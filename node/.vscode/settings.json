@@ -1,0 +1,22 @@
+{
+  "prettier.stylelintIntegration": true,
+  "prettier.eslintIntegration": true,
+  "eslint.validate": [
+    "javascript",
+    "javascriptreact",
+    ,
+    { "language": "typescript", "autoFix": true },
+    { "language": "typescriptreact", "autoFix": true }
+  ],
+  "editor.formatOnSave": true,
+  "files.exclude": {
+    "**/.git": true,
+    "**/node_modules": true,
+    "**/.cache": true,
+    "**/.vscode": true,
+    "**/coverage": true,
+    "**/build": true,
+    "**/dist": true,
+    "**/package-lock.json": true
+  }
+}
