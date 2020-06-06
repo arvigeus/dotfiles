@@ -49,4 +49,4 @@ Confirm that Vulkan is working:
 vulkaninfo
 ```
 
-It it says `VK_ERROR_INITIALIZATION_FAILED`, then something went wrong.
+If it says `VK_ERROR_INITIALIZATION_FAILED`, then something went wrong.
