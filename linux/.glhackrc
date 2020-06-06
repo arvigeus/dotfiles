@@ -1,0 +1,12 @@
+GL_OPTIONS=windowed,depth:32,mode:1360x710
+OPTIONS=tile_height:16
+OPTIONS=font_size_map:20,font_size_message:8,font_size_status:20,font_size_menu:20,font_size_text:22
+OPTIONS=vary_msgcount:8
+OPTIONS=dogname:Rex,catname:Whiskas
+OPTIONS=horsename:NoName,fruit:mango
+OPTIONS=color,hilite_pet,safe_pet
+OPTIONS=verbose,lit_corridor,confirm,!cmdassist
+OPTIONS=pickup_burden:U,pickup_types:$
+OPTIONS=showexp,!showscore,!splash_screen,time
+OPTIONS=!toptenwin,!tombstone,menustyle:full
+OPTIONS=prayconfirm,pushweapon,disclose:yi ya yv
