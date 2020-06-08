@@ -50,3 +50,9 @@ vulkaninfo
 ```
 
 If it says `VK_ERROR_INITIALIZATION_FAILED`, then something went wrong.
+
+### Enable gamemode
+
+To enable Gamemode for a steam game, click on the Properties of a game, navigate to SET LAUNCH OPTIONS and type in `gamemoderun %command%`.
+
+To enable Gamemode for all lutris games, navigate to Preferences (the **` ⋮ `** icon) -> System options -> Command prefix and type in `gamemoderun`, then click Save.
