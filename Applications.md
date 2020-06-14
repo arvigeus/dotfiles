@@ -13,7 +13,6 @@
 - VS Code
 - Meld
 - Postman
-- ClickUp
 - Slack
 
 ### Entertainment
@@ -75,3 +74,10 @@
 - AstroGrep
 - [Windows Terminal](https://aka.ms/terminal)
 - [WinGet](https://www.microsoft.com/en-us/p/app-installer/9nblggh4nns1)
+
+## Web Apps
+
+- [ClickUp](https://app.clickup.com/)
+- [AudioMass - Audio Editor](https://audiomass.co/)
+- [Counter-Strike 1.6](https://cs-online.club/en/servers)
+- [YouTube to GIF](https://gifrun.com/)
