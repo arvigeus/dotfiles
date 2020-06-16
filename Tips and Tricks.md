@@ -18,3 +18,4 @@ Example:
 
 ```sh
 GRUB_CMDLINE_LINUX_DEFAULT="mitigations=off quiet splash"
+```
