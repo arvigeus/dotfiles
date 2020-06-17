@@ -19,3 +19,7 @@ Example:
 ```sh
 GRUB_CMDLINE_LINUX_DEFAULT="mitigations=off quiet splash"
 ```
+
+## Dark themes
+
+- Audacity: *Edit -> Preferences -> Interface -> Theme -> Dark*

@@ -4,8 +4,8 @@
 
 ### Browsers
 
-- Chromium
-- Firefox *(DRM content, debugging with VS Code)*
+- [Chromium](https://www.chromium.org/)
+- [Firefox](https://www.mozilla.org/en-US/firefox/new/) *(DRM content, debugging with VS Code)*
 
 ### Development
 
@@ -24,7 +24,7 @@
 
 #### Audio
 
-- [Audacity](https://www.audacityteam.org/) *(Edit -> Preferences -> Interface -> Theme -> Dark)*
+- [Audacity](https://www.audacityteam.org/)
 
 #### Games
 
