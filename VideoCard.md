@@ -57,7 +57,6 @@ To enable Gamemode for a steam game, click on the Properties of a game, navigate
 
 To enable Gamemode for all lutris games, navigate to Preferences (the **` ⋮ `** icon) -> System options -> Command prefix and type in `gamemoderun`, then click Save.
 
-
 ### Custom Proton version
 
 [Read more](https://github.com/GloriousEggroll/proton-ge-custom)
