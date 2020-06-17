@@ -4,50 +4,49 @@
 
 ### Browsers
 
-- Chrome *(DRM content, debugging with VS Code)*
 - Chromium
-- Firefox
+- Firefox *(DRM content, debugging with VS Code)*
 
 ### Development
 
-- VS Code
-- Meld
-- Postman
-- Slack
+- [VS Code](https://code.visualstudio.com/)
+- [Meld](http://meldmerge.org/)
+- [Insomnia](https://insomnia.rest/)
+- [Slack](https://slack.com/)
 
 ### Entertainment
 
 #### Video
 
-- VLC
-- mpv
-- OBS Studio *(screen recording)*
+- [VLC](https://www.videolan.org/vlc/)
+- [mpv](https://mpv.io/)
+- [OBS Studio](https://obsproject.com/) *(screen recording)*
 
 #### Audio
 
-- Audacity *(Edit -> Preferences -> Interface -> Theme -> Dark)*
+- [Audacity](https://www.audacityteam.org/) *(Edit -> Preferences -> Interface -> Theme -> Dark)*
 
 #### Games
 
-- Steam
-- Nethack (glhack)
+- [Steam](https://store.steampowered.com/)
+- [Nethack](https://www.nethack.org/) (glhack)
 
 #### Graphics
 
-- Gimp
-- Inkscape
+- [Gimp](https://www.gimp.org/)
+- [Inkscape](https://inkscape.org/)
 
-#### Other
+#### Peer-to-peer
 
-- qBittorrent
+- [qBittorrent](https://www.qbittorrent.org/)
 
 ### Office
 
-- LibreOffice
+- [LibreOffice](https://www.libreoffice.org/)
 
 ### Security
 
-- BitWarden
+- [BitWarden](https://bitwarden.com/)
 
 ### Command line
 
@@ -56,22 +55,25 @@
 - wget
 - youtube-dl
 
+### Other
+
+- [7-zip](https://www.7-zip.org/)
+
 ## Linux
 
-- Lutris
-- winetricks
-- gamemode
-- Vulkan
+- [Lutris](https://lutris.net/)
+- [winetricks](https://wiki.winehq.org/Winetricks)
+- [gamemode](https://github.com/FeralInteractive/gamemode)
+- [Vulkan](https://www.khronos.org/vulkan/)
 
 ### KDE
 
-- Kvantum,
-- Latte Dock
+- [Kvantum](https://github.com/tsujan/Kvantum/tree/master/Kvantum)
+- [Latte Dock](https://github.com/KDE/latte-dock)
 
 ## Windows
 
-- 7zip
-- AstroGrep
+- [AstroGrep](http://astrogrep.sourceforge.net/)
 - [Windows Terminal](https://aka.ms/terminal)
 - [WinGet](https://www.microsoft.com/en-us/p/app-installer/9nblggh4nns1)
 
