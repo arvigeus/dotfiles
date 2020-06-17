@@ -78,6 +78,9 @@
 ## Web Apps
 
 - [ClickUp](https://app.clickup.com/)
+- [Excalidraw](https://excalidraw.com/)
+- [Figma](https://www.figma.com/)
+- [Framer](https://www.figma.com/)
 - [AudioMass - Audio Editor](https://audiomass.co/)
 - [Counter-Strike 1.6](https://cs-online.club/en/servers)
 - [YouTube to GIF](https://gifrun.com/)
