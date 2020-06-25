@@ -56,23 +56,53 @@ if [ -n "$force_color_prompt" ]; then
 fi
 
 if [ "$color_prompt" = yes ]; then
-    # All non-printable chars must be wrapped in \\[ and \\]. Printable chars here are: \u, \uE0B0, \h, \uE0B0, \w, \uE0B0
-    # \e[1m Sets the font to bold
-    # \e[0m Resets fonts/colors
-    # Set background color: \\033[48;5;75;38;5;{color-num}m
-    # Set foreground color: \\033[38;5;75;38;5;{color-num}m
-    # Chained background/foregound set: \\033[48;5;75;38;5;{color-num};38;5;75;38;5;{color-num}m
-    # \uE0B0 is unicode for triangle symbol
-    
-    if [ $(id -u) -eq 0 ];
-    then # you are root, make the prompt red
-        PS1=$'\\[\e[1m\\033[48;5;160;38;5;231m\\] \u \\[\\033[48;5;32;38;5;160m\\]\uE0B0\\[\\033[38;5;231m\\] \h \\[\\033[48;5;36;38;5;32m\\]\uE0B0\\[\\033[38;5;231m\\] \w \\[\e[0m\\033[48;5;226;38;5;36m\\]\uE0B0\\[\\033[48;5;226;38;5;0m\\] $(git branch 2>/dev/null | grep "^*" | colrm 1 2) \\[\e[0m\\033[38;5;226m\\]\uE0B0\\[\e[0m\\]\n\\$ '
+    function BG {
+        echo -n "48;5;$1"
+    }
+    function FG {
+        echo -n "38;5;$1"
+    }
+    WHITE=231
+    BLACK=0
+    GREY=240
+    RED=160
+    BLUE=32
+    GREEN=36
+    YELLOW=226
+
+    ARROW=$'\uE0B0'
+    BOLD=$'\e[1m'
+    RESET=$'\e[0m'
+
+    # All non-printable chars must be wrapped in \\[ and \\].
+
+    if [[ $UID -eq 0 ]]; then
+        # Root
+        PS1=$'\\[${BOLD}\\033[$(BG $RED);$(FG $WHITE)m\\] \u26a1\u@\h \\[\\033[$(BG $BLUE);$(FG $RED)m\\]${ARROW}'
     else
-        PS1=$'\\[\e[1m\\033[48;5;240;38;5;231m\\] \u \\[\\033[48;5;32;38;5;240m\\]\uE0B0\\[\\033[38;5;231m\\] \h \\[\\033[48;5;36;38;5;32m\\]\uE0B0\\[\\033[38;5;231m\\] \w \\[\e[0m\\033[48;5;226;38;5;36m\\]\uE0B0\\[\\033[48;5;226;38;5;0m\\] $(git branch 2>/dev/null | grep "^*" | colrm 1 2) \\[\e[0m\\033[38;5;226m\\]\uE0B0\\[\e[0m\\]\n\\$ '
+        # Normal user
+        PS1=$'\\[${BOLD}\\033[$(BG $GREY);$(FG $WHITE)m\\] \u@\h \\[\\033[$(BG $BLUE);$(FG $GREY)m\\]${ARROW}'
     fi
+    
+    PS1+=$'\\[\\033[$(FG $WHITE)m\\] \w '
+
+    git_branch=$(git branch 2>/dev/null | grep "^*" | colrm 1 2)
+    if [ -n "${git_branch}" ]; then
+        branch_changes=$(git status --porcelain --ignore-submodules)
+        if [ -z "${branch_changes}" ]; then
+            PS1+=$'\\[\\033[$(BG $GREEN);$(FG $BLUE)m\\]${ARROW}\\[\\033[$(FG $WHITE)m\\] \ue0a0 ${git_branch} \\[${RESET}\\033[$(FG $GREEN)m\\]${ARROW}'
+        else
+            PS1+=$'\\[\\033[$(BG $YELLOW);$(FG $BLUE)m\\]${ARROW}\\[\\033[$(FG $BLACK)m\\] \ue0a0 ${git_branch}* \\[${RESET}\\033[$(FG $YELLOW)m\\]${ARROW}'
+        fi
+    else
+        PS1+=$'\\[${RESET}\\033[$(FG $BLUE)m\\]${ARROW}'
+    fi
+
+    PS1+=$'\\[${RESET}\\]\n\\$ '
 else
-    PS1='\u > \h > \w > $(git branch 2>/dev/null | grep "^*" | colrm 1 2) \$ '
+    PS1='\u@\h:\w \$ '
 fi
+
 unset color_prompt force_color_prompt
 
 # Reset colors for print statements
@@ -148,7 +178,7 @@ function extract {
           *.tar.xz)    tar xvJf ../$1    ;;
           *.lzma)      unlzma ../$1      ;;
           *.bz2)       bunzip2 ../$1     ;;
-          *.rar)       unrar x -ad ../$1 ;;
+          *.rar)       7z x ../$1 ;;
           *.gz)        gunzip ../$1      ;;
           *.tar)       tar xvf ../$1     ;;
           *.tbz2)      tar xvjf ../$1    ;;
