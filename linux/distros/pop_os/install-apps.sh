@@ -10,7 +10,10 @@ flatpak install org.videolan.VLC
 flatpak install org.inkscape.Inkscape
 flatpak install org.audacityteam.Audacity
 
-sudo apt install chromium mpv steam glhack nodejs npm wget youtube-dl lutris winetricks gamemode p7zip-full libnotify-bin
+sudo apt install chromium mpv steam glhack nodejs npm wget youtube-dl lutris winetricks gamemode p7zip-full libnotify-bin nautilus-admin
+
+# Open with VSCode
+wget -qO- https://raw.githubusercontent.com/cra0zy/code-nautilus/master/install.sh | bash
 
 # Install Insomnia
 # https://support.insomnia.rest/article/23-installation#linux
