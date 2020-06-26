@@ -73,6 +73,7 @@
 
 ## Windows
 
+- [Visual Studio (Community Edition)](https://visualstudio.microsoft.com/vs/community/)
 - [AstroGrep](http://astrogrep.sourceforge.net/)
 - [Windows Terminal](https://aka.ms/terminal)
 - [WinGet](https://www.microsoft.com/en-us/p/app-installer/9nblggh4nns1)
