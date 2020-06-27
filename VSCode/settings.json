@@ -1,0 +1,24 @@
+{
+    "window.titleBarStyle": "custom",
+    "git.autofetch": true,
+    "jest.showCoverageOnLoad": true,
+    "todo-tree.highlights.defaultHighlight": {
+        "type": "text"
+    },
+    "todo-tree.highlights.customHighlight": {
+        "TODO": {
+            "background": "green",
+            "icon": "check",
+            "iconColour": "green",
+            "foreground": "black"
+        },
+        "FIXME": {
+            "background": "yellow",
+            "icon": "alert",
+            "iconColour": "yellow",
+            "foreground": "black"
+        }
+    },
+    "todo-tree.highlights.highlightDelay": 0,
+    "todo-tree.general.statusBar": "total"
+}
