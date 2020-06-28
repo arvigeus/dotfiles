@@ -1,4 +1,6 @@
 :: https://winstall.app/
+winget install --id=Microsoft.WindowsTerminal -e
+winget install --id=Git.Git -e
 winget install --id=Google.Chrome -e
 winget install --id=Mozilla.Firefox -e
 winget install --id=Microsoft.VisualStudioCode -e

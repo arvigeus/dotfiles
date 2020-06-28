@@ -73,11 +73,11 @@
 
 ## Windows
 
+- [WinGet](https://www.microsoft.com/en-us/p/app-installer/9nblggh4nns1)
+- [WSL 2](https://aka.ms/wslinstall)
+- [Windows Terminal](https://aka.ms/terminal)
 - [Visual Studio (Community Edition)](https://visualstudio.microsoft.com/vs/community/)
 - [AstroGrep](http://astrogrep.sourceforge.net/)
-- [Windows Terminal](https://aka.ms/terminal)
-- [WinGet](https://www.microsoft.com/en-us/p/app-installer/9nblggh4nns1)
-- [WSL 2](https://docs.microsoft.com/en-us/windows/wsl/install-win10)
 - [Dynamic Theme](https://www.microsoft.com/en-us/p/dynamic-theme/9nblggh1zbkw?activetab=pivot:overviewtab)
 
 ## Web Apps
