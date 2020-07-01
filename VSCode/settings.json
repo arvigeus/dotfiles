@@ -20,5 +20,6 @@
         }
     },
     "todo-tree.highlights.highlightDelay": 0,
-    "todo-tree.general.statusBar": "total"
+    "todo-tree.general.statusBar": "total",
+    "deno.enable": false
 }
