@@ -25,7 +25,14 @@ sudo apt install libvulkan1 mesa-vulkan-drivers vulkan-utils
 
 Southern Islands cards support is considered *experimental*, so it needs boot parameters to be added.
 
-Edit GRUB:
+#### Via kernelstub
+
+```sh
+sudo kernelstub -a radeon.si_support=0
+sudo kernelstub -a amdgpu.si_support=1
+```
+
+#### Via Grub
 
 ```sh
 sudo nano /etc/default/grub
