@@ -2,7 +2,13 @@
 
 ## HOWTO make Linux run blazing fast (again) on Intel CPUs
 
-Edit GRUB:
+### Via kernelstub
+
+```sh
+sudo kernelstub -a mitigations=off
+```
+
+### Via Grub
 
 ```sh
 sudo nano /etc/default/grub
