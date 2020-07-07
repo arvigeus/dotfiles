@@ -4,6 +4,7 @@ sudo apt -y dist-upgrade
 
 flatpak install -y com.obsproject.Studio
 flatpak install -y com.slack.Slack
+flatpak install -y com.discordapp.Discord
 flatpak install -y org.gimp.GIMP
 flatpak install -y org.gnome.meld
 flatpak install -y org.qbittorrent.qBittorrent

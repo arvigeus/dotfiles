@@ -8,6 +8,7 @@ winget install --id=Microsoft.VisualStudio.Community -e
 winget install --id=Meld.Meld -e
 winget install --id=Insomnia.Insomnia -e
 winget install --id=SlackTechnologies.Slack -e
+winget install --id=Discord.Discord -e
 winget install --id=VideoLAN.VLC -e
 winget install --id=stax76.mpv.net -e
 winget install --id=OBSProject.OBSStudio -e

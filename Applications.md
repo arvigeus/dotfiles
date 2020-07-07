@@ -13,6 +13,7 @@
 - [Meld](http://meldmerge.org/)
 - [Insomnia](https://insomnia.rest/)
 - [Slack](https://slack.com/)
+- [Discord](https://discord.com/new)
 
 ### Entertainment
 
