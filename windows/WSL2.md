@@ -21,7 +21,7 @@ wsl --set-default-version 2
 
 ## Install distribution
 
-- [Ubuntu](https://www.microsoft.com/en-us/p/ubuntu/9nblggh4msv6#activetab=pivot:overviewtab)
+- Ubuntu: `winget install --id=Canonical.Ubuntu -e`
 
 ## Using WSL 2 with Visual Studio Code
 
