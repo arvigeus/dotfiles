@@ -21,7 +21,7 @@ During Windows installing process:
 - You should now have a disk with a default Windows Recovery tools partition, a 500 MiB UEFI System Partition, and some unallocated space for your Windows installation.
 - Select the unallocated space from the disk list and click the `New` button to automatically recreate the MSR and System partition in the remaining space
 
-During Pop_OS! installing process:
+During Pop!_OS installing process:
 
 - Set the partition as EFI without formatting it
 
