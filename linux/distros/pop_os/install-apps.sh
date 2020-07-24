@@ -12,7 +12,7 @@ flatpak install -y org.videolan.VLC
 flatpak install -y org.inkscape.Inkscape
 flatpak install -y org.audacityteam.Audacity
 
-sudo apt -y install chromium code mpv steam glhack nodejs npm wget youtube-dl lutris winetricks gamemode p7zip-full libnotify-bin glhack
+sudo apt -y install gnome-tweak-tool chromium code mpv steam glhack nodejs npm wget youtube-dl lutris winetricks gamemode p7zip-full libnotify-bin glhack
 
 # Open with VSCode
 wget -qO- https://raw.githubusercontent.com/cra0zy/code-nautilus/master/install.sh | bash

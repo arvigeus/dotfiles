@@ -67,6 +67,10 @@
 - [gamemode](https://github.com/FeralInteractive/gamemode)
 - [Vulkan](https://www.khronos.org/vulkan/)
 
+### Gnome
+
+- [Foliate](https://johnfactotum.github.io/foliate/) (eBook Reader)
+
 ### KDE
 
 - [Kvantum](https://github.com/tsujan/Kvantum/tree/master/Kvantum)
