@@ -11,6 +11,7 @@ flatpak install -y org.qbittorrent.qBittorrent
 flatpak install -y org.videolan.VLC
 flatpak install -y org.inkscape.Inkscape
 flatpak install -y org.audacityteam.Audacity
+flatpak install -y com.github.johnfactotum.Foliate
 
 sudo apt -y install gnome-tweak-tool chromium code mpv steam glhack nodejs npm wget youtube-dl lutris winetricks gamemode p7zip-full libnotify-bin glhack
 
