@@ -25,3 +25,4 @@ code --install-extension Prisma.vscode-graphql
 code --install-extension denoland.vscode-deno
 code --install-extension swellaby.rust-pack
 code --install-extension swellaby.vscode-rust-test-adapter
+code --install-extension dsznajder.es7-react-js-snippets

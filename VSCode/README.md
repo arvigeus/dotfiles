@@ -51,10 +51,14 @@
 - [Rust Extension Pack](https://marketplace.visualstudio.com/items?itemName=swellaby.rust-pack)
 - [Rust Test Explorer](https://marketplace.visualstudio.com/items?itemName=swellaby.vscode-rust-test-adapter)
 
+### Snippets
+
+- [ES7 React/Redux/GraphQL/React-Native snippets](https://marketplace.visualstudio.com/items?itemName=dsznajder.es7-react-js-snippets)
+
 ## Config
 
 Depending on your platform, the user settings file is located here:
 
-- Windows `%APPDATA%\Code\User\settings.json`
-- macOS `$HOME/Library/Application Support/Code/User/settings.json`
-- Linux `$HOME/.config/Code/User/settings.json`
+- Windows: `%APPDATA%\Code\User\settings.json`
+- MacOS: `$HOME/Library/Application Support/Code/User/settings.json`
+- Linux: `$HOME/.config/Code/User/settings.json`
