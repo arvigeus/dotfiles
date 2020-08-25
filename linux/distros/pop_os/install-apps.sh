@@ -13,7 +13,7 @@ flatpak install -y org.inkscape.Inkscape
 flatpak install -y org.audacityteam.Audacity
 flatpak install -y com.github.johnfactotum.Foliate
 
-sudo apt -y install gnome-tweak-tool chromium code mpv steam glhack nodejs npm wget youtube-dl lutris winetricks gamemode p7zip-full libnotify-bin glhack
+sudo apt -y install gnome-tweak-tool chromium code fonts-firacode mpv steam glhack nodejs npm wget youtube-dl lutris winetricks gamemode p7zip-full libnotify-bin glhack
 
 # Open with VSCode
 wget -qO- https://raw.githubusercontent.com/cra0zy/code-nautilus/master/install.sh | bash

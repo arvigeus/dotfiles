@@ -1,4 +1,5 @@
 {
+    "editor.fontFamily": "Fira Code",
     "window.titleBarStyle": "custom",
     "git.autofetch": true,
     "jest.showCoverageOnLoad": true,
