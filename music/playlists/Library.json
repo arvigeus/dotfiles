@@ -260,6 +260,11 @@
     "artist": "Joshua Aaron"
   },
   {
+    "title": "Advertising Space",
+    "album": "Intensive Care",
+    "artist": "Robbie Williams"
+  },
+  {
     "title": "Africa",
     "album": "Toto IV",
     "artist": "Toto"
@@ -303,6 +308,11 @@
     "title": "Against All Odds (Take a Look at Me Now) (2016 Remaster)",
     "album": "The Singles",
     "artist": "Phil Collins"
+  },
+  {
+    "title": "Ai wa Hana, Kimi wa Sono Tane",
+    "album": "Omoide poroporo",
+    "artist": "Joe Hisaishi"
   },
   {
     "title": "Akane",
@@ -606,7 +616,7 @@
   },
   {
     "title": "Arashi No Megami",
-    "album": "Utada Hikaru Single Collection Vol.2",
+    "album": "Utada Hikaru SINGLE COLLECTION VOL.2",
     "artist": "Utada Hikaru"
   },
   {
@@ -796,7 +806,7 @@
   },
   {
     "title": "Baker Street",
-    "album": "City To City",
+    "album": "City to City",
     "artist": "Gerry Rafferty"
   },
   {
@@ -1535,6 +1545,11 @@
     "artist": "Poets of the Fall"
   },
   {
+    "title": "Carnival of Rust (Alexander Theatre Sessions)",
+    "album": "Alexander Theatre Sessions",
+    "artist": "Poets of the Fall"
+  },
+  {
     "title": "Carnival of Rust (Instrumental Version)",
     "album": "Carnival of Rust (Instrumental Version)",
     "artist": "Poets of the Fall"
@@ -1970,6 +1985,11 @@
     "artist": "Antonio Vivaldi"
   },
   {
+    "title": "Confronting Myself",
+    "album": "Celeste (Original Soundtrack)",
+    "artist": "Lena Raine"
+  },
+  {
     "title": "Cool Icon",
     "album": "Playground",
     "artist": "Playground"
@@ -2021,7 +2041,7 @@
   },
   {
     "title": "Coyote",
-    "album": "Joni 75: A Joni Mitchell Birthday Celebration",
+    "album": "Joni 75: A Joni Mitchell Birthday Celebration (Live)",
     "artist": "Glen Hansard"
   },
   {
@@ -2575,6 +2595,11 @@
     "artist": "Zona"
   },
   {
+    "title": "Don't Dream It's Over",
+    "album": "Crowded House",
+    "artist": "Crowded House"
+  },
+  {
     "title": "Don't Let the Sun Go Down on Me",
     "album": "Ladies & Gentlemen",
     "artist": "George Michael"
@@ -2877,11 +2902,6 @@
   {
     "title": "Eienwa Kirai",
     "album": "i",
-    "artist": "Mone Kamishiraishi"
-  },
-  {
-    "title": "Eienwa Kirai",
-    "album": "note",
     "artist": "Mone Kamishiraishi"
   },
   {
@@ -3460,6 +3480,11 @@
     "artist": "Clint Mansell"
   },
   {
+    "title": "First Steps",
+    "album": "Celeste (Original Soundtrack)",
+    "artist": "Lena Raine"
+  },
+  {
     "title": "First We Take Manhattan",
     "album": "The Essential Leonard Cohen",
     "artist": "Leonard Cohen"
@@ -3718,6 +3743,11 @@
     "title": "Frozen",
     "album": "Celebration (single disc version)",
     "artist": "Madonna"
+  },
+  {
+    "title": "Fully Alive",
+    "album": "Flyleaf",
+    "artist": "Flyleaf"
   },
   {
     "title": "Funeral Dirge",
@@ -4160,6 +4190,11 @@
     "artist": "Roxette"
   },
   {
+    "title": "Hatsukoi",
+    "album": "Hatsukoi",
+    "artist": "Nao Tōyama"
+  },
+  {
     "title": "Haunted",
     "album": "Haunted",
     "artist": "Poe"
@@ -4390,9 +4425,9 @@
     "artist": "Focus"
   },
   {
-    "title": "Hold on Hope",
-    "album": "Indie Folk",
-    "artist": "Dan Gautreau & Wolfgang Black"
+    "title": "Hold Back The River",
+    "album": "Hold Back The River",
+    "artist": "James Bay"
   },
   {
     "title": "Hold on Hope",
@@ -4600,6 +4635,11 @@
     "artist": "Koethe"
   },
   {
+    "title": "I Am the Fire",
+    "album": "Into the Wild Life (Deluxe)",
+    "artist": "Halestorm"
+  },
+  {
     "title": "I Call Your Name",
     "album": "Pearls Of Passion (Extended Version)",
     "artist": "Roxette"
@@ -4688,6 +4728,11 @@
     "title": "I Love The Sound Of Crashing Guitars",
     "album": "Crash! Boom! Bang! (Extended Version)",
     "artist": "Roxette"
+  },
+  {
+    "title": "I Remember U",
+    "album": "I Remember U",
+    "artist": "Cartoon"
   },
   {
     "title": "I Remember You",
@@ -5340,6 +5385,11 @@
     "artist": "Roxette"
   },
   {
+    "title": "Jessie",
+    "album": "Jessie",
+    "artist": "Gryff"
+  },
+  {
     "title": "Jeux d'eau",
     "album": "Celeste",
     "artist": "L'Indécis"
@@ -5457,11 +5507,6 @@
   {
     "title": "Kade Si Viarna Ti Lyubov Narodna",
     "album": "Kanaleto - The Best",
-    "artist": "Hor Na Hushovete"
-  },
-  {
-    "title": "Kade Si Viarna Ti Lyubov Narodna",
-    "album": "Hushove",
     "artist": "Hor Na Hushovete"
   },
   {
@@ -6120,6 +6165,11 @@
     "artist": "Lisa Hannigan"
   },
   {
+    "title": "Lily Was Here",
+    "album": "The Dave Stewart Songbook, Vol. 1",
+    "artist": "Dave Stewart"
+  },
+  {
     "title": "Line of Fire",
     "album": "Junip",
     "artist": "Junip"
@@ -6163,6 +6213,11 @@
     "title": "Livin' la Vida Loca",
     "album": "Ricky Martin",
     "artist": "Ricky Martin"
+  },
+  {
+    "title": "Living in Another World (1997 Remaster)",
+    "album": "The Colour of Spring",
+    "artist": "Talk Talk"
   },
   {
     "title": "Living On My Own",
@@ -6403,11 +6458,6 @@
     "title": "Lovesong",
     "album": "Rescue Us",
     "artist": "Anton Laurila"
-  },
-  {
-    "title": "Lovesong",
-    "album": "Greatest Hits",
-    "artist": "The Cure"
   },
   {
     "title": "Low Desert",
@@ -7048,6 +7098,11 @@
     "title": "My Religion",
     "album": "Sitting in the Fire",
     "artist": "Troy Baker"
+  },
+  {
+    "title": "My Shot",
+    "album": "Hamilton (Original Broadway Cast Recording)",
+    "artist": "Lin-Manuel Miranda"
   },
   {
     "title": "My World My Love My Life",
@@ -8250,6 +8305,11 @@
     "artist": "ASIAN KUNG-FU GENERATION"
   },
   {
+    "title": "Reach for the Summit",
+    "album": "Celeste (Original Soundtrack)",
+    "artist": "Lena Raine"
+  },
+  {
     "title": "Reaction to Action (2008 Remaster)",
     "album": "No End in Sight: The Very Best of Foreigner",
     "artist": "Foreigner"
@@ -8267,6 +8327,11 @@
   {
     "title": "Rebirth",
     "album": "Jealous Gods",
+    "artist": "Poets of the Fall"
+  },
+  {
+    "title": "Rebirth (Alexander Theatre Sessions)",
+    "album": "Rebirth (Alexander Theatre Sessions)",
     "artist": "Poets of the Fall"
   },
   {
@@ -9490,6 +9555,11 @@
     "artist": "Poets of the Fall"
   },
   {
+    "title": "Sotsugyou",
+    "album": "Axia",
+    "artist": "Yuki Saitou"
+  },
+  {
     "title": "Soul Deep (Joyride Version)",
     "album": "Joyride (Extended Version)",
     "artist": "Roxette"
@@ -9725,6 +9795,11 @@
     "artist": "First Aid Kit"
   },
   {
+    "title": "Stay the Night",
+    "album": "The Lace",
+    "artist": "Benjamin Orr"
+  },
+  {
     "title": "Stay the Road",
     "album": "Didn't He Ramble",
     "artist": "Glen Hansard"
@@ -9813,6 +9888,11 @@
     "title": "Stranger In A Strange Land",
     "album": "October (Remastered)",
     "artist": "U2"
+  },
+  {
+    "title": "Stranger Love",
+    "album": "Stranger Love",
+    "artist": "OLLIE WRIDE"
   },
   {
     "title": "Strangers In The Wind",
@@ -10760,6 +10840,11 @@
     "artist": "R.E.M."
   },
   {
+    "title": "The Silence",
+    "album": "A Black Mile To The Surface",
+    "artist": "Manchester Orchestra"
+  },
+  {
     "title": "The Song",
     "album": "Song Of The Sea (Original Motion Picture Soundtrack)",
     "artist": "Lisa Hannigan"
@@ -11160,11 +11245,6 @@
     "artist": "Raus"
   },
   {
-    "title": "To Stačí",
-    "album": "Deluxe Edition",
-    "artist": "Raus"
-  },
-  {
     "title": "To the Moon - Main Theme",
     "album": "To the Moon (Original Game Soundtrack)",
     "artist": "Kan Gao"
@@ -11555,6 +11635,11 @@
     "artist": "Red Hot Chili Peppers"
   },
   {
+    "title": "Under Your Spell",
+    "album": "Desire",
+    "artist": "Desire"
+  },
+  {
     "title": "Underglass",
     "album": "Burn The Maps",
     "artist": "The Frames"
@@ -11658,6 +11743,11 @@
     "title": "Usomitai Na I Love You",
     "album": "Deep River (Remastered 2018)",
     "artist": "Utada Hikaru"
+  },
+  {
+    "title": "Utaitaino",
+    "album": "Hako Yamazaki Best Collection",
+    "artist": "Hako Yamazaki"
   },
   {
     "title": "Utrinna syanka",
@@ -11950,6 +12040,11 @@
     "artist": "Queen"
   },
   {
+    "title": "We Built This City",
+    "album": "Greatest Hits",
+    "artist": "Starship"
+  },
+  {
     "title": "We Deal In Dreams",
     "album": "Awake The Best Of Live",
     "artist": "Live"
@@ -11958,11 +12053,6 @@
     "title": "We Walk",
     "album": "Murmur",
     "artist": "R.E.M."
-  },
-  {
-    "title": "We Will Find Out",
-    "album": "The Writers Room",
-    "artist": "Bleu McAuley"
   },
   {
     "title": "We Will Find Out",
@@ -12530,6 +12620,11 @@
     "artist": "Playground"
   },
   {
+    "title": "Yorktown (The World Turned Upside Down)",
+    "album": "Hamilton (Original Broadway Cast Recording)",
+    "artist": "Original Broadway Cast of Hamilton"
+  },
+  {
     "title": "You Ain't Goin' Nowhere",
     "album": "I'm Not There (Music From The Motion Picture)",
     "artist": "Glen Hansard"
@@ -12611,7 +12706,7 @@
   },
   {
     "title": "You're a Woman",
-    "album": "Hitcollection Vol. 1- You're a Woman",
+    "album": "Hitcollection: You're a Woman, Vol. 1",
     "artist": "Bad Boys Blue"
   },
   {
