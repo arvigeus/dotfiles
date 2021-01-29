@@ -66,6 +66,7 @@
 - [winetricks](https://wiki.winehq.org/Winetricks)
 - [gamemode](https://github.com/FeralInteractive/gamemode)
 - [Vulkan](https://www.khronos.org/vulkan/)
+- [Flatseal](https://github.com/tchx84/Flatseal)
 
 ### Gnome
 
