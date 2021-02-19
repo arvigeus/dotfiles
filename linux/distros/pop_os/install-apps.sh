@@ -11,8 +11,12 @@ flatpak install -y org.qbittorrent.qBittorrent
 flatpak install -y org.videolan.VLC
 flatpak install -y org.inkscape.Inkscape
 flatpak install -y org.audacityteam.Audacity
+flatpak install -y com.viber.Viber
 flatpak install -y com.github.johnfactotum.Foliate
 flatpak install -y com.github.tchx84.Flatseal
+
+# Viber try icon
+flatpak override --user --own-name='org.kde.*' com.viber.Viber
 
 sudo apt -y install gnome-tweak-tool chromium code fonts-firacode mpv steam glhack nodejs npm wget youtube-dl lutris winetricks gamemode p7zip-full libnotify-bin glhack
 
