@@ -2,6 +2,7 @@
 
 sudo apt -y dist-upgrade
 
+flatpak install -y org.chromium.Chromium
 flatpak install -y com.obsproject.Studio
 flatpak install -y com.slack.Slack
 flatpak install -y com.discordapp.Discord
@@ -15,10 +16,10 @@ flatpak install -y com.viber.Viber
 flatpak install -y com.github.johnfactotum.Foliate
 flatpak install -y com.github.tchx84.Flatseal
 
-# Viber try icon
+# Viber try icon: https://github.com/flathub/com.viber.Viber/issues/4
 flatpak override --user --own-name='org.kde.*' com.viber.Viber
 
-sudo apt -y install gnome-tweak-tool chromium code fonts-firacode mpv steam glhack nodejs npm wget youtube-dl lutris winetricks gamemode p7zip-full libnotify-bin glhack
+sudo apt -y install gnome-tweak-tool code fonts-firacode mpv steam glhack nodejs npm wget youtube-dl lutris winetricks gamemode p7zip-full libnotify-bin glhack
 
 # Open with VSCode
 wget -qO- https://raw.githubusercontent.com/cra0zy/code-nautilus/master/install.sh | bash
