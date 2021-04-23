@@ -1,22 +1,27 @@
 :: https://winstall.app/
-winget install --id=Microsoft.WindowsTerminal -e
-winget install --id=Git.Git -e
-winget install --id=Google.Chrome -e
-winget install --id=Mozilla.Firefox -e
-winget install --id=Microsoft.VisualStudioCode -e
-winget install --id=Microsoft.VisualStudio.Community -e
-winget install --id=Meld.Meld -e
-winget install --id=Insomnia.Insomnia -e
-winget install --id=SlackTechnologies.Slack -e
-winget install --id=Discord.Discord -e
-winget install --id=VideoLAN.VLC -e
-winget install --id=stax76.mpv.net -e
-winget install --id=OBSProject.OBSStudio -e
-winget install --id=Audacity.Audacity -e
-winget install --id=Valve.Steam -e
-winget install --id=GIMP.GIMP -e
-winget install --id=Inkscape.Inkscape -e
-winget install --id=qBittorrent.qBittorrent -e
-winget install --id=Bitwarden.Bitwarden -e
-winget install --id=OpenJS.Nodejs -e
-winget install --id=7zip.7zip -e
+winget install Microsoft.WindowsTerminal
+winget install Git.Git
+winget install Google.Chrome
+winget install Mozilla.Firefox
+winget install Microsoft.VisualStudioCode-System-x64
+winget install Meld.Meld
+winget install dnGrep.dnGrep 
+winget install Insomnia.Insomnia
+winget install Microsoft.Teams 
+winget install SlackTechnologies.Slack
+winget install Discord.Discord
+winget install VideoLAN.VLC
+winget install stax76.mpv.net
+winget install Deezer.Deezer
+winget install OBSProject.OBSStudio
+winget install Audacity.Audacity
+winget install Valve.Steam
+winget install EpicGames.EpicGamesLauncher
+winget install GIMP.GIMP
+winget install Inkscape.Inkscape
+winget install qBittorrent.qBittorrent
+winget install Bitwarden.Bitwarden
+winget install OpenJS.Nodejs
+winget install 7zip.7zip
+winget install Docker.DockerDesktop
+winget install Microsoft.VisualStudio.Community

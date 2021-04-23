@@ -26,3 +26,6 @@ code --install-extension denoland.vscode-deno
 code --install-extension swellaby.rust-pack
 code --install-extension swellaby.vscode-rust-test-adapter
 code --install-extension dsznajder.es7-react-js-snippets
+code --install-extension mtxr.sqltools
+code --install-extension mtxr.sqltools-driver-pg
+code --install-extension mtxr.sqltools-driver-sqlite

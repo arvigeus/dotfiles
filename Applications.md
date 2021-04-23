@@ -6,6 +6,7 @@
 
 - [Chromium](https://www.chromium.org/)
 - [Firefox](https://www.mozilla.org/en-US/firefox/new/) *(DRM content, debugging with VS Code)*
+- [Edge](https://www.microsoft.com/en-us/edge)
 
 ### Development
 

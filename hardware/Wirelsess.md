@@ -23,6 +23,12 @@ wlp5s0    IEEE 802.11  ESSID:"Rogue Router"
 
 ```
 
+### Complete info
+
+```sh
+wget -N -t 5 -T 10 https://github.com/UbuntuForums/wireless-info/raw/master/wireless-info && chmod +x wireless-info && ./wireless-info
+```
+
 ## Disable power management
 
 ```shell

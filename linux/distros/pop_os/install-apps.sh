@@ -15,6 +15,7 @@ flatpak install -y org.audacityteam.Audacity
 flatpak install -y com.viber.Viber
 flatpak install -y com.github.johnfactotum.Foliate
 flatpak install -y com.github.tchx84.Flatseal
+# flatpak install -y com.microsoft.Edge
 
 # Viber try icon: https://github.com/flathub/com.viber.Viber/issues/4
 flatpak override --user --own-name='org.kde.*' com.viber.Viber
@@ -22,7 +23,12 @@ flatpak override --user --own-name='org.kde.*' com.viber.Viber
 sudo apt -y install gnome-tweak-tool code fonts-firacode mpv steam glhack nodejs npm wget youtube-dl lutris winetricks gamemode p7zip-full libnotify-bin glhack
 
 # Open with VSCode
-wget -qO- https://raw.githubusercontent.com/cra0zy/code-nautilus/master/install.sh | bash
+sudo apt -y install python3-nautilus
+wget https://raw.githubusercontent.com/vvanloc/Nautilus-OpenInVSCode/master/vscode-nautilus.py -P ~/.local/share/nautilus-python/extensions
+
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# rustup update
 
 # Install Insomnia
 # https://support.insomnia.rest/article/23-installation#linux
