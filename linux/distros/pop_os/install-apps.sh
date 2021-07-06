@@ -11,7 +11,6 @@ flatpak install -y org.gnome.meld
 flatpak install -y org.qbittorrent.qBittorrent
 flatpak install -y org.videolan.VLC
 flatpak install -y org.inkscape.Inkscape
-flatpak install -y org.audacityteam.Audacity
 flatpak install -y com.viber.Viber
 flatpak install -y com.github.johnfactotum.Foliate
 flatpak install -y com.github.tchx84.Flatseal

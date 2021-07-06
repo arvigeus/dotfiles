@@ -24,10 +24,6 @@
 - [mpv](https://mpv.io/)
 - [OBS Studio](https://obsproject.com/) *(screen recording)*
 
-#### Audio
-
-- [Audacity](https://www.audacityteam.org/)
-
 #### Games
 
 - [Steam](https://store.steampowered.com/)

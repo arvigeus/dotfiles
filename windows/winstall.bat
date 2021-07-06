@@ -14,7 +14,6 @@ winget install VideoLAN.VLC
 winget install stax76.mpv.net
 winget install Deezer.Deezer
 winget install OBSProject.OBSStudio
-winget install Audacity.Audacity
 winget install Valve.Steam
 winget install EpicGames.EpicGamesLauncher
 winget install GIMP.GIMP
