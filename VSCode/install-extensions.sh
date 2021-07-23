@@ -29,3 +29,4 @@ code --install-extension dsznajder.es7-react-js-snippets
 code --install-extension mtxr.sqltools
 code --install-extension mtxr.sqltools-driver-pg
 code --install-extension mtxr.sqltools-driver-sqlite
+code --install-extension zenclabs.reactpreview
