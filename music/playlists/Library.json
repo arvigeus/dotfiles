@@ -100,6 +100,11 @@
     "artist": "U2"
   },
   {
+    "title": "500 Miles",
+    "album": "Peter Paul and Mary & the Chad Mitchell Trio (6 Original Album)",
+    "artist": "Peter, Paul And Mary"
+  },
+  {
     "title": "7 Chinese Bros.",
     "album": "Reckoning",
     "artist": "R.E.M."
@@ -158,6 +163,11 @@
     "title": "A Man And A Woman",
     "album": "How To Dismantle An Atomic Bomb",
     "artist": "U2"
+  },
+  {
+    "title": "A Mission",
+    "album": "Emm Gryner's Only of Earth: Days of Games",
+    "artist": "Emm Gryner"
   },
   {
     "title": "A Moment Like the Longest Day",
@@ -545,7 +555,7 @@
     "artist": "Phil Collins"
   },
   {
-    "title": "Another One Bites The Dust",
+    "title": "Another One Bites The Dust (Remastered 2011)",
     "album": "The Platinum Collection (2011 Remaster)",
     "artist": "Queen"
   },
@@ -616,7 +626,7 @@
   },
   {
     "title": "Arashi No Megami",
-    "album": "Utada Hikaru SINGLE COLLECTION VOL.2",
+    "album": "Utada Hikaru Single Collection Vol.2",
     "artist": "Utada Hikaru"
   },
   {
@@ -820,6 +830,11 @@
     "artist": "Molly Stone"
   },
   {
+    "title": "Banana Boat Song (day-o)",
+    "album": "Day - O !     Banana  Boat Song",
+    "artist": "Harry Belafonte"
+  },
+  {
     "title": "Bananaman",
     "album": "Live",
     "artist": "Glen Hansard"
@@ -828,6 +843,11 @@
     "title": "Bang And Blame (Remastered)",
     "album": "Monster (25th Anniversary Edition)",
     "artist": "R.E.M."
+  },
+  {
+    "title": "Bangarang (feat. Sirah)",
+    "album": "Bangarang EP",
+    "artist": "Skrillex"
   },
   {
     "title": "Banh Troi Nuoc",
@@ -890,6 +910,11 @@
     "artist": "R.E.M."
   },
   {
+    "title": "Beast (Extended Version)",
+    "album": "Beast (Extended Version)",
+    "artist": "Nico Vega"
+  },
+  {
     "title": "Beat A Drum",
     "album": "Reveal",
     "artist": "R.E.M."
@@ -898,6 +923,11 @@
     "title": "Beat It",
     "album": "Thriller 25 Super Deluxe Edition",
     "artist": "Michael Jackson"
+  },
+  {
+    "title": "Beautiful (1999 Remaster)",
+    "album": "Afraid of Sunlight",
+    "artist": "Marillion"
   },
   {
     "title": "Beautiful Day",
@@ -918,6 +948,11 @@
     "title": "Beautiful Regret",
     "album": "Piece Of My Soul",
     "artist": "Garou"
+  },
+  {
+    "title": "Beds Are Burning (Remastered)",
+    "album": "Diesel And Dust",
+    "artist": "Midnight Oil"
   },
   {
     "title": "Being In Love",
@@ -1135,6 +1170,11 @@
     "artist": "Doni i Momchil"
   },
   {
+    "title": "Blinding Lights",
+    "album": "After Hours",
+    "artist": "The Weeknd"
+  },
+  {
     "title": "Blissful Death",
     "album": "NieR:Automata Original Soundtrack",
     "artist": "岡部啓一"
@@ -1263,6 +1303,16 @@
     "title": "Breathe",
     "album": "No Line On The Horizon",
     "artist": "U2"
+  },
+  {
+    "title": "Breathe In",
+    "album": "Details",
+    "artist": "Frou Frou"
+  },
+  {
+    "title": "Bright Spot",
+    "album": "Torrential",
+    "artist": "Emm Gryner"
   },
   {
     "title": "Brighter Than the Sun",
@@ -1485,6 +1535,11 @@
     "artist": "Coeur De Pirate"
   },
   {
+    "title": "Can't Help Falling In Love",
+    "album": "Rise Up",
+    "artist": "Nini Music"
+  },
+  {
     "title": "Can't Let You Go",
     "album": "Bent Out Of Shape",
     "artist": "Rainbow"
@@ -1503,6 +1558,11 @@
     "title": "Can't Wait (2008 Remaster)",
     "album": "No End in Sight: The Very Best of Foreigner",
     "artist": "Foreigner"
+  },
+  {
+    "title": "Candy Castle",
+    "album": "B/E/A/T/B/O/X",
+    "artist": "Glass Candy"
   },
   {
     "title": "Candy Color Pop",
@@ -1790,6 +1850,11 @@
     "artist": "Roxette"
   },
   {
+    "title": "Chuvstva",
+    "album": "Shadows",
+    "artist": "Zona"
+  },
+  {
     "title": "Circlet of Pines",
     "album": "Crows in Reach",
     "artist": "Eduard Frolov EFG"
@@ -1948,6 +2013,11 @@
     "title": "Come Undone (Edit)",
     "album": "Greatest",
     "artist": "Duran Duran"
+  },
+  {
+    "title": "Comets Call",
+    "album": "Emm Gryner's Only of Earth: Days of Games",
+    "artist": "Emm Gryner"
   },
   {
     "title": "Comfy",
@@ -2280,6 +2350,11 @@
     "artist": "Coeur De Pirate"
   },
   {
+    "title": "Dark Night (Kara)",
+    "album": "Detroit: Become Human Original Soundtrack",
+    "artist": "Philip Sheppard"
+  },
+  {
     "title": "Daughter of My Sins",
     "album": "Space Sessions: Songs From a Tin Can",
     "artist": "Chris Hadfield"
@@ -2595,6 +2670,11 @@
     "artist": "Zona"
   },
   {
+    "title": "Don't Disturb Me (feat. Sherina Munaf)",
+    "album": "Earwig and the Witch - Original Soundtrack",
+    "artist": "Satoshi Takebe"
+  },
+  {
     "title": "Don't Dream It's Over",
     "album": "Crowded House",
     "artist": "Crowded House"
@@ -2805,6 +2885,11 @@
     "artist": "R.E.M."
   },
   {
+    "title": "Driving The Last Spike",
+    "album": "We Can't Dance",
+    "artist": "Genesis"
+  },
+  {
     "title": "Drown Out",
     "album": "The Swell Season",
     "artist": "Glen Hansard"
@@ -2905,6 +2990,11 @@
     "artist": "Mone Kamishiraishi"
   },
   {
+    "title": "Ela",
+    "album": "Shadows",
+    "artist": "Zona"
+  },
+  {
     "title": "Electrical Storm",
     "album": "The Best Of 1990-2000",
     "artist": "U2"
@@ -2933,6 +3023,11 @@
     "title": "Elizabeth",
     "album": "BioShock Infinite - OST",
     "artist": "Garry Schyman"
+  },
+  {
+    "title": "Ella, elle l'a",
+    "album": "Evidemment (Version Deluxe)",
+    "artist": "France Gall"
   },
   {
     "title": "Elvis Presley And America",
@@ -2975,6 +3070,11 @@
     "artist": "高橋邦幸・石濱 翔"
   },
   {
+    "title": "End of Me",
+    "album": "Torrential",
+    "artist": "Emm Gryner"
+  },
+  {
     "title": "End of the Unknown",
     "album": "NieR:Automata Original Soundtrack",
     "artist": "岡部啓一"
@@ -3000,6 +3100,11 @@
     "artist": "Depeche Mode"
   },
   {
+    "title": "Enola Gay",
+    "album": "The Best Of Orchestral Manoeuvres In The Dark",
+    "artist": "Orchestral Manoeuvres in the Dark"
+  },
+  {
     "title": "Ensemble",
     "album": "Cœur de pirate",
     "artist": "Coeur De Pirate"
@@ -3008,6 +3113,11 @@
     "title": "Enter Sandman",
     "album": "Metallica",
     "artist": "Metallica"
+  },
+  {
+    "title": "Entre dos tierras",
+    "album": "The Platinum Collection",
+    "artist": "Héroes del Silencio"
   },
   {
     "title": "Epilogue (Will the Circle Be Unbroken)",
@@ -3515,6 +3625,11 @@
     "artist": "Phoenix Effect"
   },
   {
+    "title": "Flicks",
+    "album": "Details",
+    "artist": "Frou Frou"
+  },
+  {
     "title": "Flower",
     "album": "Play - The B Sides",
     "artist": "Moby"
@@ -3598,6 +3713,11 @@
     "title": "For Sometime Now",
     "album": "Playground",
     "artist": "Playground"
+  },
+  {
+    "title": "For What It's Worth",
+    "album": "Best Of",
+    "artist": "The Cardigans"
   },
   {
     "title": "For Whom The Bell Tolls",
@@ -3780,6 +3900,16 @@
     "artist": "Darren Korb"
   },
   {
+    "title": "Genesis",
+    "album": "Justice",
+    "artist": "Justice"
+  },
+  {
+    "title": "Gentleman",
+    "album": "Shadows",
+    "artist": "Zona"
+  },
+  {
     "title": "Get On The Road",
     "album": "The Place We Ran From",
     "artist": "Tired Pony"
@@ -3800,9 +3930,24 @@
     "artist": "R.E.M."
   },
   {
+    "title": "Getaway",
+    "album": "Magic Journey",
+    "artist": "The Salsoul Orchestra"
+  },
+  {
+    "title": "Getting Even",
+    "album": "BIG TV",
+    "artist": "White Lies"
+  },
+  {
     "title": "Gigantic (Live)",
     "album": "Strict Joy (Deluxe Edition)",
     "artist": "The Swell Season"
+  },
+  {
+    "title": "Gimme Shelter",
+    "album": "Let It Bleed",
+    "artist": "The Rolling Stones"
   },
   {
     "title": "Gio Mua Ve",
@@ -4130,6 +4275,11 @@
     "artist": "Troy Baker"
   },
   {
+    "title": "Hammer",
+    "album": "Drive (Original Motion Picture Soundtrack)",
+    "artist": "Cliff Martinez"
+  },
+  {
     "title": "Hammer To Fall",
     "album": "The Platinum Collection (2011 Remaster)",
     "artist": "Queen"
@@ -4215,6 +4365,11 @@
     "artist": "Kan Gao"
   },
   {
+    "title": "Hawaii Oslo",
+    "album": "Esja",
+    "artist": "Hania Rani"
+  },
+  {
     "title": "Hawkmoon 269",
     "album": "Rattle And Hum",
     "artist": "U2"
@@ -4258,6 +4413,11 @@
     "title": "Heal My Wounds",
     "album": "Twilight Theater",
     "artist": "Poets of the Fall"
+  },
+  {
+    "title": "Hear Me Out",
+    "album": "Details",
+    "artist": "Frou Frou"
   },
   {
     "title": "Heart Beats Slow",
@@ -4433,6 +4593,11 @@
     "title": "Hold on Hope",
     "album": "Life is Strange™ OST",
     "artist": "Dan Gautreau & Wolfgang Black"
+  },
+  {
+    "title": "Hold On Just A Little While Longer (From \"Detroit : Become Human\")",
+    "album": "Hold On Just A Little While Longer (From \"Detroit : Become Human\")",
+    "artist": "Rehn Stillnight"
   },
   {
     "title": "Hold On Magnolia",
@@ -4638,6 +4803,11 @@
     "title": "I Am the Fire",
     "album": "Into the Wild Life (Deluxe)",
     "artist": "Halestorm"
+  },
+  {
+    "title": "I Breathe",
+    "album": "I Breathe",
+    "artist": "Vacuum"
   },
   {
     "title": "I Call Your Name",
@@ -5175,6 +5345,11 @@
     "artist": "Troy Baker"
   },
   {
+    "title": "Internal Flight (Remastered)",
+    "album": "Internal Flight (Remastered)",
+    "artist": "Estas Tonne"
+  },
+  {
     "title": "Into Flame",
     "album": "Phoenix Effect",
     "artist": "Phoenix Effect"
@@ -5206,7 +5381,7 @@
   },
   {
     "title": "Intro",
-    "album": "Сенки",
+    "album": "Shadows",
     "artist": "Zona"
   },
   {
@@ -5248,6 +5423,11 @@
     "title": "Isä",
     "album": "Milloin Toivo Palaa",
     "artist": "Anton Laurila"
+  },
+  {
+    "title": "Iskam da Te Ima",
+    "album": "Shadows",
+    "artist": "Zona"
   },
   {
     "title": "Iskam Te",
@@ -5293,6 +5473,11 @@
     "title": "It's a Heartache",
     "album": "It's a Heartache",
     "artist": "Bonnie Tyler"
+  },
+  {
+    "title": "It's Good To Be In Love",
+    "album": "Details",
+    "artist": "Frou Frou"
   },
   {
     "title": "It's My Life",
@@ -5565,6 +5750,11 @@
     "artist": "Poets of the Fall"
   },
   {
+    "title": "Kara Main Theme (Kara)",
+    "album": "Detroit: Become Human Original Soundtrack",
+    "artist": "Philip Sheppard"
+  },
+  {
     "title": "Kartina",
     "album": "The Collection - Part I & Part II",
     "artist": "Doni i Momchil"
@@ -5573,6 +5763,11 @@
     "title": "Kauboj",
     "album": "Undergrand",
     "artist": "Pero Defformero"
+  },
+  {
+    "title": "Kayleigh (2017 Remaster)",
+    "album": "Misplaced Childhood (Deluxe Edition)",
+    "artist": "Marillion"
   },
   {
     "title": "Keep It All",
@@ -5855,6 +6050,11 @@
     "artist": "Kan Gao"
   },
   {
+    "title": "Lavender (Single Version)",
+    "album": "The Best of Both Worlds",
+    "artist": "Marillion"
+  },
+  {
     "title": "Lay Me Down",
     "album": "The Roads Outgrown",
     "artist": "The Frames"
@@ -5948,6 +6148,11 @@
     "title": "Les amours dévouées",
     "album": "Blonde",
     "artist": "Coeur De Pirate"
+  },
+  {
+    "title": "Let Go",
+    "album": "Details",
+    "artist": "Frou Frou"
   },
   {
     "title": "Let Go (feat. Robyn Ardery)",
@@ -6168,6 +6373,11 @@
     "title": "Lily Was Here",
     "album": "The Dave Stewart Songbook, Vol. 1",
     "artist": "Dave Stewart"
+  },
+  {
+    "title": "Lily Was Here (feat. Candy Dulfer)",
+    "album": "Saxuality / Sax-A-Go-Go",
+    "artist": "David A. Stewart"
   },
   {
     "title": "Line of Fire",
@@ -6520,9 +6730,14 @@
     "artist": "Neti"
   },
   {
-    "title": "Mad World (feat. Gary Jules)",
+    "title": "Mad World",
     "album": "Donnie Darko (Original Motion Picture Soundtrack)",
     "artist": "Michael Andrews"
+  },
+  {
+    "title": "Maddening Shroud",
+    "album": "Details",
+    "artist": "Frou Frou"
   },
   {
     "title": "Magic",
@@ -6975,6 +7190,11 @@
     "artist": "Hannah Telle"
   },
   {
+    "title": "More Than This",
+    "album": "More Than This - The Best Of Bryan Ferry And Roxy Music",
+    "artist": "Roxy Music"
+  },
+  {
     "title": "Morning Tide",
     "album": "Temple of Thought (Bonus Edition)",
     "artist": "Poets of the Fall"
@@ -7005,6 +7225,11 @@
     "artist": "Ostava"
   },
   {
+    "title": "Mr. Blue Sky",
+    "album": "Out of the Blue",
+    "artist": "Electric Light Orchestra"
+  },
+  {
     "title": "Mr. Richards",
     "album": "Accelerate",
     "artist": "R.E.M."
@@ -7016,7 +7241,7 @@
   },
   {
     "title": "Mưa trên phố Huế",
-    "album": "Mưa Trên Phố Huế (Asia CD 388)",
+    "album": "Mưa Trên Phố Huế",
     "artist": "Hoang Thuc Linh"
   },
   {
@@ -7028,6 +7253,11 @@
     "title": "Musicstar",
     "album": "Tick",
     "artist": "Minako Kotobuki"
+  },
+  {
+    "title": "Must Be Dreaming",
+    "album": "Details",
+    "artist": "Frou Frou"
   },
   {
     "title": "My Beauty",
@@ -7128,6 +7358,11 @@
     "title": "Nandemonaiya - movie ver.",
     "album": "Your Name.",
     "artist": "RADWIMPS"
+  },
+  {
+    "title": "Napuk",
+    "album": "Shadows",
+    "artist": "Zona"
   },
   {
     "title": "Nar",
@@ -7380,6 +7615,11 @@
     "artist": "The Frames"
   },
   {
+    "title": "Noshten Grad",
+    "album": "Shadows",
+    "artist": "Zona"
+  },
+  {
     "title": "Not A Number",
     "album": "Cashmir",
     "artist": "Cashmir"
@@ -7403,6 +7643,11 @@
     "title": "Nothing Stays the Same",
     "album": "Jealous Gods",
     "artist": "Poets of the Fall"
+  },
+  {
+    "title": "Noviat Chovek",
+    "album": "Shadows",
+    "artist": "Zona"
   },
   {
     "title": "Now I'm Here",
@@ -7440,6 +7685,11 @@
     "artist": "Ludovico Einaudi"
   },
   {
+    "title": "O",
+    "album": "P.I.F. 6",
+    "artist": "P.I.F."
+  },
+  {
     "title": "O Sleep",
     "album": "Passenger",
     "artist": "Lisa Hannigan"
@@ -7448,6 +7698,11 @@
     "title": "Oats In The Water",
     "album": "The Burgh Island EP",
     "artist": "Ben Howard"
+  },
+  {
+    "title": "Oblivion",
+    "album": "Oblivion (Original Motion Picture Soundtrack)",
+    "artist": "M83"
   },
   {
     "title": "Obstacles",
@@ -7610,6 +7865,11 @@
     "artist": "Metallica"
   },
   {
+    "title": "One More Chance (2001 Remaster)",
+    "album": "Actually",
+    "artist": "Pet Shop Boys"
+  },
+  {
     "title": "One More Dead Rat",
     "album": "Playground",
     "artist": "Playground"
@@ -7640,6 +7900,11 @@
     "artist": "Queen"
   },
   {
+    "title": "Only Got One",
+    "album": "Details",
+    "artist": "Frou Frou"
+  },
+  {
     "title": "Only in Your Head",
     "album": "Anar",
     "artist": "Marketa Irglova"
@@ -7655,6 +7920,11 @@
     "artist": "Roxette"
   },
   {
+    "title": "Only When I Sleep",
+    "album": "Talk on Corners",
+    "artist": "The Corrs"
+  },
+  {
     "title": "Only Young Twice",
     "album": "Last Look at Eden (Bonus Track Edition)",
     "artist": "Europe"
@@ -7665,9 +7935,44 @@
     "artist": "Journey"
   },
   {
+    "title": "Open Blue",
+    "album": "Open Blue",
+    "artist": "Koethe"
+  },
+  {
     "title": "Operation Spirit (The Tyranny Of Tradition)",
     "album": "Awake The Best Of Live",
     "artist": "Live"
+  },
+  {
+    "title": "Opus 1",
+    "album": "P.I.F. 6",
+    "artist": "P.I.F."
+  },
+  {
+    "title": "Opus 2",
+    "album": "P.I.F. 6",
+    "artist": "P.I.F."
+  },
+  {
+    "title": "Opus 3",
+    "album": "P.I.F. 6",
+    "artist": "P.I.F."
+  },
+  {
+    "title": "Opus 4",
+    "album": "P.I.F. 6",
+    "artist": "P.I.F."
+  },
+  {
+    "title": "Opus 5",
+    "album": "P.I.F. 6",
+    "artist": "P.I.F."
+  },
+  {
+    "title": "Opus 6",
+    "album": "P.I.F. 6",
+    "artist": "P.I.F."
   },
   {
     "title": "Ora",
@@ -7970,6 +8275,11 @@
     "artist": "Sparklehorse"
   },
   {
+    "title": "Piano Man",
+    "album": "Piano Man (Legacy Edition)",
+    "artist": "Billy Joel"
+  },
+  {
     "title": "Pictures",
     "album": "Crows in Reach",
     "artist": "Eduard Frolov EFG"
@@ -7980,7 +8290,7 @@
     "artist": "Minako Kotobuki"
   },
   {
-    "title": "Pilgrims On a Long Journey",
+    "title": "Pilgrims on a Long Journey",
     "album": "Child of Light",
     "artist": "Coeur De Pirate"
   },
@@ -8030,6 +8340,11 @@
     "artist": "U2"
   },
   {
+    "title": "Please Mr. Postman",
+    "album": "Gold - Greatest Hits",
+    "artist": "Carpenters"
+  },
+  {
     "title": "Pocketful of Sunshine",
     "album": "Strip Me Away",
     "artist": "Natasha Bedingfield"
@@ -8043,6 +8358,11 @@
     "title": "Ponedelnik",
     "album": "Mono",
     "artist": "Ostava"
+  },
+  {
+    "title": "Ponyakoga",
+    "album": "P.I.F. 6",
+    "artist": "P.I.F."
   },
   {
     "title": "Pop Song 89 (Remastered)",
@@ -8063,6 +8383,11 @@
     "title": "Postscript",
     "album": "Time",
     "artist": "Koethe"
+  },
+  {
+    "title": "Pour Some Sugar On Me",
+    "album": "Hysteria",
+    "artist": "Def Leppard"
   },
   {
     "title": "Pour un infidèle",
@@ -8185,14 +8510,29 @@
     "artist": "Minako Kotobuki"
   },
   {
+    "title": "Priyatel",
+    "album": "P.I.F. 6",
+    "artist": "P.I.F."
+  },
+  {
     "title": "Promenade",
     "album": "The Unforgettable Fire (Remastered)",
     "artist": "U2"
   },
   {
+    "title": "Prorok",
+    "album": "Shadows",
+    "artist": "Zona"
+  },
+  {
     "title": "Psalm 121 (Lai Lai Lai)",
     "album": "Bring Us Back",
     "artist": "Joshua Aaron"
+  },
+  {
+    "title": "Psychobabble",
+    "album": "Details",
+    "artist": "Frou Frou"
   },
   {
     "title": "Psychosis",
@@ -8300,6 +8640,11 @@
     "artist": "Tired Pony"
   },
   {
+    "title": "Razpileni Nadejdi",
+    "album": "Shadows",
+    "artist": "Zona"
+  },
+  {
     "title": "Re: Re:",
     "album": "Re: Re:",
     "artist": "ASIAN KUNG-FU GENERATION"
@@ -8380,6 +8725,11 @@
     "artist": "U2"
   },
   {
+    "title": "Release",
+    "album": "Rise Up",
+    "artist": "Nini Music"
+  },
+  {
     "title": "Remember Me (Dúo)",
     "album": "Coco (Banda Sonora Original en Español)",
     "artist": "Miguel"
@@ -8423,6 +8773,11 @@
     "title": "Return",
     "album": "A Season On The Line",
     "artist": "Glen Hansard"
+  },
+  {
+    "title": "Return To Innocence",
+    "album": "The Cross Of Changes",
+    "artist": "Enigma"
   },
   {
     "title": "Rêve d'opéra (Extrait du conte musical 'Les souliers rouges')",
@@ -8480,6 +8835,11 @@
     "artist": "Lera Lynn"
   },
   {
+    "title": "Ring of Fire",
+    "album": "Americana",
+    "artist": "Diesel"
+  },
+  {
     "title": "Rise",
     "album": "The Cost (Deluxe Edition)",
     "artist": "The Frames"
@@ -8488,6 +8848,11 @@
     "title": "Rise Up",
     "album": "The Joshua Tree",
     "artist": "U2"
+  },
+  {
+    "title": "Rise Up",
+    "album": "Rise Up",
+    "artist": "Nini Music"
   },
   {
     "title": "Rise Up (Radio Edit)",
@@ -8503,6 +8868,11 @@
     "title": "Rochard Main Theme",
     "album": "Rochard (Original Game Soundtrack)",
     "artist": "Markus Kaarlonen"
+  },
+  {
+    "title": "Rock This Town",
+    "album": "Rock This Town - The Collection",
+    "artist": "Stray Cats"
   },
   {
     "title": "Rocks !",
@@ -8575,6 +8945,11 @@
     "artist": "Snow Patrol"
   },
   {
+    "title": "Run",
+    "album": "Greatest Hits",
+    "artist": "Lighthouse Family"
+  },
+  {
     "title": "Run Away (2004 Remix)",
     "album": "Awake The Best Of Live",
     "artist": "Live"
@@ -8610,6 +8985,11 @@
     "artist": "Yeah Yeah Yeahs"
   },
   {
+    "title": "Runnin' Down A Dream",
+    "album": "Greatest Hits",
+    "artist": "Tom Petty"
+  },
+  {
     "title": "Running out of Time",
     "album": "Live in Moscow",
     "artist": "Poets of the Fall"
@@ -8623,6 +9003,11 @@
     "title": "Running To Stand Still",
     "album": "The Joshua Tree",
     "artist": "U2"
+  },
+  {
+    "title": "Running Towards A Place",
+    "album": "Imploding The Mirage (Deluxe)",
+    "artist": "The Killers"
   },
   {
     "title": "Russian Roulette",
@@ -8660,7 +9045,7 @@
     "artist": "The Frames"
   },
   {
-    "title": "Safe Travels (Don’t Die)",
+    "title": "Safe Travels (Don't Die)",
     "album": "Passenger",
     "artist": "Lisa Hannigan"
   },
@@ -8718,6 +9103,11 @@
     "title": "Sam",
     "album": "P.I.F.",
     "artist": "P.I.F."
+  },
+  {
+    "title": "Samo 1 Spomen",
+    "album": "Shadows",
+    "artist": "Zona"
   },
   {
     "title": "Samsara",
@@ -8890,6 +9280,11 @@
     "artist": "Faultline"
   },
   {
+    "title": "Senki",
+    "album": "Shadows",
+    "artist": "Zona"
+  },
+  {
     "title": "Separate Ways (Worlds Apart)",
     "album": "Journey's Greatest Hits",
     "artist": "Journey"
@@ -8928,6 +9323,11 @@
     "title": "Sha'alu Shalom Yerushalayim",
     "album": "Bring Us Back",
     "artist": "Joshua Aaron"
+  },
+  {
+    "title": "Shadow Girl",
+    "album": "Emm Gryner's Only of Earth: Days of Games",
+    "artist": "Emm Gryner"
   },
   {
     "title": "Shadow Of A Doubt",
@@ -9068,6 +9468,11 @@
     "title": "Shema (feat. Don Heist)",
     "album": "You Are Holy",
     "artist": "Joshua Aaron"
+  },
+  {
+    "title": "Shh",
+    "album": "Details",
+    "artist": "Frou Frou"
   },
   {
     "title": "Shine",
@@ -9290,6 +9695,11 @@
     "artist": "U2"
   },
   {
+    "title": "Sleep Walk",
+    "album": "Songs Over the Years (50 Hits)",
+    "artist": "Santo & Johnny"
+  },
+  {
     "title": "Sleeping",
     "album": "The Swell Season",
     "artist": "Glen Hansard"
@@ -9363,6 +9773,11 @@
     "title": "So Cruel",
     "album": "Achtung Baby",
     "artist": "U2"
+  },
+  {
+    "title": "So Easy",
+    "album": "Torrential",
+    "artist": "Emm Gryner"
   },
   {
     "title": "So Easy",
@@ -9448,6 +9863,11 @@
     "title": "Something More",
     "album": "YouTube",
     "artist": "Nick Vujicic"
+  },
+  {
+    "title": "Sometimes I Feel Like Screaming",
+    "album": "A Fire in the Sky",
+    "artist": "Deep Purple"
   },
   {
     "title": "Sometimes You Can't Make It On Your Own",
@@ -9573,6 +9993,11 @@
     "title": "Sound and Light",
     "album": "Set Sail Someday",
     "artist": "Parrot Dream"
+  },
+  {
+    "title": "Sound Of Rebellion",
+    "album": "Rise Up",
+    "artist": "Nini Music"
   },
   {
     "title": "Sounds Like a Melody (Special Long Version; 2019 Remaster)",
@@ -9755,6 +10180,11 @@
     "artist": "Minako Kotobuki"
   },
   {
+    "title": "States of Mind",
+    "album": "Senser Stacked up XX",
+    "artist": "Senser"
+  },
+  {
     "title": "Statice",
     "album": "note",
     "artist": "Mone Kamishiraishi"
@@ -9780,6 +10210,11 @@
     "artist": "U2"
   },
   {
+    "title": "Stay (feat. Maty Noyes)",
+    "album": "Stay (feat. Maty Noyes)",
+    "artist": "Kygo"
+  },
+  {
     "title": "Stay Alive",
     "album": "The Secret Life Of Walter Mitty (Music From And Inspired By The Motion Picture)",
     "artist": "José González"
@@ -9788,6 +10223,11 @@
     "title": "Stay Clean",
     "album": "Sing Street (Original Motion Picture Soundtrack)",
     "artist": "Motörhead"
+  },
+  {
+    "title": "Stay Forever",
+    "album": "Stay Forever",
+    "artist": "Poets of the Fall"
   },
   {
     "title": "Stay Gold",
@@ -9870,6 +10310,11 @@
     "artist": "Lot Lorien"
   },
   {
+    "title": "Strah",
+    "album": "Shadows",
+    "artist": "Zona"
+  },
+  {
     "title": "Strahoten den",
     "album": "Tozi film",
     "artist": "Doni i Neti"
@@ -9926,7 +10371,7 @@
   },
   {
     "title": "Striven (feat. Marko Saaresto)",
-    "album": "Self Resonance (Deluxe Edition)",
+    "album": "Self-Resonance (Deluxe Edition)",
     "artist": "Jay Ray"
   },
   {
@@ -10020,6 +10465,11 @@
     "artist": "Mone Kamishiraishi"
   },
   {
+    "title": "Sunny Day",
+    "album": "Shadows",
+    "artist": "Zona"
+  },
+  {
     "title": "Sunrise",
     "album": "Hollow Glow",
     "artist": "Hannah Telle"
@@ -10033,6 +10483,11 @@
     "title": "Sunshine Reggae",
     "album": "Sunshine Reggae",
     "artist": "Laid Back"
+  },
+  {
+    "title": "Suntoucher",
+    "album": "Goodbye Country (Hello Nightclub)",
+    "artist": "Groove Armada"
   },
   {
     "title": "Superman",
@@ -10065,6 +10520,16 @@
     "artist": "Phil Collins"
   },
   {
+    "title": "Sutrin Do Men",
+    "album": "Shadows",
+    "artist": "Zona"
+  },
+  {
+    "title": "Sutrin Do Men (Piano Version)",
+    "album": "Shadows",
+    "artist": "Zona"
+  },
+  {
     "title": "Sveti Georgi",
     "album": "Kanaleto - The Best",
     "artist": "Slavi Trifonov"
@@ -10093,6 +10558,16 @@
     "title": "Sweetness Follows",
     "album": "Automatic For The People (25th Anniversary Edition)",
     "artist": "R.E.M."
+  },
+  {
+    "title": "Symphony No. 9 In D Minor, Op. 125 Choral: II. Molto vivace; Presto",
+    "album": "Beethoven: Complete 9 Symphonies (Digitally Remastered)",
+    "artist": "London Symphony Orchestra"
+  },
+  {
+    "title": "Synchronicity I",
+    "album": "Synchronicity (Remastered 2003)",
+    "artist": "The Police"
   },
   {
     "title": "T'es belle",
@@ -10185,6 +10660,11 @@
     "artist": "Darren Korb"
   },
   {
+    "title": "Tarsia Te",
+    "album": "Shadows",
+    "artist": "Zona"
+  },
+  {
     "title": "Teardrop",
     "album": "Mezzanine",
     "artist": "Massive Attack"
@@ -10215,6 +10695,16 @@
     "artist": "Anton Laurila"
   },
   {
+    "title": "Telegraph Road",
+    "album": "Love Over Gold",
+    "artist": "Dire Straits"
+  },
+  {
+    "title": "Telephone Line",
+    "album": "The Essential Electric Light Orchestra",
+    "artist": "Electric Light Orchestra"
+  },
+  {
     "title": "Tell Him",
     "album": "Tell Him",
     "artist": "The Exciters"
@@ -10233,6 +10723,11 @@
     "title": "Temple of Drifting Sands",
     "album": "NieR Gestalt & Replicant Original Soundtrack",
     "artist": "Keiichi Okabe"
+  },
+  {
+    "title": "Temple of Love (1992) (2018 Remaster)",
+    "album": "Greatest Hits Volume One: A Slight Case Of Overbombing (2018 Remaster)",
+    "artist": "The Sisters of Mercy"
   },
   {
     "title": "Temple of Thought",
@@ -10283,6 +10778,11 @@
     "title": "The Absolution (Locking up the Sun Remix)",
     "album": "Locking up the Sun",
     "artist": "Poets of the Fall"
+  },
+  {
+    "title": "The Air That I Breathe (2008 Remaster)",
+    "album": "Hollies",
+    "artist": "The Hollies"
   },
   {
     "title": "The Apologist",
@@ -10375,6 +10875,11 @@
     "artist": "The Frames"
   },
   {
+    "title": "The Boys Of Summer",
+    "album": "The Very Best Of",
+    "artist": "Don Henley"
+  },
+  {
     "title": "The Centre of the Heart",
     "album": "Room Service (Extended Version)",
     "artist": "Roxette"
@@ -10450,9 +10955,19 @@
     "artist": "Live"
   },
   {
+    "title": "The Dumbing Down Of Love",
+    "album": "Details",
+    "artist": "Frou Frou"
+  },
+  {
     "title": "The Electric Co.",
     "album": "Boy (Remastered)",
     "artist": "U2"
+  },
+  {
+    "title": "The End of the World",
+    "album": "The Essential Skeeter Davis",
+    "artist": "Skeeter Davis"
   },
   {
     "title": "The Eyes of Tomorrow",
@@ -10503,6 +11018,11 @@
     "title": "The Gauntlet",
     "album": "The Walking Dead: The Telltale Series Soundtrack (Season 1, Pt. 2)",
     "artist": "Jared Emerson-Johnson"
+  },
+  {
+    "title": "The Gift",
+    "album": "The Very Best",
+    "artist": "INXS"
   },
   {
     "title": "The Girl For The Debt",
@@ -10725,6 +11245,11 @@
     "artist": "The Swell Season"
   },
   {
+    "title": "The Passing of Ayro",
+    "album": "Emm Gryner's Only of Earth: Days of Games",
+    "artist": "Emm Gryner"
+  },
+  {
     "title": "The Path (A New Beginning)",
     "album": "The Last of Us",
     "artist": "Gustavo Santaolalla"
@@ -10750,6 +11275,11 @@
     "artist": "Eduard Frolov EFG"
   },
   {
+    "title": "The Promise",
+    "album": "The Piano: Music From The Motion Picture",
+    "artist": "Michael Nyman"
+  },
+  {
     "title": "The Rain",
     "album": "Strict Joy (Deluxe Edition)",
     "artist": "The Swell Season"
@@ -10758,6 +11288,11 @@
     "title": "The Refugee",
     "album": "War (Remastered)",
     "artist": "U2"
+  },
+  {
+    "title": "The Riddle",
+    "album": "The Collection",
+    "artist": "Nik Kershaw"
   },
   {
     "title": "The Riddle Of The Model",
@@ -11045,6 +11580,11 @@
     "artist": "Poets of the Fall"
   },
   {
+    "title": "The Winner Takes It All",
+    "album": "ABBA Gold",
+    "artist": "ABBA"
+  },
+  {
     "title": "The Worst Joke Ever",
     "album": "Around The Sun",
     "artist": "R.E.M."
@@ -11163,6 +11703,11 @@
     "title": "Thriller",
     "album": "Thriller 25 Super Deluxe Edition",
     "artist": "Michael Jackson"
+  },
+  {
+    "title": "Through the Night (feat. David Hasselhoff)",
+    "album": "Through the Night",
+    "artist": "CueStack"
   },
   {
     "title": "Thunder Road",
@@ -11340,9 +11885,19 @@
     "artist": "Foreigner"
   },
   {
+    "title": "Top Gun Anthem (From \"Top Gun\" Original Soundtrack)",
+    "album": "Top Gun - Motion Picture Soundtrack (Special Expanded Edition)",
+    "artist": "Harold Faltermeyer"
+  },
+  {
     "title": "Torn",
     "album": "Glorious: The Singles 97-07",
     "artist": "Natalie Imbruglia"
+  },
+  {
+    "title": "Torrential",
+    "album": "Torrential",
+    "artist": "Emm Gryner"
   },
   {
     "title": "Total Eclipse of the Heart",
@@ -11353,6 +11908,11 @@
     "title": "Touched by the Hand of God",
     "album": "Travelling",
     "artist": "Roxette"
+  },
+  {
+    "title": "Tova E Lubov",
+    "album": "Shadows",
+    "artist": "Zona"
   },
   {
     "title": "Toward you",
@@ -11497,7 +12057,7 @@
   {
     "title": "Tú",
     "album": "Tú",
-    "artist": "MAYE"
+    "artist": "maye"
   },
   {
     "title": "Tu oublieras mon nom",
@@ -11915,6 +12475,11 @@
     "artist": "U2"
   },
   {
+    "title": "Walk Gracefully Once",
+    "album": "Rise Up",
+    "artist": "Nini Music"
+  },
+  {
     "title": "Walk It Back",
     "album": "Collapse Into Now",
     "artist": "R.E.M."
@@ -11998,6 +12563,11 @@
     "title": "Watercolours In The Rain",
     "album": "Joyride (Extended Version)",
     "artist": "Roxette"
+  },
+  {
+    "title": "Waterfront",
+    "album": "Forty: The Best Of Simple Minds 1979-2019",
+    "artist": "Simple Minds"
   },
   {
     "title": "Wave Of Sorrow (Birdland)",
@@ -12203,6 +12773,11 @@
     "title": "Whataya Want from Me",
     "album": "For Your Entertainment",
     "artist": "Adam Lambert"
+  },
+  {
+    "title": "Whatever Wind",
+    "album": "Emm Gryner's Only of Earth: Days of Games",
+    "artist": "Emm Gryner"
   },
   {
     "title": "Wheels on Fire",
@@ -12420,6 +12995,11 @@
     "artist": "U2"
   },
   {
+    "title": "Wisdom Bus",
+    "album": "The Best of Emm Gryner",
+    "artist": "Emm Gryner"
+  },
+  {
     "title": "Wish I Could Fly",
     "album": "Have A Nice day (Extended Version)",
     "artist": "Roxette"
@@ -12468,6 +13048,11 @@
     "title": "Women Of The World (Go On Strike!)",
     "album": "Begin Again - Music From And Inspired By The Original Motion Picture",
     "artist": "Cee-Lo Green"
+  },
+  {
+    "title": "Won't Get Fooled Again",
+    "album": "Who's Next",
+    "artist": "The Who"
   },
   {
     "title": "Won't Go Home Without You",
@@ -12545,6 +13130,11 @@
     "artist": "Koethe"
   },
   {
+    "title": "Wuthering Heights",
+    "album": "The Kick Inside",
+    "artist": "Kate Bush"
+  },
+  {
     "title": "X & Y",
     "album": "A Light in a Dark Place",
     "artist": "Koethe"
@@ -12570,6 +13160,11 @@
     "artist": "Joshua Aaron"
   },
   {
+    "title": "Yasashiku Naritai",
+    "album": "Yasashiku Naritai",
+    "artist": "Kazuyoshi Saito"
+  },
+  {
     "title": "Yellow",
     "album": "Parachutes",
     "artist": "Coldplay"
@@ -12590,7 +13185,7 @@
     "artist": "Ima"
   },
   {
-    "title": "Yoakewo Kuchizusametara (note Version)",
+    "title": "Yoakewo Kuchizusametara",
     "album": "note",
     "artist": "Mone Kamishiraishi"
   },
@@ -12678,6 +13273,11 @@
     "title": "You Found Me",
     "album": "The Fray",
     "artist": "The Fray"
+  },
+  {
+    "title": "You Get What You Give",
+    "album": "90s Hits",
+    "artist": "New Radicals"
   },
   {
     "title": "You Give Love A Bad Name",
@@ -12783,6 +13383,11 @@
     "title": "Zaspali ptitzi",
     "album": "The Collection - Part I & Part II",
     "artist": "Doni i Momchil"
+  },
+  {
+    "title": "Zeleniat Put",
+    "album": "Shadows",
+    "artist": "Zona"
   },
   {
     "title": "Zenzenzense - English ver.",
@@ -12985,11 +13590,6 @@
     "artist": "Стефан Вълдобрев"
   },
   {
-    "title": "Ела",
-    "album": "Сенки",
-    "artist": "Zona"
-  },
-  {
     "title": "Елмаз И Стъкло (Elmaz I Stuklo)",
     "album": "B.T.R. '97",
     "artist": "B.T.R."
@@ -13068,11 +13668,6 @@
     "title": "Интуиция",
     "album": "Твоя",
     "artist": "Poli Genova"
-  },
-  {
-    "title": "Искам да те... (има)",
-    "album": "Сенки",
-    "artist": "Zona"
   },
   {
     "title": "Йовано, Йованке",
@@ -13180,11 +13775,6 @@
     "artist": "B.T.R."
   },
   {
-    "title": "Миг Преди Смъртта (Зеленият Път)",
-    "album": "Сенки",
-    "artist": "Zona"
-  },
-  {
     "title": "Моите песни",
     "album": "Българският Бог",
     "artist": "Епизод"
@@ -13200,11 +13790,6 @@
     "artist": "Балканджи"
   },
   {
-    "title": "На Пук",
-    "album": "Сенки",
-    "artist": "Zona"
-  },
-  {
     "title": "На ръба",
     "album": "На ръба",
     "artist": "Elitsa Naumova"
@@ -13218,16 +13803,6 @@
     "title": "Народ",
     "album": "Звездица",
     "artist": "Балканджи"
-  },
-  {
-    "title": "Новият Човек",
-    "album": "Сенки",
-    "artist": "Zona"
-  },
-  {
-    "title": "Нощен Град",
-    "album": "Сенки",
-    "artist": "Zona"
   },
   {
     "title": "Нощни Влакове (Noshtni Vlakove)",
@@ -13325,16 +13900,6 @@
     "artist": "Стефка Саботинова"
   },
   {
-    "title": "Пророк",
-    "album": "Сенки",
-    "artist": "Zona"
-  },
-  {
-    "title": "Разпилени Надежди",
-    "album": "Сенки",
-    "artist": "Zona"
-  },
-  {
     "title": "Реквием за една мръсница",
     "album": "Vox Populi",
     "artist": "Ку-ку Бенд"
@@ -13345,11 +13910,6 @@
     "artist": "Балканджи"
   },
   {
-    "title": "Само 1 Спомен",
-    "album": "Сенки",
-    "artist": "Zona"
-  },
-  {
     "title": "Самодива",
     "album": "Пробуждане",
     "artist": "Балканджи"
@@ -13358,11 +13918,6 @@
     "title": "Самодивско Хоро (Live)",
     "album": "Звездица",
     "artist": "Балканджи"
-  },
-  {
-    "title": "Сенки",
-    "album": "Сенки",
-    "artist": "Zona"
   },
   {
     "title": "Сини очи",
@@ -13380,11 +13935,6 @@
     "artist": "B.T.R."
   },
   {
-    "title": "Слънчев Ден",
-    "album": "Сенки",
-    "artist": "Zona"
-  },
-  {
     "title": "Спасение (Spasenie)",
     "album": "7 Ballads",
     "artist": "B.T.R."
@@ -13400,24 +13950,9 @@
     "artist": "B.T.R."
   },
   {
-    "title": "Страх",
-    "album": "Сенки",
-    "artist": "Zona"
-  },
-  {
     "title": "Стремеж (Stremezh)",
     "album": "Dreams",
     "artist": "B.T.R."
-  },
-  {
-    "title": "Сутрин до Мен",
-    "album": "Сенки",
-    "artist": "Zona"
-  },
-  {
-    "title": "Сутрин до Мен (2003)",
-    "album": "Сенки",
-    "artist": "Zona"
   },
   {
     "title": "Сътворение",
@@ -13435,11 +13970,6 @@
     "artist": "B.T.R."
   },
   {
-    "title": "Това е Любов",
-    "album": "Сенки",
-    "artist": "Zona"
-  },
-  {
     "title": "Толкова Близо До Теб",
     "album": "",
     "artist": "Йоан Николаев"
@@ -13453,11 +13983,6 @@
     "title": "Турски Танц",
     "album": "Орисия",
     "artist": "Исихия"
-  },
-  {
-    "title": "Търся Те",
-    "album": "Сенки",
-    "artist": "Zona"
   },
   {
     "title": "Тя Беше Ангел",
@@ -13500,11 +14025,6 @@
     "artist": "Исихия"
   },
   {
-    "title": "Чувства",
-    "album": "Сенки",
-    "artist": "Zona"
-  },
-  {
     "title": "Чудо",
     "album": "Свети Патриарх Евтимий",
     "artist": "Епизод"
@@ -13518,6 +14038,11 @@
     "title": "Ясен месец",
     "album": "Elsewhere",
     "artist": "Lot Lorien"
+  },
+  {
+    "title": "やさしくなりたい(オリジナルアーティスト:斉藤和義)[ガイドメロディ無しカラオケ]",
+    "album": "やさしくなりたい(オリジナルアーティスト:斉藤和義)[ガイドメロディ無しカラオケ]",
+    "artist": "歌っちゃ王"
   },
   {
     "title": "電話線",
