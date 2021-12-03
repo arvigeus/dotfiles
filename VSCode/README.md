@@ -34,6 +34,7 @@
 
 ##### React
 
+- [React Preview](https://marketplace.visualstudio.com/items?itemName=zenclabs.reactpreview)
 - [React Native Tools](https://marketplace.visualstudio.com/items?itemName=msjsdiag.vscode-react-native) ([debugging](https://marketplace.visualstudio.com/items?itemName=msjsdiag.vscode-react-native#debugging-react-native-applications))
 - [VSCode MDX](https://marketplace.visualstudio.com/items?itemName=JounQin.vscode-mdx)
 - [vscode-styled-components](https://marketplace.visualstudio.com/items?itemName=jpoissonnier.vscode-styled-components)

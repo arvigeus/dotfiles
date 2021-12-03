@@ -2,7 +2,6 @@
 
 sudo apt -y dist-upgrade
 
-flatpak install -y org.chromium.Chromium
 flatpak install -y com.obsproject.Studio
 flatpak install -y com.slack.Slack
 flatpak install -y com.discordapp.Discord
@@ -19,7 +18,15 @@ flatpak install -y com.github.tchx84.Flatseal
 # Viber try icon: https://github.com/flathub/com.viber.Viber/issues/4
 flatpak override --user --own-name='org.kde.*' com.viber.Viber
 
-sudo apt -y install gnome-tweak-tool code fonts-firacode mpv steam glhack nodejs npm wget youtube-dl lutris winetricks gamemode p7zip-full libnotify-bin glhack
+# Brave browser
+sudo apt install apt-transport-https curl
+sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg arch=amd64] https://brave-browser-apt-release.s3.brave.com/ stable main"|sudo tee /etc/apt/sources.list.d/brave-browser-release.list
+sudo apt update
+sudo apt install brave-browser
+
+# Misc apps
+sudo apt -y install gnome-tweak-tool code fonts-firacode mpv steam glhack nodejs npm wget youtube-dl lutris winetricks gamemode p7zip-full libnotify-bin glhack mkvtoolnix-gui
 
 # Open with VSCode
 sudo apt -y install python3-nautilus

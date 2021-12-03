@@ -4,7 +4,7 @@
 
 ### Browsers
 
-- [Chromium](https://www.chromium.org/)
+- [Brave](https://brave.com/)
 - [Firefox](https://www.mozilla.org/en-US/firefox/new/) *(DRM content, debugging with VS Code)*
 - [Edge](https://www.microsoft.com/en-us/edge)
 
@@ -23,6 +23,7 @@
 - [VLC](https://www.videolan.org/vlc/)
 - [mpv](https://mpv.io/)
 - [OBS Studio](https://obsproject.com/) *(screen recording)*
+- [mkvtoolnix-gui](https://mkvtoolnix.download/)
 
 #### Games
 
@@ -56,6 +57,7 @@
 ### Other
 
 - [7-zip](https://www.7-zip.org/)
+- [mkcert](https://github.com/FiloSottile/mkcert)
 
 ## Linux
 
@@ -85,7 +87,6 @@
 
 ## Web Apps
 
-- [ClickUp](https://app.clickup.com/)
 - [Excalidraw](https://excalidraw.com/)
 - [Figma](https://www.figma.com/)
 - [Framer](https://www.figma.com/)
