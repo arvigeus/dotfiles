@@ -235,3 +235,12 @@ echo ""
 echo "Installing partition manager"
 sudo pacman -Suy partitionmanager
 echo ""
+
+echo "Installing web account tools"
+sudo pacman -S kio-gdrive
+echo ""
+
+echo "Installing theming"
+sudo yay -S kvantum-qt5 latte-dock tela-icon-theme-git layan-kde-git
+kwriteconfig5 --file ~/.config/kwinrc --group ModifierOnlyShortcuts --key Meta "org.kde.kglobalaccel,/component/kwin,org.kde.kglobalaccel.Component,invokeShortcut,Expose"
+echo ""
