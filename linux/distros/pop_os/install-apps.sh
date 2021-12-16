@@ -26,7 +26,7 @@ sudo apt update
 sudo apt install brave-browser
 
 # Misc apps
-sudo apt -y install gnome-tweak-tool code fonts-firacode mpv steam glhack nodejs npm wget youtube-dl lutris winetricks gamemode p7zip-full libnotify-bin glhack mkvtoolnix-gui
+sudo apt -y install gnome-tweak-tool code fonts-firacode mpv steam glhack nodejs npm wget youtube-dl lutris winetricks gamemode p7zip-full libnotify-bin glhack mkvtoolnix-gui cockpit
 
 # Open with VSCode
 sudo apt -y install python3-nautilus

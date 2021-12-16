@@ -61,6 +61,7 @@
 
 ## Linux
 
+- [Cockpit](https://cockpit-project.org/)
 - [Lutris](https://lutris.net/)
 - [winetricks](https://wiki.winehq.org/Winetricks)
 - [gamemode](https://github.com/FeralInteractive/gamemode)
