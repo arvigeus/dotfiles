@@ -48,6 +48,11 @@ read -n 1 -s -r -p "Press any key to continue"
 echo ""
 echo ""
 
+# Install Alacritty terminal emulator
+## https://wiki.archlinux.org/title/Alacritty
+## https://github.com/alacritty/alacritty
+sudo pacman -S alacritty
+
 echo "Installing Chromium (with Wayland hardware acceleration)"
 sudo yay -Suy chromium-wayland-vaapi libva-vdpau-driver-chromium
 cat >> ~/.config/chromium-flags.conf <<EOL
