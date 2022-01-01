@@ -35,6 +35,12 @@ yay -S mesa-vdpau lib32-mesa-vdpau vdpauinfo
 vdpauinfo
 
 # Install Alacritty terminal emulator
+## https://wiki.archlinux.org/title/Fish
+## https://github.com/jorgebucaran/fisher
+### TODO: Hook for updating fish plugins
+sudo pacman -S fish fisher
+
+# Install Fish shell
 ## https://wiki.archlinux.org/title/Alacritty
 ## https://github.com/alacritty/alacritty
 sudo pacman -S alacritty

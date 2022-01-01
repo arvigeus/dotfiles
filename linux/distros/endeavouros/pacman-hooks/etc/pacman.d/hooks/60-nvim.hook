@@ -1,0 +1,9 @@
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = *
+
+[Action]
+Description = Updating NeoVim...
+Exec = sudo -u arvigeus git -C ~/.config/nvim pull https://github.com/NvChad/NvChad
+When = PostTransaction

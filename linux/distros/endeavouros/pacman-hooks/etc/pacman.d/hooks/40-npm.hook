@@ -1,0 +1,9 @@
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = *
+
+[Action]
+Description = Updating npm global packages...
+Exec = sudo npm update -g
+When = PostTransaction

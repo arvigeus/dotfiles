@@ -1,0 +1,9 @@
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = *
+
+[Action]
+Description = Updating flatpak packages...
+Exec = sudo -u arvigeus flatpak update
+When = PostTransaction
