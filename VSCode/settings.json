@@ -1,4 +1,5 @@
 {
+    "workbench.colorTheme": "One Dark Pro Flat",
     "editor.fontFamily": "Fira Code",
     "window.titleBarStyle": "custom",
     "git.autofetch": true,
@@ -21,6 +22,5 @@
         }
     },
     "todo-tree.highlights.highlightDelay": 0,
-    "todo-tree.general.statusBar": "total",
-    "deno.enable": false
+    "todo-tree.general.statusBar": "total"
 }

@@ -1,13 +1,13 @@
 code --install-extension MS-vsliveshare.vsliveshare-pack
 code --install-extension ms-vscode-remote.vscode-remote-extensionpack
 code --install-extension visualstudioexptteam.vscodeintellicode
+code --install-extension GitHub.copilot
 code --install-extension eamodio.gitlens
 code --install-extension pflannery.vscode-versionlens
 code --install-extension gruntfuggly.todo-tree
 code --install-extension eamodio.toggle-excluded-files
 code --install-extension editorconfig.editorconfig
 code --install-extension mikestead.dotenv
-code --install-extension msjsdiag.debugger-for-chrome
 code --install-extension firefox-devtools.vscode-firefox-debug
 code --install-extension wix.vscode-import-cost
 code --install-extension esbenp.prettier-vscode
@@ -30,3 +30,5 @@ code --install-extension mtxr.sqltools
 code --install-extension mtxr.sqltools-driver-pg
 code --install-extension mtxr.sqltools-driver-sqlite
 code --install-extension zenclabs.reactpreview
+code --install-extension zhuangtongfa.Material-theme
+code --install-extension wdhongtw.gpg-indicator

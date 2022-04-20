@@ -7,6 +7,7 @@
 - [Live Share Extension Pack](https://marketplace.visualstudio.com/items?itemName=MS-vsliveshare.vsliveshare-pack)
 - [Remote Development](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.vscode-remote-extensionpack)
 - [Visual Studio IntelliCode](https://marketplace.visualstudio.com/items?itemName=VisualStudioExptTeam.vscodeintellicode)
+- [GitHub Copilot](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot)
 - [GitLens — Git supercharged](https://marketplace.visualstudio.com/items?itemName=eamodio.gitlens)
 - [Version Lens](https://marketplace.visualstudio.com/items?itemName=pflannery.vscode-versionlens)
 - [Todo Tree](https://marketplace.visualstudio.com/items?itemName=Gruntfuggly.todo-tree)
@@ -20,8 +21,6 @@
 
 - [EditorConfig for VS Code](https://marketplace.visualstudio.com/items?itemName=EditorConfig.EditorConfig)
 - [DotENV](https://marketplace.visualstudio.com/items?itemName=mikestead.dotenv)
-- [Debugger for Chrome](https://marketplace.visualstudio.com/items?itemName=msjsdiag.debugger-for-chrome) ([config](https://marketplace.visualstudio.com/items?itemName=msjsdiag.debugger-for-chrome#using-the-debugger))
-- [Debugger for Firefox](https://marketplace.visualstudio.com/items?itemName=firefox-devtools.vscode-firefox-debug) ([config](https://marketplace.visualstudio.com/items?itemName=firefox-devtools.vscode-firefox-debug#getting-started))
 - [Import Cost](https://marketplace.visualstudio.com/items?itemName=wix.vscode-import-cost)
 - [Prettier - Code formatter](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
 - [Jest](https://marketplace.visualstudio.com/items?itemName=Orta.vscode-jest)
@@ -41,7 +40,7 @@
 
 #### GraphQL
 
-- [VSCode GraphQL](https://marketplace.visualstudio.com/items?itemName=Prisma.vscode-graphql) ([config](https://marketplace.visualstudio.com/items?itemName=Prisma.vscode-graphql#usage))
+- [GraphQL](https://marketplace.visualstudio.com/items?itemName=GraphQL.vscode-graphql) ([config](https://marketplace.visualstudio.com/items?itemName=GraphQL.vscode-graphql#usage))
 
 #### Deno
 
@@ -61,6 +60,14 @@
 ### Snippets
 
 - [ES7 React/Redux/GraphQL/React-Native snippets](https://marketplace.visualstudio.com/items?itemName=dsznajder.es7-react-js-snippets)
+
+### Theme
+
+- [One Dark Pro Flat](https://marketplace.visualstudio.com/items?itemName=zhuangtongfa.Material-theme)
+
+### Other
+
+- [GPG Indicator](https://marketplace.visualstudio.com/items?itemName=wdhongtw.gpg-indicator)
 
 ## Config
 

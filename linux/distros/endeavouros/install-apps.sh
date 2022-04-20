@@ -1,155 +1,136 @@
-echo "Enabling multilib"
-echo "Uncomment the [multilib] section"
-read -n 1 -s -r -p "Press any key to continue"
-echo ""
-sudo nano /etc/pacman.conf
-read -n 1 -s -r -p "Press any key to continue"
-echo ""
-sudo pacman -Suy
-echo ""
+# This is not meant to be automated script yet
 
-echo "Installing XWayland"
-sudo pacman xorg-xwayland
+# Installing XWayland
+## https://wiki.archlinux.org/title/Wayland
+sudo pacman -S plasma-wayland-session
 cat >> ~/.config/electron-flags.conf <<EOL
 --enable-features=UseOzonePlatform
 --ozone-platform=wayland
 EOL
-echo ""
 
-echo "Installing Radeon drivers"
-yay -S mesa lib32-mesa xf86-video-ati radeontop
-echo ""
+# Installing Radeon drivers
+yay -S lib32-mesa radeontop
 
-echo "Installing Vulkan"
-sudo yay -S vulkan-icd-loader package lib32-vulkan-icd-loader vulkan-amdgpu-pro vulkan-tools
-echo "Verifying Vulkan installation"
+# Installing Vulkan
+sudo yay -S vulkan-amdgpu-pro
+# Verifying Vulkan installation
 ls /usr/share/vulkan/icd.d/
 vulkaninfo
-echo ""
-read -n 1 -s -r -p "Press any key to continue"
-echo ""
-echo ""
 
-echo "Installing VA-API"
+# Installing VA-API
 yay -S libva-mesa-driver lib32-libva-mesa-driver libva-utils
-echo "Verifying VA-API"
+# Verifying VA-API
 vainfo
-echo ""
-read -n 1 -s -r -p "Press any key to continue"
-echo ""
-echo ""
 
-echo "Installing VDPAU"
+# Installing VDPAU
 yay -S mesa-vdpau lib32-mesa-vdpau vdpauinfo
-echo "Verifying VDPAU"
+# Verifying VDPAU
 vdpauinfo
-echo ""
-read -n 1 -s -r -p "Press any key to continue"
-echo ""
-echo ""
 
 # Install Alacritty terminal emulator
+## https://wiki.archlinux.org/title/Fish
+## https://github.com/jorgebucaran/fisher
+### TODO: Hook for updating fish plugins
+# sudo pacman -S fish fisher
+
+# Install Fish shell
 ## https://wiki.archlinux.org/title/Alacritty
 ## https://github.com/alacritty/alacritty
 sudo pacman -S alacritty
 
-echo "Installing Chromium (with Wayland hardware acceleration)"
-sudo yay -Suy chromium-wayland-vaapi libva-vdpau-driver-chromium
-cat >> ~/.config/chromium-flags.conf <<EOL
+# Installing flatpak
+sudo pacman -S flatpak
+flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+
+# Installing Chromium (with Wayland)
+# VAAPI seems to not be working: https://github.com/flathub/org.chromium.Chromium/issues/103
+flatpak install flathub org.chromium.Chromium
+cat >> ~/.var/app/org.chromium.Chromium/config/chromium-flags.conf <<EOL
 # Wayland support
 --enable-features=UseOzonePlatform
 --ozone-platform=wayland
 
-# Video accelaration
---ignore-gpu-blocklist
---enable-gpu-rasterization
---enable-zero-copy
---disable-gpu-driver-bug-workarounds
---enable-accelerated-video-decode
---enable-features=VaapiVideoDecoder
-# broken since mesa 20.1.1
-# --enable-native-gpu-memory-buffers
-
-# Cache in tmpfs
---disk-cache-dir="$XDG_RUNTIME_DIR/chromium-cache"
-
 # Enable reader
-enable-reader-mode
+--enable-reader-mode
 
 # Enable dark mode
 --force-dark-mode
 --enable-features=WebUIDarkMode
 EOL
-echo "Ensure harware acceleration is enabled"
+# Ensure harware acceleration is enabled
 chromium chrome://gpu
-read -n 1 -s -r -p "Press any key to continue"
-echo ""
-echo ""
 
-echo "Installing Firefox"
-sudo pacman -Suy firefox-developer-edition
-echo "How to enable hardware acceleration: https://wiki.archlinux.org/title/Firefox#Hardware_video_acceleration"
-read -n 1 -s -r -p "Press any key to continue"
-echo ""
-echo ""
+# Installing Firefox
+sudo pacman -S firefox-developer-edition
+mkdir -p ~/.config/environment.d/
+cat >> ~/.var/app/org.chromium.Chromium/config/chromium-flags.conf <<EOL
+MOZ_ENABLE_WAYLAND=1
+EOL
+# How to enable hardware acceleration: https://wiki.archlinux.org/title/Firefox#Hardware_video_acceleration
 
-echo "Installing web tools"
-sudo pacman -Suy mkcert
+# Installing Tor
+flatpak install flathub com.github.micahflee.torbrowser-launcher
 
-echo "Installing dev tools"
-sudo yay -Suy visual-studio-code-bin meld insomnia-bin slack-desktop discord
-echo ""
+# Installing web tools
+sudo pacman -S mkcert
 
-echo "Installing NeoVim"
-sudo yay -Suy neovim bash-language-server vscode-css-languageserver dockerfile-language-server graphql-lsp vscode-html-languageserver vscode-json-languageserver python-lsp-server rls-git rust-analyzer sql-language-server deno typescript-language-server-bin yaml-language-server lua-language-server
+# Installing Node 16
+sudo pacman -S nodejs-lts-gallium npm
+flatpak install flathub org.freedesktop.Sdk.Extension.node16
+
+# Installing .Net
+sudo pacman -S dotnet-runtime dotnet-sdk
+flatpak install flathub org.freedesktop.Sdk.Extension.dotnet6
+
+# Installing Rust language
+sudo pacman -S rust rust-analyzer
+flatpak install flathub org.freedesktop.Sdk.Extension.rust-nightly
+
+# Installing Python language
+sudo pacman -S python python-pip
+
+# Installing Go language
+sudo pacman -S go
+flatpak install flathub org.freedesktop.Sdk.Extension.golang
+
+# Installing Deno language
+sudo pacman -S deno
+
+# Installing dev tools
+flatpak install flathub visual-studio-code-insiders-bin
+sudo pacman -S  expect
+## Alt to Insomnia: Hoppscotch
+flatpak install flathub rest.insomnia.Insomnia
+flatpak install flathub com.slack.Slack
+flatpak install flathub com.discordapp.Discord
+flatpak install flathub com.microsoft.Teams
+flatpak install flathub com.skype.Client
+
+# Installing NeoVim
+# flatpak install flathub io.neovim.nvim
+sudo yay -S neovim bash-language-server vscode-css-languageserver dockerfile-language-server graphql-lsp vscode-html-languageserver vscode-json-languageserver python-lsp-server rls-git rust-analyzer sql-language-server deno typescript-language-server-bin yaml-language-server lua-language-server
 git clone https://github.com/NvChad/NvChad ~/.config/nvim
 nvim +'hi NormalFloat guibg=#1e222a' +PackerSync
-echo ""
 
-echo "Installing Podman (Docker)"
-sudo pacman -Suy podman-docker podman-dnsname
-echo "Additional config needed: https://wiki.archlinux.org/title/Podman"
-read -n 1 -s -r -p "Press any key to continue"
-echo ""
-echo ""
+# Installing Podman (Docker)
+sudo pacman -S podman-docker podman-dnsname
+# Additional config needed: https://wiki.archlinux.org/title/Podman
 
-echo "Installing Cockpit"
-sudo pacman -Suy cockpit cockpit-podman cockpit-machines
-echo ""
+# Installing Cockpit
+sudo pacman -S cockpit cockpit-podman cockpit-machines
 
-echo "Installing Node 16"
-sudo pacman -Suy nodejs-lts-gallium npm
-echo ""
+# Installing mpz media player
+yay -S mpz
 
-echo "Installing .Net"
-sudo pacman -Suy dotnet-runtime dotnet-sdk
-echo ""
-
-echo "Installing Rust language"
-sudo pacman -Suy rust rust-analyzer
-echo ""
-
-echo "Installing Python language"
-sudo pacman -Suy python python-pip
-echo ""
-
-echo "Installing Go language"
-sudo pacman -Suy go
-echo ""
-
-echo "Installing Deno language"
-sudo pacman -Suy deno
-echo ""
-
-echo "Installing MPV (with Wayland hardware acceleration and autosub)"
-sudo pacman -Suy mpv
-mkdir -p ~/.config/mpv
+# Installing MPV (with Wayland hardware acceleration and autosub)
+sudo pacman -S mpv
+mkdir -p ~/.config/mpv/
 cat >> ~/.config/mpv/mpv.conf <<EOL
 # High quality config
 profile=gpu-hq
 scale=ewa_lanczossharp
 cscale=ewa_lanczossharp
-video-suync=display-resample
+video-sync=display-resample
 interpolation
 tscale=oversample
 
@@ -161,91 +142,82 @@ hwdec=vaapi
 gpu-context=wayland
 x11-bypass-compositor=no
 EOL
-sudo yay -Suy subliminal wget
-mkdir ~/.config/mpv/scripts
-wget https://raw.githubusercontent.com/davidde/mpv-autosub/master/autosub.lua -P ~/.config/mpv/scripts/
-echo "Enable autosub support: https://github.com/davidde/mpv-autosub"
-echo ""
+yay -S subliminal
+mkdir ~/.var/app/io.mpv.Mpv/config/mpv/scripts/
+wget https://raw.githubusercontent.com/davidde/mpv-autosub/master/autosub.lua -P ~/.var/app/io.mpv.Mpv/config/mpv/scripts/
+# Enable autosub support: https://github.com/davidde/mpv-autosub
 
-echo "Installing VLC (with chromecast support)"
-sudo pacman -Suy vlc libmicrodns protobuf
-echo ""
+# Installing video tools
+flatpak install flathub org.kde.subtitlecomposer
+flatpak install flathub org.bunkus.mkvtoolnix-gui
+flatpak install flathub com.obsproject.Studio
+flatpak install flathub io.github.seadve.Kooha
 
-echo "Installing video tools"
-sudo pacman -Suy obs-studio mkvtoolnix-gui subtitlecomposer
-echo ""
+# Installing Steam
+sudo pacman -S steam ttf-liberation wqy-zenhei
 
-echo "Installing Steam"
-sudo pacman -Suy steam ttf-liberation wqy-zenhei systemd-networkd lib32-systemd
-echo ""
+# Installing Lutris
+sudo pacman -S lutris
 
-echo "Installing Lutris"
-sudo pacman -Suy lutris
-echo ""
+# Installing Epic
+yay -S rare
 
-echo "Installing Epic"
-sudo yay -Suy rare
-echo ""
-
-echo "Installing Gamemode"
-sudo pacman -Suy gamemode lib32-gamemode
+# Installing Gamemode
+sudo pacman -S gamemode lib32-gamemode
 wget https://raw.githubusercontent.com/FeralInteractive/gamemode/master/example/gamemode.ini -P ~/.config/
-echo "Setup with Steam: https://wiki.archlinux.org/title/Gamemode#Steam"
-echo ""
+## Setup with Steam: https://wiki.archlinux.org/title/Gamemode#Steam
 
-echo "Installing wine"
-sudo yay -Suy wine winetricks dxvk-bin wine-gecko wine-mono
+# Installing wine
+sudo pacman -S wine winetricks wine-gecko wine-mono
+yay -S dxvk-bin
 WINEPREFIX=~/.wine setup_dxvk install
 
-echo "Installing extra games"
-sudo pacman -Suy glhack
-echo ""
+# Installing extra games
+sudo pacman -S glhack
 
-echo "Installing GIMP"
-sudo pacman -Suy gimp poppler-glib gimp-plugin-gmic gimp-extras gimp-gap gimp-plugin-beautify gimp-plugin-facedetect gimp-plugin-instagram-effects gimp-plugin-lqr gimp-refocus
-echo ""
+# Installing GIMP
+## https://www.linuxadictos.com/en/como-instalar-plug-ins-a-la-version-flatpak-de-gimp-y-poder-usar-resynthesizer-y-bimp-entre-otros.html
+flatpak install org.gimp.GIMP org.gimp.GIMP.Plugin.Resynthesizer org.gimp.GIMP.Plugin.LiquidRescale org.gimp.GIMP.Plugin.Lensfun org.gimp.GIMP.Plugin.GMic org.gimp.GIMP.Plugin.Fourier org.gimp.GIMP.Plugin.FocusBlur org.gimp.GIMP.Plugin.BIMP
 
-echo "Installing Inkscape"
-sudo pacman -Suy inkscape
-echo ""
 
-echo "Installing qBittorrent"
-sudo pacman -Suy qbittorrent
-echo ""
+# Installing Inkscape
+flatpak install flathub org.inkscape.Inkscape
 
-echo "Installing LibreOffice"
-sudo yay -Suy libreoffice-fresh libreoffice-extension-texmaths libreoffice-extension-writer2latex libreoffice-extension-languagetool ttf-caladea ttf-carlito ttf-dejavu ttf-gentium-basic ttf-liberation ttf-linux-libertine-g noto-fonts adobe-source-code-pro-fonts adobe-source-sans-fonts adobe-source-serif-fonts
-echo "Fix theme if needed: https://wiki.archlinux.org/title/LibreOffice#Theme"
-echo ""
+# Installing qBittorrent
+flatpak install flathub org.qbittorrent.qBittorrent
 
-echo "Installing YouTube downloader"
-sudo pacman -Suy yt-dlp
-echo ""
+# Installing LibreOffice
+flatpak install flathub org.libreoffice.LibreOffice
+## Fix theme if needed: https://wiki.archlinux.org/title/LibreOffice#Theme
 
-echo "Installing archive tools"
-sudo pacman -Suy p7zip
-echo ""
+# Installing YouTube downloader
+sudo pacman -S yt-dlp
+flatpak install flathub com.github.unrud.VideoDownloader
 
-echo "Installing fonts"
-sudo pacman -Suy ttf-fira-code ttf-nerd-fonts-symbols
+# Installing fonts
+sudo pacman -S ttf-fira-code ttf-nerd-fonts-symbols
 
-echo "Installing proprietary programs"
-sudo yay -Suy whatsapp-for-linux viber deezer
-echo ""
+# Installing proprietary programs
+yay -S deezer
+## WhatsApp
+flatpak install flathub com.rtosta.zapzap
+## Viber
+# flatpak install -y com.viber.Viber
+# Viber try icon: https://github.com/flathub/com.viber.Viber/issues/4
+# flatpak override --user --own-name='org.kde.*' com.viber.Viber
 
-echo "Installing flatpak tools"
-sudo yay -Suy flatseal
-echo ""
+# Installing flatpak tools
+yay -S flatseal
 
-echo "Installing partition manager"
-sudo pacman -Suy partitionmanager
-echo ""
+# Installing partition manager
+sudo pacman -S partitionmanager
 
-echo "Installing web account tools"
+# Installing plasma addons
+sudo pacman -S kdeplasma-addons
+
+# Installing web account tools
 sudo pacman -S kio-gdrive
-echo ""
 
-echo "Installing theming"
-sudo yay -S kvantum-qt5 latte-dock tela-icon-theme-git layan-kde-git
-kwriteconfig5 --file ~/.config/kwinrc --group ModifierOnlyShortcuts --key Meta "org.kde.kglobalaccel,/component/kwin,org.kde.kglobalaccel.Component,invokeShortcut,Expose"
-echo ""
+# Installing theming
+# sudo yay -S kvantum-qt5 latte-dock tela-icon-theme-git layan-kde-git
+# kwriteconfig5 --file ~/.config/kwinrc --group ModifierOnlyShortcuts --key Meta "org.kde.kglobalaccel,/component/kwin,org.kde.kglobalaccel.Component,invokeShortcut,Expose"
