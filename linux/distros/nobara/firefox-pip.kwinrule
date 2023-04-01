@@ -1,0 +1,17 @@
+[Firefox Picture-in-Picture]
+Description=Firefox Picture-in-Picture
+above=true
+aboverule=3
+noborder=true
+noborderrule=3
+position=1297,803
+positionrule=4
+size=656,369
+sizerule=4
+skiptaskbar=true
+skiptaskbarrule=3
+title=Picture-in-Picture
+titlematch=1
+types=1
+wmclass=firefox
+wmclassmatch=1
