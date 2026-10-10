@@ -108,7 +108,7 @@ hl.config({
         -- Please see https://wiki.hypr.land/Configuring/Advanced-and-Cool/Tearing/ before you turn this on
         allow_tearing = false,
 
-        layout = "dwindle",
+        layout = "scrolling",
     },
 
     decoration = {
@@ -185,24 +185,14 @@ hl.animation({ leaf = "zoomFactor",    enabled = true,  speed = 7,    bezier = "
 --     rounding    = 0,
 -- })
 
--- See https://wiki.hypr.land/Configuring/Layouts/Dwindle-Layout/ for more
-hl.config({
-    dwindle = {
-        preserve_split = true, -- You probably want this
-    },
-})
-
--- See https://wiki.hypr.land/Configuring/Layouts/Master-Layout/ for more
-hl.config({
-    master = {
-        new_status = "master",
-    },
-})
-
 -- See https://wiki.hypr.land/Configuring/Layouts/Scrolling-Layout/ for more
 hl.config({
     scrolling = {
-        fullscreen_on_one_column = true,
+        column_width = 0.5,
+        fullscreen_on_one_column = false,
+        focus_fit_method = 1, -- Scroll only enough to bring the column into view.
+        wrap_focus = false,
+        wrap_swapcol = false,
     },
 })
 
@@ -243,6 +233,12 @@ hl.config({
 hl.gesture({
     fingers = 3,
     direction = "horizontal",
+    action = "scroll_move"
+})
+
+hl.gesture({
+    fingers = 3,
+    direction = "vertical",
     action = "workspace"
 })
 
@@ -268,12 +264,16 @@ hl.bind(mainMod .. " + M", hl.dsp.exec_cmd("command -v hyprshutdown >/dev/null 2
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
 hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }))
 hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu))
-hl.bind(mainMod .. " + P", hl.dsp.window.pseudo())
-hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))    -- dwindle only
+hl.bind(mainMod .. " + P", hl.dsp.layout("center"))
+hl.bind(mainMod .. " + J", hl.dsp.layout("promote")) -- Give a stacked window its own column.
+hl.bind(mainMod .. " + bracketright", hl.dsp.layout("colresize +conf"))
+hl.bind(mainMod .. " + bracketleft",  hl.dsp.layout("colresize -conf"))
+hl.bind(mainMod .. " + SHIFT + left",  hl.dsp.layout("swapcol l"))
+hl.bind(mainMod .. " + SHIFT + right", hl.dsp.layout("swapcol r"))
 
 -- Move focus with mainMod + arrow keys
-hl.bind(mainMod .. " + left",  hl.dsp.focus({ direction = "left" }))
-hl.bind(mainMod .. " + right", hl.dsp.focus({ direction = "right" }))
+hl.bind(mainMod .. " + left",  hl.dsp.layout("focus l"))
+hl.bind(mainMod .. " + right", hl.dsp.layout("focus r"))
 hl.bind(mainMod .. " + up",    hl.dsp.focus({ direction = "up" }))
 hl.bind(mainMod .. " + down",  hl.dsp.focus({ direction = "down" }))
 
