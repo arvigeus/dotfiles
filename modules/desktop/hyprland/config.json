@@ -12,5 +12,16 @@
             "main": "Desktop"
         },
         "greeter": "ly"
-    }
+    },
+    "packages": [
+        "quickshell",
+        "hyprpolkitagent",
+        "xdg-desktop-portal-gtk",
+        "brightnessctl",
+        "playerctl",
+        "libnotify",
+        "grim",
+        "slurp",
+        "wl-clipboard"
+    ]
 }

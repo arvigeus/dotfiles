@@ -11,6 +11,26 @@ This generates `user-configuration.json` and opens archinstall with those settin
 Review them in the installer before starting. The saved storage layout wipes
 `/dev/nvme0n1` and contains sizes specific to the original disk.
 Set users and passwords in archinstall; credentials are not stored here.
+Bootstrap prompts for the account to configure. Create that same account in
+archinstall.
+
+Bootstrap adds a chroot command to a temporary installation config carrying the
+current checkout, including Git history and uncommitted files (excluding
+`.agents`, `.aws`, and `.codex`). It copies this to `$HOME/Projects/dotfiles`,
+sets ownership, and runs `link-home.sh`. Keep private files out of this checkout.
+An existing destination checkout is rejected.
+
+Each regular file under module `files/home/` is symlinked to its corresponding
+home path; directories remain ordinary directories. Add files to the module and
+rerun `link-home.sh` to manage them. New files created by apps remain local.
+Each destination belongs to one module.
+To apply them on a running system, run as your regular user:
+
+```sh
+./link-home.sh
+```
+
+Existing files are moved to `~/.local/state/dotfiles/backup.*` before linking.
 
 Edit the modules, then regenerate without running the installer:
 
@@ -47,6 +67,6 @@ Installer arguments are forwarded, for example `./bootstrap.sh --dry-run`.
 The saved configuration is from archinstall 4.5; review compatibility with the
 version on your ISO. See the [archinstall CLI documentation](https://man.archlinux.org/man/archinstall.1.en).
 
-`custom_commands` is currently empty; repository copying and configuration
-symlinks are future steps. Generation checks JSON and merge conflicts; validation
-against the installed archinstall version is still to be added.
+Module `custom_commands` run after repository copying and home linking.
+Generation checks JSON and merge conflicts; validation against the installed
+archinstall version is still to be added.

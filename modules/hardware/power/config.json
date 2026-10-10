@@ -3,5 +3,8 @@
         "power_management_config": {
             "power_management": "tuned"
         }
-    }
+    },
+    "packages": [
+        "upower"
+    ]
 }

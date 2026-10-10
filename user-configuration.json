@@ -211,7 +211,23 @@
         "type": "nm_iwd"
     },
     "ntp": true,
-    "packages": [],
+    "packages": [
+        "firefox",
+        "quickshell",
+        "hyprpolkitagent",
+        "xdg-desktop-portal-gtk",
+        "brightnessctl",
+        "playerctl",
+        "libnotify",
+        "grim",
+        "slurp",
+        "wl-clipboard",
+        "kio-admin",
+        "upower",
+        "git",
+        "less",
+        "unzip"
+    ],
     "pacman_config": {
         "color": true,
         "parallel_downloads": 5

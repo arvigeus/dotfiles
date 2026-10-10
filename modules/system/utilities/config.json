@@ -1,0 +1,7 @@
+{
+    "packages": [
+        "git",
+        "less",
+        "unzip"
+    ]
+}
