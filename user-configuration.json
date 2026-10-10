@@ -224,6 +224,7 @@
         "wl-clipboard",
         "kio-admin",
         "upower",
+        "sudo",
         "git",
         "less",
         "unzip"

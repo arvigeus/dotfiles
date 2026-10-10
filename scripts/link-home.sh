@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-backup_dir=
+repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 sources=()
 declare -A destinations=()
 
@@ -32,15 +31,5 @@ for source in "${sources[@]}"; do
         continue
     fi
     mkdir -p -- "$(dirname -- "$target")"
-    if [[ -e $target || -L $target ]]; then
-        if [[ -z $backup_dir ]]; then
-            mkdir -p -- "$HOME/.local/state/dotfiles"
-            backup_dir=$(mktemp -d "$HOME/.local/state/dotfiles/backup.XXXXXXXX")
-        fi
-        mkdir -p -- "$backup_dir/$(dirname -- "$relative")"
-        mv -- "$target" "$backup_dir/$relative"
-    fi
-    ln -s -- "$source" "$target"
+    ln -sfnT -- "$source" "$target"
 done
-
-[[ -z $backup_dir ]] || echo "Previous files saved to $backup_dir"
