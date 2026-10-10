@@ -20,8 +20,7 @@
         "brightnessctl",
         "playerctl",
         "libnotify",
-        "grim",
-        "slurp",
-        "wl-clipboard"
+        "wl-clipboard",
+        "kio-admin"
     ]
 }

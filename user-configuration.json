@@ -219,15 +219,32 @@
         "brightnessctl",
         "playerctl",
         "libnotify",
-        "grim",
-        "slurp",
         "wl-clipboard",
         "kio-admin",
+        "cpupower",
+        "lib32-mesa",
+        "lib32-vulkan-radeon",
+        "vulkan-mesa-layers",
+        "lib32-vulkan-mesa-layers",
+        "radeontop",
+        "nvtop",
+        "fwupd",
+        "evtest",
+        "pciutils",
+        "usbutils",
         "upower",
-        "sudo",
+        "udisks2",
+        "wireless-regdb",
+        "wavemon",
+        "asusctl",
+        "rog-control-center",
+        "switcheroo-control",
+        "bind",
+        "whois",
         "git",
         "less",
-        "unzip"
+        "unzip",
+        "jq"
     ],
     "pacman_config": {
         "color": true,
@@ -249,7 +266,12 @@
         "gfx_driver": "AMD / ATI (open-source)"
     },
     "script": null,
-    "services": [],
+    "services": [
+        "fwupd-refresh.timer",
+        "tuned-ppd.service",
+        "upower.service",
+        "switcheroo-control.service"
+    ],
     "swap": {
         "algorithm": "zstd",
         "enabled": true

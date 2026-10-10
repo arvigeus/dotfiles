@@ -1,7 +1,6 @@
 {
     "archinstall_language": "English",
     "auth_config": {},
-    "hostname": "zephyrus",
     "kernels": [
         "linux"
     ],

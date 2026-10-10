@@ -6,5 +6,9 @@
     },
     "packages": [
         "upower"
+    ],
+    "services": [
+        "tuned-ppd.service",
+        "upower.service"
     ]
 }

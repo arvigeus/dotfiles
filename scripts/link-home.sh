@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+source "$repo_dir/scripts/select-modules.sh"
 sources=()
 declare -A destinations=()
 
@@ -13,7 +14,7 @@ while IFS= read -r -d '' source; do
     fi
     destinations[$relative]=$source
     sources+=("$source")
-done < <(find "$repo_dir/modules" -type f -path '*/files/home/*' -print0 | sort -z)
+done < <(find "${module_dirs[@]}" -type f -path '*/files/home/*' -print0 | sort -zu)
 
 for source in "${sources[@]}"; do
     relative=${source#*/files/home/}

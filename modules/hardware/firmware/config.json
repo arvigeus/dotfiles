@@ -1,0 +1,8 @@
+{
+    "packages": [
+        "fwupd"
+    ],
+    "services": [
+        "fwupd-refresh.timer"
+    ]
+}

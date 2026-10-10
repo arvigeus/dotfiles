@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import json
 import os
 import re
@@ -8,6 +9,13 @@ from pathlib import Path
 
 repo = Path(__file__).resolve().parent
 config = {}
+parser = argparse.ArgumentParser(description='Merge module configuration for archinstall.')
+parser.add_argument('host', nargs='?', default=None)
+parser.add_argument('--configure', action='store_true', help='Prompt for dynamic module settings again')
+args = parser.parse_args()
+selection_env = dict(os.environ)
+if args.host is not None:
+    selection_env['DOTFILES_HOST'] = args.host
 
 def unique_keys(pairs):
     result = {}
@@ -55,17 +63,28 @@ def merge(target, incoming, source, path=()):
         else:
             raise ValueError(f"{source}: repeated setting: {'.'.join(setting)}")
 
-fragments = sorted(
-    [*(repo / 'modules').rglob('config.json'),
-     *(repo / 'modules').rglob('config.jsonc'),
-     *(repo / 'modules').rglob('config.sh')]
+selected = subprocess.check_output(
+    ['bash', '-euo', 'pipefail', '-c',
+     'source "$1/scripts/select-modules.sh"; printf "%s\\0" "${module_dirs[@]}"',
+     'bash', str(repo)],
+    env=selection_env,
 )
+module_dirs = [Path(os.fsdecode(path)) for path in selected.split(b'\0') if path]
+selected_host = next(directory.name for directory in module_dirs
+                     if directory.parent == repo / 'modules' / 'hosts')
+fragments = sorted({
+    fragment
+    for directory in module_dirs
+    for name in ('*.json', '*.jsonc', 'config.sh')
+    for fragment in directory.glob(name)
+})
 for fragment in fragments:
     source = fragment.relative_to(repo)
     if fragment.suffix == '.sh':
         content = subprocess.check_output(
-            ['bash', '-euo', 'pipefail', str(fragment)],
+            ['bash', '-euo', 'pipefail', str(fragment)] + (['--configure'] if args.configure else []),
             cwd=fragment.parent, text=True,
+            env=dict(os.environ, DOTFILES_HOST=selected_host),
         )
     else:
         content = fragment.read_text()

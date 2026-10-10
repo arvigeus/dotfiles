@@ -2,6 +2,7 @@
     "packages": [
         "git",
         "less",
-        "unzip"
+        "unzip",
+        "jq"
     ]
 }
