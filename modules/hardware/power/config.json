@@ -1,0 +1,7 @@
+{
+    "app_config": {
+        "power_management_config": {
+            "power_management": "tuned"
+        }
+    }
+}

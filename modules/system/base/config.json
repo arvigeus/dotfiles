@@ -1,0 +1,18 @@
+{
+    "archinstall_language": "English",
+    "auth_config": {},
+    "hostname": "zephyrus",
+    "kernels": [
+        "linux"
+    ],
+    "ntp": true,
+    "swap": {
+        "algorithm": "zstd",
+        "enabled": true
+    },
+    "version": "4.5",
+    "script": null,
+    "packages": [],
+    "services": [],
+    "custom_commands": []
+}

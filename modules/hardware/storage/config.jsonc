@@ -1,0 +1,157 @@
+// Saved layout for the original disk; review device and sizes before installation.
+{
+    "disk_config": {
+        "btrfs_options": {
+            "snapshot_config": {
+                "type": "Snapper"
+            }
+        },
+        "config_type": "default_layout",
+        "device_modifications": [
+            {
+                "device": "/dev/nvme0n1",
+                "partitions": [
+                    {
+                        "btrfs": [],
+                        "dev_path": null,
+                        "flags": [
+                            "boot",
+                            "esp"
+                        ],
+                        "fs_type": "fat32",
+                        "mount_options": [],
+                        "mountpoint": "/boot",
+                        "obj_id": "8e2bb495-1145-4bb6-83fe-00871f2312fc",
+                        "size": {
+                            "sector_size": {
+                                "unit": "B",
+                                "value": 512
+                            },
+                            "unit": "GiB",
+                            "value": 1
+                        },
+                        "start": {
+                            "sector_size": {
+                                "unit": "B",
+                                "value": 512
+                            },
+                            "unit": "MiB",
+                            "value": 1
+                        },
+                        "status": "create",
+                        "type": "primary"
+                    },
+                    {
+                        "btrfs": [
+                            {
+                                "mountpoint": "/",
+                                "name": "@"
+                            },
+                            {
+                                "mountpoint": "/home",
+                                "name": "@home"
+                            },
+                            {
+                                "mountpoint": "/var/log",
+                                "name": "@log"
+                            },
+                            {
+                                "mountpoint": "/var/cache/pacman/pkg",
+                                "name": "@pkg"
+                            }
+                        ],
+                        "dev_path": null,
+                        "flags": [],
+                        "fs_type": "btrfs",
+                        "mount_options": [
+                            "compress=zstd"
+                        ],
+                        "mountpoint": null,
+                        "obj_id": "e973c567-bda4-42a5-a450-e356964b02fc",
+                        "size": {
+                            "sector_size": {
+                                "unit": "B",
+                                "value": 512
+                            },
+                            "unit": "B",
+                            "value": 1023133351936
+                        },
+                        "start": {
+                            "sector_size": {
+                                "unit": "B",
+                                "value": 512
+                            },
+                            "unit": "B",
+                            "value": 1074790400
+                        },
+                        "status": "create",
+                        "type": "primary"
+                    }
+                ],
+                "wipe": true
+            }
+        ],
+        "disk_encryption": {
+            "encryption_type": "lvm_on_luks",
+            "iter_time": 1000,
+            "lvm_volumes": [],
+            "partitions": [
+                "e973c567-bda4-42a5-a450-e356964b02fc"
+            ]
+        },
+        "lvm_config": {
+            "config_type": "default",
+            "vol_groups": [
+                {
+                    "lvm_pvs": [
+                        "e973c567-bda4-42a5-a450-e356964b02fc"
+                    ],
+                    "name": "ArchinstallVg",
+                    "volumes": [
+                        {
+                            "btrfs": [
+                                {
+                                    "mountpoint": "/",
+                                    "name": "@"
+                                },
+                                {
+                                    "mountpoint": "/home",
+                                    "name": "@home"
+                                },
+                                {
+                                    "mountpoint": "/var/log",
+                                    "name": "@log"
+                                },
+                                {
+                                    "mountpoint": "/var/cache/pacman/pkg",
+                                    "name": "@pkg"
+                                }
+                            ],
+                            "fs_type": "btrfs",
+                            "length": {
+                                "sector_size": {
+                                    "unit": "B",
+                                    "value": 512
+                                },
+                                "unit": "GiB",
+                                "value": 50
+                            },
+                            "mount_options": [
+                                "compress=zstd"
+                            ],
+                            "mountpoint": "/",
+                            "name": "root",
+                            "obj_id": "5ebc970c-9a79-4206-8236-f8c40150195b",
+                            "status": "create"
+                        }
+                    ]
+                }
+            ]
+        }
+    },
+    "bootloader_config": {
+        "bootloader": "Efistub",
+        "removable": false,
+        "uki": true
+    }
+}

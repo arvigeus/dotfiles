@@ -1,0 +1,13 @@
+{
+    "app_config": {
+        "fonts_config": {
+            "fonts": [
+                "noto-fonts",
+                "noto-fonts-emoji",
+                "ttf-liberation",
+                "ttf-dejavu",
+                "noto-fonts-cjk"
+            ]
+        }
+    }
+}

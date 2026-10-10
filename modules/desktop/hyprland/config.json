@@ -1,0 +1,16 @@
+{
+    "profile_config": {
+        "profile": {
+            "custom_settings": {
+                "Hyprland": {
+                    "seat_access": "systemd-logind"
+                }
+            },
+            "details": [
+                "Hyprland"
+            ],
+            "main": "Desktop"
+        },
+        "greeter": "ly"
+    }
+}

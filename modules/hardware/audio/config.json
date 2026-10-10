@@ -1,0 +1,7 @@
+{
+    "app_config": {
+        "audio_config": {
+            "audio": "pipewire"
+        }
+    }
+}

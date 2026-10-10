@@ -1,0 +1,7 @@
+{
+    "app_config": {
+        "firewall_config": {
+            "firewall": "ufw"
+        }
+    }
+}

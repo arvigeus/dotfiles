@@ -6,8 +6,11 @@
         "bluetooth_config": {
             "enabled": true
         },
-        "firewall_config": {
-            "firewall": "ufw"
+        "power_management_config": {
+            "power_management": "tuned"
+        },
+        "print_service_config": {
+            "enabled": false
         },
         "fonts_config": {
             "fonts": [
@@ -18,11 +21,8 @@
                 "noto-fonts-cjk"
             ]
         },
-        "power_management_config": {
-            "power_management": "tuned"
-        },
-        "print_service_config": {
-            "enabled": false
+        "firewall_config": {
+            "firewall": "ufw"
         }
     },
     "archinstall_language": "English",
@@ -217,8 +217,6 @@
         "parallel_downloads": 5
     },
     "profile_config": {
-        "gfx_driver": "AMD / ATI (open-source)",
-        "greeter": "ly",
         "profile": {
             "custom_settings": {
                 "Hyprland": {
@@ -229,7 +227,9 @@
                 "Hyprland"
             ],
             "main": "Desktop"
-        }
+        },
+        "greeter": "ly",
+        "gfx_driver": "AMD / ATI (open-source)"
     },
     "script": null,
     "services": [],

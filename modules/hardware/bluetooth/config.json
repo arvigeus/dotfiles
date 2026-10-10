@@ -1,0 +1,7 @@
+{
+    "app_config": {
+        "bluetooth_config": {
+            "enabled": true
+        }
+    }
+}

@@ -1,0 +1,7 @@
+{
+    "app_config": {
+        "print_service_config": {
+            "enabled": false
+        }
+    }
+}
