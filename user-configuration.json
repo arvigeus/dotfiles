@@ -1243,8 +1243,40 @@
         ],
         "symlinks": [
             {
+                "source": "modules/desktop/hyprland/symlinks/home/.config/hypr/animations.lua",
+                "target": "home/.config/hypr/animations.lua"
+            },
+            {
+                "source": "modules/desktop/hyprland/symlinks/home/.config/hypr/appearance.lua",
+                "target": "home/.config/hypr/appearance.lua"
+            },
+            {
+                "source": "modules/desktop/hyprland/symlinks/home/.config/hypr/bindings.lua",
+                "target": "home/.config/hypr/bindings.lua"
+            },
+            {
                 "source": "modules/desktop/hyprland/symlinks/home/.config/hypr/hyprland.lua",
                 "target": "home/.config/hypr/hyprland.lua"
+            },
+            {
+                "source": "modules/desktop/hyprland/symlinks/home/.config/hypr/input.lua",
+                "target": "home/.config/hypr/input.lua"
+            },
+            {
+                "source": "modules/desktop/hyprland/symlinks/home/.config/hypr/layout.lua",
+                "target": "home/.config/hypr/layout.lua"
+            },
+            {
+                "source": "modules/desktop/hyprland/symlinks/home/.config/hypr/monitors.lua",
+                "target": "home/.config/hypr/monitors.lua"
+            },
+            {
+                "source": "modules/desktop/hyprland/symlinks/home/.config/hypr/session.lua",
+                "target": "home/.config/hypr/session.lua"
+            },
+            {
+                "source": "modules/desktop/hyprland/symlinks/home/.config/hypr/windows.lua",
+                "target": "home/.config/hypr/windows.lua"
             },
             {
                 "source": "modules/dev/editors/zed/symlinks/home/.config/zed/settings.json",
