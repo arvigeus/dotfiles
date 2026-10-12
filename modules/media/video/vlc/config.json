@@ -1,0 +1,11 @@
+{
+    "packages": [
+        "vlc",
+        "vlc-plugins-all"
+    ],
+    "extra": {
+        "aur_packages": [
+            "vlc-pause-click-plugin"
+        ]
+    }
+}

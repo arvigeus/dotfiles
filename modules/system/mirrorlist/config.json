@@ -1,0 +1,15 @@
+{
+    "packages": [
+        "pkgstats",
+        "pacman-contrib",
+        "reflector"
+    ],
+    "services": [
+        "reflector.timer"
+    ],
+    "mirror_config": {
+        "optional_repositories": [
+            "multilib"
+        ]
+    }
+}

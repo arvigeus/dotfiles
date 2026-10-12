@@ -1,0 +1,13 @@
+[Unit]
+Description=Apply feature-owned UFW rules
+After=ufw.service
+Wants=ufw.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/apply-ufw-rules
+TimeoutStartSec=60s
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

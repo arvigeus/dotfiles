@@ -1,0 +1,30 @@
+{
+    "mirror_config": {
+        "custom_repositories": [
+            {
+                "name": "ogc",
+                "url": "https://pacman.opengamingcollective.org",
+                "sign_check": "Required",
+                "sign_option": "TrustedOnly"
+            },
+            {
+                "name": "chaotic-aur",
+                "url": "https://cdn-mirror.chaotic.cx/chaotic-aur/$arch",
+                "sign_check": "Required",
+                "sign_option": "TrustedOnly"
+            }
+        ]
+    },
+    "packages": [
+        "chaotic-keyring",
+        "chaotic-mirrorlist"
+    ],
+    "extra": {
+        "repositories": {
+            "database_optional": [
+                "ogc",
+                "chaotic-aur"
+            ]
+        }
+    }
+}

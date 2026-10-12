@@ -3,5 +3,14 @@
         "bluetooth_config": {
             "enabled": true
         }
+    },
+    "extra": {
+        "packages": [
+            "bluez",
+            "bluez-utils"
+        ],
+        "services": [
+            "bluetooth.service"
+        ]
     }
 }

@@ -1,0 +1,19 @@
+[Unit]
+Description=B-Trust BISS signing session
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=exec
+ExecStartPre=/usr/local/libexec/btrust-browser-setup
+ExecStartPre=/usr/local/libexec/btrust-settings
+ExecStartPre=/usr/bin/systemctl --no-ask-password start btrust.target
+ExecStart=/opt/btrustbiss/bin/BISS --server.address=127.0.0.1
+ExecStartPost=/usr/local/libexec/btrust-bind-usb
+ExecStopPost=/usr/bin/systemctl --no-ask-password stop btrust.target
+KillMode=control-group
+SuccessExitStatus=143
+TimeoutStartSec=45
+TimeoutStopSec=20
+# BISS 3.46 uses a control window on Linux, rather than its tray implementation.
+# Window close, Exit, USB removal, or btrust stop ends this service.

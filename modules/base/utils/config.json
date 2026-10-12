@@ -1,0 +1,14 @@
+{
+    "packages": [
+        "bc",
+        "less",
+        "rsync",
+        "wget",
+        "jq",
+        "curl",
+        "coreutils",
+        "util-linux",
+        "gawk",
+        "glib2"
+    ]
+}

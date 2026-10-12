@@ -1,0 +1,10 @@
+[Unit]
+Description=Vietnamese Telex (explicit start only)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=dbus
+BusName=org.fcitx.Fcitx5
+ExecStart=/usr/bin/fcitx5
+TimeoutStartSec=10

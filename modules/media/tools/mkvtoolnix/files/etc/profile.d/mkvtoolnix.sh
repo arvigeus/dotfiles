@@ -1,0 +1,5 @@
+alias mkvtoolnix-gui='flatpak run org.bunkus.mkvtoolnix-gui'
+alias mkvmerge='flatpak run org.bunkus.mkvtoolnix-gui mkvmerge'
+alias mkvextract='flatpak run org.bunkus.mkvtoolnix-gui mkvextract'
+alias mkvinfo='flatpak run org.bunkus.mkvtoolnix-gui mkvinfo'
+alias mkvpropedit='flatpak run org.bunkus.mkvtoolnix-gui mkvpropedit'

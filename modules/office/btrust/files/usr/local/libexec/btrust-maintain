@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Restore on-demand configuration replaced by vendor/AUR installation hooks.
+set -Eeuo pipefail
+systemctl disable pcscd.service pcscd.socket
+if [[ -f /usr/lib/systemd/system/safenetauthenticationclient.service ]]; then
+	systemctl disable safenetauthenticationclient.service
+fi
+install -Dm644 /usr/share/btrust/btrustbiss-BISS.desktop \
+	/usr/share/applications/btrustbiss-BISS.desktop
+install -d -m 0755 /etc/xdg/autostart
+for entry in btrustbiss-BISS SACMonitor; do
+	printf '[Desktop Entry]\nType=Application\nName=%s\nHidden=true\n' "$entry" \
+		>"/etc/xdg/autostart/$entry.desktop"
+	chmod 0644 "/etc/xdg/autostart/$entry.desktop"
+done
+# An AUR install hook can have started pcscd outside a signing session.
+# Candidate-root provisioning has no live system manager; only try this on a
+# booted system and retain the infrastructure if an explicit session is active.
+if [[ -d /run/systemd/system ]] && ! systemctl is-active --quiet btrust.target; then
+	systemctl stop pcscd.service pcscd.socket
+fi
+if [[ -d /run/systemd/system && -f /usr/lib/systemd/system/safenetauthenticationclient.service ]]; then
+	systemctl stop safenetauthenticationclient.service
+fi

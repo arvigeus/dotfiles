@@ -1,0 +1,15 @@
+{
+    "extra": {
+        "flatpak": {
+            "packages": [
+                {
+                    "remote": "flatpark",
+                    "app": "app.yaak.Yaak"
+                }
+            ],
+            "remotes": {
+                "flatpark": "https://dl.flatpark.org/flatpark.flatpakrepo"
+            }
+        }
+    }
+}

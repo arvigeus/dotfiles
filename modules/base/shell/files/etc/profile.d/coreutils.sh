@@ -1,0 +1,6 @@
+alias mkdir='mkdir -p -v'
+alias df='df -h'
+alias du='du -c -h'
+alias rm='rm -i'
+alias cp='cp -i'
+alias mv='mv -i'

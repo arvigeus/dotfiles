@@ -1,0 +1,8 @@
+{
+    "packages": [
+        "mpv",
+        "mpv-shim-default-shaders",
+        "chaotic-aur/mpv-uosc",
+        "chaotic-aur/mpv-thumbfast-git"
+    ]
+}

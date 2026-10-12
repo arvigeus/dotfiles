@@ -1,0 +1,11 @@
+[Trigger]
+Operation=Install
+Operation=Upgrade
+Type=Package
+Target=btrustbiss
+Target=sac-gui
+
+[Action]
+Description=Restore on-demand B-Trust activation
+When=PostTransaction
+Exec=/usr/local/libexec/btrust-maintain

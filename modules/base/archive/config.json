@@ -1,0 +1,7 @@
+{
+    "packages": [
+        "unrar",
+        "unzip",
+        "7zip"
+    ]
+}

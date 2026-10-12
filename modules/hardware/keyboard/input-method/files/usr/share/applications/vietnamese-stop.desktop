@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Stop Vietnamese input
+Comment=Return to English and Bulgarian phonetic
+Exec=input-method select bg --notify
+Icon=input-keyboard
+Categories=Settings;Utility;

@@ -1,0 +1,18 @@
+{
+    "app_config": {
+        "firewall_config": {
+            "firewall": "ufw"
+        }
+    },
+    "services": [
+        "ufw-rules.service"
+    ],
+    "extra": {
+        "packages": [
+            "ufw"
+        ],
+        "services": [
+            "ufw.service"
+        ]
+    }
+}

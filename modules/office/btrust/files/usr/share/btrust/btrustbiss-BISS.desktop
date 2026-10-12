@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=B-Trust QES
+GenericName=BISS signing application
+Keywords=BISS;B-Trust;QES;
+Comment=Start BISS and smart-card services for this signing session
+Exec=/usr/local/bin/btrust start
+Icon=/opt/btrustbiss/lib/BISS.png
+StartupWMClass=bg.borica.biss.all.a
+Terminal=false
+Categories=Office;
+Actions=Stop;
+
+[Desktop Action Stop]
+Name=Stop B-Trust QES
+Exec=/usr/local/bin/btrust stop

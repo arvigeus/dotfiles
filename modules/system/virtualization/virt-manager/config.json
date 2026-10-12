@@ -1,0 +1,11 @@
+{
+    "packages": [
+        "virt-manager",
+        "libvirt",
+        "qemu-desktop",
+        "dnsmasq"
+    ],
+    "services": [
+        "libvirtd.service"
+    ]
+}

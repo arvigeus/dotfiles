@@ -1,0 +1,10 @@
+{
+    "packages": [
+        "extra/openai-codex"
+    ],
+    "extra": {
+        "aur_packages": [
+            "chatgpt-desktop"
+        ]
+    }
+}

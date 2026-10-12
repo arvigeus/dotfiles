@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if ufw app info OpenSSH >/dev/null 2>&1; then
+	ufw limit OpenSSH
+else
+	ufw limit 22/tcp
+fi

@@ -1,0 +1,15 @@
+{
+  "extra": {
+    "flatpak": {
+      "packages": [
+        {
+          "remote": "flathub",
+          "app": "tv.kodi.Kodi"
+        }
+      ],
+      "remotes": {
+        "flathub": "https://dl.flathub.org/repo/flathub.flatpakrepo"
+      }
+    }
+  }
+}

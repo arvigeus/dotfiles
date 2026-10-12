@@ -47,22 +47,41 @@ class GenerationTests(unittest.TestCase):
                 disk['partitions'][1]['size'].pop('value')
             self.assertEqual(vm['disk_config'], zephyrus['disk_config'])
 
+    def test_automatic_discovery_and_disabled_checks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            (repo / 'scripts').mkdir()
+            shutil.copy(REPO / 'generate-config.py', repo)
+            shutil.copytree(REPO / 'scripts', repo / 'scripts', dirs_exist_ok=True)
+            (repo / 'host').write_text('vm\n')
+            for name in ('first', 'second', 'disabled', 'hosts/vm'):
+                module = repo / 'modules' / name
+                module.mkdir(parents=True)
+                (module / 'config.json').write_text(json.dumps({'packages': [name]}))
+            (repo / 'modules/disabled/check.sh').write_text('exit 1\n')
+            subprocess.run(['python3', str(repo / 'generate-config.py')], check=True, capture_output=True)
+            config = json.loads((repo / 'user-configuration.json').read_text())
+            self.assertEqual(config['packages'], ['first', 'hosts/vm', 'second'])
+
     def test_named_fragments_share_packages_but_isolate_host_storage(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             (repo / 'scripts').mkdir()
             shutil.copy(REPO / 'generate-config.py', repo)
-            shutil.copy(REPO / 'scripts/select-modules.sh', repo / 'scripts')
+            shutil.copytree(REPO / 'scripts', repo / 'scripts', dirs_exist_ok=True)
             (repo / 'host').write_text('zephyrus\n')
             for host in ('zephyrus', 'vm'):
                 path = repo / 'modules/hosts' / host
                 path.mkdir(parents=True)
                 (path / 'config.json').write_text(json.dumps({'hostname': host}))
-            (repo / 'modules/hosts/zephyrus/storage.jsonc').write_text(
+                (path / 'check.sh').write_text(f'[[ $DOTFILES_HOST == {host} ]]\n')
+            (repo / 'modules/hosts/zephyrus/storage.config.jsonc').write_text(
                 '// Host-specific disk\n{"disk_config": {"config_type": "default_layout"}}')
             shared = repo / 'modules/hardware/storage'
             shared.mkdir(parents=True)
-            (shared / 'packages.json').write_text('{"packages": ["udisks2"]}')
+            (shared / 'packages.config.json').write_text('{"packages": ["udisks2"]}')
+            (shared / 'package.json').write_text('{"name": "app", "private": true}')
+            (shared / 'tsconfig.json').write_text('{"compilerOptions": {"strict": true}}')
             assets = shared / 'files/home/.config/example'
             assets.mkdir(parents=True)
             (assets / 'storage.jsonc').write_text('{"packages": ["app-data"]}')
@@ -73,13 +92,72 @@ class GenerationTests(unittest.TestCase):
                 generated = json.loads((repo / 'user-configuration.json').read_text())
                 self.assertEqual(generated['packages'], ['udisks2'])
                 self.assertEqual('disk_config' in generated, host == 'zephyrus')
+                self.assertNotIn('name', generated)
+                self.assertNotIn('compilerOptions', generated)
 
-    def test_files_category_is_discovered_and_assets_are_not_configs(self):
+    def test_script_order_extra_merging_and_selection_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            shutil.copy(REPO / 'generate-config.py', repo)
+            shutil.copytree(REPO / 'scripts', repo / 'scripts')
+            (repo / 'host').write_text('vm\n')
+            (repo / 'modules/hosts/vm').mkdir(parents=True)
+            (repo / 'modules/hosts/vm/config.json').write_text('{"hostname": "vm"}')
+            for module, filename, marker in (('aaa', '99_late.sh', 'late'), ('zzz', '00_early.sh', 'early')):
+                path = repo / 'modules' / module
+                (path / 'scripts').mkdir(parents=True)
+                (path / 'scripts' / filename).write_text(f'echo {marker}\n')
+                (path / 'config.json').write_text(json.dumps({'extra': {
+                    'aur_packages': ['shared', module],
+                    'flatpak': {'remotes': {'flathub': 'same-url'}}}}))
+            command = ['python3', str(repo / 'generate-config.py')]
+            subprocess.run(command, check=True, capture_output=True)
+            output = repo / 'user-configuration.json'
+            original = output.read_text()
+            config = json.loads(original)
+            self.assertIn('echo early', config['custom_commands'][1])
+            self.assertIn('echo late', config['custom_commands'][2])
+            self.assertEqual(config['extra']['aur_packages'], ['shared', 'aaa', 'zzz'])
+            self.assertNotIn('postinstall', config['extra'])
+            (repo / 'modules/aaa/check.sh').write_text('exit 2\n')
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('selection failed (2)', result.stderr)
+            self.assertEqual(output.read_text(), original)
+            (repo / 'modules/aaa/check.sh').write_text('exit 0\n')
+            (repo / 'modules/aaa/config.json').write_text('{"hostname": "conflicting"}')
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('conflicting setting: hostname', result.stderr)
+            self.assertEqual(output.read_text(), original)
+
+    def test_unknown_option_does_not_replace_generated_config(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             (repo / 'scripts').mkdir()
             shutil.copy(REPO / 'generate-config.py', repo)
-            shutil.copy(REPO / 'scripts/select-modules.sh', repo / 'scripts')
+            shutil.copytree(REPO / 'scripts', repo / 'scripts', dirs_exist_ok=True)
+            (repo / 'host').write_text('vm\n')
+            host = repo / 'modules/hosts/vm'
+            host.mkdir(parents=True)
+            fragment = host / 'config.json'
+            fragment.write_text('{"hostname": "vm"}')
+            command = ['python3', str(repo / 'generate-config.py')]
+            subprocess.run(command, check=True, capture_output=True)
+            output = repo / 'user-configuration.json'
+            original = output.read_text()
+            fragment.write_text('{"hostname": "vm", "packges": ["git"]}')
+            result = subprocess.run(command, text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('unsupported archinstall options: packges', result.stderr)
+            self.assertEqual(output.read_text(), original)
+
+    def test_discovery_does_not_read_file_assets_as_configs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            (repo / 'scripts').mkdir()
+            shutil.copy(REPO / 'generate-config.py', repo)
+            shutil.copytree(REPO / 'scripts', repo / 'scripts', dirs_exist_ok=True)
             (repo / 'host').write_text('zephyrus\n')
             host = repo / 'modules/hosts/zephyrus'
             host.mkdir(parents=True)
@@ -90,11 +168,34 @@ class GenerationTests(unittest.TestCase):
             assets = dolphin / 'files/home/.config/example'
             assets.mkdir(parents=True)
             (assets / 'config.json').write_text('{"packages": ["app-data"]}')
+            unlisted = repo / 'modules/unlisted'
+            unlisted.mkdir()
+            (unlisted / 'check.sh').write_text('exit 1\n')
+            (unlisted / 'config.json').write_text('{"packages": ["not-selected"]}')
             env = dict(os.environ, DOTFILES_HOST='zephyrus')
             subprocess.run(['python3', str(repo / 'generate-config.py')],
                            env=env, check=True, capture_output=True)
             generated = json.loads((repo / 'user-configuration.json').read_text())
             self.assertEqual(generated['packages'], ['kio-admin'])
+
+    def test_files_and_symlinks_cannot_share_a_destination(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            shutil.copy(REPO / 'generate-config.py', repo)
+            shutil.copytree(REPO / 'scripts', repo / 'scripts')
+            (repo / 'host').write_text('vm\n')
+            host = repo / 'modules/hosts/vm'
+            host.mkdir(parents=True)
+            (host / 'config.json').write_text('{"hostname": "vm"}')
+            for kind in ('files', 'symlinks'):
+                asset = repo / 'modules/example' / kind / 'home/.config/shared.conf'
+                asset.parent.mkdir(parents=True)
+                asset.write_text('shared\n')
+            result = subprocess.run(['python3', str(repo / 'generate-config.py')],
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Multiple modules provide home/.config/shared.conf', result.stderr)
+            self.assertFalse((repo / 'user-configuration.json').exists())
 
 
 if __name__ == '__main__':

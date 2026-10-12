@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+fail() {
+	printf '%s\n' "$*" >&2
+	exit 1
+}
+
+case ${1:-start} in
+start)
+	[[ -n ${DISPLAY:-}${WAYLAND_DISPLAY:-} ]] || fail 'Start B-Trust from your desktop session.'
+	# Needed by Java's GUI on both X11 and Wayland (through XWayland).
+	variables=()
+	for name in DISPLAY WAYLAND_DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP DBUS_SESSION_BUS_ADDRESS; do
+		[[ ! -v $name ]] || variables+=("$name")
+	done
+	systemctl --user import-environment "${variables[@]}"
+	if ! systemctl --user start btrust.service; then
+		fail 'B-Trust could not start. If browser setup is pending, close Chromium and Chrome and try again. Details: journalctl --user -u btrust.service'
+	fi
+	;;
+stop) systemctl --user stop btrust.service ;;
+status) systemctl --user status btrust.service ;;
+*) printf 'Usage: btrust [start|stop|status]\n' >&2; exit 2 ;;
+esac

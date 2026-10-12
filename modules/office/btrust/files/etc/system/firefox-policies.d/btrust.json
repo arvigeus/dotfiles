@@ -1,0 +1,21 @@
+{
+  "policies": {
+    "LocalNetworkAccess": {
+      "SkipDomains": ["wsp.b-trust.bg", "test.b-trust.bg"]
+    },
+    "SecurityDevices": {
+      "Add": {"B-Trust IDPrime": "/usr/lib/pkcs11/libIDPrimePKCS11.so"}
+    },
+    "Certificates": {
+      "Install": [
+        "/opt/btrustbiss/lib/app/BTrustCA/root/B-TrustRootQCA.cer",
+        "/opt/btrustbiss/lib/app/BTrustCA/root/B-TrustRootACA.cer",
+        "/opt/btrustbiss/lib/app/BTrustCA/root/RootCA5_PEM.cer",
+        "/opt/btrustbiss/lib/app/BTrustCA/root/biss-localhost-linux.cer"
+      ]
+    },
+    "Preferences": {
+      "security.osclientcerts.autoload": {"Value": false, "Status": "locked"}
+    }
+  }
+}

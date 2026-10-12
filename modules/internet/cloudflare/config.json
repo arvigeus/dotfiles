@@ -1,0 +1,10 @@
+{
+    "extra": {
+        "aur_packages": [
+            "cloudflare-warp-nox-bin"
+        ],
+        "disabled_services": [
+            "warp-svc.service"
+        ]
+    }
+}

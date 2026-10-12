@@ -1,0 +1,15 @@
+{
+    "extra": {
+        "flatpak": {
+            "packages": [
+                {
+                    "remote": "flathub",
+                    "app": "org.telegram.desktop"
+                }
+            ],
+            "remotes": {
+                "flathub": "https://dl.flathub.org/repo/flathub.flatpakrepo"
+            }
+        }
+    }
+}

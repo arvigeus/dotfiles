@@ -1,0 +1,19 @@
+{
+    "extra": {
+        "flatpak": {
+            "packages": [
+                {
+                    "remote": "flathub",
+                    "app": "com.github.Matoking.protontricks"
+                },
+                {
+                    "remote": "flathub",
+                    "app": "com.vysp3r.ProtonPlus"
+                }
+            ],
+            "remotes": {
+                "flathub": "https://dl.flathub.org/repo/flathub.flatpakrepo"
+            }
+        }
+    }
+}

@@ -1,0 +1,13 @@
+{
+    "packages": [
+        "btop",
+        "drm-info",
+        "lm_sensors",
+        "pciutils",
+        "psmisc",
+        "powertop",
+        "stress-ng",
+        "libva-utils",
+        "vulkan-tools"
+    ]
+}

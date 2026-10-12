@@ -1,0 +1,6 @@
+{
+    "packages": [
+        "just",
+        "just-lsp"
+    ]
+}

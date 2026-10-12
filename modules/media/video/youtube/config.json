@@ -1,0 +1,18 @@
+{
+    "packages": [
+        "yt-dlp"
+    ],
+    "extra": {
+        "flatpak": {
+            "packages": [
+                {
+                    "remote": "flathub",
+                    "app": "org.nickvision.tubeconverter"
+                }
+            ],
+            "remotes": {
+                "flathub": "https://dl.flathub.org/repo/flathub.flatpakrepo"
+            }
+        }
+    }
+}

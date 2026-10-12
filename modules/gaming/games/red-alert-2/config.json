@@ -1,0 +1,16 @@
+{
+    "extra": {
+        "browsers": {
+            "chromium": {
+                "web_apps": [
+                    {
+                        "url": "https://game.chronodivide.com/",
+                        "custom_name": "Chrono Divide",
+                        "default_launch_container": "window",
+                        "create_desktop_shortcut": false
+                    }
+                ]
+            }
+        }
+    }
+}

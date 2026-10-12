@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Vietnamese Telex
+Comment=Enable Vietnamese input for this session
+Exec=input-method select vi --notify
+Icon=input-keyboard
+Categories=Settings;Utility;
+Actions=Stop;
+
+[Desktop Action Stop]
+Name=Stop Vietnamese input
+Exec=input-method select bg --notify

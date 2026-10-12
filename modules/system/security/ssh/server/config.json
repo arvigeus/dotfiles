@@ -1,0 +1,8 @@
+{
+    "packages": [
+        "openssh"
+    ],
+    "services": [
+        "sshd.service"
+    ]
+}

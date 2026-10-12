@@ -1,0 +1,27 @@
+{
+    "extra": {
+        "flatpak": {
+            "packages": [
+                {
+                    "remote": "flathub",
+                    "app": "org.gimp.GIMP"
+                },
+                {
+                    "remote": "flathub",
+                    "app": "runtime/org.gimp.GIMP.Plugin.Resynthesizer/x86_64/3"
+                },
+                {
+                    "remote": "flathub",
+                    "app": "runtime/org.gimp.GIMP.Plugin.Fourier/x86_64/3"
+                },
+                {
+                    "remote": "flathub",
+                    "app": "runtime/org.gimp.GIMP.Plugin.GMic/x86_64/3"
+                }
+            ],
+            "remotes": {
+                "flathub": "https://dl.flathub.org/repo/flathub.flatpakrepo"
+            }
+        }
+    }
+}

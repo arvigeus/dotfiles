@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""Select physical QES and disable BISS's own login startup setting."""
+import os
+from pathlib import Path
+import tempfile
+import xml.etree.ElementTree as ET
+
+path = Path.home() / "AppData/Roaming/BISS/Settings.xml"
+path.parent.mkdir(parents=True, exist_ok=True)
+root = ET.parse(path).getroot() if path.exists() else ET.Element("properties")
+if root.tag != "properties":
+    raise ValueError(f"Unexpected BISS settings format: {path}")
+values = {
+    "osStarted": "false",
+    "signAPI": "PKCS11",
+    "pkcs11Path": "/usr/lib/pkcs11/libIDPrimePKCS11.so",
+}
+for key, value in {"language": "en", "pfxPath": ""}.items():
+    if not any(entry.get("key") == key for entry in root.findall("entry")):
+        ET.SubElement(root, "entry", key=key).text = value
+for key, value in values.items():
+    entries = [entry for entry in root.findall("entry") if entry.get("key") == key]
+    entry = entries[0] if entries else ET.SubElement(root, "entry", key=key)
+    entry.text = value
+    for duplicate in entries[1:]:
+        root.remove(duplicate)
+data = (
+    b'<?xml version="1.0" encoding="UTF-8"?>\n'
+    b'<!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">\n'
+    + ET.tostring(root, encoding="utf-8") + b"\n"
+)
+with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as temporary:
+    temporary.write(data)
+    temporary_path = temporary.name
+try:
+    os.replace(temporary_path, path)
+finally:
+    if os.path.exists(temporary_path):
+        os.unlink(temporary_path)

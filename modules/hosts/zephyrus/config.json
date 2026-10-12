@@ -1,11 +1,1 @@
-{
-    "hostname": "zephyrus",
-    "packages": [
-        "asusctl",
-        "rog-control-center",
-        "switcheroo-control"
-    ],
-    "services": [
-        "switcheroo-control.service"
-    ]
-}
+{"hostname": "zephyrus"}

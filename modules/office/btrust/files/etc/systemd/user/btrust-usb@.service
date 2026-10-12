@@ -1,0 +1,11 @@
+[Unit]
+Description=B-Trust session for USB token %I
+BindsTo=%i.device btrust.service
+After=%i.device btrust.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/true
+RemainAfterExit=yes
+ExecStop=/usr/bin/systemctl --user --no-block stop btrust.service
+TimeoutStopSec=20

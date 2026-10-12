@@ -1,0 +1,37 @@
+{
+    "packages": [
+        "chromium"
+    ],
+    "extra": {
+        "flatpak": {
+            "packages": [
+                {
+                    "remote": "flathub",
+                    "app": "com.google.Chrome"
+                }
+            ],
+            "remotes": {
+                "flathub": "https://dl.flathub.org/repo/flathub.flatpakrepo"
+            }
+        },
+        "browsers": {
+            "chromium": {
+                "extensions": [
+                    "https://chromewebstore.google.com/detail/bitwarden-password-manage/nngceckbapebfimnlniiiahkandclblb",
+                    "https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh",
+                    "https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc",
+                    "https://chromewebstore.google.com/detail/picture-in-picture-extens/hkgfoiooedgoejojocmhlaklaeopbecg",
+                    "https://chromewebstore.google.com/detail/plasma-integration/cimiefiiaegbelhefglklhhakcgmhkai",
+                    "https://chromewebstore.google.com/detail/react-developer-tools/fmkadmapgofadopljbjfkapdkoienihi",
+                    "https://chromewebstore.google.com/detail/wappalyzer-technology-pro/gppongmhjkpfnbhagpmjfkannfbllamg",
+                    "https://chromewebstore.google.com/detail/web-developer-tool-for-ch/ghenifimhcdihapkceohjpgiabidpgji",
+                    "https://chromewebstore.google.com/detail/webhint/gccemnpihkbgkdmoogenkbkckppadcag",
+                    "https://chromewebstore.google.com/detail/sponsorblock-for-youtube/mnjggcdmjocbbbhaepdhchncahnbgone",
+                    "https://chromewebstore.google.com/detail/ai-grammar-checker-paraph/oldceeleldhonbafppcapldpdifcinji",
+                    "https://chromewebstore.google.com/detail/the-camelizer/ghnomdcacenbmilgjigehppbamfndblo",
+                    "https://chromewebstore.google.com/detail/unhook-remove-youtube-rec/khncfooichmfjbepaaaebmommgaepoid"
+                ]
+            }
+        }
+    }
+}

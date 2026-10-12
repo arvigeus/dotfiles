@@ -1,0 +1,2 @@
+# Circle CCR7115 ICC reader: shared model IDs only, no device serial or identity.
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="31aa", ATTR{idProduct}=="7001", TAG+="systemd", ENV{SYSTEMD_USER_WANTS}+="btrust-usb@.service"

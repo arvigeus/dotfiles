@@ -1,0 +1,6 @@
+{
+  "packages": ["pcsclite", "ccid", "nss", "opensc", "pcsc-tools"],
+  "extra": {
+    "aur_packages": ["btrustbiss", "sac-core"]
+  }
+}

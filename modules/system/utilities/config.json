@@ -1,8 +1,0 @@
-{
-    "packages": [
-        "git",
-        "less",
-        "unzip",
-        "jq"
-    ]
-}

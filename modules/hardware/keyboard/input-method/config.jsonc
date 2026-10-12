@@ -1,0 +1,10 @@
+{
+    "packages": [
+        "fcitx5",
+        "fcitx5-qt",
+        "fcitx5-gtk",
+        "fcitx5-configtool",
+        // Vietnamese Telex input engine.
+        "fcitx5-unikey"
+    ]
+}

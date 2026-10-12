@@ -1,0 +1,6 @@
+{
+    "packages": [
+        "amd-ucode",
+        "cpupower"
+    ]
+}

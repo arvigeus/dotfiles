@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Permit guests to use the host's libvirt DNS/DHCP service and initiate routed
+# connections. Return traffic is stateful; do not grant unsolicited traffic
+# from arbitrary host interfaces to guests.
+ufw allow in on virbr0 to any port 53 proto tcp
+ufw allow in on virbr0 to any port 53 proto udp
+ufw allow in on virbr0 to any port 67 proto udp
+ufw route allow in on virbr0

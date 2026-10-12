@@ -10,5 +10,14 @@
     "services": [
         "tuned-ppd.service",
         "upower.service"
-    ]
+    ],
+    "extra": {
+        "packages": [
+            "tuned",
+            "tuned-ppd"
+        ],
+        "services": [
+            "tuned.service"
+        ]
+    }
 }

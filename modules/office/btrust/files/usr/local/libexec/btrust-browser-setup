@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Configure only the shared NSS database, never an open browser profile.
+set -Eeuo pipefail
+umask 077
+
+payload=${BTRUST_APP_DIR:-/opt/btrustbiss/lib/app}
+library=${BTRUST_PKCS11_LIBRARY:-/usr/lib/pkcs11/libIDPrimePKCS11.so}
+[[ -r $library ]] || { printf 'Missing B-Trust signing library: %s\n' "$library" >&2; exit 1; }
+
+# Match Chromium's selection: an existing legacy directory takes precedence.
+if [[ -d $HOME/.pki/nssdb ]]; then
+	database=$HOME/.pki/nssdb
+else
+	database=${XDG_DATA_HOME:-$HOME/.local/share}/pki/nssdb
+fi
+state=${XDG_STATE_HOME:-$HOME/.local/state}/btrust
+mkdir -p "$state"
+exec 9>"$state/setup.lock"
+flock 9
+
+roots=(B-TrustRootQCA.cer B-TrustRootACA.cer RootCA5_PEM.cer biss-localhost-linux.cer)
+intermediates=(B-TrustOperationalQCA.cer B-TrustOperationalACA.cer OperCA5QES_PEM.cer OperCA5AES_PEM.cer)
+inputs=("$library" "$0")
+for name in "${roots[@]}"; do inputs+=("$payload/BTrustCA/root/$name"); done
+for name in "${intermediates[@]}"; do inputs+=("$payload/BTrustCA/oper/$name"); done
+digest=$( { printf '%s\n' "$database" "$library"; sha256sum "${inputs[@]}"; } | sha256sum)
+stamp=$state/nss.sha256
+if [[ -f $database/cert9.db && -f $database/key4.db && -f $database/pkcs11.txt &&
+	-f $stamp && $(cat "$stamp") == "$digest" ]]; then
+	exit 0
+fi
+
+# An existing home might need its first setup, or a vendor certificate update.
+# Never modify an NSS store while a Chromium-family browser is running.
+if pgrep -u "$(id -u)" -x 'chromium|chrome|google-chrome|chrome_crashpad' >/dev/null; then
+	printf 'Close Chromium and Chrome before the first B-Trust launch or certificate update.\n' >&2
+	exit 1
+fi
+mkdir -p "$database"
+if [[ ! -f $database/cert9.db ]]; then
+	# Do not overwrite a partial or legacy database; let the user repair it.
+	if [[ -e $database/key4.db || -e $database/cert8.db || -e $database/key3.db ]]; then
+		printf 'Incomplete or legacy NSS database: %s\n' "$database" >&2
+		exit 1
+	fi
+	certutil -N --empty-password -d "sql:$database"
+fi
+modutil -list -dbdir "sql:$database" >/dev/null
+for name in "${roots[@]}"; do
+	certutil -A -d "sql:$database" -n "B-Trust/$name" -t 'C,,' -i "$payload/BTrustCA/root/$name"
+done
+# Chain certificates are present, but are not made trust anchors.
+for name in "${intermediates[@]}"; do
+	certutil -A -d "sql:$database" -n "B-Trust/$name" -t ',,' -i "$payload/BTrustCA/oper/$name"
+done
+module='B-Trust IDPrime'
+if modutil -list "$module" -dbdir "sql:$database" >/dev/null 2>&1; then
+	# Only replace the module owned by this integration.
+	modutil -delete "$module" -dbdir "sql:$database" -force >/dev/null
+fi
+# Retain registrations from the previous installer without duplicating tokens.
+modules=$(modutil -list -dbdir "sql:$database")
+registered=false
+while IFS= read -r path; do
+	if [[ $(readlink -f -- "$path") == "$(readlink -f -- "$library")" ]]; then
+		registered=true
+		break
+	fi
+done < <(sed -n 's/^[[:space:]]*library name: //p' <<<"$modules")
+if [[ $registered == false ]]; then
+	modutil -add "$module" -libfile "$library" -dbdir "sql:$database" -force >/dev/null
+fi
+printf '%s\n' "$digest" >"$stamp"

@@ -1,0 +1,16 @@
+[Behavior]
+ShareInputState=All
+ActiveByDefault=True
+ShowInputMethodInformation=False
+
+[Hotkey/TriggerKeys]
+0=Alt+Shift_L
+1=Alt+Shift_R
+2=Shift+Alt_L
+3=Shift+Alt_R
+
+[Hotkey/AltTriggerKeys]
+
+[Hotkey/EnumerateGroupForwardKeys]
+
+[Hotkey/EnumerateGroupBackwardKeys]

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# One-time device lookup on launch, including launches from Applications.
+# No process remains to monitor USB after this helper exits.
+set -Eeuo pipefail
+for device in /sys/bus/usb/devices/*; do
+	[[ -f $device/idVendor ]] || continue
+	# An unrelated device can disappear during this one-time lookup.
+	properties=$(udevadm info --query=property --path="$device" 2>/dev/null) || continue
+	if ! rg -q '^SYSTEMD_USER_WANTS=.*\bbtrust-usb@\.service\b' <<<"$properties"; then
+		continue
+	fi
+	unit=$(systemd-escape --path --template=btrust-usb@.service "$(readlink -f -- "$device")")
+	# The USB unit is ordered after this application's start job. Queue its job
+	# without waiting so ExecStartPost cannot deadlock on that ordering.
+	systemctl --user --no-block start "$unit"
+done

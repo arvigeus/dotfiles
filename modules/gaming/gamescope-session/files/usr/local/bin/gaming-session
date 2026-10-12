@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+trim() {
+	local value=$1
+	value=${value#"${value%%[![:space:]]*}"}
+	value=${value%"${value##*[![:space:]]}"}
+	printf '%s' "$value"
+}
+
+read_config() {
+	local path=$1 line key value
+	[[ -r $path ]] || return 0
+	while IFS= read -r line || [[ -n $line ]]; do
+		line=$(trim "$line")
+		[[ -n $line && $line != \#* ]] || continue
+		[[ $line == *=* ]] || {
+			printf 'Invalid gaming-session setting in %s: %s\n' "$path" "$line" >&2
+			return 1
+		}
+		key=$(trim "${line%%=*}")
+		value=$(trim "${line#*=}")
+		case $key in
+		SYSTEM_GAMING_GPU | SYSTEM_GAMING_HDR | SYSTEM_GAMING_OUTPUT)
+			printf -v "$key" '%s' "$value"
+			;;
+		*)
+			printf 'Unknown gaming-session setting in %s: %s\n' "$path" "$key" >&2
+			return 1
+			;;
+		esac
+	done <"$path"
+}
+
+connected_outputs() {
+	local status path connector
+	local external=() internal=()
+	for status in /sys/class/drm/card*-*/status; do
+		[[ -r $status && $(<"$status") == connected ]] || continue
+		path=${status%/status}
+		connector=${path##*/}
+		connector=${connector#*-}
+		case $connector in
+		eDP-* | DSI-* | LVDS-*) internal+=("$connector") ;;
+		*) external+=("$connector") ;;
+		esac
+	done
+	local ordered=("${external[@]}" "${internal[@]}")
+	((${#ordered[@]} > 0)) || return 0
+	local IFS=,
+	printf '%s' "${ordered[*]}"
+}
+
+gpu_present() {
+	local vendor=${1%:*} device=${1#*:}
+	local vendor_file device_file actual_vendor actual_device
+	for vendor_file in /sys/bus/pci/devices/*/vendor; do
+		[[ -r $vendor_file ]] || continue
+		device_file=${vendor_file%/vendor}/device
+		[[ -r $device_file ]] || continue
+		actual_vendor=$(<"$vendor_file")
+		actual_device=$(<"$device_file")
+		actual_vendor=${actual_vendor#0x}
+		actual_device=${actual_device#0x}
+		if [[ ${vendor,,} == "${actual_vendor,,}" && ${device,,} == "${actual_device,,}" ]]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+env_gpu_set=${SYSTEM_GAMING_GPU+x}
+env_gpu=${SYSTEM_GAMING_GPU-}
+env_hdr_set=${SYSTEM_GAMING_HDR+x}
+env_hdr=${SYSTEM_GAMING_HDR-}
+env_output_set=${SYSTEM_GAMING_OUTPUT+x}
+env_output=${SYSTEM_GAMING_OUTPUT-}
+
+SYSTEM_GAMING_GPU=auto
+SYSTEM_GAMING_HDR=0
+SYSTEM_GAMING_OUTPUT=auto
+read_config "${SYSTEM_GAMING_SYSTEM_CONFIG:-/etc/system/gaming-session.conf}"
+read_config "${SYSTEM_GAMING_USER_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/system/gaming-session.conf}"
+[[ -z $env_gpu_set ]] || SYSTEM_GAMING_GPU=$env_gpu
+[[ -z $env_hdr_set ]] || SYSTEM_GAMING_HDR=$env_hdr
+[[ -z $env_output_set ]] || SYSTEM_GAMING_OUTPUT=$env_output
+
+case $SYSTEM_GAMING_HDR in
+0 | 1) ;;
+*) printf 'SYSTEM_GAMING_HDR must be 0 or 1.\n' >&2; exit 2 ;;
+esac
+if [[ $SYSTEM_GAMING_GPU != auto && ! $SYSTEM_GAMING_GPU =~ ^[[:xdigit:]]{4}:[[:xdigit:]]{4}$ ]]; then
+	printf 'SYSTEM_GAMING_GPU must be auto or a PCI vendor:device ID.\n' >&2
+	exit 2
+fi
+if [[ $SYSTEM_GAMING_OUTPUT != auto && ! $SYSTEM_GAMING_OUTPUT =~ ^[[:alnum:]_.:-]+(,[[:alnum:]_.:-]+)*$ ]]; then
+	printf 'SYSTEM_GAMING_OUTPUT must be auto or a comma-separated connector list.\n' >&2
+	exit 2
+fi
+
+gamescope_bin=${SYSTEM_GAMING_GAMESCOPE:-gamescope}
+steam_bin=${SYSTEM_GAMING_STEAM:-steam}
+args=(--backend drm --steam --xwayland-count 2 --adaptive-sync --mangoapp)
+
+output=$SYSTEM_GAMING_OUTPUT
+[[ $output != auto ]] || output=$(connected_outputs)
+[[ -z $output ]] || args+=(--prefer-output "$output")
+
+if [[ $SYSTEM_GAMING_GPU != auto ]]; then
+	if [[ ${SYSTEM_GAMING_DRY_RUN:-0} == 1 ]] || gpu_present "$SYSTEM_GAMING_GPU"; then
+		args+=(--prefer-vk-device "$SYSTEM_GAMING_GPU")
+	else
+		printf 'Preferred GPU %s is unavailable; letting Gamescope choose.\n' \
+			"$SYSTEM_GAMING_GPU" >&2
+	fi
+fi
+[[ $SYSTEM_GAMING_HDR == 0 ]] || args+=(--hdr-enabled)
+
+command=("$gamescope_bin" "${args[@]}" -- "$steam_bin" -gamepadui)
+if [[ ${SYSTEM_GAMING_DRY_RUN:-0} == 1 ]]; then
+	printf '%q ' "${command[@]}"
+	printf '\n'
+	exit 0
+fi
+
+command -v "$gamescope_bin" >/dev/null || {
+	printf 'Gamescope executable not found: %s\n' "$gamescope_bin" >&2
+	exit 127
+}
+command -v "$steam_bin" >/dev/null || {
+	printf 'Steam executable not found: %s\n' "$steam_bin" >&2
+	exit 127
+}
+
+export XDG_CURRENT_DESKTOP=gamescope
+export XDG_SESSION_DESKTOP=gamescope
+exec "${command[@]}"

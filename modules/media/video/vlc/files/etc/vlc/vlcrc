@@ -1,0 +1,16 @@
+[core]
+metadata-network-access=1
+one-instance=1
+playlist-enqueue=1
+audio-language=jpn,jp,eng,en
+sub-language=eng,en,bg,vi,vn
+snapshot-path=~/Pictures
+snapshot-prefix=vlc-
+
+[qt]
+qt-privacy-ask=0
+qt-minimal-view=1
+qt-system-tray=0
+qt-pause-minimized=1
+qt-dark-palette=1
+qt-max-volume=200

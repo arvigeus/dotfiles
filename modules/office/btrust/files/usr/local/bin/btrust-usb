@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Opt-in udev activation; no separate USB watcher is installed.
+set -Eeuo pipefail
+rule=/etc/udev/rules.d/71-btrust.rules
+usage() { printf 'Usage: sudo btrust-usb enable VENDOR_ID PRODUCT_ID [SERIAL]\n       sudo btrust-usb disable\n       btrust-usb rule VENDOR_ID PRODUCT_ID [SERIAL]\n'; }
+[[ ${1:-} != --help ]] || { usage; exit 0; }
+case ${1:-} in
+enable|rule)
+	[[ $# == 3 || $# == 4 ]] || { usage >&2; exit 2; }
+	[[ $2 =~ ^[[:xdigit:]]{4}$ && $3 =~ ^[[:xdigit:]]{4}$ ]] || { usage >&2; exit 2; }
+	serial=
+	if [[ $# == 4 ]]; then
+		[[ $4 =~ ^[a-zA-Z0-9._-]+$ ]] || { printf 'Serial must contain only letters, digits, dots, underscores, or hyphens.\n' >&2; exit 2; }
+		serial=", ATTR{serial}==\"$4\""
+	fi
+	line=$(printf 'ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="%s", ATTR{idProduct}=="%s"%s, TAG+="systemd", ENV{SYSTEMD_USER_WANTS}+="btrust-usb@.service"' \
+		"${2,,}" "${3,,}" "$serial")
+	[[ $1 != rule ]] || { printf '%s\n' "$line"; exit 0; }
+	((EUID == 0)) || { usage >&2; exit 1; }
+	install -d -m 0755 /etc/udev/rules.d
+	printf '%s\n' "$line" >"$rule"
+	chmod 0644 "$rule"
+	;;
+disable)
+	[[ $# == 1 ]] || { usage >&2; exit 2; }
+	((EUID == 0)) || { usage >&2; exit 1; }
+	# Retain an explicit disabled state across rebuilds instead of falling back
+	# to the module's default rule when preserve_path finds no local file.
+	install -d -m 0755 /etc/udev/rules.d
+	printf '# B-Trust USB activation explicitly disabled.\n' >"$rule"
+	chmod 0644 "$rule"
+	;;
+*) usage >&2; exit 2 ;;
+esac
+udevadm control --reload-rules
+printf 'USB activation rules updated. Reconnect the selected token after desktop login.\n'

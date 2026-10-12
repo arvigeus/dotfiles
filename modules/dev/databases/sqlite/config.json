@@ -1,0 +1,6 @@
+{
+    "packages": [
+        "sqlite",
+        "sqlitebrowser"
+    ]
+}

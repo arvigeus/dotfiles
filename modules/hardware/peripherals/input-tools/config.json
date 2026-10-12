@@ -1,7 +1,5 @@
 {
     "packages": [
-        "evtest",
-        "pciutils",
-        "usbutils"
+        "evtest"
     ]
 }

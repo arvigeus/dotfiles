@@ -1,0 +1,4 @@
+[Unit]
+Description=On-demand B-Trust smart-card infrastructure
+Requires=pcscd.socket pcscd.service
+After=pcscd.socket pcscd.service

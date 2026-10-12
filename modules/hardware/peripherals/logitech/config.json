@@ -1,0 +1,8 @@
+{
+    "services": [
+        "logid.service"
+    ],
+    "packages": [
+        "chaotic-aur/logiops"
+    ]
+}

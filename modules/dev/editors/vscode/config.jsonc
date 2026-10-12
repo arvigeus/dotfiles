@@ -1,0 +1,204 @@
+{
+    "packages": ["code"],
+    "extra": {
+        "vscode": {
+            // Base settings; extension settings below override these when merged.
+            "settings": {
+                "update.mode": "none",
+                "window.titleBarStyle": "custom",
+                "workbench.colorTheme": "One Dark Pro Mix",
+                "editor.fontFamily": "'FiraCode Nerd Font', 'FiraCode Nerd Font Mono', 'monospace', monospace",
+                "editor.inlineSuggest.enabled": true,
+                "git.autofetch": true,
+                "git.confirmSync": false,
+                "git.enableCommitSigning": true
+            },
+            // Extension IDs and their associated settings.
+            "extensions": {
+                // Essentials
+                "mikestead.dotenv": {},
+                "editorconfig.editorconfig": {},
+                // Interface Improvements
+                "eamodio.gitlens": {},
+                "usernamehw.errorlens": {
+                    "errorLens.gutterIconsEnabled": true,
+                    "errorLens.messageMaxChars": 0
+                },
+                "pflannery.vscode-versionlens": {},
+                "yoavbls.pretty-ts-errors": {},
+                "wix.vscode-import-cost": {},
+                "gruntfuggly.todo-tree": {
+                    "todo-tree.highlights.customHighlight": {
+                        "TODO": {
+                            "type": "text",
+                            "foreground": "#000000",
+                            "background": "#00FF00",
+                            "iconColour": "#00FF00",
+                            "icon": "shield-check",
+                            "gutterIcon": true
+                        },
+                        "FIXME": {
+                            "type": "text",
+                            "foreground": "#000000",
+                            "background": "#FFFF00",
+                            "iconColour": "#FFFF00",
+                            "icon": "shield",
+                            "gutterIcon": true
+                        },
+                        "HACK": {
+                            "type": "text",
+                            "foreground": "#000000",
+                            "background": "#FF0000",
+                            "iconColour": "#FF0000",
+                            "icon": "shield-x",
+                            "gutterIcon": true
+                        },
+                        "BUG": {
+                            "type": "text",
+                            "foreground": "#000000",
+                            "background": "#FFA500",
+                            "iconColour": "#FFA500",
+                            "icon": "bug",
+                            "gutterIcon": true
+                        }
+                    }
+                },
+                // AI
+                "Anthropic.claude-code": {},
+                "openai.chatgpt": {},
+                "kilocode.Kilo-Code": {},
+                // Color schemes (workbench.colorTheme: "One Dark Pro Mix")
+                "zhuangtongfa.material-theme": {},
+                // Docker (Podman)
+                "docker.docker": {},
+                // Vite Plus: project-local Oxlint/Oxfmt and automatic config discovery.
+                // https://www.viteplus.dev/guide/ide-integration
+                "oxc.oxc-vscode": {
+                    "oxc.enable.oxlint": true,
+                    "oxc.enable.oxfmt": true,
+                    "oxc.disableNestedConfig": true,
+                    "oxc.fmt.disableNestedConfig": true,
+                    "oxc.configPath": null,
+                    "oxc.fmt.configPath": null,
+                    "oxc.lint.run": "onType",
+                    "oxc.fixKind": "safe_fix",
+                    "[javascript]": {
+                        "editor.defaultFormatter": "oxc.oxc-vscode",
+                        "editor.formatOnSave": true,
+                        "editor.formatOnSaveMode": "file",
+                        "editor.codeActionsOnSave": {
+                            "source.fixAll.oxc": "explicit"
+                        }
+                    },
+                    "[javascriptreact]": {
+                        "editor.defaultFormatter": "oxc.oxc-vscode",
+                        "editor.formatOnSave": true,
+                        "editor.formatOnSaveMode": "file",
+                        "editor.codeActionsOnSave": {
+                            "source.fixAll.oxc": "explicit"
+                        }
+                    },
+                    "[typescript]": {
+                        "editor.defaultFormatter": "oxc.oxc-vscode",
+                        "editor.formatOnSave": true,
+                        "editor.formatOnSaveMode": "file",
+                        "editor.codeActionsOnSave": {
+                            "source.fixAll.oxc": "explicit"
+                        }
+                    },
+                    "[typescriptreact]": {
+                        "editor.defaultFormatter": "oxc.oxc-vscode",
+                        "editor.formatOnSave": true,
+                        "editor.formatOnSaveMode": "file",
+                        "editor.codeActionsOnSave": {
+                            "source.fixAll.oxc": "explicit"
+                        }
+                    },
+                    "[vue]": {
+                        "editor.defaultFormatter": "oxc.oxc-vscode",
+                        "editor.formatOnSave": true,
+                        "editor.formatOnSaveMode": "file",
+                        "editor.codeActionsOnSave": {
+                            "source.fixAll.oxc": "explicit"
+                        }
+                    },
+                    "[html]": {
+                        "editor.defaultFormatter": "oxc.oxc-vscode",
+                        "editor.formatOnSave": true,
+                        "editor.formatOnSaveMode": "file"
+                    },
+                    "[css]": {
+                        "editor.defaultFormatter": "oxc.oxc-vscode",
+                        "editor.formatOnSave": true,
+                        "editor.formatOnSaveMode": "file"
+                    },
+                    "[json]": {
+                        "editor.defaultFormatter": "oxc.oxc-vscode",
+                        "editor.formatOnSave": true,
+                        "editor.formatOnSaveMode": "file"
+                    },
+                    "[jsonc]": {
+                        "editor.defaultFormatter": "oxc.oxc-vscode",
+                        "editor.formatOnSave": true,
+                        "editor.formatOnSaveMode": "file"
+                    },
+                    "[markdown]": {
+                        "editor.defaultFormatter": "oxc.oxc-vscode",
+                        "editor.formatOnSave": true,
+                        "editor.formatOnSaveMode": "file"
+                    },
+                    "[mdx]": {
+                        "editor.defaultFormatter": "oxc.oxc-vscode",
+                        "editor.formatOnSave": true,
+                        "editor.formatOnSaveMode": "file"
+                    },
+                    "[scss]": {
+                        "editor.defaultFormatter": "oxc.oxc-vscode",
+                        "editor.formatOnSave": true,
+                        "editor.formatOnSaveMode": "file"
+                    },
+                    "[yaml]": {
+                        "editor.defaultFormatter": "oxc.oxc-vscode",
+                        "editor.formatOnSave": true,
+                        "editor.formatOnSaveMode": "file"
+                    },
+                    "[graphql]": {
+                        "editor.defaultFormatter": "oxc.oxc-vscode",
+                        "editor.formatOnSave": true,
+                        "editor.formatOnSaveMode": "file"
+                    }
+                },
+                "csstools.postcss": {},
+                "stylelint.vscode-stylelint": {},
+                "bradlc.vscode-tailwindcss": {},
+                "davidanson.vscode-markdownlint": {},
+                "unifiedjs.vscode-mdx": {},
+                // Deno
+                "denoland.vscode-deno": {},
+                // GraphQL
+                "graphql.vscode-graphql-syntax": {},
+                "graphql.vscode-graphql": {},
+                // Bash
+                "mads-hartmann.bash-ide-vscode": {
+                    "bashIde.shellcheckPath": "/usr/bin/shellcheck"
+                },
+                "mkhl.shfmt": {
+                    "shfmt.executablePath": "/usr/bin/shfmt"
+                },
+                // Rust
+                "rust-lang.rust-analyzer": {},
+                "vadimcn.vscode-lldb": {},
+                "wcrichton.flowistry": {},
+                // TOML
+                "tamasfe.even-better-toml": {},
+                // Just
+                "nefrob.vscode-just-syntax": {},
+                // Testing
+                "vitest.explorer": {},
+                "ms-playwright.playwright": {},
+                "firefox-devtools.vscode-firefox-debug": {},
+                "ms-vscode.test-adapter-converter": {}
+            }
+        }
+    }
+}

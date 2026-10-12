@@ -1,0 +1,16 @@
+{
+    "extra": {
+        "browsers": {
+            "chromium": {
+                "web_apps": [
+                    {
+                        "url": "https://www.photopea.com/",
+                        "custom_name": "Photopea",
+                        "default_launch_container": "window",
+                        "create_desktop_shortcut": false
+                    }
+                ]
+            }
+        }
+    }
+}

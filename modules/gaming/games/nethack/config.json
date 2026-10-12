@@ -1,0 +1,16 @@
+{
+    "extra": {
+        "browsers": {
+            "chromium": {
+                "web_apps": [
+                    {
+                        "url": "https://jamesiv4.github.io/nethack-3d/",
+                        "custom_name": "NetHack 3D",
+                        "default_launch_container": "window",
+                        "create_desktop_shortcut": false
+                    }
+                ]
+            }
+        }
+    }
+}

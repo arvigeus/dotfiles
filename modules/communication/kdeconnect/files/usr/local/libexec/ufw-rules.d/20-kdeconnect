@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Direct pairing, discovery and transfers stay on local networks.
+for subnet in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 fc00::/7 fe80::/10; do
+	ufw allow proto tcp from "$subnet" to any port 1714:1764
+	ufw allow proto udp from "$subnet" to any port 1714:1764
+done

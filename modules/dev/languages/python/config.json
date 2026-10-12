@@ -1,0 +1,9 @@
+{
+    "packages": [
+        "python",
+        "python-pip",
+        "uv",
+        "ruff",
+        "ty"
+    ]
+}

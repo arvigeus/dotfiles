@@ -1,0 +1,6 @@
+{
+    "pacman_config": {
+        "color": true,
+        "parallel_downloads": 5
+    }
+}

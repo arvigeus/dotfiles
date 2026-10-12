@@ -3,5 +3,16 @@
         "audio_config": {
             "audio": "pipewire"
         }
+    },
+    "extra": {
+        "packages": [
+            "pipewire",
+            "pipewire-alsa",
+            "pipewire-jack",
+            "pipewire-pulse",
+            "gst-plugin-pipewire",
+            "libpulse",
+            "wireplumber"
+        ]
     }
 }

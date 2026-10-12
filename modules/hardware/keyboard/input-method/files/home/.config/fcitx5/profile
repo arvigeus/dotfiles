@@ -1,0 +1,15 @@
+[Groups/0]
+Name=Vietnamese
+Default Layout=us
+DefaultIM=unikey
+
+[Groups/0/Items/0]
+Name=keyboard-us
+Layout=
+
+[Groups/0/Items/1]
+Name=unikey
+Layout=
+
+[GroupOrder]
+0=Vietnamese
