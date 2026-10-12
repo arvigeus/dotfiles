@@ -1,4 +1,5 @@
 hl.config({
+    cursor = { no_warps = true },
     input = {
         kb_layout  = "us",
         kb_variant = "",
@@ -6,12 +7,15 @@ hl.config({
         kb_options = "",
         kb_rules   = "",
 
-        follow_mouse = 1,
+        -- Hover routes pointer input; clicking changes keyboard focus.
+        follow_mouse = 2,
+        float_switch_override_focus = 0,
 
         sensitivity = 0, -- -1.0 - 1.0, 0 means no modification.
 
         touchpad = {
             natural_scroll = false,
+            tap_to_click = true,
         },
     },
 })
