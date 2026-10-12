@@ -16,3 +16,5 @@ awk '$1 != "HUSHLOGIN_FILE" { print } END { print "HUSHLOGIN_FILE /etc/hushlogin
     /etc/login.defs | file_write /etc/login.defs
 # UWSM's may-start check requires the graphical target even without a greeter.
 systemctl set-default graphical.target
+# The packaged user unit is tied to graphical-session.target, reached by UWSM.
+systemctl --global enable hyprpolkitagent.service

@@ -83,7 +83,9 @@ class SessionTests(unittest.TestCase):
                                     DOTFILES_REPO=str(REPO), USERNAME='tester', SESSION_TEST_LOG=str(root / 'calls')))
             self.assertIn('ExecStart=\nExecStart=-/usr/bin/agetty --autologin tester', config.read_text())
             self.assertIn('--noissue --skip-login - ${TERM}', config.read_text())
-            self.assertEqual((root / 'calls').read_text(), 'set-default graphical.target\n')
+            self.assertEqual((root / 'calls').read_text(),
+                             'set-default graphical.target\n'
+                             '--global enable hyprpolkitagent.service\n')
             self.assertEqual(login_defs.read_text(), '# Keep this comment\nUID_MIN 1000\nHUSHLOGIN_FILE /etc/hushlogins\n')
 
     def run_profile(self, overrides=None, interactive=True, login=True, start_status=0):
