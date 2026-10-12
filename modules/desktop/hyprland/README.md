@@ -18,6 +18,19 @@ Changes take effect the next time you lock.
 
 If Win+L does nothing, check `systemctl --user status hypridle.service`.
 
+## Idle and sleep
+
+After 5 minutes without input, displays turn off; input turns them back on.
+After 6 minutes, the desktop locks. After 30 minutes, the system suspends.
+It also locks before suspend and turns displays back on when waking.
+Applications can keep the desktop awake through idle or sleep inhibitors.
+
+To adjust the timeouts, edit `~/.config/hypr/hypridle.conf`, then run:
+
+```sh
+systemctl --user restart hypridle.service
+```
+
 ## File dialogs and screen sharing
 
 Desktop portals let applications open file dialogs and request screen sharing.
