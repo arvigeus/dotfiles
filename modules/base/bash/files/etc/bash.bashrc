@@ -47,3 +47,10 @@ if [[ -r /usr/share/bash-completion/bash_completion ]]; then
   # shellcheck disable=SC1091
   . /usr/share/bash-completion/bash_completion
 fi
+
+# Load system-managed shell additions after the environment and completion.
+for shell_config in /etc/bash.bashrc.d/*.sh; do
+  # shellcheck disable=SC1090
+  [[ ! -r $shell_config ]] || source "$shell_config"
+done
+unset shell_config

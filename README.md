@@ -39,6 +39,16 @@ with archinstall's `--creds` file, passed to `bootstrap.sh`. Without an encrypti
 password, archinstall does not load the declared encryption settings; a dry-run
 alone cannot confirm them.
 
+## Test in a VM
+
+Run `./vm.sh` and enter an Arch ISO path. Requires `qemu-desktop`, `qemu-img`,
+`edk2-ovmf`, `libarchive`, Python 3, and access to `/dev/kvm`. The ISO mounts
+this checkout automatically and prints the VM configuration and installation
+commands. Use `./vm.sh boot` to boot the installed disk without an ISO.
+
+The writable share also changes the host checkout. A persistent 64 GiB disk and
+UEFI settings live under `${XDG_STATE_HOME:-~/.local/state}/dotfiles-vm`.
+
 ## Apply to a live system
 
 Run as your regular user:
@@ -58,6 +68,10 @@ after applying to activate changed settings.
 Managed configuration is replaced on each apply. Omitted files, packages, and
 services are left in place; removal and migration are manual. There is no
 backward compatibility support: update your system when the configuration changes.
+
+Hyprland starts automatically on TTY1. Exiting it returns to your terminal;
+run `desktop-session` to reopen Hyprland or `gaming-session` to enter Steam
+Gaming Mode. Exiting either session returns to the terminal.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the module conventions and execution
 model, and [scripts/README.md](scripts/README.md) for execution-tool details.

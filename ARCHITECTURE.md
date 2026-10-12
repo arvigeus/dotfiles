@@ -30,13 +30,13 @@ them in application modules.
 
 ## Selection and hooks
 
-| Source | Purpose |
-| --- | --- |
-| `check.sh` | Read-only module selection during generation: exit 0 includes, 1 excludes, other statuses fail. |
-| `config.sh` | Emit dynamic JSON configuration during generation. |
-| `prerequisite.sh` | Runtime safeguard, snapshotted into the generated configuration. |
-| `pre.sh` | Early setup before native configuration, including repository key preparation. |
-| `scripts/*.sh` | Custom configuration actions, snapshotted with shared helpers into `custom_commands`. |
+| Source            | Purpose                                                                                         |
+| ----------------- | ----------------------------------------------------------------------------------------------- |
+| `check.sh`        | Read-only module selection during generation: exit 0 includes, 1 excludes, other statuses fail. |
+| `config.sh`       | Emit dynamic JSON configuration during generation.                                              |
+| `prerequisite.sh` | Runtime safeguard, snapshotted into the generated configuration.                                |
+| `pre.sh`          | Early setup before native configuration, including repository key preparation.                  |
+| `scripts/*.sh`    | Custom configuration actions, snapshotted with shared helpers into `custom_commands`.           |
 
 Selection checks receive `DOTFILES_HOST`, `DOTFILES_DESKTOP` (default `hyprland`),
 and the repository path as their first argument. Select by target-host criteria,
@@ -56,6 +56,12 @@ Use plain installed filenames such as `bash.sh` or `fcitx.conf`.
 Scripts write generated home configuration into a temporary staging home.
 Home outputs are published with user ownership; generated outputs are regular
 files. Publishing replaces managed destinations and leaves omitted outputs alone.
+
+## Boot and login
+
+EFI stub boot uses UKIs. A final boot hook adapts archinstall’s encryption
+command line for the declared systemd initramfs and rebuilds the UKIs. Routine
+boot output is suppressed; errors and the disk-unlock prompt remain visible.
 
 ## Mirrors
 

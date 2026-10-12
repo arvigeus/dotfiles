@@ -11,7 +11,7 @@
             ],
             "main": "Desktop"
         },
-        "greeter": "ly"
+        "greeter": null
     },
     "packages": [
         "quickshell",
@@ -22,5 +22,8 @@
         "libnotify",
         "wl-clipboard",
         "kio-admin"
+    ],
+    "services": [
+        "getty@tty1.service"
     ]
 }
