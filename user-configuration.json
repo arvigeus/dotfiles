@@ -1036,6 +1036,11 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/hosts/zephyrus/files/home/.config/hypr/host-monitors.lua",
+                "target": "home/.config/hypr/host-monitors.lua",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/media/graphics/gimp/files/etc/profile.d/gimp.sh",
                 "target": "/etc/profile.d/gimp.sh",
                 "mode": "0644"
