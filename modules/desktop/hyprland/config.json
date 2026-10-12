@@ -1,31 +1,30 @@
 {
-    "profile_config": {
-        "profile": {
-            "custom_settings": {
-                "Hyprland": {
-                    "seat_access": "systemd-logind"
-                }
-            },
-            "details": [
-                "Hyprland"
-            ],
-            "main": "Desktop"
-        },
-        "greeter": null
+  "profile_config": {
+    "profile": {
+      "custom_settings": {
+        "Hyprland": {
+          "seat_access": "systemd-logind"
+        }
+      },
+      "details": ["Hyprland"],
+      "main": "Desktop"
     },
-    "packages": [
-        "quickshell",
-        "hyprpolkitagent",
-        "hypridle",
-        "hyprlock",
-        "xdg-desktop-portal-gtk",
-        "brightnessctl",
-        "playerctl",
-        "libnotify",
-        "wl-clipboard",
-        "kio-admin"
-    ],
-    "services": [
-        "getty@tty1.service"
-    ]
+    "greeter": null
+  },
+  "packages": [
+    "quickshell",
+    "hyprpolkitagent",
+    "hypridle",
+    "hyprlock",
+    "hyprshot",
+    "satty",
+    "kooha",
+    "xdg-desktop-portal-gtk",
+    "brightnessctl",
+    "playerctl",
+    "libnotify",
+    "wl-clipboard",
+    "kio-admin"
+  ],
+  "services": ["getty@tty1.service"]
 }

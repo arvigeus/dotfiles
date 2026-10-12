@@ -31,6 +31,25 @@ To adjust the timeouts, edit `~/.config/hypr/hypridle.conf`, then run:
 systemctl --user restart hypridle.service
 ```
 
+## Screenshots and recording
+
+| Shortcut | Action |
+| --- | --- |
+| Print or Win+Shift+S | Select an area and edit it in Satty |
+| Win+Shift+Print | Select an area without editing |
+| Win+Print | Capture the focused window |
+| Win+Ctrl+Print | Select a window to capture |
+| Shift+Print | Capture the current display |
+| Win+Shift+R | Open Kooha's recording controls |
+
+Screenshots are saved under your Pictures directory in `Screenshots` and copied
+to the clipboard. In Satty, Enter saves your edits, copies them, and closes the
+editor. Escape closes it while keeping the original screenshot. Escape during
+area or window selection cancels capture.
+
+Kooha lets you choose what to record, microphone or desktop audio, and where to
+save recordings. Use its controls to start and stop recording.
+
 ## File dialogs and screen sharing
 
 Desktop portals let applications open file dialogs and request screen sharing.

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+fail() {
+    printf '%s\n' "$*" >&2
+    notify-send 'Screenshot' "$*" || true
+    exit 1
+}
+
+mode=${1:-}
+edit=false
+case $mode in
+    edit) mode=region; edit=true ;;
+    region|window|output|active-window) ;;
+    *) fail 'Choose edit, region, window, active-window, or output.' ;;
+esac
+
+command -v hyprshot >/dev/null || fail 'Install hyprshot to take screenshots.'
+if $edit; then
+    command -v satty >/dev/null || fail 'Install satty to edit screenshots.'
+fi
+
+pictures=$(xdg-user-dir PICTURES) || pictures=$HOME/Pictures
+folder=${pictures:-$HOME/Pictures}/Screenshots
+mkdir -p -- "$folder"
+filename="Screenshot-$(date +%Y-%m-%d-%H%M%S-%N).png"
+args=(-m "$mode" -o "$folder" -f "$filename")
+if [[ $mode == active-window ]]; then
+    args=(-m window -m active -o "$folder" -f "$filename")
+elif [[ $mode == output ]]; then
+    args+=(-m active)
+fi
+$edit && args+=(--silent)
+
+# Hyprshot captures in a child process; keep the pipe open until it finishes.
+hyprshot "${args[@]}" | cat
+image=$folder/$filename
+# Cancelling selection produces no image and should not open the editor.
+[[ -s $image ]] || exit 0
+if $edit; then
+    exec satty --filename "$image" --output-filename "$image" \
+        --copy-command 'wl-copy --type image/png' \
+        --actions-on-enter save-to-file,save-to-clipboard,exit \
+        --actions-on-escape exit
+fi

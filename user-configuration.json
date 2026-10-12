@@ -806,6 +806,11 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/desktop/hyprland/files/usr/local/bin/desktop-screenshot",
+                "target": "/usr/local/bin/desktop-screenshot",
+                "mode": "0755"
+            },
+            {
                 "source": "modules/desktop/hyprland/files/usr/local/bin/desktop-session",
                 "target": "/usr/local/bin/desktop-session",
                 "mode": "0755"
@@ -1389,6 +1394,9 @@
         "hyprpolkitagent",
         "hypridle",
         "hyprlock",
+        "hyprshot",
+        "satty",
+        "kooha",
         "xdg-desktop-portal-gtk",
         "brightnessctl",
         "playerctl",
