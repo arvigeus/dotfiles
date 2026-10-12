@@ -9,6 +9,15 @@ hyprctl reload config-only
 
 Run `hyprctl configerrors` if a change does not work as expected.
 
+## Locking
+
+Press **Win+L** to lock the desktop. Enter your login password to unlock it.
+
+To change the lock screen's appearance, edit `~/.config/hypr/hyprlock.conf`.
+Changes take effect the next time you lock.
+
+If Win+L does nothing, check `systemctl --user status hypridle.service`.
+
 ## File dialogs and screen sharing
 
 Desktop portals let applications open file dialogs and request screen sharing.

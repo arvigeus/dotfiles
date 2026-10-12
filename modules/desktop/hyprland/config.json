@@ -16,6 +16,8 @@
     "packages": [
         "quickshell",
         "hyprpolkitagent",
+        "hypridle",
+        "hyprlock",
         "xdg-desktop-portal-gtk",
         "brightnessctl",
         "playerctl",

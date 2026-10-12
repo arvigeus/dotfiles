@@ -18,3 +18,4 @@ awk '$1 != "HUSHLOGIN_FILE" { print } END { print "HUSHLOGIN_FILE /etc/hushlogin
 systemctl set-default graphical.target
 # The packaged user unit is tied to graphical-session.target, reached by UWSM.
 systemctl --global enable hyprpolkitagent.service
+systemctl --global enable hypridle.service

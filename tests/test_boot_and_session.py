@@ -85,7 +85,8 @@ class SessionTests(unittest.TestCase):
             self.assertIn('--noissue --skip-login - ${TERM}', config.read_text())
             self.assertEqual((root / 'calls').read_text(),
                              'set-default graphical.target\n'
-                             '--global enable hyprpolkitagent.service\n')
+                             '--global enable hyprpolkitagent.service\n'
+                             '--global enable hypridle.service\n')
             self.assertEqual(login_defs.read_text(), '# Keep this comment\nUID_MIN 1000\nHUSHLOGIN_FILE /etc/hushlogins\n')
 
     def run_profile(self, overrides=None, interactive=True, login=True, start_status=0):
