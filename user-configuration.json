@@ -1330,6 +1330,10 @@
                 "target": "home/.config/hypr/windows.lua"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/Bar.qml",
+                "target": "home/.config/quickshell/desktop/bar/Bar.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/LICENSE",
                 "target": "home/.config/quickshell/desktop/icons/LICENSE"
             },

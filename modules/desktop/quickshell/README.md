@@ -1,7 +1,14 @@
 # Quickshell
 
 The desktop shell starts with the UWSM-managed Hyprland session and stops on logout. A failed
-process restarts automatically. The initial entry point runs without visible UI.
+process restarts automatically. A passive top bar appears on each connected display.
+It reserves 44 logical pixels for tiled windows and shows a small Desktop pill.
+Fullscreen applications cover it; it accepts no keyboard or pointer input.
+
+Bar geometry lives in `symlinks/home/.config/quickshell/desktop/bar/Bar.qml`, with
+shared dimensions in `ui/Theme.qml`. Quickshell owns one bar per screen and removes
+it when that screen disappears. Stopping the shell removes the bars and releases
+their reserved space; starting it restores them.
 
 Edit `symlinks/home/.config/quickshell/desktop/shell.qml` in this module.
 The installed entry point links to the checkout, and Quickshell reloads QML

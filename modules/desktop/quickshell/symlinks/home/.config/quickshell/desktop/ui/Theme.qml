@@ -66,5 +66,8 @@ QtObject {
     readonly property int controlRadius: 5
     readonly property int controlHeight: 34
     readonly property int pillRadius: 9
-    readonly property int pillHeight: 42
+    readonly property int pillHeight: 44
+    // Includes the tiled window's 10 px outer gap in the visual balance.
+    readonly property int pillTopPadding: 10
+    readonly property int barInset: 14
 }
