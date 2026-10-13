@@ -4,8 +4,8 @@
 
 | Shortcut                    | Action                                             |
 | --------------------------- | -------------------------------------------------- |
-| Win+1–9 / Win+0             | Switch to workspace 1–9 / 10; create it if needed. |
-| Win+Shift+1–9 / Win+Shift+0 | Move the active window to workspace 1–9 / 10.      |
+| Ctrl+Win+Up / Down          | Go to the workspace above / below.                |
+| Ctrl+Win+Shift+Up / Down    | Move the active window above / below and follow it. |
 | Win+Arrow                   | Focus the window in that direction.                |
 | Win+Shift+Left / Right      | Move the active column left / right.               |
 | Win+J                       | Give a stacked window its own column.              |
@@ -16,6 +16,15 @@
 | Win+V                       | Toggle floating.                                   |
 | Win+left-drag / right-drag  | Move / resize a window.                            |
 | Win+Q / Alt+F4              | Close the active window.                           |
+
+Workspace navigation stays on the current display and never wraps. At either
+end, a new workspace is created only if the current one contains windows. An
+empty workspace still allows returning to an existing neighbor and disappears
+when you leave it. With a single empty workspace, both directions are disabled.
+The window strip shows only the current workspace's windows.
+
+Three-finger up/down swipes use the same rules, switching once when the swipe
+finishes. Three-finger horizontal swipes continue scrolling through columns.
 
 ## Hide or show the bar
 

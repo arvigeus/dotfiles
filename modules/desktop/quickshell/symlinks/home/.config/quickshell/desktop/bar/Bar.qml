@@ -18,7 +18,7 @@ PanelWindow {
     WlrLayershell.namespace: "desktop-bar"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     mask: Region {
-        Region { item: workspaces.visible ? workspaces : null; radius: Theme.pillRadius }
+        Region { item: workspaces.visible ? workspaces : null; radius: workspaces.radius }
         Region { item: windows.visible ? windows : null; radius: windows.radius }
     }
 
@@ -27,7 +27,7 @@ PanelWindow {
         monitor: bar.monitor
         x: Theme.barInset
         y: Theme.pillTopPadding
-        maximumWidth: Math.min(320, Math.max(0, (bar.width - Theme.barInset * 2) / 3))
+        maximumWidth: Math.max(0, bar.width - Theme.barInset * 2)
     }
 
     WindowList {

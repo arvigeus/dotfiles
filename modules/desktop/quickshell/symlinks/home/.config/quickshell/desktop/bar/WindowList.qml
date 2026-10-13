@@ -17,7 +17,7 @@ Surface {
     // Hyprland supplies placement; each window's Wayland handle supplies live metadata.
     readonly property var windowCandidates: Hyprland.toplevels.values
         .filter(toplevel => toplevel && toplevel.monitor === root.monitor
-            && toplevel.workspace && !toplevel.workspace.name.startsWith("special:"))
+            && toplevel.workspace && toplevel.workspace === root.monitor?.activeWorkspace)
     readonly property var windows: orderedWindows
     property var orderedWindows: []
 
@@ -41,15 +41,14 @@ Surface {
                 const position = window.lastIpcObject.at;
                 return {
                     window: window,
-                    workspace: window.workspace.id,
                     x: position?.[0] ?? Number.MAX_SAFE_INTEGER,
                     y: position?.[1] ?? Number.MAX_SAFE_INTEGER,
                     address: window.address
                 };
             })
-            // Keep workspaces together; within each, read columns left-to-right
-            // and stacked windows top-to-bottom. Break overlaps consistently.
-            .sort((a, b) => a.workspace - b.workspace || a.x - b.x || a.y - b.y
+            // Read columns left-to-right and stacks top-to-bottom on this workspace.
+            // Break overlaps consistently.
+            .sort((a, b) => a.x - b.x || a.y - b.y
                 || a.address.localeCompare(b.address))
             .map(entry => entry.window);
 

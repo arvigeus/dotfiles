@@ -26,8 +26,15 @@ hl.gesture({
     action = "scroll_move"
 })
 
-hl.gesture({
-    fingers = 3,
-    direction = "vertical",
-    action = "workspace"
-})
+-- One workspace per completed swipe, with the same empty-edge guard as keys/UI.
+-- Native 1:1 workspace swipes bypass that guard and use numeric workspace order.
+for _, step in ipairs({ { "up", -1 }, { "down", 1 } }) do
+    local direction = step[2]
+    hl.gesture({
+        fingers = 3,
+        direction = step[1],
+        action = { finish = function(event)
+            if not event.cancelled then DesktopWorkspaces.step(direction) end
+        end },
+    })
+end

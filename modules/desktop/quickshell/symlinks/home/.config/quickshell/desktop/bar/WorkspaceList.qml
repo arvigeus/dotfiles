@@ -1,6 +1,5 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import Quickshell
 import Quickshell.Hyprland
 import "../ui"
 
@@ -8,59 +7,68 @@ Surface {
     id: root
 
     required property HyprlandMonitor monitor
-    property real maximumWidth: 320
-    readonly property var workspaces: Hyprland.workspaces.values.filter(workspace => workspace && workspace.monitor === root.monitor
-        && !workspace.name.startsWith("special:"))
+    property real maximumWidth: Theme.controlHeight
+    readonly property HyprlandWorkspace current: monitor?.activeWorkspace ?? null
+    readonly property var workspaces: Hyprland.workspaces.values
+        .filter(workspace => workspace && workspace.monitor === root.monitor && workspace.id > 0)
+        .sort((a, b) => a.id - b.id)
+    readonly property int currentIndex: workspaces.indexOf(current)
+    readonly property bool occupied: !!current && current.toplevels.values.length > 0
+    readonly property bool canGoUp: Hyprland.usingLua && currentIndex >= 0
+        && (currentIndex > 0 || (occupied && current.id > 1))
+    readonly property bool canGoDown: Hyprland.usingLua && currentIndex >= 0
+        && (currentIndex < workspaces.length - 1 || (occupied && current.id < 2147483646))
 
-    function cellWidth(workspace: HyprlandWorkspace): real {
-        return Math.max(Theme.controlHeight, Math.min(120,
-            Math.ceil(metrics.advanceWidth(workspace?.name ?? "")) + Theme.padding));
+    function step(direction: int): void {
+        if (!monitor || (direction < 0 ? !canGoUp : !canGoDown))
+            return;
+        // Recheck against live compositor state; queued clicks cannot grow a
+        // chain of empties even before Quickshell receives the workspace event.
+        Hyprland.dispatch("function() DesktopWorkspaces.step(" + direction + ", " + monitor.id + ") end");
     }
 
-    implicitWidth: Math.min(Math.max(0, maximumWidth), workspaces.reduce((width, workspace) => width + cellWidth(workspace), 0)
-        + Math.max(0, workspaces.length - 1) * Theme.spacingSmall + Theme.spacingSmall * 2)
+    implicitWidth: Math.min(Math.max(0, maximumWidth), Theme.controlHeight)
     implicitHeight: Theme.controlHeight
-    radius: Theme.pillRadius
+    radius: Theme.controlRadius
     border.width: 0
-    visible: workspaces.length > 0 && width > 0
+    clip: true
+    visible: !!monitor && width > 0
 
-    FontMetrics {
-        id: metrics
-        font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSize
+    BarButton {
+        id: up
+        width: root.width
+        height: root.height / 2
+        padding: 0
+        text: qsTr("Workspace above (Ctrl+Win+Up)")
+        enabled: root.canGoUp
+        onClicked: root.step(-1)
+        contentItem: Item {
+            Icon {
+                anchors.centerIn: parent
+                width: 16
+                height: 16
+                name: "chevron-up"
+                opacity: up.enabled ? 1 : 0.35
+            }
+        }
     }
 
-    ListView {
-        id: list
-        anchors.fill: parent
-        anchors.leftMargin: Theme.spacingSmall
-        anchors.rightMargin: Theme.spacingSmall
-        clip: true
-        orientation: ListView.Horizontal
-        boundsBehavior: Flickable.StopAtBounds
-        spacing: Theme.spacingSmall
-        model: ScriptModel { values: root.workspaces }
-
-        delegate: BarButton {
-            required property HyprlandWorkspace modelData
-            text: modelData?.name ?? ""
-            width: root.cellWidth(modelData)
-            height: Theme.controlHeight
-            selected: modelData?.active ?? false
-            urgent: modelData?.urgent ?? false
-            enabled: !!modelData
-            onClicked: if (modelData) modelData.activate()
-        }
-
-        MouseArea {
-            anchors.fill: parent
-            acceptedButtons: Qt.NoButton
-            onWheel: event => {
-                const pixels = event.pixelDelta.x || event.pixelDelta.y;
-                const angle = event.angleDelta.x || event.angleDelta.y;
-                const delta = pixels || angle / 120 * Theme.controlHeight;
-                list.contentX = Math.max(0, Math.min(Math.max(0, list.contentWidth - list.width), list.contentX - delta));
-                event.accepted = true;
+    BarButton {
+        id: down
+        y: root.height / 2
+        width: root.width
+        height: root.height / 2
+        padding: 0
+        text: qsTr("Workspace below (Ctrl+Win+Down)")
+        enabled: root.canGoDown
+        onClicked: root.step(1)
+        contentItem: Item {
+            Icon {
+                anchors.centerIn: parent
+                width: 16
+                height: 16
+                name: "chevron-down"
+                opacity: down.enabled ? 1 : 0.35
             }
         }
     }

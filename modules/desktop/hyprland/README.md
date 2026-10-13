@@ -33,14 +33,14 @@ systemctl --user restart hypridle.service
 
 ## Screenshots and recording
 
-| Shortcut | Action |
-| --- | --- |
+| Shortcut             | Action                              |
+| -------------------- | ----------------------------------- |
 | Print or Win+Shift+S | Select an area and edit it in Satty |
-| Win+Shift+Print | Select an area without editing |
-| Win+Print | Capture the focused window |
-| Win+Ctrl+Print | Select a window to capture |
-| Shift+Print | Capture the current display |
-| Win+Shift+R | Open Kooha's recording controls |
+| Win+Shift+Print      | Select an area without editing      |
+| Win+Print            | Capture the focused window          |
+| Win+Ctrl+Print       | Select a window to capture          |
+| Shift+Print          | Capture the current display         |
+| Win+Shift+R          | Open Kooha's recording controls     |
 
 Screenshots are saved under your Pictures directory in `Screenshots` and copied
 to the clipboard. In Satty, Enter saves your edits, copies them, and closes the

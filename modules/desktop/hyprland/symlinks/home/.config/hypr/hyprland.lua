@@ -5,7 +5,7 @@ local config = os.getenv("XDG_CONFIG_HOME") or (os.getenv("HOME") .. "/.config")
 local directory = config .. "/hypr/"
 for _, component in ipairs({
     "monitors", "session", "appearance", "animations",
-    "layout", "input", "bindings", "windows",
+    "layout", "workspaces", "input", "bindings", "windows",
 }) do
     dofile(directory .. component .. ".lua")
 end
