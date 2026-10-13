@@ -1,0 +1,5 @@
+singleton Theme 1.0 Theme.qml
+ShellText 1.0 ShellText.qml
+Surface 1.0 Surface.qml
+Icon 1.0 Icon.qml
+AppIcon 1.0 AppIcon.qml

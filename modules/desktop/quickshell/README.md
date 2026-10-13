@@ -32,3 +32,28 @@ UWSM-managed session; a direct Hyprland login may leave this target inactive.
 
 After editing the service asset, apply the configuration, then run
 `systemctl --user daemon-reload` and restart the shell to use it immediately.
+
+Shared colors, fonts, spacing, and geometry live in
+`symlinks/home/.config/quickshell/desktop/ui/Theme.qml`. Components in `ui/` supply
+plain text, bordered surfaces, Lucide interface icons, and system application
+icons. Dimensions use logical pixels; Qt handles each display's scale.
+
+The selected mode lives in the regular local file
+`${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/desktop/theme-mode`, containing
+`dark` or `light`. The shell reads it at startup. Shell controls call
+`Theme.setMode()` to save the choice and reload it after a successful write; the
+preview uses Ctrl+T to switch it. Restart the shell to pick up external edits or
+changes made by another instance. Palettes and components remain linked to the
+checkout.
+Missing or unrecognized mode content uses dark colors. Apply currently replaces
+this local file with the repository default.
+
+Open the style preview with:
+
+```sh
+qs --no-duplicate --path "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/desktop/preview.qml"
+```
+
+It runs independently of the desktop service. If Hyprland tiles it, use Super+V
+to float it and Super+left-drag to move it. Interface icons are bundled under
+`icons/`, with their upstream license and source reference.

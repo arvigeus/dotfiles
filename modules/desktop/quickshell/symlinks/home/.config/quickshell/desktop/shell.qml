@@ -1,3 +1,7 @@
+import QtQml
 import Quickshell
+import "ui"
 
-ShellRoot {}
+ShellRoot {
+    readonly property QtObject theme: Theme
+}

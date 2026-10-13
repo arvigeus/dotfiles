@@ -828,6 +828,11 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/desktop/quickshell/files/home/.config/quickshell/desktop/theme-mode",
+                "target": "home/.config/quickshell/desktop/theme-mode",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/dev/editors/nano/files/etc/nanorc",
                 "target": "/etc/nanorc",
                 "mode": "0644"
@@ -1325,8 +1330,68 @@
                 "target": "home/.config/hypr/windows.lua"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/LICENSE",
+                "target": "home/.config/quickshell/desktop/icons/LICENSE"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/README.md",
+                "target": "home/.config/quickshell/desktop/icons/README.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/chevron-left.svg",
+                "target": "home/.config/quickshell/desktop/icons/chevron-left.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/chevron-right.svg",
+                "target": "home/.config/quickshell/desktop/icons/chevron-right.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/monitor.svg",
+                "target": "home/.config/quickshell/desktop/icons/monitor.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/search.svg",
+                "target": "home/.config/quickshell/desktop/icons/search.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/settings.svg",
+                "target": "home/.config/quickshell/desktop/icons/settings.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/x.svg",
+                "target": "home/.config/quickshell/desktop/icons/x.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/preview.qml",
+                "target": "home/.config/quickshell/desktop/preview.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/shell.qml",
                 "target": "home/.config/quickshell/desktop/shell.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/AppIcon.qml",
+                "target": "home/.config/quickshell/desktop/ui/AppIcon.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/Icon.qml",
+                "target": "home/.config/quickshell/desktop/ui/Icon.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ShellText.qml",
+                "target": "home/.config/quickshell/desktop/ui/ShellText.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/Surface.qml",
+                "target": "home/.config/quickshell/desktop/ui/Surface.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/Theme.qml",
+                "target": "home/.config/quickshell/desktop/ui/Theme.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/qmldir",
+                "target": "home/.config/quickshell/desktop/ui/qmldir"
             },
             {
                 "source": "modules/dev/editors/zed/symlinks/home/.config/zed/settings.json",
