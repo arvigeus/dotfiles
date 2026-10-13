@@ -56,6 +56,7 @@
         "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/base/utils '#!/usr/bin/env bash\n## Small baseline command-line utilities\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\nconfigure() {\n\t# Keep less history out of $HOME root, in the XDG state location.\n\tinstall -d -m 0755 \"$HOME/.local/state/less\"\n}\n\nconfigure\n'",
         "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/dev/editors/vscode '#!/usr/bin/env bash\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\n# Extension declarations contribute settings to the user'\"'\"'s Code - OSS profile.\njq '\"'\"'\n    .extra.vscode\n    | reduce .extensions[] as $settings (.settings; . * $settings)\n'\"'\"' /run/system-configuration.json |\n    file_write \"$HOME/.config/Code - OSS/User/settings.json\"\n'",
         "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/system/boot '#!/usr/bin/env bash\nset -Eeuo pipefail\n# Archinstall generates the device-specific command line and UKI presets.\n# Adapt its password-based encryption parameters to systemd early userspace.\njq -e '\"'\"'.bootloader_config | .bootloader == \"Efistub\" and .uki == true'\"'\"' \\\n    /run/system-configuration.json >/dev/null || {\n    echo '\"'\"'Boot configuration requires EFI stub boot with UKIs.'\"'\"' >&2; exit 1;\n}\npython3 - /etc/kernel/cmdline /etc/mkinitcpio.d <<'\"'\"'PY_BOOT'\"'\"'\nfrom pathlib import Path\nimport os\nimport re\nimport sys\nimport tempfile\n\ncmdline, presets = map(Path, sys.argv[1:])\n# Explicit preset configs bypass mkinitcpio.conf.d and would ignore our hooks.\nactive_presets = list(presets.glob('\"'\"'*.preset'\"'\"'))\nif not active_presets or not any(re.search(r'\"'\"'^\\w+_uki='\"'\"', p.read_text(), re.M) for p in active_presets):\n    sys.exit('\"'\"'No UKI preset found; configure UKIs before applying boot settings.'\"'\"')\nif any(re.search(r'\"'\"'^\\s*\\w+_config='\"'\"', p.read_text(), re.M) for p in active_presets):\n    sys.exit('\"'\"'Remove explicit *_config settings from mkinitcpio presets to enable drop-ins.'\"'\"')\n\nparameters = cmdline.read_text().split()\nif not any(p.startswith('\"'\"'root='\"'\"') for p in parameters):\n    sys.exit('\"'\"'Kernel command line has no root device.'\"'\"')\nquiet = {\n    '\"'\"'quiet'\"'\"': '\"'\"'quiet'\"'\"',\n    '\"'\"'loglevel'\"'\"': '\"'\"'loglevel=3'\"'\"',\n    '\"'\"'systemd.show_status'\"'\"': '\"'\"'systemd.show_status=auto'\"'\"',\n    '\"'\"'rd.systemd.show_status'\"'\"': '\"'\"'rd.systemd.show_status=auto'\"'\"',\n    '\"'\"'udev.log_level'\"'\"': '\"'\"'udev.log_level=3'\"'\"',\n    '\"'\"'rd.udev.log_level'\"'\"': '\"'\"'rd.udev.log_level=3'\"'\"',\n    '\"'\"'vt.global_cursor_default'\"'\"': '\"'\"'vt.global_cursor_default=0'\"'\"',\n}\nresult = []\nfor parameter in parameters:\n    if parameter.startswith('\"'\"'cryptdevice='\"'\"'):\n        match = re.fullmatch(r'\"'\"'cryptdevice=UUID=([0-9a-fA-F-]{36}):([a-zA-Z0-9_-]+)'\"'\"', parameter)\n        if not match:\n            sys.exit(f'\"'\"'Unsupported archinstall encryption parameter: {parameter}'\"'\"')\n        parameter = f'\"'\"'rd.luks.name={match[1]}={match[2]}'\"'\"'\n    if parameter.split('\"'\"'='\"'\"', 1)[0] not in quiet:\n        result.append(parameter)\nresult.extend(quiet.values())\n# Do not replace the active command line until all checks have passed.\nwith tempfile.NamedTemporaryFile(mode='\"'\"'w'\"'\"', dir=cmdline.parent, delete=False) as temporary:\n    target = Path(temporary.name)\n    try:\n        temporary.write('\"'\"' '\"'\"'.join(result) + '\"'\"'\\n'\"'\"')\n        temporary.close()\n        os.chmod(target, 0o644)\n        target.replace(cmdline)\n    finally:\n        target.unlink(missing_ok=True)\nPY_BOOT\n# Rebuild the UKIs with the updated command line and systemd hooks.\nmkinitcpio -P\n'",
+        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/desktop/hyprland '#!/usr/bin/env bash\nset -Eeuo pipefail\n\n# Archinstall'\"'\"'s Hyprland profile installs Wofi; Quickshell owns app search here.\n# Remove only Wofi, retaining shared dependencies and normal dependency checks.\nif pacman -Q wofi >/dev/null 2>&1; then\n    pacman -R --noconfirm wofi\nfi\n'",
         "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --finish"
     ],
     "disk_config": {
@@ -1390,6 +1391,14 @@
                 "target": "home/.config/quickshell/desktop/icons/x.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/launcher/Launcher.qml",
+                "target": "home/.config/quickshell/desktop/launcher/Launcher.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/launcher/Search.js",
+                "target": "home/.config/quickshell/desktop/launcher/Search.js"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/preview.qml",
                 "target": "home/.config/quickshell/desktop/preview.qml"
             },
@@ -1416,6 +1425,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/Theme.qml",
                 "target": "home/.config/quickshell/desktop/ui/Theme.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/WheelScroll.qml",
+                "target": "home/.config/quickshell/desktop/ui/WheelScroll.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/qmldir",
@@ -1516,6 +1529,8 @@
         "wl-clipboard",
         "kio-admin",
         "quickshell",
+        "gtk3",
+        "xdg-terminal-exec",
         "sqlite",
         "sqlitebrowser",
         "micro",

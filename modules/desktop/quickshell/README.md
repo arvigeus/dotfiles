@@ -1,9 +1,10 @@
-# Desktop bar
+# Desktop shell
 
-## Window and workspace shortcuts
+## Shortcuts
 
 | Shortcut                    | Action                                             |
 | --------------------------- | -------------------------------------------------- |
+| Win+R                      | Open / close application search.                   |
 | Ctrl+Win+Up / Down          | Go to the workspace above / below.                |
 | Ctrl+Win+Shift+Up / Down    | Move the active window above / below and follow it. |
 | Win+Arrow                   | Focus the window in that direction.                |
@@ -42,7 +43,7 @@ systemctl --user start desktop-shell.service
 
 ## Troubleshooting
 
-If the bar is missing, unresponsive, or shows windows in the wrong order, restart
+If the shell is missing, unresponsive, or shows windows in the wrong order, restart
 it from a terminal in your desktop session:
 
 ```sh
@@ -57,3 +58,5 @@ journalctl --user -b -u desktop-shell.service -n 50
 ```
 
 Include those messages and the action that caused the problem when reporting it.
+
+If search cannot launch an application, check its displayed error.

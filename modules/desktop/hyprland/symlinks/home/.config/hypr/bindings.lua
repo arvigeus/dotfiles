@@ -1,7 +1,6 @@
 local terminal    = "kitty"
 local fileManager = "dolphin"
 local browser     = "firefox"
-local menu = "wofi --show drun"
 
 local mainMod = "SUPER"
 
@@ -26,7 +25,7 @@ hl.bind("CTRL + ALT + DELETE", hl.dsp.exec_cmd("uwsm stop"))
 -- Lock requests are handled by hypridle/hyprlock once locking is configured.
 hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("loginctl lock-session"))
 hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }))
-hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu))
+hl.bind(mainMod .. " + R", hl.dsp.global("desktop:launcher"))
 hl.bind("PRINT", hl.dsp.exec_cmd("desktop-screenshot edit"))
 hl.bind(mainMod .. " + SHIFT + S", hl.dsp.exec_cmd("desktop-screenshot edit"))
 hl.bind(mainMod .. " + SHIFT + PRINT", hl.dsp.exec_cmd("desktop-screenshot region"))

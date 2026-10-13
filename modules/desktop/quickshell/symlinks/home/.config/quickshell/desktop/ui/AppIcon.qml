@@ -14,8 +14,10 @@ Item {
         anchors.fill: parent
         source: !root.icon.length ? "" : root.icon.startsWith("/")
             ? "file://" + root.icon : Quickshell.iconPath(root.icon, true)
-        sourceSize.width: Math.ceil(width * Screen.devicePixelRatio)
-        sourceSize.height: Math.ceil(height * Screen.devicePixelRatio)
+        // Layouts briefly have zero size during creation. Do not decode an SVG
+        // at its possibly enormous intrinsic size before the row is laid out.
+        sourceSize.width: Math.max(1, Math.ceil(width * Screen.devicePixelRatio))
+        sourceSize.height: Math.max(1, Math.ceil(height * Screen.devicePixelRatio))
         fillMode: Image.PreserveAspectFit
     }
 }

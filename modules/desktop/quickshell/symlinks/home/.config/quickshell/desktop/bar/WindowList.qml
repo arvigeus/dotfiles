@@ -131,16 +131,12 @@ Surface {
             }
         }
 
-        MouseArea {
-            anchors.fill: parent
-            acceptedButtons: Qt.NoButton
-            onWheel: event => {
-                const pixels = event.pixelDelta.x || event.pixelDelta.y;
-                const angle = event.angleDelta.x || event.angleDelta.y;
-                const delta = pixels || angle / 120 * root.cellWidth;
-                list.contentX = Math.max(0, Math.min(Math.max(0, list.contentWidth - list.width), list.contentX - delta));
-                event.accepted = true;
-            }
+        WheelScroll {
+            view: list
+            orientation: Qt.Horizontal
+            verticalToHorizontal: true
+            wheelStep: root.cellWidth
+            scrollGestureEnabled: true
         }
     }
 }

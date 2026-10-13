@@ -1,0 +1,269 @@
+pragma ComponentBehavior: Bound
+import QtQuick
+import QtQuick.Window
+import QtQuick.Controls
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Hyprland
+import Quickshell.Io
+import Quickshell.Wayland
+import "../ui"
+import "Search.js" as Search
+
+PanelWindow {
+    id: root
+
+    property bool opened: false
+    property ShellScreen targetScreen: null
+    property string errorMessage: ""
+    property bool launching: false
+    property int session: 0
+    readonly property var candidates: Search.catalogue(DesktopEntries.applications.values)
+    readonly property var matches: Search.matches(candidates, search.text)
+
+    screen: targetScreen
+    visible: opened && targetScreen !== null
+    anchors { top: true; bottom: true; left: true; right: true }
+    exclusionMode: ExclusionMode.Ignore
+    color: "transparent"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.namespace: "desktop-launcher"
+    WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+
+    function toggle(): void {
+        if (opened) {
+            dismiss();
+            return;
+        }
+        const focused = Hyprland.focusedMonitor;
+        targetScreen = Quickshell.screens.find(output => output.name === focused?.name) || null;
+        if (targetScreen)
+            opened = true;
+    }
+
+    function dismiss(): void {
+        opened = false;
+    }
+
+    onOpenedChanged: {
+        if (opened) {
+            session++;
+            search.text = "";
+            errorMessage = "";
+            Qt.callLater(root.resetSelection);
+        }
+    }
+    // Let ScriptModel reconcile identities before assigning the new selection.
+    onMatchesChanged: Qt.callLater(root.resetSelection)
+
+    function resetSelection(): void {
+        results.currentIndex = matches.length ? 0 : -1;
+        results.positionViewAtBeginning();
+    }
+
+    GlobalShortcut {
+        appid: "desktop"
+        name: "launcher"
+        description: "Open or close application search"
+        onPressed: root.toggle()
+    }
+
+    Connections {
+        target: Quickshell
+        function onScreensChanged(): void {
+            if (!Quickshell.screens.includes(root.targetScreen)) {
+                root.dismiss();
+                root.targetScreen = null;
+            }
+        }
+    }
+
+    function moveSelection(delta: int): void {
+        if (!matches.length)
+            return;
+        results.currentIndex = Math.max(0, Math.min(matches.length - 1, results.currentIndex + delta));
+        results.positionViewAtIndex(results.currentIndex, ListView.Contain);
+    }
+
+    function activate(index: int): void {
+        if (launching || index < 0 || index >= matches.length)
+            return;
+        const entry = matches[index];
+        if (!DesktopEntries.applications.values.includes(entry))
+            return;
+        errorMessage = "";
+        launch.applicationName = entry.name;
+        launch.launchSession = session;
+        launching = true;
+        // GIO handles Terminal, Path, field codes and D-Bus activation. Pass the
+        // ID as one argument; do not parse Exec or interpolate a shell command.
+        launch.exec(["/usr/bin/gtk-launch", "--", entry.id]);
+    }
+
+    Process {
+        id: launch
+        property string applicationName: ""
+        property int launchSession: 0
+        stderr: StdioCollector { id: launchErrors }
+        onExited: (exitCode, exitStatus) => {
+            root.launching = false;
+            if (launchSession !== root.session || !root.opened)
+                return;
+            if (exitCode === 0 && exitStatus === 0) {
+                root.dismiss();
+            } else {
+                root.errorMessage = qsTr("Could not open %1. %2")
+                    .arg(applicationName).arg(launchErrors.text.trim());
+            }
+        }
+        // FailedToStart does not emit exited in Quickshell 0.3.2.
+        onRunningChanged: if (!running) Qt.callLater(() => {
+            if (!root.launching)
+                return;
+            root.launching = false;
+            if (launch.launchSession === root.session && root.opened)
+                root.errorMessage = qsTr("Application launching is unavailable. Check the desktop shell logs.");
+        })
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: "#66000000"
+    }
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.AllButtons
+        onClicked: root.dismiss()
+    }
+
+    Surface {
+        id: card
+        width: Math.min(620, Math.max(0, root.width - Theme.paddingLarge * 2))
+        height: Math.min(600, Math.max(0, root.height - y - Theme.paddingLarge))
+        x: (root.width - width) / 2
+        y: Math.max(Theme.paddingLarge, Math.min(root.height * 0.14, 160))
+
+        // Consume blank card clicks before they reach the outside dismissal area.
+        MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: Theme.padding
+            spacing: Theme.gap
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacingMedium
+                Icon { name: "search" }
+                TextField {
+                    id: search
+                    objectName: "applicationSearch"
+                    // Wait for native layer focus before enabling text input on
+                    // the new surface; opening/remapping is asynchronous.
+                    Window.onActiveChanged: if (Window.active && root.opened) forceActiveFocus()
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Theme.pillHeight
+                    placeholderText: qsTr("Search applications…")
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSize
+                    color: Theme.text
+                    placeholderTextColor: Theme.muted
+                    selectionColor: Theme.accent
+                    selectedTextColor: Theme.accentText
+                    leftPadding: Theme.gap
+                    rightPadding: Theme.gap
+                    background: Rectangle {
+                        radius: Theme.controlRadius
+                        color: Theme.background
+                        border.color: search.activeFocus ? Theme.accent : Theme.border
+                    }
+                    onTextChanged: root.errorMessage = ""
+                    onAccepted: root.activate(results.currentIndex)
+                    Keys.onUpPressed: root.moveSelection(-1)
+                    Keys.onDownPressed: root.moveSelection(1)
+                    Keys.onEscapePressed: root.dismiss()
+                }
+            }
+
+            ListView {
+                id: results
+                objectName: "applicationResults"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                spacing: Theme.spacingSmall
+                boundsBehavior: Flickable.StopAtBounds
+                // An unmapped PanelWindow uses placeholder geometry. Build rows
+                // only while mapped, avoiding icon work at invalid hidden sizes.
+                model: ScriptModel { values: root.visible ? root.matches : [] }
+                currentIndex: -1
+                ScrollBar.vertical: ScrollBar {}
+                WheelScroll { view: results }
+
+                delegate: Button {
+                    id: resultButton
+                    required property DesktopEntry modelData
+                    required property int index
+                    width: results.width
+                    height: 54
+                    padding: Theme.spacingMedium
+                    hoverEnabled: true
+                    focusPolicy: Qt.NoFocus
+                    text: modelData.name
+                    enabled: !root.launching
+                    onClicked: root.activate(index)
+                    background: Rectangle {
+                        radius: Theme.controlRadius
+                        color: results.currentIndex === resultButton.index ? Theme.accentSurface
+                            : resultButton.hovered ? Theme.raised : "transparent"
+                        border.color: results.currentIndex === resultButton.index ? Theme.accent : "transparent"
+                        border.width: 1
+                    }
+                    contentItem: RowLayout {
+                        spacing: Theme.gap
+                        AppIcon {
+                            icon: resultButton.modelData.icon
+                            Layout.preferredWidth: 32
+                            Layout.preferredHeight: 32
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+                            ShellText {
+                                Layout.fillWidth: true
+                                text: resultButton.text
+                                elide: Text.ElideRight
+                            }
+                            ShellText {
+                                Layout.fillWidth: true
+                                text: resultButton.modelData.genericName || resultButton.modelData.id
+                                color: Theme.muted
+                                font.pixelSize: Theme.smallFontSize
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+                }
+
+                ShellText {
+                    anchors.centerIn: parent
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    color: Theme.muted
+                    visible: !root.matches.length
+                    text: search.text.trim() ? qsTr("No matching applications.") : qsTr("No applications available.")
+                }
+            }
+
+            ShellText {
+                Layout.fillWidth: true
+                visible: root.errorMessage.length > 0
+                text: root.errorMessage
+                color: Theme.danger
+                font.pixelSize: Theme.smallFontSize
+                wrapMode: Text.WordWrap
+            }
+        }
+    }
+}

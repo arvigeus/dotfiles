@@ -3,9 +3,12 @@ import Quickshell
 import Quickshell.Hyprland
 import "ui"
 import "bar"
+import "launcher"
 
 ShellRoot {
     readonly property QtObject theme: Theme
+
+    Launcher {}
 
     // WORKAROUND: Hyprland lacks geometry/order events; bindings.lua supplies them.
     // If the list order goes stale, check its layoutAction/release hooks and this
