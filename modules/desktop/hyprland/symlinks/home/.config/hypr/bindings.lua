@@ -5,6 +5,17 @@ local menu = "wofi --show drun"
 
 local mainMod = "SUPER"
 
+-- WORKAROUND: missing geometry events (https://github.com/hyprwm/Hyprland/discussions/15519).
+-- Stale bar order? Check this wrapper, release hooks below, and desktop/shell.qml's
+-- "desktop-layout-changed" listener. New reorder paths must notify it too.
+-- Remove these hooks when native geometry/order notifications cover their actions.
+local function layoutAction(action)
+    return function()
+        hl.dispatch(action)
+        hl.dispatch(hl.dsp.event("desktop-layout-changed"))
+    end
+end
+
 hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal))
 hl.bind(mainMod .. " + F", hl.dsp.exec_cmd(fileManager))
 hl.bind(mainMod .. " + B", hl.dsp.exec_cmd(browser))
@@ -23,12 +34,12 @@ hl.bind(mainMod .. " + PRINT", hl.dsp.exec_cmd("desktop-screenshot active-window
 hl.bind(mainMod .. " + CTRL + PRINT", hl.dsp.exec_cmd("desktop-screenshot window"))
 hl.bind("SHIFT + PRINT", hl.dsp.exec_cmd("desktop-screenshot output"))
 hl.bind(mainMod .. " + SHIFT + R", hl.dsp.exec_cmd("kooha"))
-hl.bind(mainMod .. " + period", hl.dsp.layout("center"))
-hl.bind(mainMod .. " + J", hl.dsp.layout("promote")) -- Give a stacked window its own column.
-hl.bind(mainMod .. " + bracketright", hl.dsp.layout("colresize +conf"))
-hl.bind(mainMod .. " + bracketleft",  hl.dsp.layout("colresize -conf"))
-hl.bind(mainMod .. " + SHIFT + left",  hl.dsp.layout("swapcol l"))
-hl.bind(mainMod .. " + SHIFT + right", hl.dsp.layout("swapcol r"))
+hl.bind(mainMod .. " + period", layoutAction(hl.dsp.layout("center")))
+hl.bind(mainMod .. " + J", layoutAction(hl.dsp.layout("promote"))) -- Give a stacked window its own column.
+hl.bind(mainMod .. " + bracketright", layoutAction(hl.dsp.layout("colresize +conf")))
+hl.bind(mainMod .. " + bracketleft",  layoutAction(hl.dsp.layout("colresize -conf")))
+hl.bind(mainMod .. " + SHIFT + left",  layoutAction(hl.dsp.layout("swapcol l")))
+hl.bind(mainMod .. " + SHIFT + right", layoutAction(hl.dsp.layout("swapcol r")))
 
 -- Move focus with mainMod + arrow keys
 hl.bind(mainMod .. " + left",  hl.dsp.layout("focus l"))
@@ -45,12 +56,21 @@ for i = 1, 10 do
 end
 
 -- Scroll the current workspace by columns with mainMod + wheel.
-hl.bind(mainMod .. " + mouse_down", hl.dsp.layout("move +col"))
-hl.bind(mainMod .. " + mouse_up",   hl.dsp.layout("move -col"))
+hl.bind(mainMod .. " + mouse_down", layoutAction(hl.dsp.layout("move +col")))
+hl.bind(mainMod .. " + mouse_up",   layoutAction(hl.dsp.layout("move -col")))
 
 -- Move/resize windows with mainMod + LMB/RMB and dragging
 hl.bind(mainMod .. " + mouse:272", hl.dsp.window.drag(),   { mouse = true })
 hl.bind(mainMod .. " + mouse:273", hl.dsp.window.resize(), { mouse = true })
+
+-- WORKAROUND, paired with layoutAction above: border drags need no modifier;
+-- SUPER can also be released before a drag ends.
+-- Observe releases with any modifiers, without consuming application clicks.
+for _, button in ipairs({ "mouse:272", "mouse:273" }) do
+    hl.bind(button, hl.dsp.event("desktop-layout-changed"), {
+        release = true, ignore_mods = true, non_consuming = true,
+    })
+end
 
 -- Laptop multimedia keys for volume and LCD brightness
 hl.bind("XF86AudioRaiseVolume", hl.dsp.exec_cmd("wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+"), { locked = true, repeating = true })

@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+// Developer preview: run qs --no-duplicate --path preview.qml from this directory.
 import QtQuick
 import QtQuick.Layouts
 import Quickshell

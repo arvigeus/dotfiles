@@ -1334,6 +1334,18 @@
                 "target": "home/.config/quickshell/desktop/bar/Bar.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/BarButton.qml",
+                "target": "home/.config/quickshell/desktop/bar/BarButton.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/WindowList.qml",
+                "target": "home/.config/quickshell/desktop/bar/WindowList.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/WorkspaceList.qml",
+                "target": "home/.config/quickshell/desktop/bar/WorkspaceList.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/LICENSE",
                 "target": "home/.config/quickshell/desktop/icons/LICENSE"
             },

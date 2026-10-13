@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Hyprland
 import "../ui"
 
 PanelWindow {
@@ -10,29 +11,30 @@ PanelWindow {
     implicitHeight: Theme.pillHeight
     exclusiveZone: Theme.pillHeight
     color: "transparent"
+    readonly property HyprlandMonitor monitor: Hyprland.monitorFor(screen)
 
     // Keep the reservation mapped while fullscreen windows cover the Top layer.
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "desktop-bar"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-    mask: Region {}
+    mask: Region {
+        Region { item: workspaces.visible ? workspaces : null; radius: Theme.pillRadius }
+        Region { item: windows.visible ? windows : null; radius: windows.radius }
+    }
 
-    Surface {
+    WorkspaceList {
+        id: workspaces
+        monitor: bar.monitor
         x: Theme.barInset
         y: Theme.pillTopPadding
-        width: Math.min(label.implicitWidth + Theme.padding * 2,
-            Math.max(0, bar.width - Theme.barInset * 2))
-        height: Theme.controlHeight
-        radius: Theme.pillRadius
-        border.width: 0
+        maximumWidth: Math.min(320, Math.max(0, (bar.width - Theme.barInset * 2) / 3))
+    }
 
-        ShellText {
-            id: label
-            anchors.centerIn: parent
-            width: Math.max(0, parent.width - Theme.padding * 2)
-            horizontalAlignment: Text.AlignHCenter
-            elide: Text.ElideRight
-            text: "Desktop"
-        }
+    WindowList {
+        id: windows
+        monitor: bar.monitor
+        x: workspaces.x + (workspaces.visible ? workspaces.width + Theme.spacingMedium : 0)
+        y: Theme.pillTopPadding
+        maximumWidth: Math.max(0, bar.width - x - Theme.barInset)
     }
 }
