@@ -221,6 +221,24 @@
             "topgrade",
             "geekbench"
         ],
+        "packages": [
+            "kitty",
+            "pipewire",
+            "pipewire-alsa",
+            "pipewire-jack",
+            "pipewire-pulse",
+            "gst-plugin-pipewire",
+            "libpulse",
+            "wireplumber",
+            "bluez",
+            "bluez-utils",
+            "networkmanager",
+            "iwd",
+            "network-manager-applet",
+            "tuned",
+            "tuned-ppd",
+            "ufw"
+        ],
         "flatpak": {
             "packages": [
                 {
@@ -640,23 +658,6 @@
                 "ms-vscode.test-adapter-converter": {}
             }
         },
-        "packages": [
-            "pipewire",
-            "pipewire-alsa",
-            "pipewire-jack",
-            "pipewire-pulse",
-            "gst-plugin-pipewire",
-            "libpulse",
-            "wireplumber",
-            "bluez",
-            "bluez-utils",
-            "networkmanager",
-            "iwd",
-            "network-manager-applet",
-            "tuned",
-            "tuned-ppd",
-            "ufw"
-        ],
         "services": [
             "bluetooth.service",
             "NetworkManager.service",
@@ -1272,6 +1273,10 @@
             }
         ],
         "symlinks": [
+            {
+                "source": "modules/base/terminal/symlinks/home/.config/kitty/kitty.conf",
+                "target": "home/.config/kitty/kitty.conf"
+            },
             {
                 "source": "modules/desktop/hyprland/symlinks/home/.config/hypr/animations.lua",
                 "target": "home/.config/hypr/animations.lua"
