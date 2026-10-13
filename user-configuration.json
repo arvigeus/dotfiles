@@ -713,6 +713,11 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/base/terminal/files/etc/xdg/kdeglobals",
+                "target": "/etc/xdg/kdeglobals",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/base/utils/files/etc/profile.d/less.sh",
                 "target": "/etc/profile.d/less.sh",
                 "mode": "0644"
