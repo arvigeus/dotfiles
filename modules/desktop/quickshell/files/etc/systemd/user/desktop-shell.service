@@ -1,0 +1,19 @@
+[Unit]
+Description=Desktop shell
+PartOf=graphical-session.target
+After=graphical-session.target
+Requisite=graphical-session.target
+ConditionEnvironment=WAYLAND_DISPLAY
+ConditionEnvironment=HYPRLAND_INSTANCE_SIGNATURE
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/qs --no-duplicate --path "%E/quickshell/desktop/shell.qml" --no-color
+Environment=QT_QPA_PLATFORM=wayland
+Slice=session.slice
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=5s
+
+[Install]
+WantedBy=graphical-session.target

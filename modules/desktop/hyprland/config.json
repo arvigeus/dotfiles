@@ -12,7 +12,6 @@
     "greeter": null
   },
   "packages": [
-    "quickshell",
     "hyprpolkitagent",
     "hypridle",
     "hyprlock",
