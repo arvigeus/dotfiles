@@ -70,4 +70,5 @@ QtObject {
     // Includes the tiled window's 10 px outer gap in the visual balance.
     readonly property int pillTopPadding: 10
     readonly property int barInset: 14
+    readonly property int drawerWidth: 480
 }

@@ -6,3 +6,11 @@ PassiveToolTip 1.0 PassiveToolTip.qml
 Icon 1.0 Icon.qml
 AppIcon 1.0 AppIcon.qml
 WheelScroll 1.0 WheelScroll.qml
+InteractionState 1.0 InteractionState.qml
+InteractionWindow 1.0 InteractionWindow.qml
+DrawerWindow 1.0 DrawerWindow.qml
+DrawerDefinition 1.0 DrawerDefinition.qml
+DrawerHost 1.0 DrawerHost.qml
+DrawerPage 1.0 DrawerPage.qml
+DrawerColumn 1.0 DrawerColumn.qml
+DrawerBrief 1.0 DrawerBrief.qml

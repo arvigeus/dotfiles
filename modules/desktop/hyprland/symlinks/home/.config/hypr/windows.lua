@@ -18,3 +18,11 @@ hl.window_rule({
     size = { 480, 270 },
     move = { "monitor_w-480-20", "monitor_h-270-20" },
 })
+
+-- Drawers slide in QML; a compositor layer fade would animate them a second time.
+-- Keep this scoped to category drawers so launcher/bar/tooltip motion is unchanged.
+hl.layer_rule({
+    name = "desktop-drawer-motion",
+    match = { namespace = "^desktop-drawer$" },
+    no_anim = true,
+})

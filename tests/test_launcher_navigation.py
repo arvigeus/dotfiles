@@ -23,11 +23,15 @@ class LauncherNavigationTests(unittest.TestCase):
             # PanelWindow has no offscreen backend. Replace only its native
             # surface/shortcut plumbing; selection, handlers, models and rows
             # are the unchanged production source running inside Quickshell.
-            path = root / 'launcher/Launcher.qml'
+            path = root / 'ui/InteractionWindow.qml'
             source = path.read_text().replace(
                 'PanelWindow {', 'FloatingWindow {\n    implicitWidth: 800; implicitHeight: 720', 1)
             source = source.replace('    anchors { top: true; bottom: true; left: true; right: true }\n', '')
             source = source.replace('    exclusionMode: ExclusionMode.Ignore\n', '')
+            source = re.sub(r'^    WlrLayershell\..*\n', '', source, flags=re.M)
+            path.write_text(source)
+            path = root / 'launcher/Launcher.qml'
+            source = path.read_text()
             source = re.sub(r'^    WlrLayershell\..*\n', '', source, flags=re.M)
             source = re.sub(r'    GlobalShortcut \{.*?\n    \}\n', '', source, count=1, flags=re.S)
             # The activation fixture records the actual ID passed by activate().
@@ -46,8 +50,11 @@ class LauncherNavigationTests(unittest.TestCase):
 import QtTest
 import Quickshell
 import "launcher" as App
+import "ui"
 ShellRoot {
-    App.Launcher { id: launcher; targetScreen: Quickshell.screens[0]; opened: true }
+    InteractionState { id: interactions }
+    App.Launcher { id: launcher; interactionState: interactions }
+    Component.onCompleted: launcher.openOn(Quickshell.screens[0])
     TestCase { id: input; parent: launcher.contentItem; when: false }
     property int stage: 0
     property int pointerIndex: -1

@@ -1351,12 +1351,32 @@
                 "target": "home/.config/quickshell/desktop/bar/WorkspaceList.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/AppearanceDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/AppearanceDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/BluetoothDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/BluetoothDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/SpacesDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/SpacesDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/WifiDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/WifiDrawer.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/LICENSE",
                 "target": "home/.config/quickshell/desktop/icons/LICENSE"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/README.md",
                 "target": "home/.config/quickshell/desktop/icons/README.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/bluetooth.svg",
+                "target": "home/.config/quickshell/desktop/icons/bluetooth.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/chevron-down.svg",
@@ -1373,6 +1393,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/chevron-up.svg",
                 "target": "home/.config/quickshell/desktop/icons/chevron-up.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/grip-vertical.svg",
+                "target": "home/.config/quickshell/desktop/icons/grip-vertical.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/monitor.svg",
@@ -1397,6 +1421,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/star.svg",
                 "target": "home/.config/quickshell/desktop/icons/star.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/wifi.svg",
+                "target": "home/.config/quickshell/desktop/icons/wifi.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/x.svg",
@@ -1431,8 +1459,20 @@
                 "target": "home/.config/quickshell/desktop/ui/ButtonBackground.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/DrawerWindow.qml",
+                "target": "home/.config/quickshell/desktop/ui/DrawerWindow.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/Icon.qml",
                 "target": "home/.config/quickshell/desktop/ui/Icon.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/InteractionState.qml",
+                "target": "home/.config/quickshell/desktop/ui/InteractionState.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/InteractionWindow.qml",
+                "target": "home/.config/quickshell/desktop/ui/InteractionWindow.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/PassiveToolTip.qml",

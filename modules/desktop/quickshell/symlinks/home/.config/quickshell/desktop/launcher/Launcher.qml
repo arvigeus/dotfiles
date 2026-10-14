@@ -1,6 +1,5 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
@@ -10,11 +9,9 @@ import Quickshell.Wayland
 import "../ui"
 import "Search.js" as Search
 
-PanelWindow {
+InteractionWindow {
     id: root
 
-    property bool opened: false
-    property ShellScreen targetScreen: null
     property string errorMessage: ""
     property bool launching: false
     property int session: 0
@@ -27,34 +24,8 @@ PanelWindow {
 
     Favorites { id: favorites }
 
-    screen: targetScreen
-    visible: opened && targetScreen !== null
-    anchors { top: true; bottom: true; left: true; right: true }
-    exclusionMode: ExclusionMode.Ignore
-    color: "transparent"
-    WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "desktop-launcher"
-    WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
-
-    function toggle(): void {
-        if (opened) {
-            dismiss();
-            return;
-        }
-        const focused = Hyprland.focusedMonitor;
-        openOn(Quickshell.screens.find(output => output.name === focused?.name) || null);
-    }
-
-    function openOn(output: ShellScreen): void {
-        if (!Quickshell.screens.includes(output))
-            return;
-        targetScreen = output;
-        opened = true;
-    }
-
-    function dismiss(): void {
-        opened = false;
-    }
+    initialFocus: search
 
     onOpenedChanged: {
         if (opened) {
@@ -94,16 +65,6 @@ PanelWindow {
         name: "launcher"
         description: "Open or close application search"
         onPressed: root.toggle()
-    }
-
-    Connections {
-        target: Quickshell
-        function onScreensChanged(): void {
-            if (!Quickshell.screens.includes(root.targetScreen)) {
-                root.dismiss();
-                root.targetScreen = null;
-            }
-        }
     }
 
     function moveSelection(delta: int): void {
@@ -184,16 +145,6 @@ PanelWindow {
         })
     }
 
-    Rectangle {
-        anchors.fill: parent
-        color: "#66000000"
-    }
-    MouseArea {
-        anchors.fill: parent
-        acceptedButtons: Qt.AllButtons
-        onClicked: root.dismiss()
-    }
-
     Surface {
         id: card
         width: Math.min(620, Math.max(0, root.width - Theme.paddingLarge * 2))
@@ -223,9 +174,6 @@ PanelWindow {
                 TextField {
                     id: search
                     objectName: "applicationSearch"
-                    // Wait for native layer focus before enabling text input on
-                    // the new surface; opening/remapping is asynchronous.
-                    Window.onActiveChanged: if (Window.active && root.opened) forceActiveFocus()
                     Layout.fillWidth: true
                     Layout.preferredHeight: Theme.pillHeight
                     placeholderText: qsTr("Search applications…")
@@ -249,7 +197,6 @@ PanelWindow {
                     onAccepted: root.activate(results.currentIndex)
                     Keys.onUpPressed: root.moveSelection(-1)
                     Keys.onDownPressed: root.moveSelection(1)
-                    Keys.onEscapePressed: root.dismiss()
                     Keys.onPressed: event => {
                         if (event.key === Qt.Key_D && event.modifiers === Qt.ControlModifier) {
                             const entry = root.matches[results.currentIndex];

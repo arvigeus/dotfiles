@@ -5,11 +5,17 @@ import Quickshell.Hyprland
 import "ui"
 import "bar"
 import "launcher"
+import "drawers"
 
 ShellRoot {
+    id: root
     readonly property QtObject theme: Theme
 
-    Launcher { id: launcher }
+    InteractionState { id: interactions }
+    Launcher { id: launcher; interactionState: interactions }
+    // The host owns category registration and lazy content; bar summaries do
+    // not instantiate feature pages.
+    Drawers { id: drawers; interactionState: interactions }
 
     // WORKAROUND: Hyprland lacks geometry/order events; bindings.lua supplies them.
     // If the list order goes stale, check its layoutAction/release hooks and this
@@ -50,7 +56,8 @@ ShellRoot {
         Bar {
             required property ShellScreen modelData
             screen: modelData
-            onLauncherRequested: launcher.openOn(screen)
+            onLauncherRequested: launcher.toggleOn(screen)
+            onDrawerRequested: key => drawers.toggleDrawer(key, screen)
         }
     }
 }
