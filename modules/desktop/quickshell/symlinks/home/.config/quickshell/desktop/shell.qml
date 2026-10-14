@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Hyprland
@@ -8,7 +9,7 @@ import "launcher"
 ShellRoot {
     readonly property QtObject theme: Theme
 
-    Launcher {}
+    Launcher { id: launcher }
 
     // WORKAROUND: Hyprland lacks geometry/order events; bindings.lua supplies them.
     // If the list order goes stale, check its layoutAction/release hooks and this
@@ -49,6 +50,7 @@ ShellRoot {
         Bar {
             required property ShellScreen modelData
             screen: modelData
+            onLauncherRequested: launcher.openOn(screen)
         }
     }
 }

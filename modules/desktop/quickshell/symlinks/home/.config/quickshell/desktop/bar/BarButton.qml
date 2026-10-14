@@ -23,11 +23,9 @@ Button {
         elide: Text.ElideRight
     }
 
-    background: Rectangle {
-        radius: Theme.controlRadius
-        color: button.down ? Theme.raised : button.selected ? Theme.accentSurface
-            : button.hovered ? Theme.raised : "transparent"
-        border.width: 1
-        border.color: button.selected ? Theme.accent : "transparent"
+    background: ButtonBackground {
+        highlighted: button.selected
+        pressed: button.down
+        idleColor: button.hovered ? Theme.raised : "transparent"
     }
 }

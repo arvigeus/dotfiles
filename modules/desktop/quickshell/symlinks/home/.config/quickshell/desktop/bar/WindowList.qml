@@ -99,6 +99,7 @@ Surface {
             urgent: modelData?.urgent ?? false
             enabled: Hyprland.usingLua && !!modelData && modelData.address.length > 0
             onClicked: root.activate(modelData)
+            PassiveToolTip { target: button }
 
             contentItem: RowLayout {
                 spacing: Theme.spacingMedium

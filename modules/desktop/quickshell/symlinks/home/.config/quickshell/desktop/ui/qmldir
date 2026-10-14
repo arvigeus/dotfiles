@@ -1,6 +1,8 @@
 singleton Theme 1.0 Theme.qml
 ShellText 1.0 ShellText.qml
 Surface 1.0 Surface.qml
+ButtonBackground 1.0 ButtonBackground.qml
+PassiveToolTip 1.0 PassiveToolTip.qml
 Icon 1.0 Icon.qml
 AppIcon 1.0 AppIcon.qml
 WheelScroll 1.0 WheelScroll.qml

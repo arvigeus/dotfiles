@@ -18,8 +18,14 @@ PanelWindow {
     property string errorMessage: ""
     property bool launching: false
     property int session: 0
+    property string selectionToRestore: ""
+    property bool pointerPositionKnown: false
+    property point lastPointerPosition: Qt.point(0, 0)
+    readonly property var favoriteIds: favorites.ids
     readonly property var candidates: Search.catalogue(DesktopEntries.applications.values)
-    readonly property var matches: Search.matches(candidates, search.text)
+    readonly property var matches: Search.matches(candidates, search.text, favoriteIds)
+
+    Favorites { id: favorites }
 
     screen: targetScreen
     visible: opened && targetScreen !== null
@@ -36,9 +42,14 @@ PanelWindow {
             return;
         }
         const focused = Hyprland.focusedMonitor;
-        targetScreen = Quickshell.screens.find(output => output.name === focused?.name) || null;
-        if (targetScreen)
-            opened = true;
+        openOn(Quickshell.screens.find(output => output.name === focused?.name) || null);
+    }
+
+    function openOn(output: ShellScreen): void {
+        if (!Quickshell.screens.includes(output))
+            return;
+        targetScreen = output;
+        opened = true;
     }
 
     function dismiss(): void {
@@ -48,6 +59,8 @@ PanelWindow {
     onOpenedChanged: {
         if (opened) {
             session++;
+            pointerPositionKnown = false;
+            selectionToRestore = "";
             search.text = "";
             errorMessage = "";
             Qt.callLater(root.resetSelection);
@@ -57,8 +70,23 @@ PanelWindow {
     onMatchesChanged: Qt.callLater(root.resetSelection)
 
     function resetSelection(): void {
-        results.currentIndex = matches.length ? 0 : -1;
-        results.positionViewAtBeginning();
+        const wanted = selectionToRestore;
+        selectionToRestore = "";
+        const index = wanted ? matches.findIndex(entry => entry.id === wanted) : 0;
+        results.currentIndex = matches.length ? Math.max(0, index) : -1;
+        if (results.currentIndex > 0)
+            results.positionViewAtIndex(results.currentIndex, ListView.Contain);
+        else
+            results.positionViewAtBeginning();
+    }
+
+    function toggleFavorite(id: string): void {
+        if (!DesktopEntries.applications.values.some(entry => entry.id === id))
+            return;
+        // Reordering favorites must not change the next Enter target.
+        selectionToRestore = matches[results.currentIndex]?.id || "";
+        favorites.toggle(id);
+        Qt.callLater(root.resetSelection);
     }
 
     GlobalShortcut {
@@ -83,6 +111,36 @@ PanelWindow {
             return;
         results.currentIndex = Math.max(0, Math.min(matches.length - 1, results.currentIndex + delta));
         results.positionViewAtIndex(results.currentIndex, ListView.Contain);
+    }
+
+    function updatePointerSelection(position: point): void {
+        const moved = pointerPositionKnown
+            && (position.x !== lastPointerPosition.x || position.y !== lastPointerPosition.y);
+        lastPointerPosition = position;
+        pointerPositionKnown = true;
+        if (!moved || launching || results.dragging || resultsScrollBar.pressed)
+            return;
+
+        const local = results.mapFromItem(root.contentItem, position.x, position.y);
+        if (local.x < 0 || local.y < 0 || local.x >= results.width || local.y >= results.height)
+            return;
+        const scrollbarPoint = resultsScrollBar.mapFromItem(root.contentItem, position.x, position.y);
+        if (resultsScrollBar.visible && resultsScrollBar.size < 1 && resultsScrollBar.contains(scrollbarPoint))
+            return;
+        const index = results.indexAt(results.contentX + local.x, results.contentY + local.y);
+        if (index >= 0)
+            results.currentIndex = index;
+    }
+
+    HoverHandler {
+        parent: root.contentItem
+        enabled: root.visible
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+        blocking: false
+        // Observe the fixed window, not moving delegates. Mapping establishes a
+        // baseline; only pointer motion can replace the keyboard's Enter target.
+        onPointChanged: if (point.id >= 0) root.updatePointerSelection(point.position)
+        onHoveredChanged: if (!hovered) root.pointerPositionKnown = false
     }
 
     function activate(index: int): void {
@@ -153,8 +211,15 @@ PanelWindow {
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: Theme.spacingMedium
-                Icon { name: "search" }
+                Layout.leftMargin: Theme.spacingMedium
+                Layout.rightMargin: Theme.spacingMedium
+                // The field's padding completes the same icon-to-text gap as a result row.
+                spacing: Theme.spacingSmall
+                Item {
+                    Layout.preferredWidth: 32
+                    Layout.preferredHeight: 32
+                    Icon { anchors.centerIn: parent; name: "search" }
+                }
                 TextField {
                     id: search
                     objectName: "applicationSearch"
@@ -170,18 +235,29 @@ PanelWindow {
                     placeholderTextColor: Theme.muted
                     selectionColor: Theme.accent
                     selectedTextColor: Theme.accentText
-                    leftPadding: Theme.gap
+                    leftPadding: Theme.spacingMedium
                     rightPadding: Theme.gap
                     background: Rectangle {
                         radius: Theme.controlRadius
                         color: Theme.background
                         border.color: search.activeFocus ? Theme.accent : Theme.border
                     }
-                    onTextChanged: root.errorMessage = ""
+                    onTextChanged: {
+                        root.errorMessage = "";
+                        root.selectionToRestore = "";
+                    }
                     onAccepted: root.activate(results.currentIndex)
                     Keys.onUpPressed: root.moveSelection(-1)
                     Keys.onDownPressed: root.moveSelection(1)
                     Keys.onEscapePressed: root.dismiss()
+                    Keys.onPressed: event => {
+                        if (event.key === Qt.Key_D && event.modifiers === Qt.ControlModifier) {
+                            const entry = root.matches[results.currentIndex];
+                            if (entry && !root.launching)
+                                root.toggleFavorite(entry.id);
+                            event.accepted = true;
+                        }
+                    }
                 }
             }
 
@@ -197,7 +273,7 @@ PanelWindow {
                 // only while mapped, avoiding icon work at invalid hidden sizes.
                 model: ScriptModel { values: root.visible ? root.matches : [] }
                 currentIndex: -1
-                ScrollBar.vertical: ScrollBar {}
+                ScrollBar.vertical: ScrollBar { id: resultsScrollBar }
                 WheelScroll { view: results }
 
                 delegate: Button {
@@ -209,20 +285,20 @@ PanelWindow {
                     padding: Theme.spacingMedium
                     hoverEnabled: true
                     focusPolicy: Qt.NoFocus
-                    text: modelData.name
+                    // Always show the Enter target, including the initial first result.
+                    readonly property bool rowHighlighted: ListView.isCurrentItem
+                    // Native catalogue removals can clear an entry before its row is disposed.
+                    text: modelData?.name || ""
                     enabled: !root.launching
+                    onPressed: results.currentIndex = index
                     onClicked: root.activate(index)
-                    background: Rectangle {
-                        radius: Theme.controlRadius
-                        color: results.currentIndex === resultButton.index ? Theme.accentSurface
-                            : resultButton.hovered ? Theme.raised : "transparent"
-                        border.color: results.currentIndex === resultButton.index ? Theme.accent : "transparent"
-                        border.width: 1
+                    background: ButtonBackground {
+                        highlighted: resultButton.rowHighlighted
                     }
                     contentItem: RowLayout {
                         spacing: Theme.gap
                         AppIcon {
-                            icon: resultButton.modelData.icon
+                            icon: resultButton.modelData?.icon || ""
                             Layout.preferredWidth: 32
                             Layout.preferredHeight: 32
                         }
@@ -236,11 +312,31 @@ PanelWindow {
                             }
                             ShellText {
                                 Layout.fillWidth: true
-                                text: resultButton.modelData.genericName || resultButton.modelData.id
+                                text: resultButton.modelData?.genericName || resultButton.modelData?.id || ""
                                 color: Theme.muted
                                 font.pixelSize: Theme.smallFontSize
                                 elide: Text.ElideRight
                             }
+                        }
+                        Button {
+                            id: favoriteButton
+                            objectName: "favorite-" + (resultButton.modelData?.id || "")
+                            Layout.preferredWidth: Theme.controlHeight
+                            Layout.preferredHeight: Theme.controlHeight
+                            padding: Theme.spacingMedium
+                            hoverEnabled: true
+                            focusPolicy: Qt.NoFocus
+                            readonly property bool favorite: root.favoriteIds.includes(resultButton.modelData?.id)
+                            text: favorite ? qsTr("Remove %1 from favorites").arg(resultButton.text)
+                                : qsTr("Add %1 to favorites").arg(resultButton.text)
+                            PassiveToolTip { target: favoriteButton }
+                            onPressed: results.currentIndex = resultButton.index
+                            onClicked: root.toggleFavorite(resultButton.modelData?.id || "")
+                            contentItem: Icon {
+                                name: favoriteButton.favorite ? "star-filled" : "star"
+                                color: resultButton.rowHighlighted ? Theme.accent : Theme.muted
+                            }
+                            background: null
                         }
                     }
                 }

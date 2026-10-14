@@ -4,9 +4,10 @@
 
 | Shortcut                    | Action                                             |
 | --------------------------- | -------------------------------------------------- |
-| Win+R                      | Open / close application search.                   |
-| Ctrl+Win+Up / Down          | Go to the workspace above / below.                |
-| Ctrl+Win+Shift+Up / Down    | Move the active window above / below and follow it. |
+| Win+R                       | Open / close application search.                   |
+| Ctrl+D (in search)          | Toggle the selected app's favorite.                 |
+| Ctrl+Win+Up / Down           | Go to the workspace above / below.                  |
+| Ctrl+Win+Shift+Up / Down     | Move the active window above / below and follow it. |
 | Win+Arrow                   | Focus the window in that direction.                |
 | Win+Shift+Left / Right      | Move the active column left / right.               |
 | Win+J                       | Give a stacked window its own column.              |
@@ -15,7 +16,7 @@
 | Win+mouse wheel             | Scroll through columns.                            |
 | Win+M                       | Toggle maximization.                               |
 | Win+V                       | Toggle floating.                                   |
-| Win+left-drag / right-drag  | Move / resize a window.                            |
+| Win+left-drag / right-drag   | Move / resize a window.                             |
 | Win+Q / Alt+F4              | Close the active window.                           |
 
 Workspace navigation stays on the current display and never wraps. At either
