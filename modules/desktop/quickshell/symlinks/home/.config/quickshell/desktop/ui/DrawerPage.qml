@@ -11,6 +11,7 @@ FocusScope {
     property bool active: false
     property ShellScreen screen: null
     property Item initialFocus: null
+    property Component headerActions: null
     signal closeRequested()
     signal drawerRequested(string key)
 }

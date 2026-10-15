@@ -20,55 +20,33 @@
 | Win+left-drag / right-drag | Move / resize a window.                             |
 | Win+Q / Alt+F4             | Close the active window.                            |
 
-Workspace navigation stays on the current display and never wraps. At either
-end, a new workspace is created only if the current one contains windows. An
-empty workspace still allows returning to an existing neighbor and disappears
-when you leave it. With a single empty workspace, both directions are disabled.
-The window strip shows only the current workspace's windows.
+Escape or clicking outside closes search/drawers. Opening another replaces the
+current one. Scroll over the bar islands to reach buttons on narrow displays.
 
-Three-finger up/down swipes use the same rules, switching once when the swipe
-finishes. Three-finger horizontal swipes continue scrolling through columns.
+Workspace navigation stays on the current display without wrapping. A populated
+workspace can create a new neighbor; empty workspaces disappear when left.
+Three-finger vertical swipes switch workspaces; horizontal swipes scroll columns.
+Weather, language, battery and notification indicators are currently samples.
 
-Escape or a click outside search or a drawer closes it and returns keyboard
-control to applications. Opening another drawer replaces the current surface.
+## Networking
 
-The right-side islands are Tray, Tools, System, and Notifications.
-Battery and Performance are separate destinations; Performance groups CPU, GPU,
-and memory. Keyboard sits between Microphone and Displays in System and shows
-the input language. The clock shows the current time; weather, language, battery, and
-notification indicators are samples. On narrow
-displays, scroll over the islands to reach the remaining buttons.
+- Click the Wireless icon to toggle Wi-Fi; click a network/VPN to connect or
+  disconnect. Hover for details. Passwords submit with Enter or the arrow button.
+- The pencil beside Close opens NetworkManager for all connection types.
+  Cloudflare's settings menu contains modes and registration.
+- The speed-test button starts/cancels a test of the current internet route,
+  including VPNs. The footer shows local transfer rates and adapter link speed.
 
-## Hide or show the bar
+## Service
 
-To hide it and give windows the extra space:
-
-```sh
-systemctl --user stop desktop-shell.service
-```
-
-To show it again:
-
-```sh
-systemctl --user start desktop-shell.service
-```
-
-## Troubleshooting
-
-If the shell is missing, unresponsive, or shows windows in the wrong order, restart
-it from a terminal in your desktop session:
-
-```sh
-systemctl --user restart desktop-shell.service
-```
-
-If the problem persists, check its status and recent messages:
+QML edits reload automatically. Show or hide the shell with
+`systemctl --user start desktop-shell.service` or
+`systemctl --user stop desktop-shell.service`.
+Stopping/restarting may also close applications launched by the shell.
 
 ```sh
 systemctl --user status desktop-shell.service
 journalctl --user -b -u desktop-shell.service -n 50
 ```
 
-Include those messages and the action that caused the problem when reporting it.
-
-If search cannot launch an application, check its displayed error.
+See [implementation notes](ARCHITECTURE.md) for development and troubleshooting.

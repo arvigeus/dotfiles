@@ -214,6 +214,7 @@
             "chatgpt-desktop",
             "pi-coding-agent",
             "arkenfox-user.js",
+            "librespeed-cli-bin",
             "fresh-editor-bin",
             "cloudflare-warp-nox-bin",
             "vlc-pause-click-plugin",
@@ -824,6 +825,11 @@
                 "mode": "0755"
             },
             {
+                "source": "modules/desktop/quickshell/files/etc/polkit-1/rules.d/50-desktop-warp.rules",
+                "target": "/etc/polkit-1/rules.d/50-desktop-warp.rules",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/desktop/quickshell/files/etc/systemd/user/desktop-shell.service",
                 "target": "/etc/systemd/user/desktop-shell.service",
                 "mode": "0644"
@@ -1343,6 +1349,26 @@
                 "target": "home/.config/quickshell/desktop/bar/BarButton.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/BarEntry.qml",
+                "target": "home/.config/quickshell/desktop/bar/BarEntry.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/BarIsland.qml",
+                "target": "home/.config/quickshell/desktop/bar/BarIsland.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/NetworkStatus.qml",
+                "target": "home/.config/quickshell/desktop/bar/NetworkStatus.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/StatusButton.qml",
+                "target": "home/.config/quickshell/desktop/bar/StatusButton.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/StatusIslands.qml",
+                "target": "home/.config/quickshell/desktop/bar/StatusIslands.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/WindowList.qml",
                 "target": "home/.config/quickshell/desktop/bar/WindowList.qml"
             },
@@ -1351,20 +1377,128 @@
                 "target": "home/.config/quickshell/desktop/bar/WorkspaceList.qml"
             },
             {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/AppearanceDrawer.qml",
-                "target": "home/.config/quickshell/desktop/drawers/AppearanceDrawer.qml"
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/BatteryDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/BatteryDrawer.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/BluetoothDrawer.qml",
                 "target": "home/.config/quickshell/desktop/drawers/BluetoothDrawer.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/ClipboardDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/ClipboardDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/DisksDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/DisksDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/DisplaysDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/DisplaysDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/Drawers.qml",
+                "target": "home/.config/quickshell/desktop/drawers/Drawers.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/GeneralDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/GeneralDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/KeyboardDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/KeyboardDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/MicrophoneDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/MicrophoneDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/NotificationsDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/NotificationsDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/PerformanceDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/PerformanceDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/RecordingDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/RecordingDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/ScreenshotDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/ScreenshotDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/SoundDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/SoundDrawer.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/SpacesDrawer.qml",
                 "target": "home/.config/quickshell/desktop/drawers/SpacesDrawer.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/TrayDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/TrayDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/WeatherDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/WeatherDrawer.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/WifiDrawer.qml",
                 "target": "home/.config/quickshell/desktop/drawers/WifiDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/Models.js",
+                "target": "home/.config/quickshell/desktop/drawers/network/Models.js"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkButton.qml",
+                "target": "home/.config/quickshell/desktop/drawers/network/NetworkButton.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkChoice.qml",
+                "target": "home/.config/quickshell/desktop/drawers/network/NetworkChoice.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkField.qml",
+                "target": "home/.config/quickshell/desktop/drawers/network/NetworkField.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkIconButton.qml",
+                "target": "home/.config/quickshell/desktop/drawers/network/NetworkIconButton.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkMenuItem.qml",
+                "target": "home/.config/quickshell/desktop/drawers/network/NetworkMenuItem.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkRow.qml",
+                "target": "home/.config/quickshell/desktop/drawers/network/NetworkRow.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkSection.qml",
+                "target": "home/.config/quickshell/desktop/drawers/network/NetworkSection.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/network/NetworkService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/SpeedTestService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/network/SpeedTestService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/WifiIcon.qml",
+                "target": "home/.config/quickshell/desktop/drawers/network/WifiIcon.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/backend.py",
+                "target": "home/.config/quickshell/desktop/drawers/network/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/qmldir",
+                "target": "home/.config/quickshell/desktop/drawers/network/qmldir"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/LICENSE",
@@ -1375,8 +1509,40 @@
                 "target": "home/.config/quickshell/desktop/icons/README.md"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/arrow-down.svg",
+                "target": "home/.config/quickshell/desktop/icons/arrow-down.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/arrow-right.svg",
+                "target": "home/.config/quickshell/desktop/icons/arrow-right.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/arrow-up.svg",
+                "target": "home/.config/quickshell/desktop/icons/arrow-up.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/battery-medium.svg",
+                "target": "home/.config/quickshell/desktop/icons/battery-medium.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/bell.svg",
+                "target": "home/.config/quickshell/desktop/icons/bell.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/bluetooth.svg",
                 "target": "home/.config/quickshell/desktop/icons/bluetooth.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/calendar-days.svg",
+                "target": "home/.config/quickshell/desktop/icons/calendar-days.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/camera.svg",
+                "target": "home/.config/quickshell/desktop/icons/camera.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/check.svg",
+                "target": "home/.config/quickshell/desktop/icons/check.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/chevron-down.svg",
@@ -1395,16 +1561,96 @@
                 "target": "home/.config/quickshell/desktop/icons/chevron-up.svg"
             },
             {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/grip-vertical.svg",
-                "target": "home/.config/quickshell/desktop/icons/grip-vertical.svg"
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/clipboard.svg",
+                "target": "home/.config/quickshell/desktop/icons/clipboard.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/cloud-sun.svg",
+                "target": "home/.config/quickshell/desktop/icons/cloud-sun.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/cloud.svg",
+                "target": "home/.config/quickshell/desktop/icons/cloud.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/cloudflare.svg",
+                "target": "home/.config/quickshell/desktop/icons/cloudflare.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/download.svg",
+                "target": "home/.config/quickshell/desktop/icons/download.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/eye-off.svg",
+                "target": "home/.config/quickshell/desktop/icons/eye-off.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/eye.svg",
+                "target": "home/.config/quickshell/desktop/icons/eye.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/gauge.svg",
+                "target": "home/.config/quickshell/desktop/icons/gauge.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/hard-drive.svg",
+                "target": "home/.config/quickshell/desktop/icons/hard-drive.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/info.svg",
+                "target": "home/.config/quickshell/desktop/icons/info.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/keyboard.svg",
+                "target": "home/.config/quickshell/desktop/icons/keyboard.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/languages.svg",
+                "target": "home/.config/quickshell/desktop/icons/languages.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/link-2-off.svg",
+                "target": "home/.config/quickshell/desktop/icons/link-2-off.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/link.svg",
+                "target": "home/.config/quickshell/desktop/icons/link.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/list.svg",
+                "target": "home/.config/quickshell/desktop/icons/list.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/lock-keyhole.svg",
+                "target": "home/.config/quickshell/desktop/icons/lock-keyhole.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/mic.svg",
+                "target": "home/.config/quickshell/desktop/icons/mic.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/monitor.svg",
                 "target": "home/.config/quickshell/desktop/icons/monitor.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/network.svg",
+                "target": "home/.config/quickshell/desktop/icons/network.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/pencil.svg",
+                "target": "home/.config/quickshell/desktop/icons/pencil.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/plus.svg",
                 "target": "home/.config/quickshell/desktop/icons/plus.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/power.svg",
+                "target": "home/.config/quickshell/desktop/icons/power.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/refresh-cw.svg",
+                "target": "home/.config/quickshell/desktop/icons/refresh-cw.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/search.svg",
@@ -1415,12 +1661,44 @@
                 "target": "home/.config/quickshell/desktop/icons/settings.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/shield-lock.svg",
+                "target": "home/.config/quickshell/desktop/icons/shield-lock.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/star-filled.svg",
                 "target": "home/.config/quickshell/desktop/icons/star-filled.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/star.svg",
                 "target": "home/.config/quickshell/desktop/icons/star.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/trash.svg",
+                "target": "home/.config/quickshell/desktop/icons/trash.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/video.svg",
+                "target": "home/.config/quickshell/desktop/icons/video.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/volume-2.svg",
+                "target": "home/.config/quickshell/desktop/icons/volume-2.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/wifi-high.svg",
+                "target": "home/.config/quickshell/desktop/icons/wifi-high.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/wifi-low.svg",
+                "target": "home/.config/quickshell/desktop/icons/wifi-low.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/wifi-off.svg",
+                "target": "home/.config/quickshell/desktop/icons/wifi-off.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/wifi-zero.svg",
+                "target": "home/.config/quickshell/desktop/icons/wifi-zero.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/wifi.svg",
@@ -1455,8 +1733,32 @@
                 "target": "home/.config/quickshell/desktop/ui/AppIcon.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/BusySpinner.qml",
+                "target": "home/.config/quickshell/desktop/ui/BusySpinner.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ButtonBackground.qml",
                 "target": "home/.config/quickshell/desktop/ui/ButtonBackground.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/DrawerBrief.qml",
+                "target": "home/.config/quickshell/desktop/ui/DrawerBrief.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/DrawerColumn.qml",
+                "target": "home/.config/quickshell/desktop/ui/DrawerColumn.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/DrawerDefinition.qml",
+                "target": "home/.config/quickshell/desktop/ui/DrawerDefinition.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/DrawerHost.qml",
+                "target": "home/.config/quickshell/desktop/ui/DrawerHost.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/DrawerPage.qml",
+                "target": "home/.config/quickshell/desktop/ui/DrawerPage.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/DrawerWindow.qml",
@@ -1473,6 +1775,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/InteractionWindow.qml",
                 "target": "home/.config/quickshell/desktop/ui/InteractionWindow.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/NetworkIcons.js",
+                "target": "home/.config/quickshell/desktop/ui/NetworkIcons.js"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/PassiveToolTip.qml",
@@ -1595,6 +1901,8 @@
         "quickshell",
         "gtk3",
         "xdg-terminal-exec",
+        "python-gobject",
+        "network-manager-applet",
         "sqlite",
         "sqlitebrowser",
         "micro",

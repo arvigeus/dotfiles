@@ -65,9 +65,15 @@ QtObject {
                 if not re.search(r'^import QtQuick$', source, flags=re.M):
                     source = 'import QtQuick\n' + source
                 source = source.replace('DrawerPage {', f'''DrawerPage {{
-    Component.onCompleted: ProbeState.record("created:{key}")
-    Component.onDestruction: ProbeState.record("destroyed:{key}")
-    onActiveChanged: ProbeState.record("active:{key}:" + active)
+    Item {{
+        id: pageLifecycleProbe
+        Component.onCompleted: ProbeState.record("created:{key}")
+        Component.onDestruction: ProbeState.record("destroyed:{key}")
+        Connections {{
+            target: pageLifecycleProbe.parent
+            function onActiveChanged() {{ ProbeState.record("active:{key}:" + pageLifecycleProbe.parent.active); }}
+        }}
+    }}
 ''', 1)
                 path.write_text(source)
             # An additional drawer requires no host/shell/window-rule changes. Its
@@ -200,10 +206,16 @@ ShellRoot {
                 input.mouseClick(wifi, 17, 17); sole("wifi");
             } else if (stage === 9) {
                 check(drawers.currentPage && drawers.currentPage.active && ProbeState.count("created:wifi") === 1, "Wi-Fi lazy load");
+                const edit = find(drawers.contentItem, "networkEdit");
+                const close = find(drawers.contentItem, "drawerClose");
+                check(edit && edit.mapToItem(close.parent, edit.width, 0).x < close.x,
+                    "network management icon is not before close in header");
+                check(!find(drawers.currentPage, "networkEdit") && !find(drawers.contentItem, "vpnEdit"), "duplicate section management controls");
                 check(!ProbeState.count("created:bluetooth"), "Bluetooth loaded with Wi-Fi");
                 check(ProbeState.count("destroyed:spaces") === 1, "replacement retained old page");
                 input.mouseClick(find(bar.contentItem, "bluetoothButton"), 17, 17); sole("bluetooth");
             } else if (stage === 10) {
+                check(!find(drawers.contentItem, "networkEdit"), "Wi-Fi header action leaked into another drawer");
                 check(ProbeState.count("created:bluetooth") === 1 && ProbeState.count("destroyed:wifi") === 1, "category replacement lifecycle");
                 input.mouseClick(find(bar.contentItem, "bluetoothButton"), 17, 17); sole(null);
             } else if (stage === 11) {
@@ -256,7 +268,10 @@ ShellRoot {
             } else if (stage >= 20 && stage < 20 + previewKeys.length) {
                 if (stage > 20) {
                     check(drawers.currentPage !== null, "preview page did not load");
-                    check(find(drawers.contentItem, "drawerBrief").text.length > 0, "preview draft missing");
+                    if (previewKeys[stage - 21] === "wifi")
+                        check(find(drawers.contentItem, "networkScroll"), "Wi-Fi controls missing");
+                    else
+                        check(find(drawers.contentItem, "drawerBrief").text.length > 0, "preview draft missing");
                 }
                 const key = previewKeys[stage - 20];
                 const button = find(bar.contentItem, key + "Button");

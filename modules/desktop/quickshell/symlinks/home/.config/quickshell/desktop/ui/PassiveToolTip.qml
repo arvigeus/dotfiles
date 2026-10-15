@@ -7,6 +7,7 @@ PopupWindow {
 
     required property T.AbstractButton target
     property string text: target?.text || ""
+    property int maximumLineCount: 6
     property bool ready: false
     readonly property bool requested: !!target && target.hovered && !target.down
         && target.enabled && target.visible && text.length > 0
@@ -49,7 +50,7 @@ PopupWindow {
             // Changing window titles need text layout only while a tip is shown.
             text: root.visible ? root.text : ""
             wrapMode: Text.Wrap
-            maximumLineCount: 6
+            maximumLineCount: root.maximumLineCount
             elide: Text.ElideRight
         }
     }

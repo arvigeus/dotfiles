@@ -18,6 +18,7 @@ DrawerWindow {
     title: currentDrawer?.title ?? ""
     leftEdge: currentDrawer?.edge === DrawerDefinition.Left
     contentInitialFocus: currentPage?.initialFocus ?? null
+    headerActions: currentPage?.headerActions ?? null
     WlrLayershell.namespace: "desktop-drawer"
 
     function definition(key: string): DrawerDefinition {
@@ -96,7 +97,7 @@ DrawerWindow {
         }
     }
 
-    BusyIndicator {
+    BusySpinner {
         anchors.centerIn: parent
         visible: page.status === Loader.Loading
         running: visible && root.opened

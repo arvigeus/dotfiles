@@ -17,9 +17,8 @@ Item {
     height: implicitHeight
     clip: true
 
-    // Sample status is confined to these view models. Bind live icons, labels,
-    // badges and attention here later; do not instantiate feature pages for it.
-    // The clock is real. Weather, language, battery and notification status are mock.
+    // Feature pages stay lazy. Wi-Fi and the clock are live; other entries are previews.
+    NetworkStatus { id: networkStatus }
     SystemClock { id: clock; precision: SystemClock.Minutes }
 
     Flickable {
@@ -66,7 +65,7 @@ Item {
                 id: system
                 objectName: "systemIsland"
                 entries: [
-                    BarEntry { key: "wifi"; title: qsTr("Wi-Fi"); iconName: "wifi" },
+                    BarEntry { key: "wifi"; title: qsTr("Wi-Fi"); iconName: networkStatus.iconName; description: networkStatus.description },
                     BarEntry { key: "bluetooth"; title: qsTr("Bluetooth"); iconName: "bluetooth" },
                     BarEntry { key: "sound"; title: qsTr("Sound"); iconName: "volume-2" },
                     BarEntry { key: "microphone"; title: qsTr("Microphone"); iconName: "mic" },

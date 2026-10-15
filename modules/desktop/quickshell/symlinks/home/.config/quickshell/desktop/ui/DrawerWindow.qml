@@ -12,6 +12,7 @@ InteractionWindow {
     readonly property int drawerWidth: Theme.drawerWidth
     property real slideProgress: 0
     property Item contentInitialFocus: null
+    property Component headerActions: null
     default property alias drawerContent: body.data
     initialFocus: contentInitialFocus ?? closeButton
     // Keep this true while open too: opened/keepVisible must not both become
@@ -89,6 +90,13 @@ InteractionWindow {
                     font.weight: Font.DemiBold
                     Layout.fillWidth: true
                     elide: Text.ElideRight
+                }
+                Loader {
+                    objectName: "drawerHeaderActions"
+                    active: root.headerActions !== null
+                    visible: active
+                    sourceComponent: root.headerActions
+                    Layout.alignment: Qt.AlignVCenter
                 }
                 Button {
                     id: closeButton

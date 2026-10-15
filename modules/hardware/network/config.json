@@ -7,6 +7,9 @@
         "type": "nm_iwd"
     },
     "extra": {
+        "aur_packages": [
+            "librespeed-cli-bin"
+        ],
         "packages": [
             "networkmanager",
             "iwd",

@@ -14,3 +14,4 @@ DrawerHost 1.0 DrawerHost.qml
 DrawerPage 1.0 DrawerPage.qml
 DrawerColumn 1.0 DrawerColumn.qml
 DrawerBrief 1.0 DrawerBrief.qml
+BusySpinner 1.0 BusySpinner.qml
