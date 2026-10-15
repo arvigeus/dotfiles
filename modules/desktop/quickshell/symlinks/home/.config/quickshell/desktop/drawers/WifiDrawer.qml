@@ -420,7 +420,7 @@ DrawerPage {
                             verticalAlignment: Text.AlignVCenter
                             font.weight: Font.Medium
                             elide: Text.ElideRight
-                            color: speedButton.hovered || speedButton.visualFocus ? Theme.accent : Theme.text
+                            color: Theme.text
                         }
                         ShellText {
                             id: speedDetails

@@ -23,7 +23,7 @@ MenuItem {
         ShellText {
             text: root.text
             Layout.fillWidth: true
-            color: root.highlighted ? Theme.accent : Theme.text
+            color: Theme.text
         }
     }
     background: ButtonBackground { highlighted: root.highlighted; pressed: root.down }

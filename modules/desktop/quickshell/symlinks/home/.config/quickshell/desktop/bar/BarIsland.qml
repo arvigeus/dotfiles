@@ -14,7 +14,7 @@ Surface {
     Row {
         id: buttons
         anchors.centerIn: parent
-        spacing: Theme.spacingSmall
+        spacing: 0
         Repeater {
             model: root.entries
             delegate: StatusButton {

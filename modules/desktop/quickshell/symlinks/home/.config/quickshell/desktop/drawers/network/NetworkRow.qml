@@ -34,7 +34,7 @@ Button {
             text: root.text
             textFormat: Text.PlainText
             elide: Text.ElideRight
-            color: root.foreground
+            color: root.highlighted || root.connected ? Theme.text : Theme.muted
         }
     }
     Component {
