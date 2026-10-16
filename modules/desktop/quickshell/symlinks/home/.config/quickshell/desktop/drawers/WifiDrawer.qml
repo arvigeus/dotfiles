@@ -368,6 +368,28 @@ DrawerPage {
             }
         }
         Button {
+            id: stats
+            objectName: "networkStats"
+            visible: root.statsDevice !== null
+            Layout.fillWidth: true
+            implicitHeight: 26
+            padding: 4
+            hoverEnabled: true
+            focusPolicy: Qt.NoFocus
+            text: qsTr("Transfer rates for %1. Link speed is the negotiated adapter rate, not an internet speed test.").arg(root.statsDevice?.interface ?? "")
+            contentItem: RowLayout {
+                spacing: 6
+                Icon { name: "arrow-down"; Layout.preferredWidth: 14; Layout.preferredHeight: 14; color: Theme.muted }
+                Note { objectName: "downloadRate"; text: root.rateText(root.rates?.down); Layout.fillWidth: false; font.family: Theme.monospaceFamily }
+                Icon { name: "arrow-up"; Layout.preferredWidth: 14; Layout.preferredHeight: 14; color: Theme.muted }
+                Note { text: root.rateText(root.rates?.up); Layout.fillWidth: false; font.family: Theme.monospaceFamily }
+                Item { Layout.fillWidth: true }
+                Note { visible: !!root.statsDevice?.speed; text: (root.statsDevice?.speed ?? 0) + " Mb/s"; Layout.fillWidth: false }
+            }
+            background: Item {}
+            PassiveToolTip { target: stats }
+        }
+        Button {
             id: speedButton
             objectName: "speedTestButton"
             Layout.fillWidth: true
@@ -462,28 +484,6 @@ DrawerPage {
                     .arg(root.speedTest.result.jitter.toFixed(1)).arg(root.speedTest.result.timestamp)
                     : root.speedTest.error || qsTr("Measures the current internet route, including any VPN. Downloads and uploads test data."))
             }
-        }
-        Button {
-            id: stats
-            objectName: "networkStats"
-            visible: root.statsDevice !== null
-            Layout.fillWidth: true
-            implicitHeight: 26
-            padding: 4
-            hoverEnabled: true
-            focusPolicy: Qt.NoFocus
-            text: qsTr("Transfer rates for %1. Link speed is the negotiated adapter rate, not an internet speed test.").arg(root.statsDevice?.interface ?? "")
-            contentItem: RowLayout {
-                spacing: 6
-                Icon { name: "arrow-down"; Layout.preferredWidth: 14; Layout.preferredHeight: 14; color: Theme.muted }
-                Note { objectName: "downloadRate"; text: root.rateText(root.rates?.down); Layout.fillWidth: false; font.family: Theme.monospaceFamily }
-                Icon { name: "arrow-up"; Layout.preferredWidth: 14; Layout.preferredHeight: 14; color: Theme.muted }
-                Note { text: root.rateText(root.rates?.up); Layout.fillWidth: false; font.family: Theme.monospaceFamily }
-                Item { Layout.fillWidth: true }
-                Note { visible: !!root.statsDevice?.speed; text: (root.statsDevice?.speed ?? 0) + " Mb/s"; Layout.fillWidth: false }
-            }
-            background: Item {}
-            PassiveToolTip { target: stats }
         }
     }
 }
