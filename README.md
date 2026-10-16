@@ -74,4 +74,4 @@ run `desktop-session` to reopen Hyprland or `gaming-session` to enter Steam
 Gaming Mode. Exiting either session returns to the terminal.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the module conventions and execution
-model, and [scripts/README.md](scripts/README.md) for execution-tool details.
+model, and [execution-tool details](scripts/ARCHITECTURE.md) for the scripts.

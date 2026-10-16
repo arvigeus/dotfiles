@@ -1,8 +1,9 @@
 # Kodi media center
 
-https://kodi.tv/
+[Upstream](https://kodi.tv/)
 
-Shortcuts:
-\  toggle fullscreen
-o  player process info
-x  stop movie
+| Shortcut | Action |
+| --- | --- |
+| `\` | Toggle fullscreen |
+| `o` | Player process info |
+| `x` | Stop playback |

@@ -155,7 +155,10 @@ for directory in module_dirs:
         for source in sorted((directory / kind).rglob('*')):
             if not source.is_file():
                 continue
-            relative = source.relative_to(directory / kind).as_posix()
+            asset = source.relative_to(directory / kind)
+            if '__pycache__' in asset.parts or asset.suffix in ('.pyc', '.pyo'):
+                continue
+            relative = asset.as_posix()
             target = relative if relative.startswith('home/') else '/' + relative
             if target in destinations:
                 raise ValueError(f'Multiple modules provide {target}')

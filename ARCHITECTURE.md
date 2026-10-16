@@ -21,6 +21,11 @@ combined; duplicate entries are removed except for `custom_commands`. Conflictin
 scalar values fail generation. Native top-level options are checked during
 generation; `extra` has no custom schema validator.
 
+`modules/hosts/<name>` owns machine identity and installation choices, including
+disk layout. `modules/hardware/devices/<name>` owns that machine's hardware
+settings and device aliases. Reusable accessories belong under
+`modules/hardware/peripherals/`; their matching rules can travel between hosts.
+
 Native archinstall fields control packages and services. `extra` holds custom
 metadata, including AUR packages, Flatpak remotes/apps, assets, and hooks.
 `extra.packages`, `extra.services`, `extra.disabled_services`, and
@@ -52,6 +57,10 @@ actions. Avoid explicit service restarts; users reboot after applying changes.
 directory, `home/` targets the regular user's home and other paths target `/`.
 Keep application-rewritten configuration in `files/home/` to avoid checkout noise.
 Use plain installed filenames such as `bash.sh` or `fcitx.conf`.
+
+The XDG module declares directories in both shell startup and the systemd user
+environment. Cache files use `~/.local/cache`; other XDG directories use their
+standard defaults.
 
 Scripts write generated home configuration into a temporary staging home.
 Home outputs are published with user ownership; generated outputs are regular
@@ -91,5 +100,5 @@ exports do not carry between commands. Shared staging and temporary invocation
 context bridge those commands and are cleaned up after completion or on the next
 invocation following an interruption. They are not system-state manifests.
 
-See [scripts/README.md](scripts/README.md) for executor and adapter details and
-[scripts/helpers/README.md](scripts/helpers/README.md) for shared helpers.
+See [scripts/ARCHITECTURE.md](scripts/ARCHITECTURE.md) for executor, adapter and
+shared-helper details.

@@ -197,6 +197,27 @@ class GenerationTests(unittest.TestCase):
             self.assertIn('Multiple modules provide home/.config/shared.conf', result.stderr)
             self.assertFalse((repo / 'user-configuration.json').exists())
 
+    def test_file_manifests_exclude_python_bytecode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            shutil.copy(REPO / 'generate-config.py', repo)
+            shutil.copytree(REPO / 'scripts', repo / 'scripts')
+            (repo / 'host').write_text('vm\n')
+            host = repo / 'modules/hosts/vm'
+            host.mkdir(parents=True)
+            (host / 'config.json').write_text('{"hostname": "vm"}')
+            for kind in ('files', 'symlinks'):
+                assets = repo / 'modules/example' / kind / 'home/.config' / kind
+                for name in ('backend.py', 'backend.pyc', 'backend.pyo', '__pycache__/backend.cpython-314.pyc', '__pycache__/metadata.json'):
+                    path = assets / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text('test\n')
+            subprocess.run(['python3', str(repo / 'generate-config.py')], check=True, capture_output=True)
+            generated = json.loads((repo / 'user-configuration.json').read_text())
+            for kind in ('files', 'symlinks'):
+                self.assertEqual([entry['target'] for entry in generated['extra'][kind]],
+                                 [f'home/.config/{kind}/backend.py'])
+
 
 if __name__ == '__main__':
     unittest.main()

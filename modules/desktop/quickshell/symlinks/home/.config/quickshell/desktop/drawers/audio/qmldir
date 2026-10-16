@@ -1,0 +1,6 @@
+singleton AudioService 1.0 AudioService.qml
+AudioIconButton 1.0 AudioIconButton.qml
+VolumeControl 1.0 VolumeControl.qml
+MediaControls 1.0 MediaControls.qml
+AudioTestService 1.0 AudioTestService.qml
+AudioTestButton 1.0 AudioTestButton.qml

@@ -30,16 +30,19 @@ Weather, language, battery and notification indicators are currently samples.
 
 ## Networking
 
-- Click the Wireless icon to toggle Wi-Fi; click a network/VPN to connect or
-  disconnect. Hover for details. Passwords submit with Enter or the arrow button.
-- The pencil beside Close opens NetworkManager for all connection types.
-  Cloudflare's settings menu contains modes and registration.
-- The speed-test button starts/cancels a test of the current internet route,
-  including VPNs. The footer shows local transfer rates and adapter link speed.
+Wi-Fi, VPN and Cloudflare WARP controls, with transfer rates and an internet
+speed test that follows the current route, including VPNs.
+
+## Audio
+
+Sound and Microphone drawers provide device and per-application audio controls,
+routing, playback controls, speaker/microphone tests and optional volume boost.
+Custom device names and volume limits are described under
+[audio configuration](ARCHITECTURE.md#audio-configuration).
 
 ## Service
 
-QML edits reload automatically. Show or hide the shell with
+Show or hide the shell with
 `systemctl --user start desktop-shell.service` or
 `systemctl --user stop desktop-shell.service`.
 Stopping/restarting may also close applications launched by the shell.

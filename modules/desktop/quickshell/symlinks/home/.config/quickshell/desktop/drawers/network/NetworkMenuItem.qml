@@ -6,6 +6,7 @@ import "../../ui"
 
 MenuItem {
     id: root
+    property bool marked: checked
     implicitHeight: 36
     padding: 8
     spacing: 8
@@ -16,7 +17,7 @@ MenuItem {
         spacing: 8
         Icon {
             name: "check"
-            opacity: root.checked ? 1 : 0
+            opacity: root.marked ? 1 : 0
             Layout.preferredWidth: 16; Layout.preferredHeight: 16
             color: root.highlighted ? Theme.accent : Theme.text
         }

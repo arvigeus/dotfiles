@@ -17,8 +17,10 @@ Item {
     height: implicitHeight
     clip: true
 
-    // Feature pages stay lazy. Wi-Fi and the clock are live; other entries are previews.
+    // Feature pages stay lazy. Wi-Fi, audio and the clock are live; other entries are previews.
     NetworkStatus { id: networkStatus }
+    AudioStatus { id: audioStatus }
+    MicrophoneStatus { id: microphoneStatus }
     SystemClock { id: clock; precision: SystemClock.Minutes }
 
     Flickable {
@@ -67,8 +69,8 @@ Item {
                 entries: [
                     BarEntry { key: "wifi"; title: qsTr("Wi-Fi"); iconName: networkStatus.iconName; description: networkStatus.description },
                     BarEntry { key: "bluetooth"; title: qsTr("Bluetooth"); iconName: "bluetooth" },
-                    BarEntry { key: "sound"; title: qsTr("Sound"); iconName: "volume-2" },
-                    BarEntry { key: "microphone"; title: qsTr("Microphone"); iconName: "mic" },
+                    BarEntry { key: "sound"; title: qsTr("Sound"); iconName: audioStatus.iconName; iconColor: audioStatus.iconColor; description: audioStatus.description },
+                    BarEntry { key: "microphone"; title: qsTr("Microphone"); iconName: microphoneStatus.iconName; iconColor: microphoneStatus.iconColor; description: microphoneStatus.description },
                     BarEntry { key: "keyboard"; title: qsTr("Keyboard"); iconName: "keyboard"; label: "EN"; description: qsTr("Active input language preview") },
                     BarEntry { key: "displays"; title: qsTr("Displays"); iconName: "monitor" },
                     BarEntry { key: "disks"; title: qsTr("Disks"); iconName: "hard-drive" },

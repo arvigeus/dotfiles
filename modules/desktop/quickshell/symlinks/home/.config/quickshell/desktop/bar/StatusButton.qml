@@ -21,6 +21,7 @@ BarButton {
         Icon {
             visible: root.entry.iconName !== ""
             name: root.entry.iconName
+            color: root.entry.iconColor
             Layout.preferredWidth: Theme.iconSize
             Layout.preferredHeight: Theme.iconSize
             Layout.alignment: Qt.AlignVCenter
@@ -46,5 +47,5 @@ BarButton {
             Layout.alignment: Qt.AlignVCenter
         }
     }
-    PassiveToolTip { target: root; text: root.entry.key === "wifi" ? root.entry.description : root.text }
+    PassiveToolTip { target: root; text: ["wifi", "sound", "microphone"].includes(root.entry.key) ? root.entry.description : root.text }
 }

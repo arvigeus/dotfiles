@@ -270,6 +270,10 @@ ShellRoot {
                     check(drawers.currentPage !== null, "preview page did not load");
                     if (previewKeys[stage - 21] === "wifi")
                         check(find(drawers.contentItem, "networkScroll"), "Wi-Fi controls missing");
+                    else if (previewKeys[stage - 21] === "sound")
+                        check(find(drawers.contentItem, "audioOutputsEmpty") && find(drawers.contentItem, "audioScroll"), "playback controls missing");
+                    else if (previewKeys[stage - 21] === "microphone")
+                        check(find(drawers.contentItem, "microphoneInputsEmpty") && find(drawers.contentItem, "microphoneScroll"), "microphone controls missing");
                     else
                         check(find(drawers.contentItem, "drawerBrief").text.length > 0, "preview draft missing");
                 }
