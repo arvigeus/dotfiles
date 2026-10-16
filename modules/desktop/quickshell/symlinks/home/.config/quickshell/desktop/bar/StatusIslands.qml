@@ -2,12 +2,14 @@ import QtQuick
 import Quickshell
 import "../ui"
 import "../drawers/displays"
+import "../drawers/keyboard"
 
 Item {
     id: root
     property real maximumWidth: implicitWidth
     property string outputName: ""
     property var displayComfort: ComfortService
+    property var inputLanguage: InputLanguage
     signal drawerRequested(string key)
     readonly property alias trayIsland: tray
     readonly property alias toolsIsland: tools
@@ -20,7 +22,7 @@ Item {
     height: implicitHeight
     clip: true
 
-    // Feature pages stay lazy. Wi-Fi, audio, displays and the clock are live.
+    // Feature pages stay lazy; live status does not depend on an open drawer.
     NetworkStatus { id: networkStatus }
     AudioStatus { id: audioStatus }
     MicrophoneStatus { id: microphoneStatus }
@@ -74,7 +76,7 @@ Item {
                     BarEntry { key: "bluetooth"; title: qsTr("Bluetooth"); iconName: "bluetooth" },
                     BarEntry { key: "sound"; title: qsTr("Sound"); iconName: audioStatus.iconName; iconColor: audioStatus.iconColor; description: audioStatus.description },
                     BarEntry { key: "microphone"; title: qsTr("Microphone"); iconName: microphoneStatus.iconName; iconColor: microphoneStatus.iconColor; description: microphoneStatus.description },
-                    BarEntry { key: "keyboard"; title: qsTr("Keyboard"); iconName: "keyboard"; label: "EN"; description: qsTr("Active input language preview") },
+                    BarEntry { key: "keyboard"; title: qsTr("Keyboard"); iconName: "keyboard"; label: root.inputLanguage.label; description: root.inputLanguage.description },
                     BarEntry {
                         key: "displays"; title: qsTr("Displays"); iconName: "monitor"
                         iconColor: root.displayComfort.awakeFor(root.outputName) ? Theme.accent : Theme.text

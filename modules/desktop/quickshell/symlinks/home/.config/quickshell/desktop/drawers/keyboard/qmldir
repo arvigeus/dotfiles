@@ -1,0 +1,4 @@
+singleton InputLanguage 1.0 InputLanguage.qml
+singleton BacklightService 1.0 BacklightService.qml
+BacklightControl 1.0 BacklightControl.qml
+BacklightCard 1.0 BacklightCard.qml

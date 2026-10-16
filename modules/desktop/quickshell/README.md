@@ -26,7 +26,7 @@ current one. Scroll over the bar islands to reach buttons on narrow displays.
 Workspace navigation stays on the current display without wrapping. A populated
 workspace can create a new neighbor; empty workspaces disappear when left.
 Three-finger vertical swipes switch workspaces; horizontal swipes scroll columns.
-Weather, language, battery and notification indicators are currently samples.
+Weather, battery and notification indicators are currently samples.
 
 ## Networking
 
@@ -39,6 +39,23 @@ Sound and Microphone drawers provide device and per-application audio controls,
 routing, playback controls, speaker/microphone tests and optional volume boost.
 Custom device names and volume limits are described under
 [audio configuration](ARCHITECTURE.md#audio-configuration).
+
+## Keyboard
+
+English, Български (phonetic) and Tiếng Việt (Telex), with the active language
+shown in the settings island. Alt+Shift switches between English and the
+checkmarked secondary language. The help button has Telex, Bulgarian phonetic
+and desktop shortcut references; the typing field clears when the drawer closes.
+The pencil opens Fcitx input-method settings.
+Keyboard cards provide brightness and supported lighting settings in a cog menu.
+RGB keyboards offer color presets and supported effects. The lowest brightness
+step is off; keyboard input stays enabled.
+
+Lighting support comes from the selected hardware modules. See the
+[Logitech module](../../hardware/peripherals/logitech/README.md) for MX Keys Mini
+backlighting behavior.
+
+See [input language integration](ARCHITECTURE.md#keyboard) for technical details.
 
 ## Displays
 

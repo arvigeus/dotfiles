@@ -450,6 +450,120 @@ Set `DISPLAY_PREVIEW_PLATFORM=wayland` for native icon/menu QA and
 new component/helper/icon symlinks before checking the installed shell;
 configuration generation alone does not install them.
 
+## Keyboard
+
+`drawers/keyboard/InputLanguage.qml` owns confirmed language and secondary-pair
+state independently of the transient drawer. The bar reads its EN/BG/VI label.
+Requests serialize; repeated status reads coalesce, pending selections take
+priority, and selections finish after dismissal. Failed selections retain the
+last confirmed state and their error until another explicit selection. Status
+refreshes recover separately without hiding a failed action.
+
+`backend.py` reads `$XDG_CONFIG_HOME/quickshell/input-language.json` on each
+request and invokes its `command` array directly, without a shell. The existing
+[hardware input controller](../../hardware/keyboard/input-method/ARCHITECTURE.md)
+owns Fcitx startup/stop, pair selection, Alt+Shift and session persistence.
+Missing providers fall back to the configured Hyprland XKB layouts; Vietnamese
+stays visible but disabled with an explanation. Reads never launch a daemon.
+No login/reboot persistence is added: the provider resets each compositor
+instance to English/Bulgarian and preserves changes through config reloads.
+
+Hyprland layout events carry the keyboard that changed, including non-main
+keyboards. Config reloads also refresh state. Provider mode changes need a
+one-second refresh while the Vietnamese pair is selected. The active drawer
+adds a five-second recovery refresh. All bars share this single provider.
+
+Language highlighting identifies active input; the checkmark identifies the
+secondary language even while English is active. Choosing a language commits
+existing preedit and temporarily replaces the target row's checkmark slot with a
+spinner, without adding a status row or moving the language list. The service's
+`selectingLanguage` includes queued selections. Choosing a language also moves
+focus off the test field and, after success, refocuses it
+with a short delay so a cold-started IME can attach. The single-line test field
+uses `NetworkField` styling. Test text is page-local, never persisted and cleared
+on dismissal. The help popup has separate Telex, Phonetic and shortcut tabs,
+scrolls at narrow heights and consumes Escape before dismissal.
+Tabs use `QtQuick.Templates` with an explicit row, equal widths and an eight-pixel
+gap; no platform tab background, inset or underline is retained. The Telex view
+groups a two-column diacritics map and named tones with key badges. Popup height
+follows content within the window bounds. Outside press, the help button or
+Escape dismisses it; there is no separate close control.
+The Bulgarian map follows the configured `bg(phonetic)` traditional variant,
+not `bg(bas_phonetic)`. Its alphabetic three-column map includes the punctuation
+keys used for ч, ш, щ and ю, plus the Shift+X exception for ѝ. Mappings are checked
+against the installed xkeyboard-config `symbols/bg` definition.
+Patterns reviewed: [Caelestia dashboard tabs](https://github.com/caelestia-dots/shell/blob/main/modules/dashboard/Tabs.qml)
+and [DMS shared tab bar](https://github.com/AvengeMedia/dank-qml-common/blob/master/DCommon/Widgets/DTabBar.qml).
+Their theme and navigation dependencies stay outside this shell.
+
+The shortcut list mirrors the repository's Hyprland bindings; it is a reference,
+not a live introspection of arbitrary external bindings. Telex mappings follow
+the [UniKey manual](https://www.unikey.org/support/ukmanual.html).
+
+The pencil launches `fcitx5-configtool`, provided by
+`hardware/keyboard/input-method/config.jsonc`. This editor covers input methods;
+physical keyboard settings remain owned by Hyprland.
+
+`keyboard/backlight.py` owns a page-scoped worker with independent keyboard
+cards, placed immediately after Languages. Cards identify each device by title
+and model, with brightness and a capability-filtered settings cog. There is no
+input-disable action: zero brightness and the MX backlight Off mode affect only
+lighting. Native LED inventory includes only the `kbd_backlight` function;
+lock, compose, network and display LEDs are excluded. Brightness writes
+revalidate resolved sysfs identity and native maximum, reject wildcard device
+names, target brightnessctl's exact LED and read hardware back. Sliders use
+integer levels from zero to the native maximum. Unknown/unreadable controls
+report their reason rather than silently retargeting another device.
+
+Hardware modules install trusted Python adapters in
+`$XDG_CONFIG_HOME/devices/keyboard/backends/*.py` (default `~/.config`). The worker
+loads only these installed adapters; no vendor imports or device IDs live in the
+shell. Without adapters, native Linux keyboard brightness remains available.
+The [Zephyrus module](../../hardware/devices/zephyrus/ARCHITECTURE.md) owns ASUS
+Aura integration and dependencies; the
+[Logitech module](../../hardware/peripherals/logitech/ARCHITECTURE.md) owns Solaar
+integration and dependencies. Module selection determines which adapters ship.
+
+Each adapter exports `Provider` with `snapshot(native)`, `change(row, request)`
+and `close()`. `snapshot` receives native LED records and returns additional or
+augmented records in the same card schema. Native rows carry `key`, resolved
+`identity`, `value`, `maximum`, `available`, and `reason`; adapters can add
+`label`, `connection`, `effects` (`id`, `label`, `colors`), active `effect`,
+`rgb`, `color`, `lightingPath`, `modes` (`id`, `label`), and active `mode`.
+The worker merges by key and records adapter ownership as `provider`; conflicting
+adapter claims fail explicitly. Native `set` operations always retain the generic
+sysfs validation/write path. Other mutations route to the owning adapter, which
+revalidates live identity and capabilities. `close` releases adapter resources.
+Adapters neither apply saved preferences during discovery nor add shell-owned
+lighting persistence. The swatches are UI presets for RGB-capable effects.
+
+`BacklightService.qml` serializes requests over stdin/stdout JSON to a persistent
+worker. Repeated slider updates coalesce per device/action; they cannot discard
+an unrelated effect or mode change. Observation polls once per second only while
+an owner is active. Adapters may cache device reads and retain handles while
+open; their timing and hardware rules live in their module documentation.
+First-time wireless discovery can take several seconds and shows a
+loading indicator. Reads never change lighting. Queued mutations drain on
+dismissal before the worker exits and releases its handles. Keyed models retain
+slider and option-button identity through status updates. Only one lighting or
+reference popup remains open; Escape dismisses it before the drawer.
+
+```sh
+python3 -m unittest discover -s tests -p 'test_keyboard*.py'
+python3 -m unittest discover -s tests -p test_desktop_interactions.py
+```
+
+Tests use mock providers and production QML; they do not change host input.
+`DISPLAY_PREVIEW_PLATFORM=wayland DISPLAY_PREVIEW_DIR=/tmp` enables native
+captures of language choices, backlight controls, narrow/light layouts and the
+three reference tabs. Backlight tests use fake sysfs and clients, including
+native/off levels, stale controllers, capability filtering, RGB effect semantics,
+Logitech mode selection/rollback, optional adapter discovery/routing, write
+failures and queue/observer lifetime. Generation tests check adapter ownership
+and host selection. Publish both the shell and selected hardware module symlinks
+before reloading the installed shell.
+Real Telex composition in third-party clients remains a native acceptance check.
+
 ## Icons
 
 Interface SVGs are copied without modification from Lucide's `icons/` directory,

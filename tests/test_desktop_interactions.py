@@ -283,6 +283,14 @@ ShellRoot {
                         check(find(drawers.contentItem, "audioOutputsEmpty") && find(drawers.contentItem, "audioScroll"), "playback controls missing");
                     else if (previewKeys[stage - 21] === "microphone")
                         check(find(drawers.contentItem, "microphoneInputsEmpty") && find(drawers.contentItem, "microphoneScroll"), "microphone controls missing");
+                    else if (previewKeys[stage - 21] === "keyboard") {
+                        check(find(drawers.contentItem, "keyboardTestInput") && find(drawers.contentItem, "language-en"), "keyboard controls missing");
+                        find(drawers.contentItem, "keyboardHelp").clicked();
+                        check(drawers.currentPage.referencePopup.visible && drawers.escapeHandler, "keyboard help Escape handler missing");
+                        input.keyClick(Qt.Key_Escape);
+                        sole("keyboard");
+                        check(!drawers.currentPage.referencePopup.visible && !drawers.escapeHandler, "Escape did not close only keyboard help");
+                    }
                     else if (previewKeys[stage - 21] === "displays") {
                         check(find(drawers.contentItem, "displayScroll") && !find(drawers.contentItem, "drawerBrief"), "display controls missing");
                         const options = find(drawers.contentItem, "displayOptions:test-output");

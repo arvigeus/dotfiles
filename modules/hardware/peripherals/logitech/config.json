@@ -3,6 +3,7 @@
         "logid.service"
     ],
     "packages": [
-        "chaotic-aur/logiops"
+        "chaotic-aur/logiops",
+        "solaar"
     ]
 }

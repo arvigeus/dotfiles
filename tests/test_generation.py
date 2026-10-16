@@ -33,6 +33,14 @@ class GenerationTests(unittest.TestCase):
             result = generate('vm', '\n64\n')
             self.assertEqual(result.returncode, 0, result.stderr)
             vm = json.loads((repo / 'user-configuration.json').read_text())
+            backend = 'home/.config/devices/keyboard/backends/'
+            zephyrus_links = {entry['target']: entry['source'] for entry in zephyrus['extra']['symlinks']}
+            vm_links = {entry['target']: entry['source'] for entry in vm['extra']['symlinks']}
+            self.assertTrue(zephyrus_links[backend + 'asus.py'].startswith('modules/hardware/devices/zephyrus/'))
+            self.assertNotIn(backend + 'asus.py', vm_links)
+            for links in (zephyrus_links, vm_links):
+                self.assertTrue(links[backend + 'logitech.py'].startswith('modules/hardware/peripherals/logitech/'))
+                self.assertFalse(any(target.endswith('drawers/keyboard/lighting.py') or target.endswith('drawers/keyboard/logitech.py') for target in links))
             self.assertEqual(generate('vm').returncode, 0)
             self.assertEqual(json.loads((repo / 'user-configuration.json').read_text()), vm)
             result = generate('vm', '/dev/sda\n80\n', configure=True)

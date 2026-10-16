@@ -1556,6 +1556,34 @@
                 "target": "home/.config/quickshell/desktop/drawers/displays/qmldir"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/keyboard/BacklightCard.qml",
+                "target": "home/.config/quickshell/desktop/drawers/keyboard/BacklightCard.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/keyboard/BacklightControl.qml",
+                "target": "home/.config/quickshell/desktop/drawers/keyboard/BacklightControl.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/keyboard/BacklightService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/keyboard/BacklightService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/keyboard/InputLanguage.qml",
+                "target": "home/.config/quickshell/desktop/drawers/keyboard/InputLanguage.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/keyboard/backend.py",
+                "target": "home/.config/quickshell/desktop/drawers/keyboard/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/keyboard/backlight.py",
+                "target": "home/.config/quickshell/desktop/drawers/keyboard/backlight.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/keyboard/qmldir",
+                "target": "home/.config/quickshell/desktop/drawers/keyboard/qmldir"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/Models.js",
                 "target": "home/.config/quickshell/desktop/drawers/network/Models.js"
             },
@@ -1976,12 +2004,20 @@
                 "target": "home/.config/devices/audio/zephyrus.json"
             },
             {
+                "source": "modules/hardware/devices/zephyrus/symlinks/home/.config/devices/keyboard/backends/asus.py",
+                "target": "home/.config/devices/keyboard/backends/asus.py"
+            },
+            {
                 "source": "modules/hardware/keyboard/input-method/symlinks/home/.config/hypr/input-method.lua",
                 "target": "home/.config/hypr/input-method.lua"
             },
             {
                 "source": "modules/hardware/peripherals/dell-s2722dc/symlinks/home/.config/devices/audio/dell-s2722dc.json",
                 "target": "home/.config/devices/audio/dell-s2722dc.json"
+            },
+            {
+                "source": "modules/hardware/peripherals/logitech/symlinks/home/.config/devices/keyboard/backends/logitech.py",
+                "target": "home/.config/devices/keyboard/backends/logitech.py"
             }
         ],
         "checks": [
@@ -2150,6 +2186,7 @@
         "bind",
         "evtest",
         "chaotic-aur/logiops",
+        "solaar",
         "upower",
         "udisks2",
         "wireless-regdb",
