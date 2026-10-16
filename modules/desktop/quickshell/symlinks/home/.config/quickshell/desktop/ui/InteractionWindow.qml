@@ -10,6 +10,7 @@ PanelWindow {
 
     required property InteractionState interactionState
     property Item initialFocus: null
+    property var escapeHandler: null
     // Drawers can retain their presentation while closing. Input ownership still
     // follows opened, so an exiting surface cannot intercept application input.
     property bool keepVisible: false
@@ -57,7 +58,7 @@ PanelWindow {
     Shortcut {
         sequence: "Escape"
         enabled: root.opened && root.visible
-        onActivated: root.dismiss()
+        onActivated: { if (root.escapeHandler) root.escapeHandler(); else root.dismiss(); }
     }
 
     Rectangle { anchors.fill: parent; color: "#66000000"; opacity: root.backdropOpacity }

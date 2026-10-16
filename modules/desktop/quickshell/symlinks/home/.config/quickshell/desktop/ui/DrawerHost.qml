@@ -19,6 +19,7 @@ DrawerWindow {
     leftEdge: currentDrawer?.edge === DrawerDefinition.Left
     contentInitialFocus: currentPage?.initialFocus ?? null
     headerActions: currentPage?.headerActions ?? null
+    escapeHandler: currentPage?.escapeHandler ?? null
     WlrLayershell.namespace: "desktop-drawer"
 
     function definition(key: string): DrawerDefinition {

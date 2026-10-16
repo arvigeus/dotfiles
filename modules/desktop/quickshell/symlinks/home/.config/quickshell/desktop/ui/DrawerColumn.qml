@@ -8,6 +8,8 @@ ScrollView {
     default property alias content: body.data
     clip: true
     contentWidth: availableWidth
+    contentHeight: body.implicitHeight
+    readonly property WheelScroll wheelInput: WheelScroll { view: root.contentItem as Flickable }
     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
     ScrollBar.vertical: ScrollBar {
         id: verticalScroll

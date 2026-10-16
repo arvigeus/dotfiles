@@ -805,6 +805,11 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/desktop/hyprland/files/etc/systemd/user/hyprsunset.service.d/hyprland.conf",
+                "target": "/etc/systemd/user/hyprsunset.service.d/hyprland.conf",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/desktop/hyprland/files/home/.config/hypr/hypridle.conf",
                 "target": "home/.config/hypr/hypridle.conf",
                 "mode": "0644"
@@ -813,6 +818,16 @@
                 "source": "modules/desktop/hyprland/files/home/.config/hypr/hyprlock.conf",
                 "target": "home/.config/hypr/hyprlock.conf",
                 "mode": "0644"
+            },
+            {
+                "source": "modules/desktop/hyprland/files/home/.config/hypr/hyprsunset.conf",
+                "target": "home/.config/hypr/hyprsunset.conf",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/desktop/hyprland/files/usr/local/bin/desktop-idle",
+                "target": "/usr/local/bin/desktop-idle",
+                "mode": "0755"
             },
             {
                 "source": "modules/desktop/hyprland/files/usr/local/bin/desktop-screenshot",
@@ -1493,6 +1508,54 @@
                 "target": "home/.config/quickshell/desktop/drawers/audio/qmldir"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/displays/BrightnessControl.qml",
+                "target": "home/.config/quickshell/desktop/drawers/displays/BrightnessControl.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/displays/ComfortControls.qml",
+                "target": "home/.config/quickshell/desktop/drawers/displays/ComfortControls.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/displays/ComfortService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/displays/ComfortService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/displays/DisplayService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/displays/DisplayService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/displays/DisplayTestService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/displays/DisplayTestService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/displays/DisplayTestView.qml",
+                "target": "home/.config/quickshell/desktop/drawers/displays/DisplayTestView.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/displays/DisplayTestWindow.qml",
+                "target": "home/.config/quickshell/desktop/drawers/displays/DisplayTestWindow.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/displays/Layout.js",
+                "target": "home/.config/quickshell/desktop/drawers/displays/Layout.js"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/displays/backend.py",
+                "target": "home/.config/quickshell/desktop/drawers/displays/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/displays/brightness.py",
+                "target": "home/.config/quickshell/desktop/drawers/displays/brightness.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/displays/comfort.py",
+                "target": "home/.config/quickshell/desktop/drawers/displays/comfort.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/displays/qmldir",
+                "target": "home/.config/quickshell/desktop/drawers/displays/qmldir"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/Models.js",
                 "target": "home/.config/quickshell/desktop/drawers/network/Models.js"
             },
@@ -1745,6 +1808,10 @@
                 "target": "home/.config/quickshell/desktop/icons/star.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/sun.svg",
+                "target": "home/.config/quickshell/desktop/icons/sun.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/trash.svg",
                 "target": "home/.config/quickshell/desktop/icons/trash.svg"
             },
@@ -1873,6 +1940,10 @@
                 "target": "home/.config/quickshell/desktop/ui/PassiveToolTip.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ScrollListView.qml",
+                "target": "home/.config/quickshell/desktop/ui/ScrollListView.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ShellText.qml",
                 "target": "home/.config/quickshell/desktop/ui/ShellText.qml"
             },
@@ -1988,6 +2059,7 @@
         "kdeconnect",
         "hyprpolkitagent",
         "hypridle",
+        "hyprsunset",
         "hyprlock",
         "hyprshot",
         "satty",
@@ -2006,6 +2078,8 @@
         "libpulse",
         "pavucontrol",
         "alsa-utils",
+        "ddcutil",
+        "wdisplays",
         "sqlite",
         "sqlitebrowser",
         "micro",

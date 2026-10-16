@@ -31,6 +31,10 @@ To adjust the timeouts, edit `~/.config/hypr/hypridle.conf`, then run:
 systemctl --user restart hypridle.service
 ```
 
+The Display drawer offers Night light and Keep awake. If Night light is
+unavailable, check `systemctl --user status hyprsunset.service`.
+Edit `~/.config/hypr/hyprsunset.conf` to set its temperature or timed profiles.
+
 ## Screenshots and recording
 
 | Shortcut             | Action                              |

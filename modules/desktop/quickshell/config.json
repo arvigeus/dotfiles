@@ -1,5 +1,5 @@
 {
-  "packages": ["quickshell", "gtk3", "xdg-terminal-exec", "python-gobject", "network-manager-applet", "libpulse", "pavucontrol", "alsa-utils"],
+  "packages": ["quickshell", "gtk3", "xdg-terminal-exec", "python-gobject", "network-manager-applet", "libpulse", "pavucontrol", "alsa-utils", "brightnessctl", "ddcutil", "wdisplays"],
   "extra": {
     "aur_packages": ["librespeed-cli-bin"]
   }

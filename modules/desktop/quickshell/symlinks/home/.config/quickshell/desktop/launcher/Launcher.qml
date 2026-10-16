@@ -208,20 +208,18 @@ InteractionWindow {
                 }
             }
 
-            ListView {
+            ScrollListView {
                 id: results
                 objectName: "applicationResults"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
                 spacing: Theme.spacingSmall
-                boundsBehavior: Flickable.StopAtBounds
                 // An unmapped PanelWindow uses placeholder geometry. Build rows
                 // only while mapped, avoiding icon work at invalid hidden sizes.
                 model: ScriptModel { values: root.visible ? root.matches : [] }
                 currentIndex: -1
                 ScrollBar.vertical: ScrollBar { id: resultsScrollBar }
-                WheelScroll { view: results }
 
                 delegate: Button {
                     id: resultButton

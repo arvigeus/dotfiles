@@ -1,11 +1,10 @@
 """Exercise shared scrolling through Qt input delivery and native view geometry."""
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
-
+from pathlib import Path
 
 UI = (Path(__file__).resolve().parents[1] / 'modules/desktop/quickshell'
       / 'symlinks/home/.config/quickshell/desktop/ui')
@@ -61,13 +60,12 @@ Item {
         UI.WheelScroll { view: outer }
     }
     ListModel { id: rows }
-    ListView {
+    UI.ScrollListView {
         id: list
         x: 600; width: 180; height: 180
         model: rows
         delegate: Rectangle { required property real rowHeight; width: 180; height: rowHeight; color: "gray" }
         boundsBehavior: Flickable.StopAtBounds
-        UI.WheelScroll { view: list }
     }
     TestCase {
         id: test
@@ -133,6 +131,14 @@ Item {
             vertical.interactive = false;
             verticalWheel.scroll(mouse); compare(vertical.contentY, 120); verify(!mouse.accepted);
         }
+        function test_shared_list_immediate_wheel_and_no_delayed_tail() {
+            rows.clear();
+            for (let i = 0; i < 30; i++) rows.append({rowHeight: 36});
+            list.forceLayout(); list.positionViewAtBeginning();
+            const origin = list.originY;
+            wheel(list, 0, -120); compare(list.contentY, origin + 120);
+            wait(250); compare(list.contentY, origin + 120);
+        }
         function test_list_model_removal_bounds() {
             rows.clear();
             for (let i = 0; i < 30; i++) rows.append({rowHeight: 30 + i % 3 * 7});
@@ -151,7 +157,8 @@ Item {
         with tempfile.TemporaryDirectory() as directory:
             # Load the unchanged, Qt-only component without ui/qmldir's theme:
             # Quickshell's static plugins are registered only by the qs binary.
-            shutil.copyfile(UI / 'WheelScroll.qml', Path(directory, 'WheelScroll.qml'))
+            for name in ('WheelScroll.qml', 'ScrollListView.qml'):
+                shutil.copyfile(UI / name, Path(directory, name))
             Path(directory, 'tst_wheel.qml').write_text(
                 qml.replace('UI_URL', Path(directory).as_uri()))
             result = subprocess.run(

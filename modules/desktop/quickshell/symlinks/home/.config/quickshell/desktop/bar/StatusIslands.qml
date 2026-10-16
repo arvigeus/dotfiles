@@ -1,10 +1,13 @@
 import QtQuick
 import Quickshell
 import "../ui"
+import "../drawers/displays"
 
 Item {
     id: root
     property real maximumWidth: implicitWidth
+    property string outputName: ""
+    property var displayComfort: ComfortService
     signal drawerRequested(string key)
     readonly property alias trayIsland: tray
     readonly property alias toolsIsland: tools
@@ -17,7 +20,7 @@ Item {
     height: implicitHeight
     clip: true
 
-    // Feature pages stay lazy. Wi-Fi, audio and the clock are live; other entries are previews.
+    // Feature pages stay lazy. Wi-Fi, audio, displays and the clock are live.
     NetworkStatus { id: networkStatus }
     AudioStatus { id: audioStatus }
     MicrophoneStatus { id: microphoneStatus }
@@ -72,7 +75,11 @@ Item {
                     BarEntry { key: "sound"; title: qsTr("Sound"); iconName: audioStatus.iconName; iconColor: audioStatus.iconColor; description: audioStatus.description },
                     BarEntry { key: "microphone"; title: qsTr("Microphone"); iconName: microphoneStatus.iconName; iconColor: microphoneStatus.iconColor; description: microphoneStatus.description },
                     BarEntry { key: "keyboard"; title: qsTr("Keyboard"); iconName: "keyboard"; label: "EN"; description: qsTr("Active input language preview") },
-                    BarEntry { key: "displays"; title: qsTr("Displays"); iconName: "monitor" },
+                    BarEntry {
+                        key: "displays"; title: qsTr("Displays"); iconName: "monitor"
+                        iconColor: root.displayComfort.awakeFor(root.outputName) ? Theme.accent : Theme.text
+                        description: root.displayComfort.awakeFor(root.outputName) ? qsTr("Displays · Keep awake") : qsTr("Displays")
+                    },
                     BarEntry { key: "disks"; title: qsTr("Disks"); iconName: "hard-drive" },
                     BarEntry { key: "battery"; title: qsTr("Battery"); iconName: "battery-medium"; label: "76%"; description: qsTr("Battery preview") },
                     BarEntry { key: "performance"; title: qsTr("Performance"); iconName: "gauge" },

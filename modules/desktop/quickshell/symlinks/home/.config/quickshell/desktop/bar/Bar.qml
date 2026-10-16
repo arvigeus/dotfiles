@@ -93,6 +93,7 @@ PanelWindow {
 
     StatusIslands {
         id: status
+        outputName: bar.screen?.name ?? ""
         x: bar.width - Theme.barInset - width
         y: Theme.pillTopPadding
         // Reserve Spaces, workspace navigation, launcher and a minimum window

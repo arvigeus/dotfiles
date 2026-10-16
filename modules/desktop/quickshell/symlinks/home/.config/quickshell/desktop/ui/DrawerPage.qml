@@ -12,6 +12,8 @@ FocusScope {
     property ShellScreen screen: null
     property Item initialFocus: null
     property Component headerActions: null
+    // An open popup can consume Escape before the host dismisses the page.
+    property var escapeHandler: null
     signal closeRequested()
     signal drawerRequested(string key)
 }

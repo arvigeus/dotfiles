@@ -14,3 +14,9 @@ if file then
     file:close()
     dofile(path)
 end
+
+-- Forward native output changes (including wdisplays mode/position edits) to
+-- the shell's existing IPC subscription. No command or polling process is used.
+hl.on("monitor.layout_changed", function()
+    hl.dispatch(hl.dsp.event("desktop-displays-changed"))
+end)

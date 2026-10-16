@@ -47,5 +47,5 @@ BarButton {
             Layout.alignment: Qt.AlignVCenter
         }
     }
-    PassiveToolTip { target: root; text: ["wifi", "sound", "microphone"].includes(root.entry.key) ? root.entry.description : root.text }
+    PassiveToolTip { target: root; text: ["wifi", "sound", "microphone", "displays"].includes(root.entry.key) ? root.entry.description : root.text }
 }

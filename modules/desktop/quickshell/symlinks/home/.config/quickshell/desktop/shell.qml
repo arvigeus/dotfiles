@@ -6,6 +6,7 @@ import "ui"
 import "bar"
 import "launcher"
 import "drawers"
+import "drawers/displays"
 
 ShellRoot {
     id: root
@@ -22,11 +23,12 @@ ShellRoot {
     // If the list order goes stale, check its layoutAction/release hooks and this
     // custom listener. Replace the paired workaround when native events suffice.
     // External reorder scripts: hyprctl dispatch 'hl.dsp.event("desktop-layout-changed")'
-    Component.onCompleted: layoutRefresh.restart()
+    Component.onCompleted: { layoutRefresh.restart(); ComfortService.start(); DisplayService.start(); }
 
     Connections {
         target: Hyprland
         function onRawEvent(event: HyprlandEvent): void {
+            DisplayService.handleEvent(event.name, event.data);
             if ((event.name === "custom" && event.data === "desktop-layout-changed")
                 || ["openwindow", "closewindow", "activewindowv2", "movewindowv2",
                 "changefloatingmode", "fullscreen", "workspacev2",

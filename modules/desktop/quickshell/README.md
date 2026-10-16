@@ -40,6 +40,32 @@ routing, playback controls, speaker/microphone tests and optional volume boost.
 Custom device names and volume limits are described under
 [audio configuration](ARCHITECTURE.md#audio-configuration).
 
+## Displays
+
+Per-display controls for refresh rate, mirroring and hardware brightness.
+The header edit button opens wdisplays for arrangement, resolution, scale and rotation.
+Settings apply immediately, and the cog menu closes after each selection.
+Identify displays labels the connected screens. Each cog also offers test patterns
+and a motion test. In fullscreen tests, Space/arrow keys cycle patterns, H hides
+controls, and Escape or a click exits. Mirrored outputs share their source’s image.
+External brightness needs DDC/CI support and the monitor's DDC/CI setting enabled.
+
+Night light starts/stops hyprsunset for all active displays. Configure warmth
+and optional timing in `~/.config/hypr/hyprsunset.conf`; restart
+`hyprsunset.service` after editing it while active.
+
+Keep awake in a display's cog prevents that monitor from blanking and pauses
+automatic locking/suspend while it stays connected. Its bar's monitor icon turns
+red. Checkmarks reset when the shell exits or reloads.
+
+Display settings are saved automatically in
+`~/.config/quickshell/desktop/displays.json` and restored after login, reconnect
+and Hyprland config reload. This user-owned file is separate from the dotfiles.
+Changes made in wdisplays are saved when display-change notifications settle.
+Brightness retention depends on the hardware; the drawer does not restore it.
+The Night light toggle is remembered across logins.
+See [display implementation notes](ARCHITECTURE.md#displays).
+
 ## Service
 
 Show or hide the shell with

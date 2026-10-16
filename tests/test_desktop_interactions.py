@@ -47,6 +47,15 @@ class DesktopInteractionTests(unittest.TestCase):
                 else:
                     source = re.sub(r'    GlobalShortcut \{.*?\n    \}\n', '', source, count=1, flags=re.S)
                 path.write_text(source)
+            # Display popup Escape must cancel its edit instead of dismissing the host.
+            (root / 'drawers/displays/backend.py').write_text('''import json,sys
+state={"available":True,"token":"fixture","displays":[{"name":"test-output","identity":["test-output"],"label":"Test monitor","enabled":True,"mode":"1920x1080@60.00Hz","modes":["1920x1080@60.00Hz"],"scale":1,"transform":0,"x":0,"y":0,"mirror":"none","dpms":True}]}
+if __name__=="__main__":
+ for line in sys.stdin:
+  json.loads(line)
+  print(json.dumps(dict(ok=True,error="",data=state)),flush=True)
+''')
+            (root / 'drawers/displays/brightness.py').write_text('import json,sys;json.loads(sys.stdin.readline());print(json.dumps(dict(ok=True,values=[])))')
             # Observe real page creation/destruction, including unrelated pages.
             (root / 'ui/ProbeState.qml').write_text('''pragma Singleton
 import QtQuick
@@ -274,6 +283,16 @@ ShellRoot {
                         check(find(drawers.contentItem, "audioOutputsEmpty") && find(drawers.contentItem, "audioScroll"), "playback controls missing");
                     else if (previewKeys[stage - 21] === "microphone")
                         check(find(drawers.contentItem, "microphoneInputsEmpty") && find(drawers.contentItem, "microphoneScroll"), "microphone controls missing");
+                    else if (previewKeys[stage - 21] === "displays") {
+                        check(find(drawers.contentItem, "displayScroll") && !find(drawers.contentItem, "drawerBrief"), "display controls missing");
+                        const options = find(drawers.contentItem, "displayOptions:test-output");
+                        check(options, "display card missing");
+                        input.mouseClick(options, options.width / 2, options.height / 2);
+                        check(options.menu.visible && drawers.escapeHandler, "popup Escape handler not forwarded");
+                        input.keyClick(Qt.Key_Escape);
+                        sole("displays");
+                        check(!options.menu.visible && !drawers.escapeHandler, "Escape did not close only the display popup");
+                    }
                     else
                         check(find(drawers.contentItem, "drawerBrief").text.length > 0, "preview draft missing");
                 }

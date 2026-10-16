@@ -1,0 +1,6 @@
+singleton DisplayService 1.0 DisplayService.qml
+BrightnessControl 1.0 BrightnessControl.qml
+singleton DisplayTestService 1.0 DisplayTestService.qml
+DisplayTestView 1.0 DisplayTestView.qml
+singleton ComfortService 1.0 ComfortService.qml
+ComfortControls 1.0 ComfortControls.qml
