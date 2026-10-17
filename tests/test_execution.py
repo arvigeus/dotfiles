@@ -14,6 +14,28 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 class GeneratedExecutionTests(unittest.TestCase):
+    def test_xdg_folders_are_published_without_staging_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            staging = root / 'staging home'
+            home = root / 'installed home'
+            config = staging / '.config'
+            config.mkdir(parents=True)
+            module = REPO / 'modules/base/xdg'
+            shutil.copyfile(module / 'files/home/.config/user-dirs.dirs', config / 'user-dirs.dirs')
+            env = dict(os.environ, HOME=str(staging), XDG_CONFIG_HOME=str(config))
+            for _ in range(2):
+                subprocess.run(['bash', str(module / 'scripts/45_user-directories.sh')], env=env, check=True)
+            subprocess.run(['python3', str(REPO / 'scripts/publish-home.py'), str(staging),
+                            str(home), str(os.getuid()), str(os.getgid())], check=True)
+            for name in ('Desktop', 'Downloads', 'Documents', 'Music', 'Pictures',
+                         'Videos', 'Templates', 'Public', 'Projects'):
+                self.assertTrue((home / name).is_dir(), name)
+                self.assertEqual((home / name).stat().st_uid, os.getuid())
+            user_dirs = (home / '.config/user-dirs.dirs').read_text()
+            self.assertIn('XDG_DOWNLOAD_DIR="$HOME/Downloads"', user_dirs)
+            self.assertNotIn(str(staging), user_dirs)
+
     def test_executor_uses_snapshot_and_is_repeatable_without_state(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
