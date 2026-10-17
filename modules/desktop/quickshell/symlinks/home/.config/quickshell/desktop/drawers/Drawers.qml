@@ -84,7 +84,7 @@ DrawerHost {
         },
         DrawerDefinition {
             key: "weather"
-            title: qsTr("Clock and weather")
+            title: qsTr("Time and weather")
             source: Qt.resolvedUrl("WeatherDrawer.qml")
         },
         DrawerDefinition {

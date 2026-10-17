@@ -135,9 +135,9 @@ icon tinting. Treat layout/polish warnings as failures, including during resizin
 - `bar/MicrophoneStatus.qml` uses `mic-off` for both muted and unavailable sources.
   Icon color depends only on availability: available sources use `Theme.text`,
   including muted sources, while unavailable sources use `Theme.muted`.
-Reference implementations reviewed: [DankMaterialShell audio](https://github.com/AvengeMedia/DankMaterialShell/blob/master/quickshell/Services/AudioService.qml),
-[Caelestia audio](https://github.com/caelestia-dots/shell/blob/main/services/Audio.qml),
-and Zephyrus's `settings/AudioInventory.qml` and `docs/audio-names.md`.
+  Reference implementations reviewed: [DankMaterialShell audio](https://github.com/AvengeMedia/DankMaterialShell/blob/master/quickshell/Services/AudioService.qml),
+  [Caelestia audio](https://github.com/caelestia-dots/shell/blob/main/services/Audio.qml),
+  and Zephyrus's `settings/AudioInventory.qml` and `docs/audio-names.md`.
 
 ```sh
 python3 -m unittest discover -s tests -p test_audio_drawer.py
@@ -184,11 +184,11 @@ cancellation, drawer dismissal, worker errors and restart. No host audio is used
 
 Audio settings are contributed by modules:
 
-| Source | Owns |
-| --- | --- |
-| [Shared labels](../../hardware/audio/symlinks/home/.config/devices/audio/profiles.json) | Plain-language profile names; driver labels remain available on hover |
-| [Zephyrus audio](../../hardware/devices/zephyrus/symlinks/home/.config/devices/audio/zephyrus.json) | Laptop speakers, headphone jack and graphics audio connections |
-| [Dell S2722DC](../../hardware/peripherals/dell-s2722dc/symlinks/home/.config/devices/audio/dell-s2722dc.json) | Monitor speaker name, overriding generic graphics audio names |
+| Source                                                                                                        | Owns                                                                  |
+| ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| [Shared labels](../../hardware/audio/symlinks/home/.config/devices/audio/profiles.json)                       | Plain-language profile names; driver labels remain available on hover |
+| [Zephyrus audio](../../hardware/devices/zephyrus/symlinks/home/.config/devices/audio/zephyrus.json)           | Laptop speakers, headphone jack and graphics audio connections        |
+| [Dell S2722DC](../../hardware/peripherals/dell-s2722dc/symlinks/home/.config/devices/audio/dell-s2722dc.json) | Monitor speaker name, overriding generic graphics audio names         |
 
 Each module installs its JSON file as a symlink under
 `$XDG_CONFIG_HOME/devices/audio/`. The drawer reads every `*.json` file in that
@@ -207,7 +207,7 @@ Example device file:
 {
   "rules": [
     {
-      "match": {"device.name": "alsa_card.example", "port.name": "analog-output-headphones"},
+      "match": { "device.name": "alsa_card.example", "port.name": "analog-output-headphones" },
       "label": "Desk headphones",
       "icon": "headphones",
       "maxVolume": 100
@@ -571,3 +571,178 @@ revision `440a1e1dfb1e712505308da46bead3c28b1f1398`. Add individual SVGs as need
 and retain their license notices. `ui/Icon.qml` tints monochrome interface icons;
 application artwork uses `ui/AppIcon.qml` and the system icon theme.
 `cloudflare.svg` uses a `currentColor` fill for theme tinting.
+
+## Time and weather
+
+`WeatherDrawer.qml` owns a transient `weather/WeatherService.qml`. It never imports
+or changes the system island's clock/weather state. The island icon and tooltip
+use the first configured place unless `islandLocation` names another location id
+in `weather.json`. `bar/WeatherStatus.qml` checks its cache once per minute and
+fetches automatically when it reaches 30 minutes, including with the drawer closed.
+The icon follows weather code and day/night state; the tooltip also shows the full
+system-local date/time. Background work never reads or writes drawer selection.
+Failed background fetches retain cached conditions and retry after five minutes.
+Other saved locations are never prefetched; they only fetch while selected in
+the drawer with an expired cache (or on manual refresh).
+There is no clock-format setting, automatic location detection or account/API-key
+setup. Browsing remains independent of system settings; the pin is the explicit
+system timezone action.
+
+The inventory is an unmanaged, user-owned JSON object at
+`$XDG_CONFIG_HOME/quickshell/desktop/weather.json` (default `~/.config`). It contains
+a `locations` array; each entry needs a unique string `id`, display `name`, numeric
+`latitude` and `longitude`, and an IANA `timezone`. Optional `detail` disambiguates
+places in the picker. An empty/missing inventory shows setup guidance; invalid
+entries report an error without rewriting the file. Personal places must never
+be included in provisioning assets, generated manifests, fixtures or examples.
+`islandLocation` is the explicit current/default location id; omission uses the
+first entry. The drawer pin applies the selected IANA timezone through
+`timedatectl --no-ask-password`, validates readback, then saves that field while
+preserving the inventory and unknown fields with atomic mode-0600 replacement.
+A failed timezone change leaves the config alone; a failed config save restores
+the previous timezone. The current pin can be reapplied to repair a timezone
+changed elsewhere. Reading weather or opening the drawer never changes timezone.
+`LocationSettings.qml` is a feature-local singleton, so a pending timezone
+change/save survives drawer
+dismissal/destruction. On success it calls `Date.timeZoneUpdated()` to clear Qt
+QML's cached timezone offset, then notifies the bar to refresh its clock and date
+immediately. Normal minute updates still come from `SystemClock`.
+The bar watches this file and immediately rereads after changes, deferring past
+any in-flight response so the old location cannot overwrite the new one.
+`50-desktop-timezone.rules` grants only `org.freedesktop.timedate1.set-timezone`
+to active, local members of `wheel`. System time, RTC and NTP permissions retain
+their existing policies. Install the rule as root (provisioning manages it as a
+file asset); polkit reloads it automatically. Runtime calls forbid interactive
+authentication, so a missing/denied permission becomes a short drawer error.
+Clock synchronization remains with the existing NTP service.
+
+The selected id is saved separately in `weather-selection.json` using atomic
+replacement and mode 0600. New or removed selections fall back to the configured
+current location. Ordinary selection never changes `islandLocation`.
+
+`weather/backend.py` uses only the Python standard library. Local status reads
+supply a ZoneInfo clock even without networking. While active, a cheap QML timer
+checks minute boundaries; local reads update the clock and reload configuration
+once per minute, including local clocks for every picker row and the main clock.
+The closed picker is a bare chevron at the far right of the clock/date row; its popup
+retains location names, details, local times and the selected checkmark. The bare
+pin sits immediately before the chevron; refresh remains in the drawer header. A separate cancellable process
+fetches Open-Meteo over HTTPS with an 18-second timeout. Closing stops both
+processes and the timer. Selection clears
+the old place immediately; revision tokens discard delayed responses, including
+local reads racing a successful forecast refresh. The picker consumes Escape
+before drawer dismissal and supports normal keyboard selection.
+
+Forecasts use °C and km/h, current conditions, six upcoming hourly temperatures
+and precipitation probabilities (four at narrow widths), and five daily forecasts.
+Wind and humidity stack at the right of current conditions; narrow drawers place
+them on their own row below the temperature.
+Request UNIX timestamps and convert hours through ZoneInfo to handle daylight
+saving changes. Daily dates use the API's fixed UTC offset as documented by
+Open-Meteo. Missing metrics stay unknown rather than becoming zero.
+
+A short sentence for each forecast day adapts the daily-outlook idea in zephyrus-shell
+(`attention/weather.py`): daylight hours determine predominant sky conditions,
+all hours contribute wet/fog spells, and at most one secondary event is included.
+It requires at least 18 valid local-day hours and daylight coverage; incomplete
+days omit the sentence. Today's outlook appears under current conditions without
+a date prefix. Each daily row uses the shared passive tooltip to show its own
+outlook, falling back to the provider's condition when hourly coverage is incomplete.
+These summaries reuse the cached hourly forecast and require no extra requests.
+This is a model-based daily outlook and never overrides
+the provider's current condition or island icon. Current conditions come from
+Open-Meteo's 15-minute model data, rather than a local observation. The requested
+point can resolve to a grid cell several kilometres away.
+
+Validated raw forecasts are stored under
+`$XDG_CACHE_HOME/quickshell/desktop/weather/` (default `~/.cache`) in private,
+atomically replaced files keyed by coordinates and timezone. Cache hits avoid
+network requests for 30 minutes and are shared by the island and drawer.
+Automatic fetches acquire a per-place file lock and recheck freshness after
+locking, avoiding duplicate downloads across outputs or simultaneous drawer reads.
+Manual refresh bypasses freshness checks. Drawer failures retry at most every five
+minutes while open. Switching places shows cached weather immediately only if
+it is younger than 30 minutes; expired data is hidden until fresh weather arrives.
+An already displayed forecast remains available if a later refresh fails.
+Forecasts older than one hour are marked outdated. Fetch failures preserve the last successful data
+and update time, and show a short error. Changed coordinates cannot reuse another
+place's weather. Names and coordinates never enter tracked configuration.
+The additional weather SVGs are local drawings matching the existing icon style.
+
+Reference implementations reviewed:
+[Caelestia weather service](https://github.com/caelestia-dots/shell/blob/main/services/Weather.qml),
+[DankMaterialShell weather service](https://github.com/AvengeMedia/DankMaterialShell/blob/master/quickshell/Services/WeatherService.qml),
+[Plasma weather improvements](https://blogs.kde.org/2026/10/17/this-week-in-plasma-new-weather-widget-and-on-screen-keyboard/),
+and [Open-Meteo API](https://open-meteo.com/en/docs).
+
+```sh
+python3 -m unittest discover -s tests -p test_weather_drawer.py
+```
+
+Tests cover date rollover, DST, private persistence, cache isolation/freshness,
+nullable and malformed responses, failed refresh retention, keyboard selection,
+Escape, narrowing, offline clocks and cancellation/delayed-reply handling. They
+mock network calls and location inventories. Set `DISPLAY_PREVIEW_PLATFORM=wayland`
+and `DISPLAY_PREVIEW_DIR=/tmp/weather-preview` for native captures; offscreen
+rendering cannot verify icon tinting. Install links for newly added QML, helpers
+and icons before checking the installed configuration.
+
+### Alarms and focus reminders
+
+`weather/ReminderControls.qml` adds Focus and Reminders sections below the
+forecast, each with a full-width action and a separate editor. The focus button
+shows the active phase's countdown and stops the cycle directly. One-shot
+reminders appear below their add button, each with an individual stop action.
+Multiple one-shot alarms and one repeating pomodoro can run together.
+The pomodoro defaults to 25 minutes of focus and a 5-minute break; both intervals
+are editable. Escape closes the editor before the drawer. Each popup matches its
+button's actual width and opens below the button.
+Opening and confirming use distinct labels (Set up focus / Start and Add reminder
+/ Schedule). Popup content omits duplicate titles, timezone and next-time labels.
+
+`ui/NumberField.qml` styles Qt's editable `SpinBox` with compact up/down arrows,
+integer bounds and optional two-digit padding. Typed input is committed before
+keyboard or pointer steps so arrows operate on the entered number. Focus/break durations
+and the separate hour/minute fields share it. Reminder defaults use the next
+actual minute. The editor holds that local date and rejects elapsed times instead
+of silently scheduling tomorrow; a midnight default rolls onto the next date and
+shows only a small Tomorrow hint. An editor-only timer keeps validation current
+even without pending reminders. The service revalidates the date on submission.
+The message occupies its own row so it remains usable in narrow drawers.
+
+Input controls reviewed:
+[Caelestia StyledSpinBox](https://github.com/caelestia-dots/shell/blob/main/components/controls/StyledSpinBox.qml),
+[DMS DTimePicker](https://github.com/AvengeMedia/dank-qml-common/blob/master/DCommon/Widgets/DTimePicker.qml),
+and [Qt SpinBox](https://doc.qt.io/qt-6/qml-qtquick-controls-spinbox.html).
+The numeric editor uses Qt's control rather than importing either shell's UI.
+
+`weather/ReminderService.qml` is a lazily imported QML singleton outside the
+transient drawer's lifecycle. Entries exist only in memory, survive drawer
+dismissal, and clear on shell exit/reload. A one-second timer runs only while
+entries exist. Alarms resolve the next occurrence of an `HH:mm` system-local
+time to an absolute deadline at creation; later timezone changes do not move
+that deadline. Searching actual minutes handles DST gaps and repeated hours.
+The due label follows the current system timezone.
+
+Deadlines use wall-clock milliseconds, so an overdue alarm fires after resume.
+An overdue pomodoro sends one notification and starts the next phase from the
+current time rather than replaying missed phases. Nothing wakes the computer.
+Stopping an entry removes it immediately; there is no background worker or
+persisted state.
+
+Delivery uses `notify-send` with literal arguments and escaped body markup.
+The module declares `libnotify` and Dunst, whose notification service activates
+over D-Bus. Desktop notification policies, including do-not-disturb, apply.
+The alarm icon is from Lucide under the existing icon license.
+
+```sh
+python3 -m unittest discover -s tests -p test_reminders.py
+```
+
+Tests exercise one-shot delivery, cancellation, DST, sleep/resume, focus/break
+transitions, real numeric typing and step arrows, past-time rejection, midnight
+defaults and editor expiration, popup input/dismissal, button/field widths and
+label centering in full and narrow layouts,
+and drawer destruction. The desktop interaction test also opens both editors in
+the production drawer host and checks their width and Escape handling. Tests
+replace delivery or the `notify-send` executable, so no real notifications fire.

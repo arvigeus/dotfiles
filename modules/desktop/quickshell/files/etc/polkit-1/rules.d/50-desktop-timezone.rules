@@ -1,0 +1,8 @@
+// Travel location changes may update only the timezone, without an auth dialog.
+// Keep clock, NTP and RTC administration under their existing policies.
+polkit.addRule(function(action, subject) {
+    if (action.id === "org.freedesktop.timedate1.set-timezone" &&
+        subject.local && subject.active && subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+    }
+});

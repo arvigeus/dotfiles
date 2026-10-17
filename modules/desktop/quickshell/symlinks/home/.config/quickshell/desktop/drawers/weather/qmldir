@@ -1,0 +1,4 @@
+WeatherService 1.0 WeatherService.qml
+singleton LocationSettings 1.0 LocationSettings.qml
+singleton ReminderService 1.0 ReminderService.qml
+ReminderControls 1.0 ReminderControls.qml

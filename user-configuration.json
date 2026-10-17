@@ -840,6 +840,11 @@
                 "mode": "0755"
             },
             {
+                "source": "modules/desktop/quickshell/files/etc/polkit-1/rules.d/50-desktop-timezone.rules",
+                "target": "/etc/polkit-1/rules.d/50-desktop-timezone.rules",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/desktop/quickshell/files/etc/polkit-1/rules.d/50-desktop-warp.rules",
                 "target": "/etc/polkit-1/rules.d/50-desktop-warp.rules",
                 "mode": "0644"
@@ -1392,6 +1397,10 @@
                 "target": "home/.config/quickshell/desktop/bar/StatusIslands.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/WeatherStatus.qml",
+                "target": "home/.config/quickshell/desktop/bar/WeatherStatus.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/WindowList.qml",
                 "target": "home/.config/quickshell/desktop/bar/WindowList.qml"
             },
@@ -1636,12 +1645,44 @@
                 "target": "home/.config/quickshell/desktop/drawers/network/qmldir"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/weather/Conditions.js",
+                "target": "home/.config/quickshell/desktop/drawers/weather/Conditions.js"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/weather/LocationSettings.qml",
+                "target": "home/.config/quickshell/desktop/drawers/weather/LocationSettings.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/weather/ReminderControls.qml",
+                "target": "home/.config/quickshell/desktop/drawers/weather/ReminderControls.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/weather/ReminderService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/weather/ReminderService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/weather/WeatherService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/weather/WeatherService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/weather/backend.py",
+                "target": "home/.config/quickshell/desktop/drawers/weather/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/weather/qmldir",
+                "target": "home/.config/quickshell/desktop/drawers/weather/qmldir"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/LICENSE",
                 "target": "home/.config/quickshell/desktop/icons/LICENSE"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/README.md",
                 "target": "home/.config/quickshell/desktop/icons/README.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/alarm-clock.svg",
+                "target": "home/.config/quickshell/desktop/icons/alarm-clock.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/arrow-down.svg",
@@ -1716,6 +1757,10 @@
                 "target": "home/.config/quickshell/desktop/icons/download.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/droplet.svg",
+                "target": "home/.config/quickshell/desktop/icons/droplet.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/eye-off.svg",
                 "target": "home/.config/quickshell/desktop/icons/eye-off.svg"
             },
@@ -1764,6 +1809,10 @@
                 "target": "home/.config/quickshell/desktop/icons/lock-keyhole.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/map-pin.svg",
+                "target": "home/.config/quickshell/desktop/icons/map-pin.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/mic-off.svg",
                 "target": "home/.config/quickshell/desktop/icons/mic-off.svg"
             },
@@ -1774,6 +1823,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/monitor.svg",
                 "target": "home/.config/quickshell/desktop/icons/monitor.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/moon.svg",
+                "target": "home/.config/quickshell/desktop/icons/moon.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/network.svg",
@@ -1864,6 +1917,22 @@
                 "target": "home/.config/quickshell/desktop/icons/volume.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/weather-fog.svg",
+                "target": "home/.config/quickshell/desktop/icons/weather-fog.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/weather-rain.svg",
+                "target": "home/.config/quickshell/desktop/icons/weather-rain.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/weather-snow.svg",
+                "target": "home/.config/quickshell/desktop/icons/weather-snow.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/weather-storm.svg",
+                "target": "home/.config/quickshell/desktop/icons/weather-storm.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/wifi-high.svg",
                 "target": "home/.config/quickshell/desktop/icons/wifi-high.svg"
             },
@@ -1882,6 +1951,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/wifi.svg",
                 "target": "home/.config/quickshell/desktop/icons/wifi.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/wind.svg",
+                "target": "home/.config/quickshell/desktop/icons/wind.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/x.svg",
@@ -1962,6 +2035,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/NetworkIcons.js",
                 "target": "home/.config/quickshell/desktop/ui/NetworkIcons.js"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/NumberField.qml",
+                "target": "home/.config/quickshell/desktop/ui/NumberField.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/PassiveToolTip.qml",
@@ -2116,6 +2193,7 @@
         "alsa-utils",
         "ddcutil",
         "wdisplays",
+        "dunst",
         "sqlite",
         "sqlitebrowser",
         "micro",

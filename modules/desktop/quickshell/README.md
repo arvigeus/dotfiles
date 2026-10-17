@@ -26,7 +26,7 @@ current one. Scroll over the bar islands to reach buttons on narrow displays.
 Workspace navigation stays on the current display without wrapping. A populated
 workspace can create a new neighbor; empty workspaces disappear when left.
 Three-finger vertical swipes switch workspaces; horizontal swipes scroll columns.
-Weather, battery and notification indicators are currently samples.
+Battery and notification indicators are currently samples.
 
 ## Networking
 
@@ -39,6 +39,32 @@ Sound and Microphone drawers provide device and per-application audio controls,
 routing, playback controls, speaker/microphone tests and optional volume boost.
 Custom device names and volume limits are described under
 [audio configuration](ARCHITECTURE.md#audio-configuration).
+
+## Time and weather
+
+Choose a saved place for its local time, current weather, hourly rain chances and
+five-day forecast. Selection leaves the system island unchanged. Temperatures
+are in °C. The island icon and tooltip refresh weather every 30 minutes, even
+with the drawer closed. The drawer shares that cache and refreshes a selected
+place when its data is older than 30 minutes. The refresh button updates it
+immediately. Each place in the picker shows its local time. Cached forecasts
+remain visible offline with their last update time. Short daily outlooks appear
+under current conditions and in forecast-row tooltips.
+
+The pin action sets the selected place as current and applies its system timezone
+without a password once the desktop timezone permission rule is installed. Clocks
+and dates then use that timezone, including daylight saving changes. Browsing
+other places leaves system settings alone.
+Only that place refreshes in the background; other places fetch while selected
+and their cache is older than 30 minutes.
+
+Places live in `~/.config/quickshell/desktop/weather.json`, outside the dotfiles.
+See [weather configuration](ARCHITECTURE.md#clock-and-weather) for the file format.
+
+Add a one-shot alarm with a message, or a repeating focus/break reminder (25/5
+minutes by default). Alarms use system-local time. Reminders keep running with
+the drawer closed and clear when the shell exits or reloads. They send desktop
+notifications; they do not wake a sleeping computer.
 
 ## Keyboard
 

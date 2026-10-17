@@ -301,6 +301,18 @@ ShellRoot {
                         sole("displays");
                         check(!options.menu.visible && !drawers.escapeHandler, "Escape did not close only the display popup");
                     }
+                    else if (previewKeys[stage - 21] === "weather") {
+                        check(find(drawers.contentItem, "weatherLocation") && !find(drawers.contentItem, "drawerBrief"), "clock/weather controls missing");
+                        const page = drawers.currentPage, focus = find(page, "focusToggle"), add = find(page, "reminderAdd");
+                        check(Math.abs(focus.width - page.width) < 2 && Math.abs(add.width - page.width) < 2, "reminder section buttons are squeezed in host");
+                        for (const [button, name] of [[focus, "focusPopup"], [add, "reminderPopup"]]) {
+                            button.clicked();
+                            const popup = button.data.find(item => item.objectName === name);
+                            check(popup.visible && Math.abs(popup.width - page.width) < 2 && popup.width > 260, "reminder popup is squeezed in host");
+                            input.keyClick(Qt.Key_Escape); sole("weather");
+                            check(!popup.visible && !drawers.escapeHandler, "Escape did not close only reminder popup");
+                        }
+                    }
                     else
                         check(find(drawers.contentItem, "drawerBrief").text.length > 0, "preview draft missing");
                 }

@@ -3,6 +3,7 @@ import Quickshell
 import "../ui"
 import "../drawers/displays"
 import "../drawers/keyboard"
+import "../drawers/weather"
 
 Item {
     id: root
@@ -10,6 +11,7 @@ Item {
     property string outputName: ""
     property var displayComfort: ComfortService
     property var inputLanguage: InputLanguage
+    property date localDate: new Date()
     signal drawerRequested(string key)
     readonly property alias trayIsland: tray
     readonly property alias toolsIsland: tools
@@ -26,7 +28,12 @@ Item {
     NetworkStatus { id: networkStatus }
     AudioStatus { id: audioStatus }
     MicrophoneStatus { id: microphoneStatus }
-    SystemClock { id: clock; precision: SystemClock.Minutes }
+    WeatherStatus { id: weatherStatus; objectName: "islandWeatherStatus" }
+    SystemClock { id: clock; precision: SystemClock.Minutes; onDateChanged: root.localDate = date }
+    Connections {
+        target: LocationSettings
+        function onChanged(): void { root.localDate = new Date(); }
+    }
 
     Flickable {
         id: viewport
@@ -94,13 +101,13 @@ Item {
                 objectName: "notificationsIsland"
                 entries: [
                     BarEntry {
-                        key: "weather"; title: qsTr("Clock and weather"); iconName: "cloud-sun"
-                        label: Qt.formatTime(clock.date, "HH:mm")
-                        description: qsTr("Weather preview")
+                        key: "weather"; title: qsTr("Time and weather"); iconName: weatherStatus.iconName
+                        label: Qt.formatTime(root.localDate, "HH:mm")
+                        description: Qt.formatDateTime(root.localDate, "dddd, d MMMM yyyy · HH:mm t") + "\n" + weatherStatus.description
                     },
                     BarEntry {
                         key: "notifications"; title: qsTr("Events and notifications"); iconName: "calendar-days"
-                        label: Qt.formatDate(clock.date, "ddd d")
+                        label: Qt.formatDate(root.localDate, "ddd d")
                         secondaryIconName: "bell"; badge: "2"; attention: true
                         description: qsTr("Events and notifications preview")
                     }
