@@ -15,8 +15,9 @@ ShellRoot {
     InteractionState { id: interactions }
     Launcher { id: launcher; interactionState: interactions }
     // The host owns category registration and lazy content; bar summaries do
-    // not instantiate feature pages or start their helper processes. Audio test
-    // workers belong to the pages and stop when those pages are dismissed.
+    // not instantiate feature pages or start their helper processes. Feature-local
+    // services load with their drawers. Audio test workers belong to the pages
+    // and stop when those pages are dismissed.
     Drawers { id: drawers; interactionState: interactions }
 
     // WORKAROUND: Hyprland lacks geometry/order events; bindings.lua supplies them.

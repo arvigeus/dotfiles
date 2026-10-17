@@ -1,3 +1,5 @@
 singleton DisksService 1.0 DisksService.qml
 DriveCard 1.0 DriveCard.qml
 VolumeRow 1.0 VolumeRow.qml
+singleton CleanupService 1.0 CleanupService.qml
+CleanupControl 1.0 CleanupControl.qml

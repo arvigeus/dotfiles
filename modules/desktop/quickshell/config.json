@@ -16,6 +16,7 @@
     "udisks2",
     "partitionmanager",
     "filelight",
+    "pacman-contrib",
     "dolphin"
   ],
   "extra": {

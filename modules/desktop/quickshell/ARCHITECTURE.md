@@ -15,9 +15,11 @@ The installed shell uses individual file symlinks. Editing an existing linked
 file reloads it, but adding a component or helper also requires installing its
 new link before reloading. Regenerating the manifest alone does not publish
 links. Publish new links before editing importers or their `qmldir`. If an
-already running engine attempted a missing component, edit/touch the top-level
+already running engine attempted a missing component, edit the top-level
 `shell.qml` after publishing to force a fresh configuration engine; a new preview
-process cannot detect cached failures in the existing shell.
+process cannot detect cached failures in the existing shell. Change the contents
+of `shell.qml` to trigger that reload: touching only its timestamp can be ignored
+by the file watcher.
 Verify component loading through the installed configuration as well as
 repository fixtures, which cannot detect missing installed files.
 
@@ -29,6 +31,18 @@ Touchpad gestures retain native precision and inertia. `ScrollListView.qml` owns
 this behavior for lists, including launcher results and display options;
 `DrawerColumn.qml` installs it on its internal Flickable for all drawer forms.
 Keep wheel behavior in these widgets rather than tuning individual drawers.
+
+## Buttons
+
+`ui/ShellButton.qml` styles Qt Quick Controls' `Button` for ordinary text actions,
+with an optional leading icon, symmetrically centered label and zero vertical
+padding. Content height contributes to minimum button height so fonts cannot be
+clipped inside the 34 px default. Cleanup, hold confirmation, Reminders/Focus and
+the existing `network/NetworkButton.qml` wrapper share this layout. Use it for
+new ordinary actions rather than recreating their padding and content layouts.
+`HoldButton` adds gesture/progress handling; specialized icon buttons, multi-line
+audio tests and device rows retain their feature-specific layouts. Overriding
+`contentItem` makes that component responsible for its own size and alignment.
 
 ## Networking
 
@@ -662,6 +676,80 @@ launches use a fixture executable, so tests never start a real scan.
 enables native captures. Publish the new `disks/` helper and singleton links
 before checking the installed shell. Real mount/unlock/eject and polkit dialogs
 remain acceptance checks on disposable/removable media.
+
+### System cleanup
+
+`disks/CleanupControl.qml` pins the Clean system action below the drive list.
+Its upward popover resets selections on opening, discovers availability without
+running package managers, and scrolls independently at narrow/short sizes.
+Each option has a short description. Administrator-required options
+carry a shield icon with a tooltip. The pinned Select all checkbox supports
+partial selection and clearing, skips unavailable choices, and selects All Mise
+tools instead of the redundant unused-versions option.
+Escape, outside press and drawer deactivation cancel confirmation and close it.
+`ui/HoldButton.qml` follows Zephyrus's 1300 ms hold/progress pattern, including
+Space-key activation; early release, lost focus, changed choices, disabling and
+popup closure cancel the gesture. A hold fires once and clears the selection.
+
+`CleanupService.qml` owns a separate one-shot worker outside the page lifetime;
+cleanup continues after dismissal and sends its outcome as a desktop notification.
+`cleanup.py` accepts category IDs only, validates the whole selection before any
+mutation, sends progress, and continues after individual failures. Native commands
+have a ten-minute timeout and literal argv with no shell. Discovery never cleans.
+Permission, authorization, timeout and general command failures become short,
+human-readable messages; terminal output and Python errno details never appear
+in the popover or notifications. The service sends one completion/partial-failure
+notification through `notify-send`, even after page destruction. Successful
+discovery does not replay results. Notification delivery is replaced in tests.
+
+The fixed catalogue follows the developer/package modules and their environment:
+XDG cache/data, `MISE_CACHE_DIR`, `MISE_DATA_DIR`, `CARGO_HOME`, `npm_config_cache`
+and `PIP_CACHE_DIR`. Defaults match provisioning: `~/.local/cache` and
+`~/.local/share/cargo`. Legacy `~/.cache`, `~/.cargo` and `~/.npm` folders are not
+added automatically; explicit environment overrides still apply.
+It includes pacman archives (all versions via
+`pkexec /usr/bin/paccache --remove --keep 0`), paru package archives only,
+mise downloads/cache, npm content cache, pnpm store pruning, Bun cache, pip/uv,
+Cargo registry archives, known browser web caches, and thumbnails/Mesa/NVIDIA
+shader caches. It never recursively clears the whole XDG cache, browser profiles,
+AUR working trees, Downloads, Trash, logs or project directories. Cache traversal
+opens all ancestors with `O_NOFOLLOW`; fd-based deletion does not follow symlinks.
+Home/config/data roots and their ancestors are refused. Cache directory roots
+remain in place. Concurrent applications may refill caches; close browsers first.
+
+Rootless Podman cleanup inspects immutable image IDs, requires `RepoDigests`,
+skips images referenced by any running/stopped container (including descendant
+images), and removes without force. It never prunes containers, volumes or local
+builds, preserving Distrobox state. Removal failures, including multiple tags or
+new dependencies, appear in the per-category result. Flatpak uses native
+`uninstall --unused --noninteractive` separately for user and default system
+installations; applications, data and pinned runtimes remain under Flatpak policy.
+Native polkit authentication applies to privileged operations; no new grants.
+`pacman-contrib` supplies paccache. Package caches are the offline rollback copies;
+removing them does not uninstall packages.
+
+Mise has mutually exclusive choices for `prune --tools --yes` and
+`uninstall --all --yes`. Neither edits tool configuration. Pruning relies on
+mise's tracked configurations and may remove versions used only by one-off
+commands. Removing all versions requires `mise install` before those tools work.
+Installed tools start unchecked, as do all other categories.
+
+References: [Syntaxis cleanup UI](https://github.com/katawaredev/syntaxis/blob/master/crates/app-shell/src/home_management.rs),
+Zephyrus `widgets/HoldAction.qml`, [mise pruning](https://mise.jdx.dev/cli/prune.html),
+[Podman inspection](https://docs.podman.io/en/stable/markdown/podman-image-inspect.1.html),
+[Flatpak commands](https://docs.flatpak.org/en/latest/flatpak-command-reference.html),
+[pnpm store](https://pnpm.io/cli/store) and [uv caches](https://docs.astral.sh/uv/concepts/cache/).
+
+```sh
+python3 -m unittest discover -s tests -p test_system_cleanup.py
+```
+
+Tests use temporary caches and mock commands; no real cleanup occurs. They cover
+allowlists, environment paths, symlink protection, AUR working tree preservation,
+container/image protections, partial failures, hold cancellation/keyboard input,
+narrow/light layouts, button geometry, notifications and service survival after
+page destruction. Native captures
+use `DISPLAY_PREVIEW_PLATFORM=wayland DISPLAY_PREVIEW_DIR=/tmp/cleanup-preview`.
 
 ## Icons
 

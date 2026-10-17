@@ -331,6 +331,11 @@ ShellRoot {
                         check(drawers.currentPage.unlockPopup.visible && drawers.escapeHandler, "unlock Escape handler missing");
                         input.keyClick(Qt.Key_Escape); sole("disks");
                         check(!drawers.currentPage.unlockPopup.visible && !drawers.escapeHandler, "Escape did not close only unlock popup");
+                        const cleanup = find(drawers.currentPage, "systemCleanup"); cleanup.clicked();
+                        check(cleanup.popupOpen && drawers.escapeHandler, "cleanup popover Escape handler missing");
+                        check(Math.abs(cleanup.width - drawers.currentPage.width) < 2, "cleanup footer is squeezed");
+                        input.keyClick(Qt.Key_Escape); sole("disks");
+                        check(!cleanup.popupOpen && !drawers.escapeHandler, "Escape did not close only cleanup popup");
                     }
                     else
                         check(find(drawers.contentItem, "drawerBrief").text.length > 0, "preview draft missing");

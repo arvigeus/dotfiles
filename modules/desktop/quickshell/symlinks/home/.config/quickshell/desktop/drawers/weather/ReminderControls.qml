@@ -25,20 +25,7 @@ ColumnLayout {
 
     component Heading: ShellText { Layout.fillWidth: true; font.weight: Font.DemiBold }
     component Note: ShellText { color: Theme.muted; font.pixelSize: Theme.smallFontSize }
-    component Action: Button {
-        id: control
-        property string iconName: ""
-        Layout.fillWidth: true
-        implicitHeight: Theme.controlHeight
-        horizontalPadding: 10; verticalPadding: 0; hoverEnabled: true
-        contentItem: RowLayout {
-            spacing: 8
-            Icon { name: control.iconName; color: control.checked || control.hovered || control.visualFocus ? Theme.accent : Theme.text }
-            ShellText { objectName: control.objectName + "Label"; text: control.text; Layout.fillWidth: true; Layout.fillHeight: true; elide: Text.ElideRight; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-            Item { implicitWidth: Theme.iconSize; implicitHeight: 1 }
-        }
-        background: ButtonBackground { idleColor: Theme.raised; highlighted: control.checked || control.hovered || control.visualFocus; pressed: control.down }
-    }
+    component Action: ShellButton { Layout.fillWidth: true }
     component Editor: Popup {
         id: popup
         required property Item button

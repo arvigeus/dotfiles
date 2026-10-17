@@ -46,9 +46,9 @@ DrawerPage {
     Component.onDestruction: service.observe(root, false)
     onActiveChanged: {
         service.observe(root, active);
-        if (!active) { unlock.close(); if (openOptions) openOptions.close(); }
+        if (!active) { unlock.close(); cleanup.closePopup(); if (openOptions) openOptions.close(); }
     }
-    escapeHandler: unlock.visible ? (() => unlock.close()) : openOptions ? (() => openOptions.close()) : null
+    escapeHandler: cleanup.popupOpen ? (() => cleanup.closePopup()) : unlock.visible ? (() => unlock.close()) : openOptions ? (() => openOptions.close()) : null
     headerActions: RowLayout {
         spacing: 4
         NetworkIconButton {
@@ -58,15 +58,15 @@ DrawerPage {
             onClicked: { Quickshell.execDetached(["filelight"]); root.closeRequested(); }
         }
         NetworkIconButton {
-            objectName: "disksRefresh"; iconName: "refresh-cw"; text: qsTr("Refresh storage")
-            enabled: !root.service.busy && !root.service.closing
-            onClicked: root.service.refresh()
-        }
-        NetworkIconButton {
             objectName: "disksEditor"; iconName: "pencil"; text: qsTr("Open Partition Manager")
             enabled: root.service.state.editorAvailable
             hint: enabled ? qsTr("Partitioning, formatting and advanced filesystem operations") : qsTr("Install partitionmanager to open the partition editor.")
             onClicked: { Quickshell.execDetached(["partitionmanager"]); root.closeRequested(); }
+        }
+        NetworkIconButton {
+            objectName: "disksRefresh"; iconName: "refresh-cw"; text: qsTr("Refresh storage")
+            enabled: !root.service.busy && !root.service.closing
+            onClicked: root.service.refresh()
         }
     }
     component Note: ShellText {
@@ -106,6 +106,11 @@ DrawerPage {
                     onOptionsClosed: menu => { if (root.openOptions === menu) root.openOptions = null; }
                 }
             }
+        }
+        CleanupControl {
+            id: cleanup
+            Layout.fillWidth: true; active: root.active
+            onPopupOpened: { unlock.close(); if (root.openOptions) root.openOptions.close(); }
         }
     }
     Popup {

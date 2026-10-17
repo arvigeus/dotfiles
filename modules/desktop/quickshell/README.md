@@ -119,6 +119,11 @@ The header scan button opens Filelight; the pencil opens KDE Partition Manager
 for partitioning and filesystem operations. Drive health
 checks run on request where supported; sleeping ATA drives stay asleep.
 
+**Clean system** offers recoverable package, browser and developer caches, unused
+Podman images and Flatpak runtimes, and optional mise tool removal. Select categories
+and hold to confirm. System package cleanup may ask for administrator authentication.
+See [cleanup implementation notes](ARCHITECTURE.md#system-cleanup).
+
 ## Service
 
 Show or hide the shell with

@@ -1497,6 +1497,14 @@
                 "target": "home/.config/quickshell/desktop/drawers/audio/qmldir"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/disks/CleanupControl.qml",
+                "target": "home/.config/quickshell/desktop/drawers/disks/CleanupControl.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/disks/CleanupService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/disks/CleanupService.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/disks/DisksService.qml",
                 "target": "home/.config/quickshell/desktop/drawers/disks/DisksService.qml"
             },
@@ -1511,6 +1519,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/disks/backend.py",
                 "target": "home/.config/quickshell/desktop/drawers/disks/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/disks/cleanup.py",
+                "target": "home/.config/quickshell/desktop/drawers/disks/cleanup.py"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/disks/qmldir",
@@ -1707,6 +1719,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/bluetooth.svg",
                 "target": "home/.config/quickshell/desktop/icons/bluetooth.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/brush-cleaning.svg",
+                "target": "home/.config/quickshell/desktop/icons/brush-cleaning.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/calendar-days.svg",
@@ -2045,6 +2061,10 @@
                 "target": "home/.config/quickshell/desktop/ui/DrawerWindow.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/HoldButton.qml",
+                "target": "home/.config/quickshell/desktop/ui/HoldButton.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/Icon.qml",
                 "target": "home/.config/quickshell/desktop/ui/Icon.qml"
             },
@@ -2071,6 +2091,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ScrollListView.qml",
                 "target": "home/.config/quickshell/desktop/ui/ScrollListView.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ShellButton.qml",
+                "target": "home/.config/quickshell/desktop/ui/ShellButton.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ShellText.qml",
@@ -2224,6 +2248,7 @@
         "udisks2",
         "partitionmanager",
         "filelight",
+        "pacman-contrib",
         "dolphin",
         "sqlite",
         "sqlitebrowser",
@@ -2327,7 +2352,6 @@
         "ebook-tools",
         "archinstall",
         "pkgstats",
-        "pacman-contrib",
         "reflector",
         "flatpak",
         "chaotic-keyring",
