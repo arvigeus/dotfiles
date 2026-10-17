@@ -44,15 +44,15 @@ Edit `~/.config/hypr/hyprsunset.conf` to set its temperature or timed profiles.
 | Win+Print            | Capture the focused window          |
 | Win+Ctrl+Print       | Select a window to capture          |
 | Shift+Print          | Capture the current display         |
-| Win+Shift+R          | Open vokoscreenNG's recording controls |
+| Win+Shift+R          | Open Kooha's recording controls      |
 
 Screenshots are saved under your Pictures directory in `Screenshots` and copied
 to the clipboard before the editor opens. While selecting an area, hold Space
 to move the rectangle; release Space to resize it before releasing the mouse.
 
-Ksnip and vokoscreenNG are the current trial tools. To compare the previous
-editor, run `DESKTOP_SCREENSHOT_EDITOR=satty desktop-screenshot edit`.
-Kooha remains available from the launcher.
+Ksnip is the default screenshot editor. Satty remains available with
+`DESKTOP_SCREENSHOT_EDITOR=satty desktop-screenshot edit`.
+Kooha provides recording controls until the wf-recorder drawer is implemented.
 
 ## File dialogs and screen sharing
 

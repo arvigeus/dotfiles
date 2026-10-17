@@ -33,7 +33,7 @@ hl.bind(mainMod .. " + SHIFT + PRINT", hl.dsp.exec_cmd("desktop-screenshot regio
 hl.bind(mainMod .. " + PRINT", hl.dsp.exec_cmd("desktop-screenshot active-window"))
 hl.bind(mainMod .. " + CTRL + PRINT", hl.dsp.exec_cmd("desktop-screenshot window"))
 hl.bind("SHIFT + PRINT", hl.dsp.exec_cmd("desktop-screenshot output"))
-hl.bind(mainMod .. " + SHIFT + R", hl.dsp.exec_cmd("vokoscreenNG"))
+hl.bind(mainMod .. " + SHIFT + R", hl.dsp.exec_cmd("kooha"))
 hl.bind(mainMod .. " + period", layoutAction(hl.dsp.layout("center")))
 hl.bind(mainMod .. " + J", layoutAction(hl.dsp.layout("promote"))) -- Give a stacked window its own column.
 hl.bind(mainMod .. " + bracketright", layoutAction(hl.dsp.layout("colresize +conf")))
