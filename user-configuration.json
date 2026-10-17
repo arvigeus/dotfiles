@@ -810,6 +810,11 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/desktop/hyprland/files/home/.config/ksnip/ksnip.conf",
+                "target": "home/.config/ksnip/ksnip.conf",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/desktop/hyprland/files/usr/local/bin/desktop-idle",
                 "target": "/usr/local/bin/desktop-idle",
                 "mode": "0755"
@@ -2197,7 +2202,9 @@
         "hyprlock",
         "hyprshot",
         "satty",
+        "ksnip",
         "kooha",
+        "vokoscreen",
         "xdg-desktop-portal-gtk",
         "brightnessctl",
         "playerctl",

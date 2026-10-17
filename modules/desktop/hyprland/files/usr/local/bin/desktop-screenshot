@@ -9,6 +9,7 @@ fail() {
 
 mode=${1:-}
 edit=false
+editor=${DESKTOP_SCREENSHOT_EDITOR:-ksnip}
 case $mode in
     edit) mode=region; edit=true ;;
     region|window|output|active-window) ;;
@@ -17,7 +18,11 @@ esac
 
 command -v hyprshot >/dev/null || fail 'Install hyprshot to take screenshots.'
 if $edit; then
-    command -v satty >/dev/null || fail 'Install satty to edit screenshots.'
+    case $editor in
+        ksnip|satty) ;;
+        *) fail 'Choose ksnip or satty as DESKTOP_SCREENSHOT_EDITOR.' ;;
+    esac
+    command -v "$editor" >/dev/null || fail "Install $editor to edit screenshots."
 fi
 
 pictures=$(xdg-user-dir PICTURES) || pictures=$HOME/Pictures
@@ -33,13 +38,20 @@ fi
 $edit && args+=(--silent)
 
 # Hyprshot captures in a child process; keep the pipe open until it finishes.
-hyprshot "${args[@]}" | cat
+# Its monitor can fail to kill a nonexistent hyprpicker after a successful grab.
+# Use the resulting image, rather than the monitor's exit status, for handoff.
+hyprshot "${args[@]}" | cat || true
 image=$folder/$filename
 # Cancelling selection produces no image and should not open the editor.
 [[ -s $image ]] || exit 0
 if $edit; then
-    exec satty --filename "$image" --output-filename "$image" \
-        --copy-command 'wl-copy --type image/png' \
-        --actions-on-enter save-to-file,save-to-clipboard,exit \
-        --actions-on-escape exit
+    case $editor in
+        ksnip) exec ksnip --edit "$image" ;;
+        satty)
+            exec satty --filename "$image" --output-filename "$image" \
+                --copy-command 'wl-copy --type image/png' \
+                --actions-on-enter save-to-file,save-to-clipboard,exit \
+                --actions-on-escape exit
+            ;;
+    esac
 fi
