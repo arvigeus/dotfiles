@@ -41,7 +41,7 @@ DrawerPage {
     }
     headerActions: AudioIconButton {
         objectName: "audioSettings"; iconName: "pencil"; text: qsTr("Advanced sound settings")
-        onClicked: { Quickshell.execDetached(["pavucontrol"]); root.closeRequested(); }
+        onClicked: { Quickshell.execDetached(["pavucontrol-qt"]); root.closeRequested(); }
     }
     ListModel { id: devicesModel; dynamicRoles: true }
     ListModel { id: appsModel; dynamicRoles: true }

@@ -19,7 +19,7 @@ DrawerPage {
     readonly property bool canAct: active && service.state.available
     headerActions: AudioIconButton {
         iconName: "pencil"; text: qsTr("Advanced microphone settings")
-        onClicked: { Quickshell.execDetached(["pavucontrol", "--tab=4"]); root.closeRequested(); }
+        onClicked: { Quickshell.execDetached(["pavucontrol-qt", "--tab=4"]); root.closeRequested(); }
     }
     ListModel { id: devicesModel; dynamicRoles: true }
     ListModel { id: recordingsModel; dynamicRoles: true }

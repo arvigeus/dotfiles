@@ -128,7 +128,7 @@ icon tinting. Treat layout/polish warnings as failures, including during resizin
   microphone test opens a capture stream.
 - Backend actions revalidate current devices, ports, card profiles and application
   serials. Profile changes require the previously observed profile. Explicit app
-  routing targets the current connected port of an exposed sink. `libpulse` provides pactl; pavucontrol is the advanced editor.
+  routing targets the current connected port of an exposed sink. `libpulse` provides pactl; pavucontrol-qt is the advanced editor.
 - Actions serialize and survive dismissal. Pending slider changes coalesce; model
   records reconcile by stable keys so refreshes preserve delegate identity/focus.
   Mute and volume are independent. The backend enforces volume ceilings too.

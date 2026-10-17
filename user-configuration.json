@@ -2210,7 +2210,7 @@
         "python-gobject",
         "network-manager-applet",
         "libpulse",
-        "pavucontrol",
+        "pavucontrol-qt",
         "alsa-utils",
         "ddcutil",
         "wdisplays",
