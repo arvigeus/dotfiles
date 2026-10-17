@@ -1,1 +1,1 @@
-alias telegram='flatpak run org.telegram.desktop'
+alias telegram='Telegram'

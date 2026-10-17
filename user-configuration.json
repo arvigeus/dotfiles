@@ -258,10 +258,6 @@
                 },
                 {
                     "remote": "flathub",
-                    "app": "org.telegram.desktop"
-                },
-                {
-                    "remote": "flathub",
                     "app": "com.rtosta.zapzap"
                 },
                 {
@@ -330,27 +326,11 @@
                 },
                 {
                     "remote": "flathub",
-                    "app": "org.fooyin.fooyin"
-                },
-                {
-                    "remote": "flathub",
-                    "app": "org.bunkus.mkvtoolnix-gui"
-                },
-                {
-                    "remote": "flathub",
-                    "app": "org.kde.subtitlecomposer"
-                },
-                {
-                    "remote": "flathub",
                     "app": "org.nickvision.tubeconverter"
                 },
                 {
                     "remote": "flathub",
                     "app": "org.libreoffice.LibreOffice"
-                },
-                {
-                    "remote": "flathub",
-                    "app": "com.github.johnfactotum.Foliate"
                 },
                 {
                     "remote": "flathub",
@@ -1115,23 +1095,13 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/media/music/fooyin/files/etc/profile.d/fooyin.sh",
-                "target": "/etc/profile.d/fooyin.sh",
+                "source": "modules/media/music/fooyin/files/home/.config/fooyin/fooyin.conf",
+                "target": "home/.config/fooyin/fooyin.conf",
                 "mode": "0644"
             },
             {
-                "source": "modules/media/music/fooyin/files/home/.var/app/org.fooyin.fooyin/config/fooyin/fooyin.conf",
-                "target": "home/.var/app/org.fooyin.fooyin/config/fooyin/fooyin.conf",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/media/music/fooyin/files/home/.var/app/org.fooyin.fooyin/config/fooyin/layout.fyl",
-                "target": "home/.var/app/org.fooyin.fooyin/config/fooyin/layout.fyl",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/media/tools/mkvtoolnix/files/etc/profile.d/mkvtoolnix.sh",
-                "target": "/etc/profile.d/mkvtoolnix.sh",
+                "source": "modules/media/music/fooyin/files/home/.config/fooyin/layout.fyl",
+                "target": "home/.config/fooyin/layout.fyl",
                 "mode": "0644"
             },
             {
@@ -2195,6 +2165,7 @@
         "extra/openai-codex",
         "extra/lemonade-server",
         "extra/opencode",
+        "ark",
         "unrar",
         "unzip",
         "7zip",
@@ -2214,6 +2185,7 @@
         "chromium",
         "firefox",
         "kdeconnect",
+        "telegram-desktop",
         "hyprpolkitagent",
         "hypridle",
         "hyprsunset",
@@ -2244,6 +2216,7 @@
         "dolphin",
         "sqlite",
         "sqlitebrowser",
+        "kate",
         "micro",
         "nano",
         "nano-syntax-highlighting",
@@ -2318,9 +2291,13 @@
         "wavemon",
         "qbittorrent",
         "rclone",
+        "koko",
+        "fooyin",
         "ffmpeg",
         "imagemagick",
+        "mkvtoolnix-gui",
         "ghostscript",
+        "subtitlecomposer",
         "mpv",
         "mpv-shim-default-shaders",
         "chaotic-aur/mpv-uosc",
@@ -2336,6 +2313,7 @@
         "opensc",
         "pcsc-tools",
         "okular",
+        "ebook-tools",
         "archinstall",
         "pkgstats",
         "pacman-contrib",

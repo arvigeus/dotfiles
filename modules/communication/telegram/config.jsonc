@@ -1,15 +1,19 @@
 {
+    "packages": ["telegram-desktop"],
     "extra": {
+        // Official Flatpak alternative: remove the native packages and uncomment.
+        /*
         "flatpak": {
             "packages": [
                 {
                     "remote": "flathub",
-                    "app": "com.github.johnfactotum.Foliate"
+                    "app": "org.telegram.desktop"
                 }
             ],
             "remotes": {
                 "flathub": "https://dl.flathub.org/repo/flathub.flatpakrepo"
             }
         }
+        */
     }
 }

@@ -1,5 +1,8 @@
 {
+    "packages": ["mkvtoolnix-gui"],
     "extra": {
+        // Official Flatpak alternative: remove the native packages and uncomment.
+        /*
         "flatpak": {
             "packages": [
                 {
@@ -11,5 +14,6 @@
                 "flathub": "https://dl.flathub.org/repo/flathub.flatpakrepo"
             }
         }
+        */
     }
 }

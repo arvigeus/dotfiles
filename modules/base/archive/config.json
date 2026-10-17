@@ -1,5 +1,6 @@
 {
     "packages": [
+        "ark",
         "unrar",
         "unzip",
         "7zip"
