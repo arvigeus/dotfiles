@@ -1517,6 +1517,26 @@
                 "target": "home/.config/quickshell/desktop/drawers/audio/qmldir"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/disks/DisksService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/disks/DisksService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/disks/DriveCard.qml",
+                "target": "home/.config/quickshell/desktop/drawers/disks/DriveCard.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/disks/VolumeRow.qml",
+                "target": "home/.config/quickshell/desktop/drawers/disks/VolumeRow.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/disks/backend.py",
+                "target": "home/.config/quickshell/desktop/drawers/disks/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/disks/qmldir",
+                "target": "home/.config/quickshell/desktop/drawers/disks/qmldir"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/displays/BrightnessControl.qml",
                 "target": "home/.config/quickshell/desktop/drawers/displays/BrightnessControl.qml"
             },
@@ -1761,6 +1781,10 @@
                 "target": "home/.config/quickshell/desktop/icons/droplet.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/eject.svg",
+                "target": "home/.config/quickshell/desktop/icons/eject.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/eye-off.svg",
                 "target": "home/.config/quickshell/desktop/icons/eye-off.svg"
             },
@@ -1769,8 +1793,24 @@
                 "target": "home/.config/quickshell/desktop/icons/eye.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/folder-open.svg",
+                "target": "home/.config/quickshell/desktop/icons/folder-open.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/folder-search.svg",
+                "target": "home/.config/quickshell/desktop/icons/folder-search.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/gauge.svg",
                 "target": "home/.config/quickshell/desktop/icons/gauge.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/hard-drive-download.svg",
+                "target": "home/.config/quickshell/desktop/icons/hard-drive-download.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/hard-drive-upload.svg",
+                "target": "home/.config/quickshell/desktop/icons/hard-drive-upload.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/hard-drive.svg",
@@ -1779,6 +1819,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/headphones.svg",
                 "target": "home/.config/quickshell/desktop/icons/headphones.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/heart.svg",
+                "target": "home/.config/quickshell/desktop/icons/heart.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/info.svg",
@@ -2194,6 +2238,10 @@
         "ddcutil",
         "wdisplays",
         "dunst",
+        "udisks2",
+        "partitionmanager",
+        "filelight",
+        "dolphin",
         "sqlite",
         "sqlitebrowser",
         "micro",
@@ -2266,7 +2314,6 @@
         "chaotic-aur/logiops",
         "solaar",
         "upower",
-        "udisks2",
         "wireless-regdb",
         "wavemon",
         "qbittorrent",

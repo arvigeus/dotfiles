@@ -109,6 +109,16 @@ Brightness retention depends on the hardware; the drawer does not restore it.
 The Night light toggle is remembered across logins.
 See [display implementation notes](ARCHITECTURE.md#displays).
 
+## Disks
+
+Storage capacity and free space by drive, with file-manager access to mounted
+locations, encrypted-volume unlock and mount/unmount. Unmounted devices remain
+available to mount again. System volumes stay mounted.
+
+The header scan button opens Filelight; the pencil opens KDE Partition Manager
+for partitioning and filesystem operations. Drive health
+checks run on request where supported; sleeping ATA drives stay asleep.
+
 ## Service
 
 Show or hide the shell with

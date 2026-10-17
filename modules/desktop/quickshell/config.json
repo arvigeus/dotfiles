@@ -1,6 +1,26 @@
 {
-  "packages": ["quickshell", "gtk3", "xdg-terminal-exec", "python-gobject", "network-manager-applet", "libpulse", "pavucontrol", "alsa-utils", "brightnessctl", "ddcutil", "wdisplays", "libnotify", "dunst"],
+  "packages": [
+    "quickshell",
+    "gtk3",
+    "xdg-terminal-exec",
+    "python-gobject",
+    "network-manager-applet",
+    "libpulse",
+    "pavucontrol",
+    "alsa-utils",
+    "brightnessctl",
+    "ddcutil",
+    "wdisplays",
+    "libnotify",
+    "dunst",
+    "udisks2",
+    "partitionmanager",
+    "filelight",
+    "dolphin"
+  ],
   "extra": {
-    "aur_packages": ["librespeed-cli-bin"]
+    "aur_packages": [
+      "librespeed-cli-bin"
+    ]
   }
 }

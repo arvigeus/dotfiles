@@ -14,7 +14,11 @@ belong to the page and are loaded by the host; the catalogue must not import ser
 The installed shell uses individual file symlinks. Editing an existing linked
 file reloads it, but adding a component or helper also requires installing its
 new link before reloading. Regenerating the manifest alone does not publish
-links. Verify component loading through the installed configuration as well as
+links. Publish new links before editing importers or their `qmldir`. If an
+already running engine attempted a missing component, edit/touch the top-level
+`shell.qml` after publishing to force a fresh configuration engine; a new preview
+process cannot detect cached failures in the existing shell.
+Verify component loading through the installed configuration as well as
 repository fixtures, which cannot detect missing installed files.
 
 ## Scrolling
@@ -563,6 +567,101 @@ failures and queue/observer lifetime. Generation tests check adapter ownership
 and host selection. Publish both the shell and selected hardware module symlinks
 before reloading the installed shell.
 Real Telex composition in third-party clients remains a native acceptance check.
+
+## Disks
+
+`drawers/DisksDrawer.qml` groups volumes under physical-drive cards, using shared
+surface, button, field, spinner and scroll controls. `disks/DriveCard.qml` keeps
+one representative volume's free-space summary visible (root, another mounted
+volume, or the first volume, in that order). Other volumes and mount-point chips
+start collapsed behind a chevron. Expansion is disabled without mounted volumes
+and collapses after the last unmount. It survives keyed refreshes while the
+drawer lives and resets on media-identity changes. Volume names open their first
+mount point; the expanded chips open specific locations. `VolumeRow.qml` shares
+summary, capacity and icon controls. The summary's single action beside its size
+mounts or unmounts that volume without powering off or ejecting the drive, so
+it remains available to remount. Locked volumes use that slot for unlock.
+Expanded secondary volumes retain individual mount/unmount/unlock controls.
+Drive/volume details live in passive tooltips; a heart button opens health details
+and checks on the first open without cached results. Unsupported health buttons are disabled. The popup
+shows pending/error states and offers an explicit refresh for cached results.
+Only one drive menu or editor popup remains open. Mount locations open with
+literal `dolphin --` arguments, matching the desktop file-manager shortcut and
+avoiding directory MIME handlers that may launch a terminal. Header actions
+refresh inventory and launch `partitionmanager` (KDE Partition Manager) for
+partition and filesystem operations. The scan action launches `filelight` as a separate
+application and dismisses the drawer. Each launch action is unavailable until
+its executable is installed.
+
+`disks/backend.py` uses Gio on the system bus with
+[UDisks](https://storaged.org/doc/udisks2-api/latest/index.html). Ordinary reads
+use `GetManagedObjects` and mounted filesystems' `statvfs`; they issue no SMART,
+device-probe, auto-mount or power-management commands. Local UDisks volumes are
+in scope; network shares and unrelated virtual filesystems are not inventoried.
+Free space uses `f_bavail`, so space reserved for root is not presented as usable.
+Failed capacity reads remain unknown. Multiple mount points share one volume's
+capacity bar; Btrfs subvolume mount points do not multiply storage totals.
+
+Crypto backing paths and sysfs slave relationships associate encrypted/LVM/RAID
+layers with physical drives. A directly unlocked filesystem shares its encrypted
+container's row; unlocked containers holding LVM give way to their filesystem
+rows. Volumes spanning several drives appear under Other volumes. Mounted
+volumes stay visible even with UDisks' ignore hint. Unmounted ignored volumes
+and raw partitions without a filesystem are omitted. Empty drives remain visible.
+
+Every action revalidates a fingerprint of the native object and observed media:
+block device number, filesystem UUID, size, crypto backing and associated drive
+identities; drive identity includes connection/media detection timestamps.
+Mount, unlock and unmount target the current native interface. Unlock does not
+automatically mount. Passphrases cross the worker's stdin and D-Bus only, never
+argv, disk or error text. QML retains startup input only until the pipe is ready;
+the input field clears on submission, Escape and dismissal. System mounts (`/`,
+`/boot`, `/efi`, `/usr`, `/var`, `/home` and their descendants) cannot be unmounted
+through the drawer. Active swap also prevents drive removal.
+
+The backend's explicit eject operation freezes the drive's block inventory, unmounts mounted
+filesystems without force, locks encrypted containers, then requests `PowerOff`
+or `Eject` according to capability. Each step checks live device identity; newly
+appearing mappings or mounts stop removal. Busy LVM/RAID holders are left to
+UDisks to reject. No holder teardown or swap disabling is attempted. A power-off
+that could affect another drive with the same `SiblingId` is withheld, with an
+explanation directing the user to Disks. Failure refreshes inventory so any
+completed unmounts are reflected. UDisks' existing polkit rules and the desktop
+authentication agent own authorization; this feature adds no permission rules.
+
+Health is an explicit read using `Drive.Ata.SmartUpdate` with `nowakeup=true`, or
+`NVMe.Controller.SmartUpdate`. SMART is never enabled automatically. Unsupported
+or disabled reporting has no health action. Summaries show provider warnings,
+temperature, powered-on hours, ATA bad sectors and the observation time. Results
+remain in memory, keyed by drive identity, without automatic health refreshes.
+An asleep ATA device reports that refresh would wake it and retains any prior
+result. NVMe checks may wake their controller; opening the drawer never requests
+one. No self-tests are started.
+
+`disks/DisksService.qml` is a feature-local lazy singleton. It polls only while
+a page observes it, serializes explicit actions and coalesces status reads.
+Actions finish after dismissal; the worker exits once the last owner leaves and
+the current action finishes. Stable keyed models preserve card and volume
+controls across refreshes. Action errors remain beside the affected device (or
+above the list after disconnect) until another action or dismissal of the error;
+successful status reads do not erase them. Unlock consumes Escape before the
+drawer and closes if its target disappears or changes identity.
+
+```sh
+python3 -m unittest discover -s tests -p test_disks_drawer.py
+python3 -m unittest discover -s tests -p test_desktop_interactions.py
+```
+
+Tests use fake UDisks inventories/mutations and the production QML. They cover
+encrypted/LVM associations, reserved/unknown capacity, stale media, system/swap
+protection, shared power, busy and changed inventories during removal, secret
+handling, health semantics, compact/expanded keyed refresh, narrow/light layouts,
+popup input, unmount/remount continuity and service lifetime. Dedicated analyzer
+launches use a fixture executable, so tests never start a real scan.
+`DISPLAY_PREVIEW_PLATFORM=wayland DISPLAY_PREVIEW_DIR=/tmp/disks-preview`
+enables native captures. Publish the new `disks/` helper and singleton links
+before checking the installed shell. Real mount/unlock/eject and polkit dialogs
+remain acceptance checks on disposable/removable media.
 
 ## Icons
 

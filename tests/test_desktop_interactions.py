@@ -56,6 +56,14 @@ if __name__=="__main__":
   print(json.dumps(dict(ok=True,error="",data=state)),flush=True)
 ''')
             (root / 'drawers/displays/brightness.py').write_text('import json,sys;json.loads(sys.stdin.readline());print(json.dumps(dict(ok=True,values=[])))')
+            # Storage uses fixture inventory; opening or dismissing must never touch host disks.
+            (root / 'drawers/disks/backend.py').write_text('''import json,sys
+volume=dict(key="vault",identity="vault",label="Vault",device="/dev/test1",fs="crypto_LUKS",size=1000,capacity=None,free=None,used=None,capacityError="",mounts=[],encrypted=True,locked=True,canMount=False,canUnmount=False,reason="",target="/")
+drive=dict(key="test-drive",identity="drive",label="Test drive",size=1000,connection="usb",removable=True,canEject=True,ejectReason="",healthSupported=True,volumes=[volume])
+for line in sys.stdin:
+ json.loads(line)
+ print(json.dumps(dict(ok=True,error="",data=dict(drives=[drive],editorAvailable=False))),flush=True)
+''')
             # Observe real page creation/destruction, including unrelated pages.
             (root / 'ui/ProbeState.qml').write_text('''pragma Singleton
 import QtQuick
@@ -312,6 +320,17 @@ ShellRoot {
                             input.keyClick(Qt.Key_Escape); sole("weather");
                             check(!popup.visible && !drawers.escapeHandler, "Escape did not close only reminder popup");
                         }
+                    }
+                    else if (previewKeys[stage - 21] === "disks") {
+                        check(find(drawers.contentItem, "disksScroll") && !find(drawers.contentItem, "drawerBrief"), "storage controls missing");
+                        const health = find(drawers.contentItem, "diskHealth:test-drive"); health.clicked();
+                        check(health.menu.visible && drawers.escapeHandler, "health popover Escape handler missing");
+                        input.keyClick(Qt.Key_Escape); sole("disks");
+                        check(!health.menu.visible && !drawers.escapeHandler, "Escape did not close only health popover");
+                        find(drawers.contentItem, "volumeAction:vault").clicked();
+                        check(drawers.currentPage.unlockPopup.visible && drawers.escapeHandler, "unlock Escape handler missing");
+                        input.keyClick(Qt.Key_Escape); sole("disks");
+                        check(!drawers.currentPage.unlockPopup.visible && !drawers.escapeHandler, "Escape did not close only unlock popup");
                     }
                     else
                         check(find(drawers.contentItem, "drawerBrief").text.length > 0, "preview draft missing");

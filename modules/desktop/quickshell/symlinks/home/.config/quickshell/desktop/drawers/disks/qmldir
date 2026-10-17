@@ -1,0 +1,3 @@
+singleton DisksService 1.0 DisksService.qml
+DriveCard 1.0 DriveCard.qml
+VolumeRow 1.0 VolumeRow.qml
