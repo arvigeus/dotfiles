@@ -83,6 +83,10 @@ def protected(displays):
 
 
 def idle_action(op):
+    if op == 'wake':
+        backend.command('dispatch', 'hl.dsp.dpms({action="on"})')
+        backend.command('dispatch', 'hl.dsp.event("desktop-displays-changed")')
+        return 0
     displays = backend.snapshot()['displays']
     awake = protected(displays)
     if op == 'allow-session-idle':

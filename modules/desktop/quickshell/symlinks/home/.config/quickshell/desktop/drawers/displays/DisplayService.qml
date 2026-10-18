@@ -1,6 +1,7 @@
 pragma Singleton
 import QtQuick
 import Quickshell.Io
+import Quickshell.Services.UPower
 
 QtObject {
     id: root
@@ -78,6 +79,10 @@ QtObject {
     // Session state stays in the shell; each helper invocation can exit after
     // one request without forgetting which changes came from restoration.
     property var baseline: null
+    property var powerState: ({active: false, overrides: {}, suppressed: []})
+    property var powerProfiles: PowerProfiles
+    readonly property string powerMode: powerProfiles.profile === PowerProfile.PowerSaver ? "power-saver" : "balanced"
+    onPowerModeChanged: if (started) run("power")
     property bool restorePending: false
     function start(): void {
         if (started) return;
@@ -110,7 +115,7 @@ QtObject {
     }
     function run(op: string, values = {}): void {
         if (op === "status" && (request?.op === "status" || queue.some(item => item.op === "status"))) return;
-        if (["sync", "restore"].includes(op) && queue.some(item => item.op === op)) return;
+        if (["sync", "restore", "power"].includes(op) && queue.some(item => item.op === op)) return;
         if (op !== "status" && op !== "sync") error = "";
         queue = queue.concat([Object.assign({op}, values)]);
         pump();
@@ -134,7 +139,7 @@ QtObject {
         command: ["python3", "-u", decodeURIComponent(Qt.resolvedUrl("backend.py").toString().replace(/^file:\/\//, ""))]
         stdinEnabled: true
         onStarted: {
-            write(JSON.stringify(Object.assign({}, root.request, {baseline: root.baseline})) + "\n");
+            write(JSON.stringify(Object.assign({}, root.request, {baseline: root.baseline, powerState: root.powerState, powerMode: root.powerMode})) + "\n");
             stdinEnabled = false;
         }
         stdout: SplitParser {
@@ -145,6 +150,7 @@ QtObject {
                     if (JSON.stringify(root.state) !== JSON.stringify(result.data)) root.state = result.data;
                     if (result.baseline !== undefined) root.baseline = result.baseline;
                     else if (result.ok && root.request?.op !== "status") root.baseline = result.data;
+                    if (result.powerState) root.powerState = result.powerState;
                     if (!result.ok) root.error = result.error || qsTr("Could not change displays.");
                 } catch (_) { root.error = qsTr("Could not read display status."); }
             }

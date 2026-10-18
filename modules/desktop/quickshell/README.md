@@ -26,7 +26,26 @@ current one. Scroll over the bar islands to reach buttons on narrow displays.
 Workspace navigation stays on the current display without wrapping. A populated
 workspace can create a new neighbor; empty workspaces disappear when left.
 Three-finger vertical swipes switch workspaces; horizontal swipes scroll columns.
-Battery and notification indicators are currently samples.
+Notification indicators are currently samples.
+
+## Battery and performance
+
+Battery shows system and device batteries, with charge-limit control on supported
+hardware. **Charge to 100% once** restores the previous limit after unplugging;
+**Restore charge limit** ends it early. Changing the limit manually cancels it.
+One-time charging needs the shell running; pending restorations recover at startup.
+An unplug/replug cycle while the shell is stopped cannot be detected.
+
+Performance offers power modes, resource readings, btop access and workload
+recording. On Zephyrus, plugging in selects Balanced and unplugging selects
+Powersave; Performance stays selected. See the
+[mode comparison](../../hardware/power/README.md) for CPU, cooling and playback behavior.
+Detailed readings refresh while the drawers are open; sleeping GPUs stay asleep.
+
+**Record performance** observes the current workload for the chosen number of
+minutes and saves readings and a summary. It requires `power-study`, continues
+with the drawer closed, and stops on shell exit or reload.
+See [power implementation notes](ARCHITECTURE.md#battery-and-performance).
 
 ## Networking
 
@@ -86,6 +105,8 @@ See [input language integration](ARCHITECTURE.md#keyboard) for technical details
 ## Displays
 
 Per-display controls for refresh rate, mirroring and hardware brightness.
+Each display's cog offers **Use recommended resolution** to apply and save its
+preferred resolution and refresh rate.
 The header edit button opens wdisplays for arrangement, resolution, scale and rotation.
 Settings apply immediately, and the cog menu closes after each selection.
 Identify displays labels the connected screens. Each cog also offers test patterns
@@ -105,6 +126,9 @@ Display settings are saved automatically in
 `~/.config/quickshell/desktop/displays.json` and restored after login, reconnect
 and Hyprland config reload. This user-owned file is separate from the dotfiles.
 Changes made in wdisplays are saved when display-change notifications settle.
+Unplugging the last external display temporarily re-enables the built-in panel;
+your dock-only preference returns on reconnect. Stranded workspaces and off-screen
+floating windows are recovered onto an available display.
 Brightness retention depends on the hardware; the drawer does not restore it.
 The Night light toggle is remembered across logins.
 See [display implementation notes](ARCHITECTURE.md#displays).

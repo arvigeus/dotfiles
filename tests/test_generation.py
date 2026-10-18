@@ -38,6 +38,9 @@ class GenerationTests(unittest.TestCase):
             vm_links = {entry['target']: entry['source'] for entry in vm['extra']['symlinks']}
             self.assertTrue(zephyrus_links[backend + 'asus.py'].startswith('modules/hardware/devices/zephyrus/'))
             self.assertNotIn(backend + 'asus.py', vm_links)
+            power_backend = 'home/.config/devices/power/backends/asus.py'
+            self.assertTrue(zephyrus_links[power_backend].startswith('modules/hardware/devices/zephyrus/'))
+            self.assertNotIn(power_backend, vm_links)
             for links in (zephyrus_links, vm_links):
                 self.assertTrue(links[backend + 'logitech.py'].startswith('modules/hardware/peripherals/logitech/'))
                 self.assertFalse(any(target.endswith('drawers/keyboard/lighting.py') or target.endswith('drawers/keyboard/logitech.py') for target in links))
@@ -49,7 +52,17 @@ class GenerationTests(unittest.TestCase):
             self.assertEqual(updated['disk_config']['device_modifications'][0]['device'], '/dev/sda')
             self.assertEqual(vm['bootloader_config'], zephyrus['bootloader_config'])
             self.assertIn('udisks2', vm['packages'])
+            self.assertIn('upower', vm['packages'])
+            self.assertIn('upower.service', vm['services'])
+            self.assertIn('power-source.service', zephyrus['services'])
+            self.assertNotIn('power-source.service', vm['services'])
+            power_files = {entry['target']: entry for entry in zephyrus['extra']['files']}
+            self.assertEqual(power_files['/usr/local/libexec/power-source']['mode'], '0755')
+            self.assertIn('/etc/systemd/system/power-source.service', power_files)
             for config, device in ((zephyrus, '/dev/nvme0n1'), (vm, '/dev/vda')):
+                files = {entry['target']: entry for entry in config['extra']['files']}
+                self.assertNotIn('/usr/local/libexec/desktop-cpu-boost', files)
+                self.assertNotIn('/usr/share/polkit-1/actions/org.dotfiles.desktop.cpu-boost.policy', files)
                 disk = config['disk_config']['device_modifications'][0]
                 self.assertEqual(disk.pop('device'), device)
                 disk['partitions'][1]['size'].pop('value')

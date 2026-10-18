@@ -1,5 +1,4 @@
-// Tuned owns platform profiles and CPU EPP; asusd retains ASUS hardware control.
-// Firmware owns temperatures, fans and power limits; no custom tuning groups.
+// Initial seed only. Existing ASUS preferences are preserved during reapply.
 (
     charge_control_end_threshold: 100,
     base_charge_control_end_threshold: 100,

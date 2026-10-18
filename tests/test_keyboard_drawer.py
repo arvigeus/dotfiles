@@ -120,7 +120,7 @@ ShellRoot {
   const field=find(drawer,"keyboardTestInput");
   if(stage===0){
    check(find(drawer,"language-en").current,"English not active");
-   check(find(drawer,"keyboardPrimaryLabel").text==="Primary","primary heading");
+   check(find(drawer,"keyboardPrimaryLabel").text==="Primary language","primary heading");
    check(field.height<=44,"test field is not a single line");
    const slider=find(drawer,"keyboardBacklightSlider:test::kbd_backlight");
    check(slider&&slider.from===0&&slider.to===3&&slider.stepSize===1,"native backlight range");

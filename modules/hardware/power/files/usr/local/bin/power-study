@@ -1,0 +1,298 @@
+#!/usr/bin/python3 -I
+"""Explicit, bounded measurements; never a resident power-management service."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import signal
+import statistics
+import subprocess
+import time
+
+SYS = Path('/sys')
+
+
+def read(path):
+    try:
+        return Path(path).read_text().strip()
+    except OSError:
+        return None
+
+
+def value(path, divisor=1):
+    try:
+        return float(read(path)) / divisor
+    except (TypeError, ValueError):
+        return None
+
+
+def command(args):
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=8)
+        return result.stdout.strip() if result.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def sample(gpu_telemetry=False):
+    batteries, ac, temperatures, fans, gpus = {}, {}, {}, {}, {}
+    for supply in (SYS / 'class/power_supply').glob('*'):
+        kind = read(supply / 'type')
+        if kind == 'Battery' and read(supply / 'scope') != 'Device':
+            batteries[supply.name] = dict(status=read(supply / 'status'),
+                watts=value(supply / 'power_now', 1e6), wh=value(supply / 'energy_now', 1e6),
+                full_wh=value(supply / 'energy_full', 1e6), design_wh=value(supply / 'energy_full_design', 1e6))
+        elif kind in ('Mains', 'USB', 'USB_C'):
+            ac[supply.name] = read(supply / 'online')
+    for hw in (SYS / 'class/hwmon').glob('*'):
+        device = (hw / 'device').resolve()
+        if any(read(parent / 'power/runtime_status') in ('suspended', 'suspending')
+               for parent in (device, *device.parents)):
+            continue
+        chip = read(hw / 'name')
+        # DRM sensors are read below only after checking the GPU's PM state.
+        if chip in ('k10temp', 'coretemp', 'asus', 'acpitz', 'nvme'):
+            for path in hw.glob('temp*_input'):
+                label = read(path.with_name(path.name.replace('_input', '_label'))) or path.stem
+                temperatures[f'{chip}:{label}'] = value(path, 1000)
+        if chip == 'asus':
+            for path in hw.glob('fan*_input'):
+                label = read(path.with_name(path.name.replace('_input', '_label'))) or path.stem
+                fans[label] = value(path)
+    for card in (SYS / 'class/drm').glob('card[0-9]*'):
+        if not card.name[4:].isdigit():
+            continue
+        device = card / 'device'
+        state = read(device / 'power/runtime_status')
+        gpu = dict(state=state, id=read(device / 'device'), control=read(device / 'power/control'))
+        # Even an already-active GPU can be held awake by hwmon reads resetting
+        # its autosuspend timer. Battery measurements observe PM state only.
+        if state == 'active' and gpu_telemetry:
+            gpu['busy'] = value(device / 'gpu_busy_percent')
+            gpu['vram'] = value(device / 'mem_info_vram_used')
+            for hw in (device / 'hwmon').glob('*'):
+                gpu['watts'] = value(hw / 'power1_average', 1e6) or value(hw / 'power1_input', 1e6)
+                gpu['clock_mhz'] = value(hw / 'freq1_input', 1e6)
+                gpu['memory_clock_mhz'] = value(hw / 'freq2_input', 1e6)
+                for path in hw.glob('temp*_input'):
+                    label = read(path.with_name(path.name.replace('_input', '_label'))) or path.stem
+                    gpu[label] = value(path, 1000)
+        gpus[device.resolve().name] = gpu
+    cpu = SYS / 'devices/system/cpu/cpufreq'
+    memory = {}
+    for line in (read('/proc/meminfo') or '').splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] in ('MemTotal:', 'MemAvailable:'):
+            memory[parts[0].rstrip(':')] = int(parts[1]) * 1024
+    # CLOCK_BOOTTIME includes suspend, so a sleeping laptop invalidates the run.
+    return dict(time=time.time(), monotonic=time.clock_gettime(time.CLOCK_BOOTTIME), batteries=batteries, ac=ac,
+                temperatures=temperatures, fans=fans, gpus=gpus,
+                profile=read('/etc/tuned/active_profile'), platform=read(SYS / 'firmware/acpi/platform_profile'),
+                boost=read(cpu / 'boost'), epp=read(cpu / 'policy0/energy_performance_preference'),
+                cpu_limits={p.name: {name: read(p / name) for name in
+                    ('scaling_min_freq', 'scaling_max_freq', 'cpuinfo_max_freq', 'boost')}
+                    for p in cpu.glob('policy*')},
+                frequency_mhz=value(cpu / 'policy0/scaling_cur_freq', 1000),
+                ppt={p.name: read(p / 'current_value') for p in
+                    (SYS / 'class/firmware-attributes/asus-armoury/attributes').glob('ppt_*')}
+                    if gpu_telemetry else None,
+                load=read('/proc/loadavg'), cpu_stat=read('/proc/stat').splitlines()[0],
+                memory_used=max(0, memory['MemTotal'] - memory['MemAvailable']) if len(memory) == 2 else None,
+                backlights={p.name: read(p / 'brightness') for p in (SYS / 'class/backlight').glob('*')})
+
+
+def metadata(gpu_telemetry=False):
+    return dict(recorder_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                kernel=os.uname().release, bios=read(SYS / 'devices/virtual/dmi/id/bios_version'),
+                hardware=read(SYS / 'devices/virtual/dmi/id/product_name'),
+                versions=command(['pacman', '-Q', 'tuned', 'tuned-ppd', 'asusctl', 'mesa', 'mpv', 'linux-firmware']),
+                monitors=command(['hyprctl', 'monitors', 'all', '-j']),
+                wifi=command(['iw', 'dev', 'wlan0', 'get', 'power_save']), sample=sample(gpu_telemetry))
+
+
+def guard(row, cpu=82, edge=80, hotspot=90):
+    for label, temp in row['temperatures'].items():
+        if label.startswith(('k10temp:', 'coretemp:')) and temp is not None and temp >= cpu:
+            return f'{label} reached {temp} C (guard {cpu} C)'
+    for key, gpu in row['gpus'].items():
+        for label, limit in [('edge', edge), ('junction', hotspot), ('mem', hotspot)]:
+            if isinstance(gpu.get(label), (int, float)) and gpu[label] >= limit:
+                return f'{key} {label} reached {gpu[label]} C (guard {limit} C)'
+    return ''
+
+
+def sensor_failure(row, gpu_telemetry=True):
+    if not any(label.startswith(('k10temp:', 'coretemp:')) and temp is not None
+               for label, temp in row['temperatures'].items()):
+        return 'CPU temperature is unavailable; guarded workload refused'
+    for key, gpu in row['gpus'].items():
+        if gpu_telemetry and gpu.get('id') == '0x73ef' and gpu['state'] == 'active' and any(gpu.get(label) is None for label in ('edge', 'junction')):
+            return f'{key} thermal telemetry is unavailable; guarded workload stopped'
+    return ''
+
+
+def summarize(rows):
+    result = dict(samples=len(rows))
+    if len(rows) < 2:
+        return result
+    elapsed = rows[-1]['monotonic'] - rows[0]['monotonic']
+    result['measured_seconds'] = elapsed
+    if elapsed <= 0:
+        return result
+    try:
+        first = [int(n) for n in rows[0]['cpu_stat'].split()[1:9]]
+        last = [int(n) for n in rows[-1]['cpu_stat'].split()[1:9]]
+        total = sum(last) - sum(first)
+        idle = sum(last[3:5]) - sum(first[3:5])
+        result['cpu_usage'] = max(0, min(100, (total - idle) / total * 100)) if total > 0 else None
+    except (KeyError, ValueError, IndexError):
+        result['cpu_usage'] = None
+    memories = [r['memory_used'] for r in rows if r.get('memory_used') is not None]
+    result['peak_memory_used'] = max(memories) if memories else None
+    result['batteries'] = {}
+    for key, first in rows[0]['batteries'].items():
+        last = rows[-1]['batteries'].get(key, {})
+        powers = [r['batteries'][key]['watts'] for r in rows if key in r['batteries']
+                  and r['batteries'][key]['status'] == 'Discharging' and r['batteries'][key]['watts'] is not None]
+        entry = dict(discharge_samples=len(powers))
+        if len(powers) == len(rows) and all(
+                '1' not in row.get('ac', {}).values() for row in rows):
+            mean = statistics.mean(powers)
+            entry.update(mean_w=mean, median_w=statistics.median(powers), stdev_w=statistics.stdev(powers),
+                         min_w=min(powers), max_w=max(powers))
+            if first['wh'] is not None and last.get('wh') is not None:
+                delta = first['wh'] - last['wh']
+                entry.update(energy_delta_wh=delta, energy_delta_mean_w=delta * 3600 / elapsed)
+            if mean > 0:
+                entry.update(estimated_full_hours=first['full_wh'] / mean if first['full_wh'] else None,
+                             estimated_remaining_hours=last['wh'] / mean if last.get('wh') else None)
+        result['batteries'][key] = entry
+    result['peak_temperatures_c'] = {key: max(values) for key in rows[0]['temperatures']
+        if (values := [r['temperatures'][key] for r in rows if r['temperatures'].get(key) is not None])}
+    result['gpu_active_samples'] = {key: sum(r['gpus'].get(key, {}).get('state') == 'active' for r in rows)
+                                    for key in rows[0]['gpus']}
+    return result
+
+
+def stop_workload(child, abort=False):
+    if child is None:
+        return
+    # A thermal/telemetry guard must not leave GPU load running through a
+    # graceful-shutdown timeout. Only normal completion gets that grace period.
+    try:
+        os.killpg(child.pid, signal.SIGKILL if abort else signal.SIGTERM)
+    except ProcessLookupError:
+        child.wait()
+        return
+    try:
+        child.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+    finally:
+        # The launcher can exit before its descendants, including descendants
+        # that ignore SIGTERM. Always clean up the remaining process group.
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        child.wait()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('label')
+    parser.add_argument('--duration', type=float, default=120)
+    parser.add_argument('--warmup', type=float, default=20)
+    parser.add_argument('--interval', type=float, default=2)
+    parser.add_argument('--cpu-limit', type=float, default=82)
+    parser.add_argument('--gpu-telemetry', action='store_true',
+                        help='Collect active GPU sensors for guarded thermal loads; may delay runtime suspension')
+    parser.add_argument('--output', type=Path)
+    parser.add_argument('command', nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    # Options precede the label, command follows it (optionally with --).
+    if not 1 <= args.duration <= 3600 or not 0 <= args.warmup <= 300 or not .25 <= args.interval <= 10:
+        parser.error('duration 1..3600 s, warmup 0..300 s, interval .25..10 s')
+    if not 60 <= args.cpu_limit <= 85:
+        parser.error('CPU guard must be 60..85 C; hardware protections are never changed')
+    directory = args.output or Path(os.environ.get('XDG_STATE_HOME', str(Path.home() / '.local/state'))) / 'dotfiles-power-study' / (time.strftime('%Y%m%d-%H%M%S-') + ''.join(c if c.isalnum() or c in '-_' else '_' for c in args.label))
+    directory.mkdir(parents=True, exist_ok=False)
+    before = metadata(args.gpu_telemetry)
+    (directory / 'before.json').write_text(json.dumps(before, indent=2) + '\n')
+    print(directory, flush=True)
+    initial = before['sample']
+    reason = guard(initial, args.cpu_limit)
+    child, rows, observations = None, [], []
+    stopped = False
+    def stop(_signal, _frame):
+        nonlocal stopped
+        stopped = True
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    argv = args.command[1:] if args.command[:1] == ['--'] else args.command
+    if argv:
+        reason = reason or sensor_failure(initial, args.gpu_telemetry)
+    started = time.clock_gettime(time.CLOCK_BOOTTIME)
+    with (directory / 'workload.log').open('w') as log, (directory / 'samples.jsonl').open('w') as stream:
+        try:
+            if argv and not reason:
+                child = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+            previous_time = started
+            while not reason and not stopped:
+                row = sample(args.gpu_telemetry)
+                now = row['monotonic']
+                if now - previous_time > max(10, args.interval * 3):
+                    reason = 'Measurement interrupted (suspend or scheduling gap)'
+                previous_time = now
+                reason = reason or guard(row, args.cpu_limit)
+                if child:
+                    reason = reason or sensor_failure(row, args.gpu_telemetry)
+                if any(row[key] != initial[key] for key in ('ac', 'profile', 'platform', 'boost', 'epp', 'cpu_limits', 'ppt', 'backlights')):
+                    reason = reason or 'Power policy, AC state or brightness changed; run is not comparable'
+                row['warmup'] = now - started < args.warmup
+                observations.append(row)
+                stream.write(json.dumps(row) + '\n')
+                stream.flush()
+                if not row['warmup']:
+                    rows.append(row)
+                if child and child.poll() is not None:
+                    if child.returncode:
+                        reason = reason or f'Workload exited with status {child.returncode}'
+                    break
+                if now - started >= args.warmup + args.duration:
+                    break
+                time.sleep(args.interval)
+        finally:
+            stop_workload(child, abort=bool(reason))
+    after = metadata(args.gpu_telemetry)
+    if after['monitors'] != before['monitors']:
+        # Focus/workspace fields vary normally; compare physical configuration.
+        def displays(raw):
+            try:
+                return [{k: m.get(k) for k in ('name', 'width', 'height', 'refreshRate', 'scale', 'disabled', 'dpmsStatus')} for m in json.loads(raw or '[]')]
+            except ValueError:
+                return raw
+        if displays(after['monitors']) != displays(before['monitors']):
+            reason = reason or 'Display configuration changed; run is not comparable'
+    summary = dict(summarize(rows), label=args.label, abort_reason=reason, interrupted=stopped,
+                   command=argv, gpu_telemetry=args.gpu_telemetry, child_returncode=child.returncode if child else None)
+    # Early bursts can trip a guard before the measured interval even starts.
+    # Keep their thermal extrema rather than hiding them with warm-up exclusion.
+    summary['observed_samples'] = len(observations)
+    summary['observed_peak_temperatures_c'] = {
+        key: max(values) for key in {k for row in observations for k in row['temperatures']}
+        if (values := [row['temperatures'][key] for row in observations if row['temperatures'].get(key) is not None])}
+    summary['observed_gpu_peaks_c'] = {
+        key: {sensor: max(values) for sensor in ('edge', 'junction', 'mem')
+              if (values := [row['gpus'].get(key, {}).get(sensor) for row in observations
+                             if isinstance(row['gpus'].get(key, {}).get(sensor), (int, float))])}
+        for key in {k for row in observations for k in row['gpus']}}
+    (directory / 'after.json').write_text(json.dumps(after, indent=2) + '\n')
+    (directory / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+    print(json.dumps(summary, indent=2), flush=True)
+    return 2 if reason or stopped else 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

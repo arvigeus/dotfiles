@@ -34,8 +34,14 @@ end
 function DesktopWorkspaces.step(direction, monitorID, moveWindow)
     if direction ~= -1 and direction ~= 1 then return end
     local monitor
-    if monitorID == nil then monitor = hl.get_active_monitor()
-    else monitor = hl.get_monitor(monitorID) end
+    if monitorID == nil then
+        monitor = hl.get_active_monitor()
+    else
+        -- Match the bar's numeric ID directly, without monitor selector parsing.
+        for _, candidate in ipairs(hl.get_monitors()) do
+            if candidate.id == monitorID then monitor = candidate; break end
+        end
+    end
     if not monitor then return end
     local current = monitor.active_workspace
     if not current or current.id < 1 or monitor.active_special_workspace then return end
@@ -81,3 +87,69 @@ end
 -- is left alone. Startup and newly attached displays receive room in both directions.
 hl.on("monitor.added", DesktopWorkspaces.seed)
 for _, monitor in ipairs(hl.get_monitors()) do DesktopWorkspaces.seed(monitor) end
+
+-- Let native output migration finish before repairing anything left behind.
+-- This also covers disabling an output and changing its position/mode/scale.
+function DesktopWorkspaces.recover()
+    local monitors, byName = {}, {}
+    for _, monitor in ipairs(hl.get_monitors()) do
+        if monitor.enabled and not monitor.is_mirror and monitor.name ~= "FALLBACK" then
+            table.insert(monitors, monitor)
+            byName[monitor.name] = monitor
+        end
+    end
+    local focused = hl.get_active_monitor()
+    local target = focused and byName[focused.name] or monitors[1]
+    if not target then return end
+
+    -- Move whole workspaces so tiled windows reflow and stacks stay separate.
+    local rescued = {}
+    for _, workspace in ipairs(hl.get_workspaces()) do
+        local monitor = workspace.monitor
+        if not monitor or not byName[monitor.name] then
+            local selector = workspace.special and ("special:" .. workspace.name:gsub("^special:", ""))
+                or workspace.id or workspace.name
+            hl.dispatch(hl.dsp.workspace.move({ workspace = selector, monitor = target.name }))
+            rescued[workspace.id or workspace.name] = target
+        end
+    end
+
+    local function bounds(monitor)
+        local width, height = monitor.width, monitor.height
+        if monitor.transform % 2 == 1 then width, height = height, width end
+        local reserved = monitor.reserved
+        local left, top = monitor.x + reserved.left, monitor.y + reserved.top
+        return left, top, monitor.x + width / monitor.scale - reserved.right,
+            monitor.y + height / monitor.scale - reserved.bottom
+    end
+    for _, window in ipairs(hl.get_windows({ mapped = true, floating = true })) do
+        if not window.hidden and window.fullscreen == 0 then
+            local at, size = window.at, window.size
+            local reachable = false
+            for _, monitor in ipairs(monitors) do
+                local left, top, right, bottom = bounds(monitor)
+                if at.x < right and at.x + size.x > left and at.y < bottom and at.y + size.y > top then
+                    reachable = true
+                    break
+                end
+            end
+            if not reachable then
+                local workspace = window.workspace
+                local monitor = workspace and (rescued[workspace.id or workspace.name] or workspace.monitor)
+                monitor = monitor and byName[monitor.name] or target
+                local left, top, right, bottom = bounds(monitor)
+                local width, height = math.min(size.x, right - left), math.min(size.y, bottom - top)
+                local selector = "address:" .. window.address
+                if width ~= size.x or height ~= size.y then
+                    hl.dispatch(hl.dsp.window.resize({ window = selector, x = width, y = height, relative = false }))
+                end
+                hl.dispatch(hl.dsp.window.move({ window = selector,
+                    x = math.max(left, math.min(at.x, right - width)),
+                    y = math.max(top, math.min(at.y, bottom - height)), relative = false }))
+            end
+        end
+    end
+end
+
+local recovery = hl.timer(DesktopWorkspaces.recover, { timeout = 150, type = "oneshot" })
+hl.on("monitor.layout_changed", function() recovery:set_timeout(150) end)

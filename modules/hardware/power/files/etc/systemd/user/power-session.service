@@ -1,0 +1,13 @@
+[Unit]
+Description=Apply power policy to cooperating session applications
+StartLimitIntervalSec=0
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/power-session
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+TimeoutStartSec=15

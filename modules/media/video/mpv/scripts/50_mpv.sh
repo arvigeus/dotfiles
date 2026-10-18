@@ -3,7 +3,6 @@
 ## https://mpv.io/
 set -Eeuo pipefail
 repo_dir=${DOTFILES_REPO:?}
-MODULE_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
 source "$repo_dir/scripts/config-helpers.sh"
 source "$repo_dir/scripts/helpers/hardware.sh"
@@ -11,16 +10,18 @@ source "$repo_dir/scripts/helpers/hardware.sh"
 # Configuration
 SHADERS_DIR="${MPV_SHADERS_DIR:-/usr/share/mpv-shim-default-shaders/shaders}"
 PACK_JSON="${MPV_SHADER_PACK:-/usr/share/mpv-shim-default-shaders/pack-next.json}"
-MPV_CONF_DIR="$HOME/.config/mpv"
+MPV_CONF_DIR="${MPV_CONF_DIR:-$HOME/.config/mpv}"
 
 configure() {
 	# Physical GA402RK comparisons found VA-API/OpenGL substantially cheaper
-	# than Vulkan Video for the tested H.264 playback. Keep driver/codec discovery
-	# automatic; this is a native mpv option, not a power-management hook.
+	# than the original Vulkan/software-decoding path for tested H.264 playback.
+	# Keep driver and codec discovery automatic.
 	if dmi_matches ga402rk; then
 		file_append "${MPV_CONF_DIR}/mpv.conf" <<'EOF'
 # GA402RK playback renderer preference
 gpu-api=opengl
+hwdec=auto-safe
+include=/etc/mpv/power-profiles.conf
 
 EOF
 	fi
@@ -38,10 +39,13 @@ HEADER
 	jq -r --arg sd "${SHADERS_DIR}" '
     .["setting-groups"] as $g |
     .profiles | to_entries[] |
+    select((.value.platforms // ["linux"]) | index("linux")) |
     .key as $n | .value as $p |
     ($p["setting-groups"] // []) as $sgs |
     ([($sgs[] | $g[.].shaders // [] | .[])] + ($p.shaders // [])) as $shaders |
     [($sgs[] | $g[.].settings // [] | .[])] as $settings |
+    # The shared pack contains Windows-only D3D11 profiles; mpv validates
+    # even inactive profiles and reports unsupported options at every launch.
     "[\($n)]",
     ($settings[] |
         "\(.[0] | gsub("_"; "-"))=\(
@@ -93,6 +97,7 @@ EOF
 	jq -r --arg skip "$BOUND_PROFILES" '
     ($skip | split(" ")) as $skip_list |
     .profiles | to_entries[] |
+    select((.value.platforms // ["linux"]) | index("linux")) |
     select(.key as $k | $skip_list | index($k) | not) |
     "# apply-profile \"\(.key)\"; show-text \"Profile: \(.value.displayname // .key)\" #! Profiles > \(.value.displayname // .key)"
 ' "${PACK_JSON}" | file_append "${MPV_CONF_DIR}/input.conf"

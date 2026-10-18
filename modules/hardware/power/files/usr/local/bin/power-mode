@@ -1,0 +1,32 @@
+#!/usr/bin/python3 -I
+"""Select the same three modes as the desktop through the standard PPD API."""
+import argparse
+from gi.repository import Gio, GLib
+
+SERVICE = 'org.freedesktop.UPower.PowerProfiles'
+PATH = '/org/freedesktop/UPower/PowerProfiles'
+PROPERTIES = 'org.freedesktop.DBus.Properties'
+MODES = {'performance': 'performance', 'balanced': 'balanced', 'powersave': 'power-saver'}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('mode', choices=MODES, nargs='?')
+    args = parser.parse_args()
+    bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+    def call(method, signature, values):
+        return bus.call_sync(SERVICE, PATH, PROPERTIES, method, GLib.Variant(signature, values), None,
+                             Gio.DBusCallFlags.NONE, 15000, None).unpack()
+    if args.mode:
+        call('Set', '(ssv)', (SERVICE, 'ActiveProfile', GLib.Variant('s', MODES[args.mode])))
+    active = call('Get', '(ss)', (SERVICE, 'ActiveProfile'))[0]
+    if args.mode and active != MODES[args.mode]:
+        raise RuntimeError('The power service did not confirm the requested mode')
+    print(next((key for key, value in MODES.items() if value == active), active))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (GLib.Error, RuntimeError) as error:
+        raise SystemExit(str(error))

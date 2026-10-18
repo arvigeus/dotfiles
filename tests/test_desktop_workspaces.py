@@ -9,8 +9,8 @@ POLICY = (Path(__file__).resolve().parents[1] / 'modules/desktop/hyprland'
           / 'symlinks/home/.config/hypr/workspaces.lua')
 
 SETUP = r'''
-local monitors = { { id = 0 }, { id = 1 } }
-local workspaces, actions = {}, {}
+local monitors = { { id = 0, name = "DP-1" }, { id = 1, name = "DP-2" } }
+local workspaces, actions, windows, timers = {}, {}, {}, {}
 local focused, activeWindow = monitors[1], nil
 local applyFocus, registered = false, {}
 local function add(id, name, monitor, windows)
@@ -24,7 +24,27 @@ hl = {
     get_active_monitor = function() return focused end,
     get_monitors = function() return monitors end,
     on = function(event, callback) registered[event] = callback end,
-    get_monitor = function(id) return monitors[id + 1] end,
+    timer = function(callback, options)
+        assert(options.type == "oneshot")
+        local timer = { callback = callback, timeout = options.timeout, restarts = 0 }
+        function timer:set_timeout(timeout) self.timeout = timeout; self.restarts = self.restarts + 1 end
+        table.insert(timers, timer)
+        return timer
+    end,
+    get_windows = function(filters)
+        assert(filters.mapped and filters.floating)
+        local result = {}
+        for _, window in ipairs(windows) do
+            if window.mapped and window.floating then table.insert(result, window) end
+        end
+        return result
+    end,
+    -- Bare numeric IDs from the bar do not reliably resolve as native selectors.
+    get_monitor = function(name)
+        for _, monitor in ipairs(monitors) do
+            if name == monitor.name then return monitor end
+        end
+    end,
     get_active_window = function() return activeWindow end,
     get_workspaces = function() return workspaces end,
     get_workspace = function(selector)
@@ -46,10 +66,29 @@ hl = {
     end,
     dsp = {
         focus = function(args) return { "focus", args } end,
-        window = { move = function(args) return { "move", args } end },
+        window = {
+            move = function(args) return { "move", args } end,
+            resize = function(args) return { "resize", args } end,
+        },
+        workspace = { move = function(args) return { "workspace_move", args } end },
     },
 }
 dofile(arg[1])
+local function panel(monitor, values)
+    monitor.enabled, monitor.is_mirror = true, false
+    monitor.x, monitor.y, monitor.width, monitor.height = 0, 0, 1920, 1080
+    monitor.scale, monitor.transform = 1, 0
+    monitor.reserved = { left = 0, top = 44, right = 0, bottom = 0 }
+    for key, value in pairs(values or {}) do monitor[key] = value end
+    return monitor
+end
+local function floating(workspace, x, y, width, height)
+    local window = { address = tostring(#windows + 1), workspace = workspace,
+        at = { x = x, y = y }, size = { x = width or 600, y = height or 400 },
+        mapped = true, floating = true, hidden = false, fullscreen = 0 }
+    table.insert(windows, window)
+    return window
+end
 '''
 
 
@@ -59,6 +98,75 @@ class DesktopWorkspaceTests(unittest.TestCase):
         result = subprocess.run(['lua', '-', str(POLICY)], input=SETUP + scenario,
                                 text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_recovery_moves_orphaned_workspaces_without_merging_or_changing_focus(self):
+        self.run_policy('''
+panel(monitors[1])
+panel(monitors[2], { enabled = false })
+focused.active_workspace = add(10000, nil, 1, 2)
+add(20000, nil, 2, 3)
+local missing = add(30000, nil, 2, 1); missing.monitor = nil
+local special = add(-99, "special:scratch", 2, 1); special.special = true
+DesktopWorkspaces.recover()
+assert(#actions == 3)
+assert(actions[1][1] == "workspace_move" and actions[1][2].workspace == 20000)
+assert(actions[2][2].workspace == 30000 and actions[3][2].workspace == "special:scratch")
+for _, action in ipairs(actions) do assert(action[2].monitor == "DP-1") end
+assert(focused.active_workspace.id == 10000)
+''')
+
+    def test_fallback_and_mirrors_are_not_recovery_destinations(self):
+        self.run_policy('''
+panel(monitors[1], { name = "FALLBACK" })
+panel(monitors[2], { is_mirror = true })
+add(10000, nil, 1, 2)
+DesktopWorkspaces.recover()
+assert(#actions == 0)
+panel(monitors[2])
+DesktopWorkspaces.recover()
+assert(#actions == 1 and actions[1][2].monitor == "DP-2")
+''')
+
+    def test_recovery_fits_stranded_floats_to_scaled_rotated_work_area(self):
+        self.run_policy('''
+panel(monitors[1], { x = -900, y = -100, width = 2560, height = 1600, scale = 1.25, transform = 1 })
+panel(monitors[2], { enabled = false })
+local workspace = add(10000, nil, 1, 2)
+floating(workspace, 8000, 4000, 3000, 2500)
+DesktopWorkspaces.recover()
+assert(#actions == 2 and actions[1][1] == "resize" and actions[2][1] == "move")
+assert(actions[1][2].x == 1280 and actions[1][2].y == 2004)
+assert(actions[2][2].x == -900 and actions[2][2].y == -56)
+assert(actions[1][2].relative == false and actions[2][2].relative == false)
+assert(actions[2][2].window == "address:1")
+''')
+
+    def test_recovery_leaves_reachable_hidden_fullscreen_and_scrolling_windows_alone(self):
+        self.run_policy('''
+panel(monitors[1])
+panel(monitors[2], { x = 1920 })
+local workspace = add(10000, nil, 1, 6)
+floating(workspace, 10, 60)
+floating(workspace, 1800, 60) -- spans outputs
+floating(workspace, 2200, 60) -- still reachable on the other output
+floating(workspace, 8000, 0).hidden = true
+floating(workspace, 8000, 0).fullscreen = 2
+floating(workspace, 8000, 0).floating = false -- scrolling layout's intentional off-screen column
+DesktopWorkspaces.recover()
+assert(#actions == 0)
+''')
+
+    def test_recovery_runs_once_after_layout_events_settle(self):
+        self.run_policy('''
+assert(#timers == 1 and timers[1].timeout == 150)
+panel(monitors[1]); panel(monitors[2], { enabled = false })
+add(20000, nil, 2, 1)
+registered["monitor.layout_changed"]()
+registered["monitor.layout_changed"]()
+assert(#actions == 0 and timers[1].restarts == 2)
+timers[1].callback()
+assert(#actions == 1 and actions[1][1] == "workspace_move")
+''')
 
     def test_single_empty_workspace_cannot_extend_in_either_direction(self):
         self.run_policy('''
@@ -141,6 +249,20 @@ DesktopWorkspaces.step(1)
 focused.active_special_workspace = nil
 DesktopWorkspaces.step(1, 999)
 DesktopWorkspaces.step(0)
+assert(#actions == 0)
+''')
+
+    def test_bar_targets_numeric_monitor_ids_in_both_directions(self):
+        self.run_policy('''
+focused.active_workspace = add(10000, nil, 1, 1)
+monitors[2].id = 7
+monitors[2].active_workspace = add(80000, nil, 2, 1)
+DesktopWorkspaces.step(-1, 7)
+assert(actions[#actions - 1][2].monitor == 7 and selected() == 79999)
+DesktopWorkspaces.step(1, 7)
+assert(actions[#actions - 1][2].monitor == 7 and selected() == 80001)
+actions = {}
+DesktopWorkspaces.step(1, 999)
 assert(#actions == 0)
 ''')
 

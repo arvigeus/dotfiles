@@ -64,6 +64,15 @@ for line in sys.stdin:
  json.loads(line)
  print(json.dumps(dict(ok=True,error="",data=dict(drives=[drive],editorAvailable=False))),flush=True)
 ''')
+            # Power drawers use fixture inventory and never mutate host profiles.
+            from test_power_drawers import snapshot as power_snapshot
+            (root / 'drawers/power/backend.py').write_text(
+                'import json,sys\n'
+                f'state={power_snapshot()!r}\n'
+                'for line in sys.stdin:\n'
+                ' request=json.loads(line)\n'
+                ' if request["op"]=="profile":state["profiles"]["active"]=request["value"]\n'
+                ' print(json.dumps(dict(ok=True,error="",data=state)),flush=True)\n')
             # Observe real page creation/destruction, including unrelated pages.
             (root / 'ui/ProbeState.qml').write_text('''pragma Singleton
 import QtQuick
@@ -336,6 +345,18 @@ ShellRoot {
                         check(Math.abs(cleanup.width - drawers.currentPage.width) < 2, "cleanup footer is squeezed");
                         input.keyClick(Qt.Key_Escape); sole("disks");
                         check(!cleanup.popupOpen && !drawers.escapeHandler, "Escape did not close only cleanup popup");
+                    }
+                    else if (previewKeys[stage - 21] === "battery") {
+                        check(find(drawers.contentItem, "batteryPercentage").text === "76%" && !find(drawers.contentItem, "drawerBrief"), "battery controls missing");
+                        check(find(drawers.contentItem, "batteryRefresh"), "battery header missing");
+                        check(!find(drawers.currentPage, "batteryPerformance"), "battery retained cross-drawer link");
+                    }
+                    else if (previewKeys[stage - 21] === "performance") {
+                        check(find(drawers.contentItem, "cpuUsage").value === "23%" && !find(drawers.contentItem, "drawerBrief"), "performance controls missing");
+                        check(find(drawers.contentItem, "performanceMonitor"), "performance header missing");
+                        check(!find(drawers.currentPage, "performanceBattery"), "performance retained cross-drawer link");
+                        check(!find(drawers.contentItem, "performanceHardware:asus"), "competing hardware profile editor remains");
+                        check(!find(drawers.contentItem, "cpuBoost"), "independent boost control remains");
                     }
                     else
                         check(find(drawers.contentItem, "drawerBrief").text.length > 0, "preview draft missing");

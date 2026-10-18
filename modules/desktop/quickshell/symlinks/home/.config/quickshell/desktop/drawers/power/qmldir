@@ -1,0 +1,6 @@
+singleton PowerService 1.0 PowerService.qml
+PowerCard 1.0 PowerCard.qml
+MetricChip 1.0 MetricChip.qml
+ChargeGauge 1.0 ChargeGauge.qml
+singleton PowerSession 1.0 PowerSession.qml
+PerformanceRecording 1.0 PerformanceRecording.qml

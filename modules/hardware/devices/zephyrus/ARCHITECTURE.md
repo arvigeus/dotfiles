@@ -25,3 +25,25 @@ persistence; the shell adds none.
 `tests/test_keyboard_backlight.py` covers supported effects, RGB capability,
 wire values, stale-controller rejection and provider routing without hardware
 changes. `tests/test_generation.py` checks that other hosts omit the adapter.
+
+## Battery care and performance
+
+`symlinks/home/.config/devices/power/backends/asus.py` extends the desktop's
+[power drawers](../../../desktop/quickshell/ARCHITECTURE.md#battery-and-performance).
+It discovers `ChargeControlEndThreshold` through `SupportedProperties` on
+`xyz.ljones.Platform` at `/xyz/ljones`. Reads never activate asusd. Charge limits
+use the byte-valued property setter and remain persisted by asusd. The adapter
+rechecks the unique daemon owner and observed limit before writing, and confirms
+both after writing. The supported range is 20–100%, in integer steps, matching
+asusd's setter. The shared gauge renders the actual applied value.
+Unsupported or unavailable controllers expose no charge-limit controls.
+
+Standard hwmon fan RPM and DRM metrics remain in the shared read-only backend.
+The Performance drawer exposes the three coordinated modes; CPU boost and ASUS
+profile selection have no independent shell controls. Hardware control ownership
+and application integration are defined in the
+[power architecture](../../power/ARCHITECTURE.md).
+
+`tests/test_power_drawers.py` checks capability discovery, stale requests, preset
+range validation and applied-value readback with a mock bus. Generation tests verify
+that only Zephyrus installs this provider.

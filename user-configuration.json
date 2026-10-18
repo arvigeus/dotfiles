@@ -46,7 +46,8 @@
         "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/system/security/gnupg '#!/usr/bin/env bash\nset -Eeuo pipefail\n# Key storage belongs in the real user'\"'\"'s home, with private directory permissions.\nentry=$(getent passwd \"${1:?User required}\")\nIFS=: read -r _ _ uid gid _ home _ <<< \"$entry\"\ninstall -d -o \"$uid\" -g \"$gid\" -m 0700 \"$home/.local/share/gnupg\"\n'",
         "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/dev/tools/meld '#!/usr/bin/env bash\nset -Eeuo pipefail\n# Compile files/etc/dconf/db/local.d into the binary database read by Meld.\n# Needed to compile changed keyfiles.\ndconf update\n'",
         "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/dev/tools/mise '#!/usr/bin/env bash\n## mise \u2014 per-project runtime version manager\n## https://mise.jdx.dev/\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n\nconfigure() {\n\t# Pin mise state to XDG locations so it never lands in $HOME root.\n\tinstall -d -m 0755 \"$HOME/.local/share/mise\" \"${XDG_CACHE_HOME:-$HOME/.local/cache}/mise\" \"$HOME/.config/mise\"\n}\n\nconfigure\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/media/video/mpv '#!/usr/bin/env bash\n## mpv media player with shaders and plugins\n## https://mpv.io/\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\n#!/usr/bin/env bash\n\ncpu_vendor_is() {\n\tlocal wanted=${1:?CPU vendor required}\n\tawk -F: -v wanted=\"$wanted\" '\"'\"'\n\t\t/vendor_id/ {\n\t\t\tgsub(/[[:space:]]/, \"\", $2)\n\t\t\texit($2 == wanted ? 0 : 1)\n\t\t}\n\t\tEND { if (NR == 0) exit 1 }\n\t'\"'\"' /proc/cpuinfo\n}\n\npci_vendor_present() {\n\tlocal wanted=${1:?PCI vendor ID required} vendor\n\tfor vendor in /sys/bus/pci/devices/*/vendor; do\n\t\t[[ -r $vendor ]] || continue\n\t\t[[ $(<\"$vendor\") == \"$wanted\" ]] && return 0\n\tdone\n\treturn 1\n}\n\ndmi_matches() {\n\tlocal pattern=${1:?DMI pattern required} value file\n\tfor file in /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name; do\n\t\t[[ -r $file ]] || continue\n\t\tvalue=$(<\"$file\")\n\t\t[[ ${value,,} == *${pattern,,}* ]] && return 0\n\tdone\n\treturn 1\n}\n\nusb_vendor_present() {\n\tlocal wanted=${1:?USB vendor ID required} vendor\n\tfor vendor in /sys/bus/usb/devices/*/idVendor; do\n\t\t[[ -r $vendor ]] || continue\n\t\t[[ ${wanted,,} == $(tr '\"'\"'[:upper:]'\"'\"' '\"'\"'[:lower:]'\"'\"' <\"$vendor\") ]] && return 0\n\tdone\n\treturn 1\n}\n\n# Configuration\nSHADERS_DIR=\"${MPV_SHADERS_DIR:-/usr/share/mpv-shim-default-shaders/shaders}\"\nPACK_JSON=\"${MPV_SHADER_PACK:-/usr/share/mpv-shim-default-shaders/pack-next.json}\"\nMPV_CONF_DIR=\"$HOME/.config/mpv\"\n\nconfigure() {\n\t# Physical GA402RK comparisons found VA-API/OpenGL substantially cheaper\n\t# than Vulkan Video for the tested H.264 playback. Keep driver/codec discovery\n\t# automatic; this is a native mpv option, not a power-management hook.\n\tif dmi_matches ga402rk; then\n\t\tfile_append \"${MPV_CONF_DIR}/mpv.conf\" <<'\"'\"'EOF'\"'\"'\n# GA402RK playback renderer preference\ngpu-api=opengl\n\nEOF\n\tfi\n\t# Package-owned shader and plugin payloads provide pack-next.json before this\n\t# configuration phase begins.\n\t[[ -f $PACK_JSON ]] || {\n\t\tprintf '\"'\"'MPV extras package did not install %s\\n'\"'\"' \"$PACK_JSON\" >&2\n\t\treturn 1\n\t}\n\n\t# Generate mpv profile sections from upstream pack-next.json\n\tfile_append \"${MPV_CONF_DIR}/mpv.conf\" <<'\"'\"'HEADER'\"'\"'\n# Auto-generated from https://github.com/iwalton3/default-shader-pack/blob/master/pack-next.json\nHEADER\n\tjq -r --arg sd \"${SHADERS_DIR}\" '\"'\"'\n    .[\"setting-groups\"] as $g |\n    .profiles | to_entries[] |\n    .key as $n | .value as $p |\n    ($p[\"setting-groups\"] // []) as $sgs |\n    ([($sgs[] | $g[.].shaders // [] | .[])] + ($p.shaders // [])) as $shaders |\n    [($sgs[] | $g[.].settings // [] | .[])] as $settings |\n    \"[\\($n)]\",\n    ($settings[] |\n        \"\\(.[0] | gsub(\"_\"; \"-\"))=\\(\n            if .[1] == true then \"yes\"\n            elif .[1] == false then \"no\"\n            else .[1] | tostring\n            end\n        )\"\n    ),\n    ($shaders | to_entries[] |\n        if .key == 0 then \"glsl-shaders=\\($sd)/\\(.value)\"\n        else \"glsl-shaders-append=\\($sd)/\\(.value)\"\n        end\n    ),\n    \"\"\n'\"'\"' \"${PACK_JSON}\" | file_append \"${MPV_CONF_DIR}/mpv.conf\"\n\n\t# Convenience aliases for long profile names\n\tfile_append \"${MPV_CONF_DIR}/mpv.conf\" <<'\"'\"'EOF'\"'\"'\n[fsr]\nprofile=AMD FidelityFX Super Resolution\n\n[cas]\nprofile=AMD FidelityFX Contrast Adaptive Sharpening\n\nEOF\n\n\t# Custom combo profile (not in upstream shader pack)\n\tfile_append \"${MPV_CONF_DIR}/mpv.conf\" <<EOF\n[fsr-cas]\nglsl-shaders=${SHADERS_DIR}/FSR.glsl\nglsl-shaders-append=${SHADERS_DIR}/CAS-scaled.glsl\nEOF\n\n\t# The owner selected generic-high as the default; preserve all other profiles.\n\tjq -e '\"'\"'.profiles | has(\"generic-high\")'\"'\"' \"$PACK_JSON\" >/dev/null || {\n\t\tprintf '\"'\"'Shader pack is missing the requested generic-high profile.\\n'\"'\"' >&2\n\t\treturn 1\n\t}\n\tfile_append \"${MPV_CONF_DIR}/mpv.conf\" <<'\"'\"'EOF'\"'\"'\n\n[default]\nprofile=generic-high\n\nEOF\n\n\t# Generate input.conf menu entries for profiles without manual keybindings\n\tBOUND_PROFILES=\"fsr-cas generic-high nnedi-very-high anime4k-high-a anime4k-high-b anime4k-high-c anime4k-high-aa anime4k-high-bb anime4k-high-ca\"\n\tjq -r --arg skip \"$BOUND_PROFILES\" '\"'\"'\n    ($skip | split(\" \")) as $skip_list |\n    .profiles | to_entries[] |\n    select(.key as $k | $skip_list | index($k) | not) |\n    \"# apply-profile \\\"\\(.key)\\\"; show-text \\\"Profile: \\(.value.displayname // .key)\\\" #! Profiles > \\(.value.displayname // .key)\"\n'\"'\"' \"${PACK_JSON}\" | file_append \"${MPV_CONF_DIR}/input.conf\"\n}\n\nconfigure\n'",
+        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/media/video/mpv '#!/usr/bin/env bash\n## mpv media player with shaders and plugins\n## https://mpv.io/\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\n#!/usr/bin/env bash\n\ncpu_vendor_is() {\n\tlocal wanted=${1:?CPU vendor required}\n\tawk -F: -v wanted=\"$wanted\" '\"'\"'\n\t\t/vendor_id/ {\n\t\t\tgsub(/[[:space:]]/, \"\", $2)\n\t\t\texit($2 == wanted ? 0 : 1)\n\t\t}\n\t\tEND { if (NR == 0) exit 1 }\n\t'\"'\"' /proc/cpuinfo\n}\n\npci_vendor_present() {\n\tlocal wanted=${1:?PCI vendor ID required} vendor\n\tfor vendor in /sys/bus/pci/devices/*/vendor; do\n\t\t[[ -r $vendor ]] || continue\n\t\t[[ $(<\"$vendor\") == \"$wanted\" ]] && return 0\n\tdone\n\treturn 1\n}\n\ndmi_matches() {\n\tlocal pattern=${1:?DMI pattern required} value file\n\tfor file in /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name; do\n\t\t[[ -r $file ]] || continue\n\t\tvalue=$(<\"$file\")\n\t\t[[ ${value,,} == *${pattern,,}* ]] && return 0\n\tdone\n\treturn 1\n}\n\nusb_vendor_present() {\n\tlocal wanted=${1:?USB vendor ID required} vendor\n\tfor vendor in /sys/bus/usb/devices/*/idVendor; do\n\t\t[[ -r $vendor ]] || continue\n\t\t[[ ${wanted,,} == $(tr '\"'\"'[:upper:]'\"'\"' '\"'\"'[:lower:]'\"'\"' <\"$vendor\") ]] && return 0\n\tdone\n\treturn 1\n}\n\n# Configuration\nSHADERS_DIR=\"${MPV_SHADERS_DIR:-/usr/share/mpv-shim-default-shaders/shaders}\"\nPACK_JSON=\"${MPV_SHADER_PACK:-/usr/share/mpv-shim-default-shaders/pack-next.json}\"\nMPV_CONF_DIR=\"${MPV_CONF_DIR:-$HOME/.config/mpv}\"\n\nconfigure() {\n\t# Physical GA402RK comparisons found VA-API/OpenGL substantially cheaper\n\t# than the original Vulkan/software-decoding path for tested H.264 playback.\n\t# Keep driver and codec discovery automatic.\n\tif dmi_matches ga402rk; then\n\t\tfile_append \"${MPV_CONF_DIR}/mpv.conf\" <<'\"'\"'EOF'\"'\"'\n# GA402RK playback renderer preference\ngpu-api=opengl\nhwdec=auto-safe\ninclude=/etc/mpv/power-profiles.conf\n\nEOF\n\tfi\n\t# Package-owned shader and plugin payloads provide pack-next.json before this\n\t# configuration phase begins.\n\t[[ -f $PACK_JSON ]] || {\n\t\tprintf '\"'\"'MPV extras package did not install %s\\n'\"'\"' \"$PACK_JSON\" >&2\n\t\treturn 1\n\t}\n\n\t# Generate mpv profile sections from upstream pack-next.json\n\tfile_append \"${MPV_CONF_DIR}/mpv.conf\" <<'\"'\"'HEADER'\"'\"'\n# Auto-generated from https://github.com/iwalton3/default-shader-pack/blob/master/pack-next.json\nHEADER\n\tjq -r --arg sd \"${SHADERS_DIR}\" '\"'\"'\n    .[\"setting-groups\"] as $g |\n    .profiles | to_entries[] |\n    select((.value.platforms // [\"linux\"]) | index(\"linux\")) |\n    .key as $n | .value as $p |\n    ($p[\"setting-groups\"] // []) as $sgs |\n    ([($sgs[] | $g[.].shaders // [] | .[])] + ($p.shaders // [])) as $shaders |\n    [($sgs[] | $g[.].settings // [] | .[])] as $settings |\n    # The shared pack contains Windows-only D3D11 profiles; mpv validates\n    # even inactive profiles and reports unsupported options at every launch.\n    \"[\\($n)]\",\n    ($settings[] |\n        \"\\(.[0] | gsub(\"_\"; \"-\"))=\\(\n            if .[1] == true then \"yes\"\n            elif .[1] == false then \"no\"\n            else .[1] | tostring\n            end\n        )\"\n    ),\n    ($shaders | to_entries[] |\n        if .key == 0 then \"glsl-shaders=\\($sd)/\\(.value)\"\n        else \"glsl-shaders-append=\\($sd)/\\(.value)\"\n        end\n    ),\n    \"\"\n'\"'\"' \"${PACK_JSON}\" | file_append \"${MPV_CONF_DIR}/mpv.conf\"\n\n\t# Convenience aliases for long profile names\n\tfile_append \"${MPV_CONF_DIR}/mpv.conf\" <<'\"'\"'EOF'\"'\"'\n[fsr]\nprofile=AMD FidelityFX Super Resolution\n\n[cas]\nprofile=AMD FidelityFX Contrast Adaptive Sharpening\n\nEOF\n\n\t# Custom combo profile (not in upstream shader pack)\n\tfile_append \"${MPV_CONF_DIR}/mpv.conf\" <<EOF\n[fsr-cas]\nglsl-shaders=${SHADERS_DIR}/FSR.glsl\nglsl-shaders-append=${SHADERS_DIR}/CAS-scaled.glsl\nEOF\n\n\t# The owner selected generic-high as the default; preserve all other profiles.\n\tjq -e '\"'\"'.profiles | has(\"generic-high\")'\"'\"' \"$PACK_JSON\" >/dev/null || {\n\t\tprintf '\"'\"'Shader pack is missing the requested generic-high profile.\\n'\"'\"' >&2\n\t\treturn 1\n\t}\n\tfile_append \"${MPV_CONF_DIR}/mpv.conf\" <<'\"'\"'EOF'\"'\"'\n\n[default]\nprofile=generic-high\n\nEOF\n\n\t# Generate input.conf menu entries for profiles without manual keybindings\n\tBOUND_PROFILES=\"fsr-cas generic-high nnedi-very-high anime4k-high-a anime4k-high-b anime4k-high-c anime4k-high-aa anime4k-high-bb anime4k-high-ca\"\n\tjq -r --arg skip \"$BOUND_PROFILES\" '\"'\"'\n    ($skip | split(\" \")) as $skip_list |\n    .profiles | to_entries[] |\n    select((.value.platforms // [\"linux\"]) | index(\"linux\")) |\n    select(.key as $k | $skip_list | index($k) | not) |\n    \"# apply-profile \\\"\\(.key)\\\"; show-text \\\"Profile: \\(.value.displayname // .key)\\\" #! Profiles > \\(.value.displayname // .key)\"\n'\"'\"' \"${PACK_JSON}\" | file_append \"${MPV_CONF_DIR}/input.conf\"\n}\n\nconfigure\n'",
+        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/hardware/power '#!/usr/bin/env bash\nset -Eeuo pipefail\n\n# Install a seed only once. Keep charge limits, lighting and user preferences.\nif [[ ! -f /etc/asusd/asusd.ron ]]; then\n    install -Dm0644 /usr/share/dotfiles/power/asusd.ron /etc/asusd/asusd.ron\nelse\n    python3 -I - <<'\"'\"'PY'\"'\"'\nfrom pathlib import Path\nimport os\nimport re\nimport tempfile\n\npath = Path('\"'\"'/etc/asusd/asusd.ron'\"'\"')\noriginal = path.read_text()\nupdated = original\nfor name in ('\"'\"'platform_profile_linked_epp'\"'\"', '\"'\"'change_platform_profile_on_battery'\"'\"', '\"'\"'change_platform_profile_on_ac'\"'\"'):\n    updated, count = re.subn(r'\"'\"'(?m)^(\\s*'\"'\"' + name + r'\"'\"':\\s*)(?:true|false)(\\s*,)'\"'\"', r'\"'\"'\\g<1>false\\2'\"'\"', updated)\n    if count != 1:\n        raise SystemExit(f'\"'\"'Cannot safely configure ASUS ownership: expected one {name} field'\"'\"')\nif updated != original:\n    fd, temporary = tempfile.mkstemp(prefix='\"'\"'.power-'\"'\"', dir=path.parent)\n    try:\n        with os.fdopen(fd, '\"'\"'w'\"'\"') as stream:\n            stream.write(updated)\n            stream.flush()\n            os.fsync(stream.fileno())\n        os.chmod(temporary, path.stat().st_mode & 0o777)\n        os.replace(temporary, path)\n    finally:\n        if os.path.exists(temporary):\n            os.unlink(temporary)\nPY\nfi\n\n# Session integration uses inotify through systemd; no timer or daemon.\ninstall -d /etc/systemd/user/graphical-session.target.wants\nln -sfn ../power-session.path /etc/systemd/user/graphical-session.target.wants/power-session.path\n\n# Migrate the retired, independently writable boost control.\nrm -f /usr/local/libexec/desktop-cpu-boost \\\n    /usr/share/polkit-1/actions/org.dotfiles.desktop.cpu-boost.policy\n'",
         "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/dev/languages/python '#!/usr/bin/env bash\n## Python development with uv, Ruff and ty; pip for compatibility\n## https://www.python.org/ https://docs.astral.sh/uv/\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\nconfigure() {\n\t# Keep the REPL history out of $HOME root, in the XDG state location\n\t# (honored by Python 3.13+; ignored by older versions).\n\t# Pin the pip cache to its XDG-default location so an unset XDG_*\n\t# var cannot push it elsewhere. Values stay unexpanded until login.\n\tinstall -d -m 0755 \"$HOME/.local/state/python\" \"${XDG_CACHE_HOME:-$HOME/.local/cache}/pip\"\n}\n\nconfigure\n'",
         "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/desktop/quickshell '#!/usr/bin/env bash\nset -Eeuo pipefail\n\nsystemctl --global enable desktop-shell.service\n'",
         "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/gaming/games/roblox '#!/usr/bin/env bash\n## Roblox through Sober\n## https://www.roblox.com/\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\n#!/usr/bin/env bash\nflatpak_override() { flatpak override --system \"$@\"; }\n\nconfigure() {\n\tflatpak_override --device=input org.vinegarhq.Sober\n}\n\nconfigure\n'",
@@ -985,11 +986,6 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/hardware/devices/zephyrus/files/etc/asusd/asusd.ron",
-                "target": "/etc/asusd/asusd.ron",
-                "mode": "0644"
-            },
-            {
                 "source": "modules/hardware/devices/zephyrus/files/etc/system/gaming-session.conf",
                 "target": "/etc/system/gaming-session.conf",
                 "mode": "0644"
@@ -1065,6 +1061,41 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/hardware/power/files/etc/mpv/power-profiles.conf",
+                "target": "/etc/mpv/power-profiles.conf",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/hardware/power/files/etc/mpv/scripts/dotfiles-power.lua",
+                "target": "/etc/mpv/scripts/dotfiles-power.lua",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/hardware/power/files/etc/systemd/system/power-source.service",
+                "target": "/etc/systemd/system/power-source.service",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/hardware/power/files/etc/systemd/system/tuned-ppd.service.d/recovery.conf",
+                "target": "/etc/systemd/system/tuned-ppd.service.d/recovery.conf",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/hardware/power/files/etc/systemd/system/tuned.service.d/recovery.conf",
+                "target": "/etc/systemd/system/tuned.service.d/recovery.conf",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/hardware/power/files/etc/systemd/user/power-session.path",
+                "target": "/etc/systemd/user/power-session.path",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/hardware/power/files/etc/systemd/user/power-session.service",
+                "target": "/etc/systemd/user/power-session.service",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/hardware/power/files/etc/tuned/ppd.conf",
                 "target": "/etc/tuned/ppd.conf",
                 "mode": "0644"
@@ -1080,13 +1111,58 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/hardware/power/files/etc/tuned/profiles/zephyrus-common/asus-thermal.py",
+                "target": "/etc/tuned/profiles/zephyrus-common/asus-thermal.py",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/hardware/power/files/etc/tuned/profiles/zephyrus-common/tuned.conf",
+                "target": "/etc/tuned/profiles/zephyrus-common/tuned.conf",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/hardware/power/files/etc/tuned/profiles/zephyrus-performance/tuned.conf",
                 "target": "/etc/tuned/profiles/zephyrus-performance/tuned.conf",
                 "mode": "0644"
             },
             {
+                "source": "modules/hardware/power/files/etc/tuned/profiles/zephyrus-performance-battery/tuned.conf",
+                "target": "/etc/tuned/profiles/zephyrus-performance-battery/tuned.conf",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/hardware/power/files/etc/tuned/profiles/zephyrus-powersave/tuned.conf",
                 "target": "/etc/tuned/profiles/zephyrus-powersave/tuned.conf",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/hardware/power/files/etc/tuned/profiles/zephyrus-powersave-battery/tuned.conf",
+                "target": "/etc/tuned/profiles/zephyrus-powersave-battery/tuned.conf",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/hardware/power/files/usr/local/bin/power-mode",
+                "target": "/usr/local/bin/power-mode",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/hardware/power/files/usr/local/bin/power-study",
+                "target": "/usr/local/bin/power-study",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/hardware/power/files/usr/local/libexec/power-session",
+                "target": "/usr/local/libexec/power-session",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/hardware/power/files/usr/local/libexec/power-source",
+                "target": "/usr/local/libexec/power-source",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/hardware/power/files/usr/share/dotfiles/power/asusd.ron",
+                "target": "/usr/share/dotfiles/power/asusd.ron",
                 "mode": "0644"
             },
             {
@@ -1359,6 +1435,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/BarIsland.qml",
                 "target": "home/.config/quickshell/desktop/bar/BarIsland.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/BatteryStatus.qml",
+                "target": "home/.config/quickshell/desktop/bar/BatteryStatus.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/MicrophoneStatus.qml",
@@ -1657,6 +1737,46 @@
                 "target": "home/.config/quickshell/desktop/drawers/network/qmldir"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/power/ChargeGauge.qml",
+                "target": "home/.config/quickshell/desktop/drawers/power/ChargeGauge.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/power/Format.js",
+                "target": "home/.config/quickshell/desktop/drawers/power/Format.js"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/power/MetricChip.qml",
+                "target": "home/.config/quickshell/desktop/drawers/power/MetricChip.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/power/PerformanceRecording.qml",
+                "target": "home/.config/quickshell/desktop/drawers/power/PerformanceRecording.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/power/PowerCard.qml",
+                "target": "home/.config/quickshell/desktop/drawers/power/PowerCard.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/power/PowerService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/power/PowerService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/power/PowerSession.qml",
+                "target": "home/.config/quickshell/desktop/drawers/power/PowerSession.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/power/backend.py",
+                "target": "home/.config/quickshell/desktop/drawers/power/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/power/qmldir",
+                "target": "home/.config/quickshell/desktop/drawers/power/qmldir"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/power/session.py",
+                "target": "home/.config/quickshell/desktop/drawers/power/session.py"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/weather/Conditions.js",
                 "target": "home/.config/quickshell/desktop/drawers/weather/Conditions.js"
             },
@@ -1707,6 +1827,18 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/arrow-up.svg",
                 "target": "home/.config/quickshell/desktop/icons/arrow-up.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/battery-charging.svg",
+                "target": "home/.config/quickshell/desktop/icons/battery-charging.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/battery-full.svg",
+                "target": "home/.config/quickshell/desktop/icons/battery-full.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/battery-low.svg",
+                "target": "home/.config/quickshell/desktop/icons/battery-low.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/battery-medium.svg",
@@ -1769,6 +1901,10 @@
                 "target": "home/.config/quickshell/desktop/icons/cloudflare.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/cpu.svg",
+                "target": "home/.config/quickshell/desktop/icons/cpu.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/download.svg",
                 "target": "home/.config/quickshell/desktop/icons/download.svg"
             },
@@ -1787,6 +1923,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/eye.svg",
                 "target": "home/.config/quickshell/desktop/icons/eye.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/fan.svg",
+                "target": "home/.config/quickshell/desktop/icons/fan.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/folder-open.svg",
@@ -1833,6 +1973,10 @@
                 "target": "home/.config/quickshell/desktop/icons/languages.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/leaf.svg",
+                "target": "home/.config/quickshell/desktop/icons/leaf.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/link-2-off.svg",
                 "target": "home/.config/quickshell/desktop/icons/link-2-off.svg"
             },
@@ -1851,6 +1995,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/map-pin.svg",
                 "target": "home/.config/quickshell/desktop/icons/map-pin.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/memory-stick.svg",
+                "target": "home/.config/quickshell/desktop/icons/memory-stick.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/mic-off.svg",
@@ -1897,6 +2045,10 @@
                 "target": "home/.config/quickshell/desktop/icons/refresh-cw.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/repeat.svg",
+                "target": "home/.config/quickshell/desktop/icons/repeat.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/search.svg",
                 "target": "home/.config/quickshell/desktop/icons/search.svg"
             },
@@ -1931,6 +2083,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/sun.svg",
                 "target": "home/.config/quickshell/desktop/icons/sun.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/thermometer.svg",
+                "target": "home/.config/quickshell/desktop/icons/thermometer.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/trash.svg",
@@ -1999,6 +2155,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/x.svg",
                 "target": "home/.config/quickshell/desktop/icons/x.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/zap.svg",
+                "target": "home/.config/quickshell/desktop/icons/zap.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/launcher/Favorites.qml",
@@ -2133,6 +2293,10 @@
                 "target": "home/.config/devices/keyboard/backends/asus.py"
             },
             {
+                "source": "modules/hardware/devices/zephyrus/symlinks/home/.config/devices/power/backends/asus.py",
+                "target": "home/.config/devices/power/backends/asus.py"
+            },
+            {
                 "source": "modules/hardware/keyboard/input-method/symlinks/home/.config/hypr/input-method.lua",
                 "target": "home/.config/hypr/input-method.lua"
             },
@@ -2235,6 +2399,8 @@
         "wl-clipboard",
         "kio-admin",
         "quickshell",
+        "upower",
+        "polkit",
         "gtk3",
         "xdg-terminal-exec",
         "python-gobject",
@@ -2322,7 +2488,6 @@
         "evtest",
         "chaotic-aur/logiops",
         "solaar",
-        "upower",
         "wireless-regdb",
         "wavemon",
         "qbittorrent",
@@ -2366,7 +2531,6 @@
         "libva-utils",
         "vulkan-tools",
         "gnupg",
-        "polkit",
         "openssh",
         "sudo",
         "virt-manager",
@@ -2395,11 +2559,12 @@
     "script": null,
     "services": [
         "getty@tty1.service",
+        "upower.service",
         "switcheroo-control.service",
         "fwupd-refresh.timer",
         "logid.service",
         "tuned-ppd.service",
-        "upower.service",
+        "power-source.service",
         "reflector.timer",
         "ufw-rules.service",
         "libvirtd.service"

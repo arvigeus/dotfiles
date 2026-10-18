@@ -1,9 +1,11 @@
 import QtQuick
 import Quickshell
+import Quickshell.Services.UPower
 import "../ui"
 import "../drawers/displays"
 import "../drawers/keyboard"
 import "../drawers/weather"
+import "../drawers/power/Format.js" as PowerFormat
 
 Item {
     id: root
@@ -12,6 +14,8 @@ Item {
     property var displayComfort: ComfortService
     property var inputLanguage: InputLanguage
     property date localDate: new Date()
+    readonly property string powerProfile: PowerProfiles.profile === PowerProfile.PowerSaver ? "power-saver"
+        : PowerProfiles.profile === PowerProfile.Performance ? "performance" : "balanced"
     signal drawerRequested(string key)
     readonly property alias trayIsland: tray
     readonly property alias toolsIsland: tools
@@ -28,6 +32,7 @@ Item {
     NetworkStatus { id: networkStatus }
     AudioStatus { id: audioStatus }
     MicrophoneStatus { id: microphoneStatus }
+    BatteryStatus { id: batteryStatus }
     WeatherStatus { id: weatherStatus; objectName: "islandWeatherStatus" }
     SystemClock { id: clock; precision: SystemClock.Minutes; onDateChanged: root.localDate = date }
     Connections {
@@ -90,8 +95,11 @@ Item {
                         description: root.displayComfort.awakeFor(root.outputName) ? qsTr("Displays · Keep awake") : qsTr("Displays")
                     },
                     BarEntry { key: "disks"; title: qsTr("Disks"); iconName: "hard-drive" },
-                    BarEntry { key: "battery"; title: qsTr("Battery"); iconName: "battery-medium"; label: "76%"; description: qsTr("Battery preview") },
-                    BarEntry { key: "performance"; title: qsTr("Performance"); iconName: "gauge" },
+                    BarEntry { key: "battery"; title: qsTr("Battery"); iconName: batteryStatus.iconName; label: batteryStatus.label; iconColor: batteryStatus.iconColor; description: batteryStatus.description },
+                    BarEntry {
+                        key: "performance"; title: qsTr("Performance"); iconName: PowerFormat.profileIcon(root.powerProfile)
+                        description: qsTr("Performance · %1").arg(PowerFormat.profile(root.powerProfile))
+                    },
                     BarEntry { key: "general"; title: qsTr("General"); iconName: "settings" }
                 ]
                 onDrawerRequested: key => root.drawerRequested(key)

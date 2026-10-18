@@ -5,11 +5,13 @@
         }
     },
     "packages": [
-        "upower"
+        "upower",
+        "python-gobject"
     ],
     "services": [
         "tuned-ppd.service",
-        "upower.service"
+        "upower.service",
+        "power-source.service"
     ],
     "extra": {
         "packages": [

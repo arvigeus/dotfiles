@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Install a seed only once. Keep charge limits, lighting and user preferences.
+if [[ ! -f /etc/asusd/asusd.ron ]]; then
+    install -Dm0644 /usr/share/dotfiles/power/asusd.ron /etc/asusd/asusd.ron
+else
+    python3 -I - <<'PY'
+from pathlib import Path
+import os
+import re
+import tempfile
+
+path = Path('/etc/asusd/asusd.ron')
+original = path.read_text()
+updated = original
+for name in ('platform_profile_linked_epp', 'change_platform_profile_on_battery', 'change_platform_profile_on_ac'):
+    updated, count = re.subn(r'(?m)^(\s*' + name + r':\s*)(?:true|false)(\s*,)', r'\g<1>false\2', updated)
+    if count != 1:
+        raise SystemExit(f'Cannot safely configure ASUS ownership: expected one {name} field')
+if updated != original:
+    fd, temporary = tempfile.mkstemp(prefix='.power-', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w') as stream:
+            stream.write(updated)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, path.stat().st_mode & 0o777)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+PY
+fi
+
+# Session integration uses inotify through systemd; no timer or daemon.
+install -d /etc/systemd/user/graphical-session.target.wants
+ln -sfn ../power-session.path /etc/systemd/user/graphical-session.target.wants/power-session.path
+
+# Migrate the retired, independently writable boost control.
+rm -f /usr/local/libexec/desktop-cpu-boost \
+    /usr/share/polkit-1/actions/org.dotfiles.desktop.cpu-boost.policy

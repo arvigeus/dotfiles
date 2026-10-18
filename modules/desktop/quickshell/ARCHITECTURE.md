@@ -43,6 +43,8 @@ new ordinary actions rather than recreating their padding and content layouts.
 `HoldButton` adds gesture/progress handling; specialized icon buttons, multi-line
 audio tests and device rows retain their feature-specific layouts. Overriding
 `contentItem` makes that component responsible for its own size and alignment.
+Reserve hover and pressed styling for actionable controls. Informational icons
+and readings retain their tooltips without changing appearance on hover.
 
 ## Networking
 
@@ -269,6 +271,14 @@ lists scroll with a visible scrollbar and an exact
 content extent for the mixed heading/separator/option heights. Refresh rate
 choices retain the current resolution, scale and transform.
 
+The cog's Use recommended resolution action sends `mode: "preferred"` through
+the existing change request. The backend queries `hl.get_monitor().available_modes`
+with read-only `hyprctl repl` and matches the preferred flag's dimensions and
+unrounded refresh rate to an advertised mode. Missing/unavailable preferred modes
+report an error without mutation. The resolved explicit mode uses normal geometry
+adjustment, validation, readback, rollback and persistence; scale, transform and
+mirroring are retained. Mode-list order is not used to infer the recommendation.
+
 Selections apply immediately and close the popup. Escape, an outside click or a
 second cog click dismisses the menu without changing applied settings. The popup
 excludes its parent button from outside press dismissal so the button can toggle
@@ -297,7 +307,11 @@ Shell startup and subsequent physical topology changes restore matching outputs.
 Unsupported modes are skipped. Missing/replaced mirror sources become
 independent temporarily; overlap is resolved by moving conflicting outputs right.
 If saved settings would leave no independent output, a usable connected output
-stays enabled. These safety fallbacks do not overwrite unchanged saved preferences.
+stays enabled, preferring the built-in panel when one must be enabled. A disabled
+panel retains valid saved mode, scale, transform and position during this temporary
+override. Hyprland's invisible `FALLBACK` output is excluded from discovery and
+safety checks; legacy saved entries for it are ignored on load. These safety
+fallbacks do not overwrite unchanged saved preferences.
 Restoration uses the same validation, readback and rollback path as manual changes.
 Hyprland `configreloaded` queues a debounced restore rather than saving reset
 defaults. Monitor enable/disable events alone do not trigger restoration: they
@@ -305,6 +319,9 @@ can be deliberate edits in wdisplays, while `monitors all` distinguishes physica
 topology from enabled state. No window/workspace preferences are saved.
 There is no primary/default display preference: launcher output selection and
 Hyprland's window/workspace placement remain authoritative.
+The native workspace policy repairs stranded workspace ownership and wholly
+off-screen floating windows after layout changes; see
+[workspace recovery](../hyprland/ARCHITECTURE.md).
 See [wdisplays](https://github.com/artizirk/wdisplays) for compositor caveats.
 
 `monitors.lua` forwards Hyprland's native `monitor.layout_changed` Lua event as
@@ -750,6 +767,174 @@ container/image protections, partial failures, hold cancellation/keyboard input,
 narrow/light layouts, button geometry, notifications and service survival after
 page destruction. Native captures
 use `DISPLAY_PREVIEW_PLATFORM=wayland DISPLAY_PREVIEW_DIR=/tmp/cleanup-preview`.
+
+## Battery and performance
+
+`drawers/power/PowerService.qml` is shared by Battery and Performance. Observation
+is owner-scoped: Battery polls every ten seconds, Performance every two seconds.
+Only Performance requests detailed telemetry. Requests serialize over JSON lines
+to `backend.py`; user actions precede refreshes and finish after dismissal. The
+last departing owner stops the timer and closes the helper after pending actions.
+Power profiles and charge limits remain daemon-owned. The shell persists only
+the previous limit for a one-time full charge, not a competing settings copy.
+Snapshot updates reconcile cards and profile buttons by key to retain keyboard
+focus. Controls display confirmed values rather than predicting action results.
+
+The drawers have no links to each other. Battery has a Batteries section with one
+system card, then Device batteries with separate keyed cards. The system card has
+percentage, pack
+name and estimate at top left, health/cycle/energy/power metrics at top right,
+and the full-width charge gauge below, followed by a power-source explanation.
+Battery-wear guidance lives in the health tooltip. Multiple packs remain keyed
+sections within the metrics block, alongside the aggregate charge summary.
+`ChargeGauge.qml` overlays the actual limit as a solid rounded marker without an
+outline.
+The full track always represents 0–100% charge. Slider padding maps the advertised
+minimum/maximum onto that same track, rather than rescaling the battery level.
+Drag release and keyboard steps submit integer limits; only dragging previews a
+new value. Status refreshes do not replace the slider or its keyboard focus.
+`MetricChip.qml` groups icon/value readings with labels and explanations in passive
+tooltips. Missing values use a dash. Performance uses three compact profile
+choices, hiding captions at narrow widths; warnings remain visible. CPU, memory,
+GPU and fan details use the same chips. Sleeping GPUs omit inactive counters.
+
+The shell module declares UPower and its service for all hosts. UPower supplies
+system batteries (`Type=Battery`, `PowerSupply`, `IsPresent`),
+external power, capacity, health, cycles and energy rate. Its display device
+supplies the aggregate percentage/state/estimate, including for multiple packs;
+the backend never averages pack percentages or derives its own time estimates.
+Zero cycles/rate/percentage are valid; negative cycles, zero time estimates and
+missing capacity remain unknown. Fully charged, pending charge and estimating
+are distinct. Peripherals have separate rows and never enter the system battery
+inventory or its aggregate percentage/runtime. Coarse UPower battery levels are
+shown as labels rather than false precision. Device rows use daemon reports;
+the shell does not poll Bluetooth hardware.
+Remaining-runtime estimates are hidden on external power, including residual
+discharge while charge-capped; actual battery flow remains visible.
+`bar/BatteryStatus.qml` independently subscribes through Quickshell's native
+UPower service; its percentage is a fraction, unlike the D-Bus API's 0–100 value.
+The bar loads no detailed helper and polls no hardware.
+The Performance bar icon follows native `PowerProfiles` notifications, using the
+same profile-to-icon mapping as the drawer without starting its telemetry worker.
+System-wide plug/unplug selection belongs to the power module's
+`power-source.service`, which selects through PPD; the shell only displays the
+confirmed resulting mode. Balanced and Performance preserve mpv quality;
+Powersave alone overlays cheaper playback settings.
+Keep passive hardware indicators event-driven. Dedicated GPU runtime power status
+does not provide ordinary sysfs change notifications, so there is no background
+GPU badge or poller. Read GPU telemetry only while the Performance drawer is active.
+
+Profiles use the public `org.freedesktop.UPower.PowerProfiles` API, with the older
+`net.hadess.PowerProfiles` interface as fallback. This includes tuned-ppd. Only
+advertised standard profiles appear, with degradation, inhibition and application
+hold information. Mutations revalidate the daemon's unique bus owner, previously
+observed profile and supported choices, then read back the active profile.
+The drawer never writes platform profiles, CPU governors or EPP directly.
+Existing daemon policy controls profile authorization.
+
+CPU boost belongs to the selected system mode; the shell has no independent
+boost action or privileged boost helper. TuneD owns that control on Zephyrus.
+Performance shows hardware readback mismatches, while GPU edge, hotspot and memory
+temperatures are labelled separately and read only while the device is awake.
+See the [power architecture](../../hardware/power/ARCHITECTURE.md) for session,
+mpv and temporary panel-refresh policy. The existing display service observes
+native profile changes independently of drawer lifetime. Its `powerState`
+retains temporary mode overlays across short-lived backend processes; ordinary
+display preference saves exclude those overlays.
+Refresh restoration stays pending while a panel is blank. Hypridle's wake
+notification applies it once awake, without a periodic display probe.
+
+CPU utilization uses `/proc/stat` deltas (excluding the already included guest
+counters), with a fresh baseline after long gaps. Frequency averages available
+cpufreq policies; CPU temperature is the highest valid sensor on recognized CPU
+hwmon providers. Memory uses `MemTotal - MemAvailable`, with swap and PSI `some`
+average over ten seconds. These are system measurements, not process attribution.
+Missing sensors and a first CPU sample remain unknown rather than showing zero.
+
+DRM inventory uses local sysfs identifiers and the installed PCI name database.
+GPU utilization, VRAM and temperature are optional sysfs counters. Runtime-
+suspended devices skip sensor reads, including through hwmon. No render node,
+NVML or `nvidia-smi` is opened to collect telemetry. Fan RPM uses standard hwmon
+attributes, including real zero readings. No raw fan or graphics-mode writes are
+offered. The header opens btop through `xdg-terminal-exec` for process inspection.
+Per-application GPU launching and whole-system graphics-mode switching are outside
+these drawers.
+
+For runtime-managed GPUs, sensor reads are spaced at least eight seconds apart
+and longer than the advertised autosuspend delay. Interim snapshots reuse the
+last reading with its age; a suspended state immediately clears those readings.
+This matters even for an already-active GPU: AMD hwmon reads can reset its idle
+timer and prevent it from sleeping. The generic hwmon fan scan excludes AMD GPU
+chips so it cannot bypass this pacing. Platform ASUS fan tachometers remain
+available independently of dGPU runtime state.
+
+Device-specific extensions are installed Python providers in
+`$XDG_CONFIG_HOME/devices/power/backends/*.py`. Each exposes `Provider(bus)`,
+`snapshot()` and `change(request)`. Snapshot records carry an identity, actual
+`limit` or null, and supported `minimum`/`maximum`/`step`. The
+shared controller owns discovery and delegates charge-limit requests; providers
+own vendor capabilities, validation, typed D-Bus writes and readback. Reads use
+`NO_AUTO_START` and never start daemons. Adapter failures cannot suppress the
+generic battery/profile/telemetry sections. Zephyrus's implementation lives with
+its [hardware module](../../hardware/devices/zephyrus/ARCHITECTURE.md#battery-care-and-performance).
+
+Interface references: [UPower Device](https://upower.freedesktop.org/docs/Device.html),
+[ASUS platform proxy](https://github.com/OpenGamingCollective/asusctl/blob/main/rog-dbus/src/zbus_platform.rs)
+and [Linux CPUFreq](https://docs.kernel.org/admin-guide/pm/cpufreq.html).
+
+### Power utilities
+
+Both drawers use a scrolling body and a separate footer. Battery offers one-time
+full charging for supported limits below 100% while plugged in; a pending action
+replaces it with **Restore charge limit**, also available when restoration needs a
+retry. Performance has mode choices and CPU, memory, GPU and fan cards. Its
+recording footer uses a 1–60 minute `NumberField` (default 2), disabled during
+recording. Results appear above the controls.
+
+`PowerSession.qml` starts `session.py` once from `shell.qml`, independently of
+drawer lifetimes. It subscribes to UPower and login1 events, but only queries
+battery daemon properties when a one-time charge is pending or explicitly
+requested. Relevant events debounce for 250 ms. Device batteries come from the
+ordinary drawer snapshot; no closed-drawer peripheral discovery runs. There is
+no background history, notification target, temporary profile or profile-daemon
+subscription. No background thermal/fan/CPU/GPU sampling or status timer runs.
+
+An advisory lock prevents overlapping helpers during reload. Quickshell owns a
+small idle supervisor; the event helper runs in a separate session with the same
+pipes. QProcess destruction kills its direct child immediately, so this separation
+lets stdin EOF reach the helper and stop its recorder during reload. The supervisor
+only waits for its child and forwards termination signals; it has no timer. The
+QML transport retries a stopped helper after five seconds. The ordinary drawer
+helper still stops on dismissal. While PowerSession is started, PowerService
+routes mutations through it; manual limit changes cancel the one-time intent.
+Command completion refreshes an open drawer.
+
+`$XDG_STATE_HOME/quickshell/power/session.json` stores the pending one-time charge
+and last recording only. Invalid actions and unknown top-level fields are
+discarded on load. Explicit changes save immediately by fsync and atomic
+replacement. One-time charging records the previous supported limit before
+requesting 100%. Unplugging restores it using fresh provider identity/readback;
+a new boot also restores it at startup. Missing controllers retain restoration
+for subsequent events or an explicit retry. Externally changed limits are respected.
+Actions need the shell running: unplug/replug cycles entirely while stopped cannot
+be reconstructed. The ordinary charge-limit slider can end a full-charge override.
+
+Recording is available when `power-study` is installed. It runs for the chosen
+1–60 minutes at two-second intervals, with no child workload or GPU sensor
+telemetry. The helper checks completion every two seconds only during recording.
+Results live in timestamped directories under the power state directory. The
+drawer shows CPU usage, peak memory/temperature and comparable battery discharge,
+with interrupted/invalid-run reasons and folder access. A source/policy/display
+change invalidates comparison according to power-study's rules. Recording survives
+drawer dismissal; shell exit/reload sends SIGTERM, allowing a partial summary,
+then bounds shutdown to eight seconds. The last result reloads from disk.
+
+Validation: `python3 -B -m unittest discover -s tests -p 'test_power*.py'` covers
+charge restoration/reload, manual overrides, unavailable controllers, malformed
+state, recording lifecycle, telemetry, stale mutation rejection, keyboard input
+and narrow layouts. Tests mock hardware mutations. Use
+`DISPLAY_PREVIEW_PLATFORM=wayland DISPLAY_PREVIEW_DIR=/tmp/power-preview` for native
+captures and icon QA. Install new asset links before reloading the shell.
 
 ## Icons
 

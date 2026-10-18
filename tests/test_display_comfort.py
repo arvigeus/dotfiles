@@ -102,6 +102,13 @@ class ComfortTests(unittest.TestCase):
             self.awake()
         command.assert_called_once_with('dispatch', 'hl.dsp.dpms({action="on",monitor=' + comfort.backend.lua_string('DP-"quoted') + '})')
 
+    def test_idle_wake_notifies_the_existing_display_policy_after_dpms(self):
+        with patch.object(comfort.backend, 'command') as command:
+            self.assertEqual(comfort.idle_action('wake'), 0)
+        self.assertEqual(command.call_args_list, [
+            unittest.mock.call('dispatch', 'hl.dsp.dpms({action="on"})'),
+            unittest.mock.call('dispatch', 'hl.dsp.event("desktop-displays-changed")')])
+
     def test_night_toggle_uses_packaged_service_and_reads_external_state(self):
         self.systemctl.return_value = 'active'
         self.controller.action(dict(op='night', enabled=True))

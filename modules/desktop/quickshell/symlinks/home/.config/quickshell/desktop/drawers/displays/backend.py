@@ -46,6 +46,10 @@ def snapshot():
     records = []
     names = {str(monitor["id"]): monitor["name"] for monitor in raw if "id" in monitor}
     for monitor in raw:
+        # Hyprland creates this invisible output when the last real one goes
+        # away. It must not satisfy the safety check or become a preference.
+        if monitor['name'] == 'FALLBACK':
+            continue
         modes = list(dict.fromkeys(value for value in monitor.get('availableModes', []) if mode_parts(value)))
         width, height = monitor.get('width', 0), monitor.get('height', 0)
         transform = monitor.get('transform', 0)
@@ -213,6 +217,22 @@ def restore(before):
     apply_rows(rows)
 
 
+def preferred_mode(row):
+    # availableModes has no preferred flag. The native Lua inventory does;
+    # query it without changing the output, then match its unrounded rate.
+    value = command('repl', 'local monitor=hl.get_monitor(' + lua_string(row['name']) + '); '
+                    'if monitor then for _, mode in ipairs(monitor.available_modes or {}) do '
+                    'if mode.preferred then return string.format("%dx%d@%.5f", '
+                    'mode.width, mode.height, mode.refresh_rate) end end end; return ""')
+    preferred = mode_parts(value)
+    if preferred:
+        for mode in row['modes']:
+            parts = mode_parts(mode)
+            if parts[:2] == preferred[:2] and abs(parts[2] - preferred[2]) < 0.02:
+                return mode
+    raise ValueError('The display did not report an available recommended mode. Use wdisplays to choose a resolution.')
+
+
 def prepare_change(request, state):
     original = next((row for row in state['displays'] if row['name'] == request.get('name')), None)
     if not original or original['identity'] != request.get('identity'):
@@ -220,11 +240,13 @@ def prepare_change(request, state):
     values = request.get('values')
     if not isinstance(values, dict) or not values or not set(values) <= {'mode', 'scale', 'transform', 'mirror', 'enabled'}:
         raise ValueError('Unsupported display setting.')
+    if not original['enabled'] and values.get('enabled') is not True:
+        raise ValueError('Enable this display before changing its settings.')
+    if values.get('mode') == 'preferred':
+        values = dict(values, mode=preferred_mode(original))
     rows = [dict(row) for row in state['displays']]
     target = next(row for row in rows if row['name'] == original['name'])
     target.update(values)
-    if not original['enabled'] and values.get('enabled') is not True:
-        raise ValueError('Enable this display before changing its settings.')
     # Validate values before calculating geometry with them. Overlap is checked
     # after preserving the gaps to displays on the right/below a resized output.
     if target['enabled']:
@@ -294,6 +316,7 @@ class Preferences:
         self.saved = None
         self.baseline = None
         self.restoring = False
+        self.power_state = dict(active=False, overrides={}, suppressed=[])
 
     @staticmethod
     def key(row):
@@ -312,6 +335,8 @@ class Preferences:
                 raise ValueError()
             saved = {}
             for row in data['outputs']:
+                if isinstance(row, dict) and row.get('name') == 'FALLBACK':
+                    continue
                 if not isinstance(row, dict) or any(key not in row for key in self.fields):
                     raise ValueError()
                 if (not isinstance(row['name'], str) or not isinstance(row['identity'], list)
@@ -352,6 +377,9 @@ class Preferences:
                 if geometry:
                     for field in ('mode', 'scale', 'transform', 'x', 'y'):
                         value[field] = geometry[field]
+            overlay = self.power_state['overrides'].get(key)
+            if overlay and value['mode'] == overlay['applied']:
+                value['mode'] = overlay['original']
             if not mode_parts(value['mode']):
                 continue
             target = connected.get(row['mirror'])
@@ -372,6 +400,46 @@ class Preferences:
                     os.unlink(temporary)
             self.saved = saved
         self.baseline = current
+
+    def power_refresh(self, current, powersave, reconfigured=False):
+        """Temporary internal-panel 60 Hz cap; manual refresh edits take priority."""
+        state = self.power_state
+        if powersave and not state['active']:
+            state = dict(active=True, overrides=state['overrides'], suppressed=[])
+        rows = [dict(row) for row in current['displays']]
+        overrides = dict(state['overrides'])
+        suppressed = set(state['suppressed'])
+        for row in rows:
+            key = self.key(row)
+            overlay = overrides.get(key)
+            if not row['enabled'] or not row.get('dpms', True):
+                continue
+            if not powersave:
+                if overlay and row['mode'] == overlay['applied'] and overlay['original'] in row['modes']:
+                    row['mode'] = overlay['original']
+                overrides.pop(key, None)
+                continue
+            if overlay and row['mode'] != overlay['applied']:
+                if not reconfigured:
+                    suppressed.add(key)
+                overrides.pop(key, None)
+            if not row['name'].startswith('eDP-') or key in suppressed:
+                continue
+            mode = mode_parts(row['mode'])
+            if not mode or mode[2] <= 60.1:
+                continue
+            candidates = [m for m in row['modes'] if mode_parts(m)[:2] == mode[:2] and 59 <= mode_parts(m)[2] <= 60.1]
+            if candidates:
+                target = max(candidates, key=lambda m: mode_parts(m)[2])
+                overrides[key] = dict(original=row['mode'], applied=target)
+                row['mode'] = target
+        # Commit overlay state only after the compositor confirms the change.
+        result = apply_setup(rows, current) if fingerprint(rows) != current['token'] else current
+        # Dark/disconnected panels retain their pending restoration until wake.
+        self.power_state = dict(active=powersave, overrides=overrides,
+                                suppressed=sorted(suppressed) if powersave else [])
+        self.baseline = result
+        return result
 
     def plan(self, current):
         rows = []
@@ -398,8 +466,20 @@ class Preferences:
         if rows and not any(row['enabled'] and row['mirror'] == 'none' for row in rows):
             # A dock-only preference must never leave the laptop unusable alone.
             fallback = next((row for row in current['displays'] if row['enabled'] and row['mirror'] == 'none'), None)
-            fallback = fallback or next((dict(row, enabled=True, mirror='none', mode=row['modes'][0], scale=1, transform=0)
-                                         for row in current['displays'] if row['modes']), None)
+            # Prefer the built-in panel and its saved usable geometry. A
+            # disabled live output may report placeholder mode/scale values.
+            candidates = sorted(rows, key=lambda row: not re.match(r'^(eDP|LVDS|DSI)-', row['name']))
+            if not fallback:
+                for row in candidates:
+                    if not row['modes']:
+                        continue
+                    fallback = dict(row, enabled=True, mirror='none')
+                    if fallback['mode'] not in row['modes']:
+                        fallback['mode'] = row['modes'][0]
+                    width, height, _ = mode_parts(fallback['mode'])
+                    if any(abs(size / fallback['scale'] - round(size / fallback['scale'])) > 0.01 for size in (width, height)):
+                        fallback['scale'] = 1
+                    break
             if fallback:
                 rows = [dict(fallback) if row['name'] == fallback['name'] else row for row in rows]
         # Missing mirror sources or newly attached outputs can create overlap.
@@ -443,11 +523,12 @@ def handle(request, preferences=None):
     op = request.get('op')
     if op == 'status':
         return snapshot()
-    if op == 'sync' and preferences:
+    if op in ('sync', 'power') and preferences:
         return preferences.observe(snapshot())
     if op == 'restore' and preferences:
         return preferences.observe(snapshot(), force=True)
     if op == 'change':
+        mode_requested = 'mode' in request.get('values', {})
         before = snapshot() if preferences else None
         if preferences:
             preferences.load()
@@ -459,6 +540,12 @@ def handle(request, preferences=None):
                     request = dict(request, values=dict(values, **request['values']))
         current = control(request, before)
         if preferences:
+            if mode_requested:
+                live = next((row for row in current['displays'] if row['name'] == request.get('name')), None)
+                if live and preferences.power_state['active']:
+                    key = preferences.key(live)
+                    preferences.power_state['overrides'].pop(key, None)
+                    preferences.power_state['suppressed'] = list(set(preferences.power_state['suppressed']) | {key})
             # Include external edits since the last observation, but preserve
             # the exact pre-disable geometry reported just before this action.
             preferences.remember(current, preferences.baseline or before, before)
@@ -468,8 +555,15 @@ def handle(request, preferences=None):
 
 def response(request, preferences=None):
     try:
+        if preferences and isinstance(request.get('powerState'), dict):
+            preferences.power_state = request['powerState']
+        previous = request.get('baseline')
         data = handle(request, preferences)
-        return dict(ok=True, error='', data=data, baseline=preferences.baseline if preferences else None)
+        if preferences and 'powerMode' in request and request.get('op') != 'status':
+            reconfigured = request.get('op') == 'restore' or (previous is not None and topology(previous) != topology(data))
+            data = preferences.power_refresh(data, request['powerMode'] == 'power-saver', reconfigured)
+        return dict(ok=True, error='', data=data, baseline=preferences.baseline if preferences else None,
+                    powerState=preferences.power_state if preferences else None)
     except Exception as exc:
         try:
             data = snapshot()
@@ -480,7 +574,8 @@ def response(request, preferences=None):
             # actual rollback/fallback state so those echoes cannot retry it
             # endlessly or save it over the user's preference.
             preferences.baseline = data if data['available'] else preferences.baseline
-        return dict(ok=False, error=str(exc), data=data, baseline=preferences.baseline if preferences else None)
+        return dict(ok=False, error=str(exc), data=data, baseline=preferences.baseline if preferences else None,
+                    powerState=preferences.power_state if preferences else None)
 
 
 def main():

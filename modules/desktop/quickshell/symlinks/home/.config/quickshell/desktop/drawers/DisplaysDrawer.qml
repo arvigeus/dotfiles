@@ -41,6 +41,7 @@ DrawerPage {
         const separator = key => ({kind: "separator", key: "separator:" + key});
         const option = (key, text, marked, values) => ({kind: "option", key, text, marked, values});
         return [{kind: "awake", key: "awake", text: qsTr("Keep awake"), marked: comfortService.awakeFor(record.name)},
+                {kind: "action", key: "recommended", text: qsTr("Use recommended resolution"), action: "recommended"},
                 separator("Refresh rate"), heading(qsTr("Refresh rate"))]
             .concat(record.modes.filter(mode => mode.split("@")[0] === record.mode.split("@")[0]).map(mode =>
                 option("rate:" + mode, rateLabel(mode), record.mode === mode, {mode})))
@@ -154,7 +155,10 @@ DrawerPage {
                         function activate(entry): void {
                             if (!card.editable) return;
                             if (entry.kind === "option") root.service.change(card.record, entry.values);
-                            else if (entry.kind === "action") root.startTest(entry.action, card.record);
+                            else if (entry.kind === "action") {
+                                if (entry.action === "recommended") root.service.change(card.record, {mode: "preferred"});
+                                else root.startTest(entry.action, card.record);
+                            }
                             else if (entry.kind === "awake") root.comfortService.setAwake(card.record, !root.comfortService.awakeFor(card.record.name));
                             else return;
                             close();

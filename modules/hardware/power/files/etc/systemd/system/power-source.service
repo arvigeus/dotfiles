@@ -1,0 +1,18 @@
+[Unit]
+Description=Select Balanced on AC and Powersave on battery
+Wants=upower.service tuned-ppd.service
+After=upower.service tuned-ppd.service
+
+[Service]
+ExecStart=/usr/local/libexec/power-source
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

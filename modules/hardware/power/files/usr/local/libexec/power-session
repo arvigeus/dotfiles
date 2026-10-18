@@ -1,0 +1,36 @@
+#!/usr/bin/python3 -I
+"""Notify the user's cooperating mpv instances, without polling or privileges."""
+import json
+import os
+from pathlib import Path
+import socket
+import stat
+
+
+def main():
+    directory = Path('/run/user') / str(os.getuid()) / 'mpv-power'
+    for path in sorted(directory.glob('*.sock'))[:64]:
+        try:
+            info = path.lstat()
+            if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
+                continue
+            with socket.socket(socket.AF_UNIX) as client:
+                client.settimeout(.2)
+                client.connect(str(path))
+                client.sendall(json.dumps(dict(command=['script-message', 'dotfiles-power'])).encode() + b'\n')
+                client.recv(4096)
+        except ConnectionRefusedError:
+            # mpv can leave a socket after SIGKILL. Never remove a live/replaced
+            # endpoint or another user's file while cleaning our private set.
+            try:
+                if (path.stem.isdecimal() and not (Path('/proc') / path.stem).exists()
+                        and path.lstat().st_ino == info.st_ino):
+                    path.unlink()
+            except OSError:
+                pass
+        except (OSError, TimeoutError) as error:
+            print(f'{path.name}: {error}')
+
+
+if __name__ == '__main__':
+    main()

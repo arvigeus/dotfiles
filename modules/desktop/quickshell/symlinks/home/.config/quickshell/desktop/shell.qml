@@ -7,6 +7,7 @@ import "bar"
 import "launcher"
 import "drawers"
 import "drawers/displays"
+import "drawers/power"
 
 ShellRoot {
     id: root
@@ -16,15 +17,17 @@ ShellRoot {
     Launcher { id: launcher; interactionState: interactions }
     // The host owns category registration and lazy content; bar summaries do
     // not instantiate feature pages or start their helper processes. Feature-local
-    // services load with their drawers. Audio test workers belong to the pages
-    // and stop when those pages are dismissed.
+    // services, including detailed power telemetry, load with their drawers.
+    // PowerSession owns one-time charging and recording lifetimes, with
+    // supervised cleanup and no background sensor polling.
+    // Audio test workers belong to the pages and stop on dismissal.
     Drawers { id: drawers; interactionState: interactions }
 
     // WORKAROUND: Hyprland lacks geometry/order events; bindings.lua supplies them.
     // If the list order goes stale, check its layoutAction/release hooks and this
     // custom listener. Replace the paired workaround when native events suffice.
     // External reorder scripts: hyprctl dispatch 'hl.dsp.event("desktop-layout-changed")'
-    Component.onCompleted: { layoutRefresh.restart(); ComfortService.start(); DisplayService.start(); }
+    Component.onCompleted: { layoutRefresh.restart(); ComfortService.start(); DisplayService.start(); PowerSession.start(); }
 
     Connections {
         target: Hyprland

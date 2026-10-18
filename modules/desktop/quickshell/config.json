@@ -1,6 +1,8 @@
 {
   "packages": [
     "quickshell",
+    "upower",
+    "polkit",
     "gtk3",
     "xdg-terminal-exec",
     "python-gobject",
@@ -18,6 +20,9 @@
     "filelight",
     "pacman-contrib",
     "dolphin"
+  ],
+  "services": [
+    "upower.service"
   ],
   "extra": {
     "aur_packages": [

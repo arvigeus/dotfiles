@@ -50,6 +50,17 @@ class DisplayBackendTests(unittest.TestCase):
         self.assertEqual(result['displays'][1]['mode'], '2560x1440@60.00Hz')
         self.assertFalse(result['displays'][1]['enabled'])
 
+    def test_invisible_fallback_is_excluded_from_inventory_and_safety(self):
+        raw = [dict(id=-1, name='FALLBACK', width=1920, height=1080, refreshRate=60),
+               dict(id=0, name='eDP-1', disabled=True, width=0, height=0,
+                    availableModes=['2560x1600@120.00Hz'])]
+        with patch.object(backend, 'command', return_value=json.dumps(raw)):
+            result = backend.snapshot()
+        self.assertEqual([row['name'] for row in result['displays']], ['eDP-1'])
+        self.assertFalse(result['displays'][0]['enabled'])
+        with self.assertRaisesRegex(ValueError, 'at least one display'):
+            backend.validate(dict(token=result['token'], displays=result['displays']), result)
+
     def test_rejects_stale_and_invalid_actions_before_mutation(self):
         cases = []
         request = self.request(); request['token'] = 'stale'; cases.append(request)
@@ -107,6 +118,29 @@ class DisplayBackendTests(unittest.TestCase):
         before = state([display(mode='2560x1600@60.00Hz', modes=['2560x1600@60.00Hz'])])
         rows = backend.prepare_change(dict(name='eDP-1', identity=before['displays'][0]['identity'], values=dict(scale=4)), before)
         self.assertEqual(backend.dimensions(rows[0]), (640, 400))
+
+    def test_recommended_mode_uses_native_preference_and_preserves_geometry_gaps(self):
+        modes = ['3840x2160@60.00Hz', '2560x1440@74.98Hz', '2560x1440@59.95Hz', '800x600@60.32Hz']
+        before = state([display('DP-1', mode=modes[-1], modes=modes, scale=1.25, transform=1),
+                        display('eDP-1', x=500)])
+        request = dict(name='DP-1', identity=before['displays'][0]['identity'], values=dict(mode='preferred'))
+        with patch.object(backend, 'command', return_value='2560x1440@59.95100') as command:
+            rows = backend.prepare_change(request, before)
+        self.assertEqual(command.call_args.args[0], 'repl')
+        self.assertIn('mode.preferred', command.call_args.args[1])
+        self.assertEqual(rows[0]['mode'], modes[2])
+        self.assertEqual((rows[0]['scale'], rows[0]['transform'], rows[0]['mirror']), (1.25, 1, 'none'))
+        self.assertEqual(rows[1]['x'], 1172)
+        self.assertEqual(request['values']['mode'], 'preferred')
+
+    def test_unavailable_recommendation_never_mutates(self):
+        request = dict(name='eDP-1', identity=self.rows[0]['identity'], values=dict(mode='preferred'))
+        with patch.object(backend, 'snapshot', return_value=self.state), patch.object(backend, 'apply_rows') as apply:
+            for reply in ('', 'ok', '3840x2160@60.00000', '1920x1080@75.00000'):
+                with self.subTest(reply=reply), patch.object(backend, 'command', return_value=reply):
+                    with self.assertRaisesRegex(ValueError, 'recommended mode'):
+                        backend.control(request)
+            apply.assert_not_called()
 
     def test_failed_modeset_restores_previous_settings(self):
         request = dict(name='eDP-1', identity=self.rows[0]['identity'], values=dict(mode='1920x1080@120.00Hz'))
@@ -244,6 +278,22 @@ class DisplayPreferencesTests(unittest.TestCase):
     def saved(self, name):
         return next(row for row in json.loads(self.path.read_text())['outputs'] if row['name'] == name)
 
+    def test_recommended_resolution_saves_resolved_mode_and_rolls_back_on_failure(self):
+        self.preferences.remember(state(self.rows))
+        request = dict(op='change', name='DP-1', identity=self.rows[1]['identity'], values=dict(mode='preferred'))
+        with patch.object(backend, 'command', return_value='1280x720@60.00000'):
+            result = backend.handle(request, self.preferences)
+        self.assertEqual(result['displays'][1]['mode'], '1280x720@60.00Hz')
+        self.assertEqual(self.saved('DP-1')['mode'], '1280x720@60.00Hz')
+        before = copy.deepcopy(self.rows)
+        saved = self.path.read_bytes()
+        with patch.object(backend, 'command', return_value='1920x1080@60.00000'), \
+                patch.object(backend, 'apply_rows', side_effect=[RuntimeError('rejected'), None]) as apply:
+            with self.assertRaisesRegex(RuntimeError, 'rejected'):
+                backend.handle(request, self.preferences)
+        self.assertEqual(apply.call_args.args[0], before)
+        self.assertEqual(self.path.read_bytes(), saved)
+
     def test_xdg_path_is_user_owned_and_writes_are_private_atomic(self):
         with patch.dict(os.environ, XDG_CONFIG_HOME=str(self.path.parents[2])):
             self.assertEqual(backend.Preferences().path, self.path)
@@ -280,6 +330,19 @@ class DisplayPreferencesTests(unittest.TestCase):
         self.assertEqual(self.saved('DP-1')['transform'], 3)
         self.assertEqual(self.saved('DP-1')['y'], -100)
 
+    def test_wdisplays_order_is_saved_without_reapplying_monitor_settings(self):
+        self.observe()
+        self.apply.reset_mock()
+        self.rows[0]['x'], self.rows[1]['x'] = 1920, 0
+        self.observe()
+        self.assertEqual(self.saved('DP-1')['x'], 0)
+        self.assertEqual(self.saved('eDP-1')['x'], 1920)
+        saved = self.path.read_bytes()
+        self.observe(); self.observe()
+        self.apply.assert_not_called()
+        self.assertEqual([row['x'] for row in self.rows], [1920, 0])
+        self.assertEqual(self.path.read_bytes(), saved)
+
     def test_dock_only_preferences_keep_laptop_usable_and_return_on_reconnect(self):
         self.rows[0]['enabled'] = False
         self.rows[1]['mode'] = '1920x1080@120.00Hz'
@@ -293,6 +356,36 @@ class DisplayPreferencesTests(unittest.TestCase):
         self.observe()
         self.assertFalse(self.rows[0]['enabled'])
         self.assertEqual(self.rows[1]['mode'], '1920x1080@120.00Hz')
+
+    def test_unplug_restores_disabled_panel_geometry_without_saving_safety_override(self):
+        self.rows[0].update(enabled=False, scale=1.25, transform=1, x=-864, y=100)
+        self.preferences.remember(state(self.rows))
+        saved = self.path.read_bytes()
+        self.rows = [display(enabled=False)]
+        self.observe(); self.observe(); self.observe()
+        panel = self.rows[0]
+        self.assertTrue(panel['enabled'])
+        self.assertEqual((panel['scale'], panel['transform'], panel['x'], panel['y']), (1.25, 1, -864, 100))
+        self.assertEqual(self.path.read_bytes(), saved)
+        self.rows.append(display('DP-1', x=1920))
+        self.observe()
+        self.assertFalse(self.rows[0]['enabled'])
+        self.assertTrue(self.rows[1]['enabled'])
+        self.assertEqual(self.path.read_bytes(), saved)
+
+    def test_legacy_fallback_preference_is_not_restored_or_kept_in_memory(self):
+        self.rows.append(display('FALLBACK', x=3840))
+        self.preferences.remember(state(self.rows))
+        preferences = backend.Preferences(self.path)
+        preferences.load()
+        self.assertEqual({row['name'] for row in preferences.saved.values()}, {'eDP-1', 'DP-1'})
+
+    def test_safety_prefers_builtin_panel_and_repairs_placeholder_scale(self):
+        self.rows = [display('DP-1', enabled=False), display(enabled=False, scale=1.3)]
+        self.observe()
+        self.assertFalse(self.rows[0]['enabled'])
+        self.assertTrue(self.rows[1]['enabled'])
+        self.assertEqual(self.rows[1]['scale'], 1)
 
     def test_missing_mirror_source_temporarily_becomes_independent_without_losing_preference(self):
         self.rows[1]['mirror'] = 'eDP-1'
@@ -517,13 +610,16 @@ ShellRoot {
   property var owners:[]
   readonly property int observers:owners.length
   property int calls:0
+  property var lastValues: ({})
   property int brightnessCalls:0
   function brightnessFor(name) {return {available:name==="eDP-1",value:60,reason:"DDC/CI unavailable"};}
   function setBrightness(name,value) {brightnessCalls++;}
   function observe(owner,active) {owners=owners.filter(item=>item!==owner).concat(active?[owner]:[]);}
   function change(record,values) {
    calls++;
-   state={available:true,displays:state.displays.map(row=>row.name===record.name?Object.assign({},row,values):row),token:String(calls)};
+   lastValues=values;
+   const applied=values.mode==="preferred"?{mode:record.modes[0]}:values;
+   state={available:true,displays:state.displays.map(row=>row.name===record.name?Object.assign({},row,applied):row),token:String(calls)};
   }
   function refresh(){}
  }
@@ -571,7 +667,7 @@ ShellRoot {
     }
     check(headings===3&&separators===3,"flat sections incorrect");
     const card=find(drawer,"displayCard:DP-1");
-    const rate=list.itemAtIndex(4);
+    const rate=list.itemAtIndex(5);
     check(rate&&rate.record.key==="rate:1920x1080@120.00Hz","refresh rate row missing");
     input.mouseClick(rate,rate.width/2,rate.height/2);
     check(mock.calls===1&&drawer.displays[1].mode==="1920x1080@120.00Hz","refresh rate not immediate");
@@ -603,6 +699,11 @@ ShellRoot {
     check(!button.menu.visible&&drawer.displays[1].mirror==="none","outside click changed settings");
     drawer.width=268;
    }else if(stage===7){
+    const recommended=drawer.optionsFor(drawer.displays[1]).find(entry=>entry.key==="recommended");
+    check(recommended&&recommended.text==="Use recommended resolution"&&recommended.kind==="action","recommended action missing");
+    choose("recommended");
+    check(mock.lastValues.mode==="preferred"&&Object.keys(mock.lastValues).length===1,"recommendation changed unrelated settings");
+    check(drawer.displays[1].mode==="1920x1080@60.00Hz","recommendation not applied");
     const destination=Quickshell.env("DISPLAY_PREVIEW_DIR");
     if(destination)drawer.grabToImage(result=>result.saveToFile(destination+"/displays-narrow.png"));
     find(drawer,"displayBrightness:eDP-1:slider").moved();
@@ -866,7 +967,7 @@ ShellRoot {
  property int expected:0
  Timer { interval:80; repeat:true; running:true; onTriggered: {
   try {
-   if(stage===0) { DisplayService.eventDelay.interval=100;DisplayService.start();DisplayService.start();stage++; }
+   if(stage===0) { DisplayService.powerProfiles=({profile:-1});DisplayService.eventDelay.interval=100;DisplayService.start();DisplayService.start();stage++; }
    else if(stage===1 && DisplayService.loaded && !DisplayService.worker.running) {
     if(DisplayService.state.count!==1 || DisplayService.state.last.op!=="restore")throw new Error("startup restore incorrect");
     if(DisplayService.observing || DisplayService.brightnessWorker.running)throw new Error("eager brightness worker");

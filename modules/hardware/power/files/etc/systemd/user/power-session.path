@@ -1,0 +1,10 @@
+[Unit]
+Description=Notify applications when the system power policy changes
+PartOf=graphical-session.target
+
+[Path]
+PathChanged=/etc/tuned/active_profile
+Unit=power-session.service
+
+[Install]
+WantedBy=graphical-session.target
