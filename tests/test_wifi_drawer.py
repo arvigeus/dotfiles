@@ -245,7 +245,6 @@ FloatingWindow {
   ColumnLayout {
    Layout.fillWidth: true; spacing: 2
    UI.ShellText { text: "Wi-Fi"; font.pixelSize: UI.Theme.titleFontSize; Layout.fillWidth: true; elide: Text.ElideRight }
-   UI.ShellText { text: drawer?.headerSubtitle ?? ""; font.pixelSize: UI.Theme.smallFontSize; color: UI.Theme.muted; Layout.fillWidth: true }
   }
   Loader { sourceComponent: drawer?.headerActions ?? null }
   UI.ShellButton { text: "×"; Layout.preferredWidth: 34 }
@@ -289,8 +288,9 @@ FloatingWindow {
     check(drawer.headerActions !== null && !find(drawer, "networkEdit") && !find(drawer, "vpnEdit") && !find(drawer, "addVpn"), "management action is not confined to the header");
     check(!find(drawer, "connectionDetails") && !find(drawer, "connectionInfo"), "info controls remain");
     const row = find(drawer, "wifiNetwork:home");
-    check(row.leftPadding >= 0 && row.hint.includes("192.0.2.1") && row.hint.includes("82%"), "tooltip lost connection details");
-    check(drawer.headerSubtitle === "wlan0", "interface is not in the header subtitle");
+    check(row.leftPadding >= 0 && !row.hint.includes("192.0.2.1") && row.hint.includes("82%"), "network tooltip lost signal or duplicated connection information");
+    check(find(preview, "wifiInfo").iconName === "info", "connection information is not discoverable in header");
+    check(find(drawer,"wirelessSection").hint === "", "Wireless heading retains hidden information");
     for (const name of ["wirelessSection", "ethernetSection", "vpnSection"])
      check(find(drawer, name).iconName === "" && find(drawer, name).leading === null, "section still has an icon");
     check(find(window.contentItem, "wifiScan") && !find(drawer, "wifiScan") && !find(drawer, "wifiToggle"), "power/scan did not move to header");

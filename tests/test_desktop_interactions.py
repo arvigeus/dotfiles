@@ -246,6 +246,10 @@ ShellRoot {
                 check(edit && edit.mapToItem(close.parent, edit.width, 0).x < close.x,
                     "network management icon is not before close in header");
                 check(!find(drawers.currentPage, "networkEdit") && !find(drawers.contentItem, "vpnEdit"), "duplicate section management controls");
+                input.mouseClick(find(drawers.contentItem, "wifiInfo"), 17, 17);
+                check(drawers.currentPage.informationPopup?.visible, "Wi-Fi information did not open");
+                input.keyClick(Qt.Key_Escape); sole("wifi");
+                check(!drawers.currentPage.informationPopup, "Escape left Wi-Fi information open");
                 check(!ProbeState.count("created:bluetooth"), "Bluetooth loaded with Wi-Fi");
                 check(ProbeState.count("destroyed:spaces") === 1, "replacement retained old page");
                 input.mouseClick(find(bar.contentItem, "bluetoothButton"), 17, 17); sole("bluetooth");
@@ -306,8 +310,9 @@ ShellRoot {
                     if (["wifi", "bluetooth"].includes(previewKeys[stage - 21])) {
                         const title = find(drawers.contentItem, "drawerTitleBlock");
                         const actions = find(drawers.contentItem, "drawerHeaderActions");
-                        check(drawers.subtitle === drawers.currentPage.headerSubtitle
-                            && find(drawers.contentItem, "drawerSubtitle").text === drawers.subtitle, "adapter subtitle not forwarded");
+                        check(!find(drawers.contentItem, "drawerSubtitle"), "adapter subtitle remains in header");
+                        const infoName = previewKeys[stage - 21] === "wifi" ? "wifiInfo" : "bluetoothInfo";
+                        check(find(drawers.contentItem, infoName)?.iconName === "info", "header information action missing");
                         check(Math.abs(title.mapToItem(drawers.contentItem, 0, title.height / 2).y
                             - actions.mapToItem(drawers.contentItem, 0, actions.height / 2).y) < 1, "title block is not vertically centered");
                     }

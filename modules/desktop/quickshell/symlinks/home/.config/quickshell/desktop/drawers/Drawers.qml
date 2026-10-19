@@ -76,6 +76,7 @@ DrawerHost {
             key: "performance"
             title: qsTr("Performance")
             source: Qt.resolvedUrl("PerformanceDrawer.qml")
+            shortcut: "performance"
         },
         DrawerDefinition {
             key: "weather"

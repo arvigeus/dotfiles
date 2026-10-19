@@ -310,7 +310,6 @@ ShellRoot {
      ColumnLayout {
       Layout.fillWidth:true;spacing:2
       ShellText { text:"Bluetooth";font.pixelSize:Theme.titleFontSize;Layout.fillWidth:true;elide:Text.ElideRight }
-      ShellText { text:drawer.headerSubtitle;font.pixelSize:Theme.smallFontSize;color:Theme.muted;Layout.fillWidth:true;elide:Text.ElideRight }
      }
      Loader { sourceComponent:drawer.headerActions }
      ShellButton { text:"×";Layout.preferredWidth:34 }
@@ -362,7 +361,7 @@ ShellRoot {
   }else if(stage===-1){checkPositions();mock.pending="";mock.pendingKey="";
   }else if(stage===0){
    check(mock.owners.length===1,"not observing");
-   check(drawer.headerSubtitle==="Laptop"&&!find(drawer,"bluetoothPower")&&find(preview,"bluetoothPower").checked,"power/alias missing in header");
+   check(find(preview,"bluetoothInfo").iconName==="info"&&!find(drawer,"bluetoothPower")&&find(preview,"bluetoothPower").checked,"power/alias missing in header");
    check(mock.calls===0,"power read triggered a mutation");
    click("bluetoothPower");
    check(mock.lastOp==="power"&&mock.lastFields.enabled===false&&find(preview,"bluetoothPower").checked,"power request did not preserve readback binding");

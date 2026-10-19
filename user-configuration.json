@@ -1344,6 +1344,16 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/system/security/ufw/files/etc/polkit-1/rules.d/50-desktop-ports.rules",
+                "target": "/etc/polkit-1/rules.d/50-desktop-ports.rules",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/system/security/ufw/files/etc/systemd/system/desktop-ports.service",
+                "target": "/etc/systemd/system/desktop-ports.service",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/system/security/ufw/files/etc/systemd/system/ufw-rules.service",
                 "target": "/etc/systemd/system/ufw-rules.service",
                 "mode": "0644"
@@ -1352,6 +1362,26 @@
                 "source": "modules/system/security/ufw/files/usr/local/libexec/apply-ufw-rules",
                 "target": "/usr/local/libexec/apply-ufw-rules",
                 "mode": "0755"
+            },
+            {
+                "source": "modules/system/security/ufw/files/usr/local/libexec/desktop-ports",
+                "target": "/usr/local/libexec/desktop-ports",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/system/security/ufw/files/usr/share/dbus-1/system-services/org.dotfiles.Ports1.service",
+                "target": "/usr/share/dbus-1/system-services/org.dotfiles.Ports1.service",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/system/security/ufw/files/usr/share/dbus-1/system.d/org.dotfiles.Ports1.conf",
+                "target": "/usr/share/dbus-1/system.d/org.dotfiles.Ports1.conf",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/system/security/ufw/files/usr/share/polkit-1/actions/org.dotfiles.ports.policy",
+                "target": "/usr/share/polkit-1/actions/org.dotfiles.ports.policy",
+                "mode": "0644"
             },
             {
                 "source": "modules/system/virtualization/virt-manager/files/etc/sysctl.d/99-libvirt.conf",
@@ -1731,6 +1761,18 @@
                 "target": "home/.config/quickshell/desktop/drawers/network/NetworkService.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/PortsControls.qml",
+                "target": "home/.config/quickshell/desktop/drawers/network/PortsControls.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/PortsService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/network/PortsService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/PublicIpService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/network/PublicIpService.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/SpeedTestService.qml",
                 "target": "home/.config/quickshell/desktop/drawers/network/SpeedTestService.qml"
             },
@@ -1917,6 +1959,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/cloudflare.svg",
                 "target": "home/.config/quickshell/desktop/icons/cloudflare.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/copy.svg",
+                "target": "home/.config/quickshell/desktop/icons/copy.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/cpu.svg",
@@ -2253,6 +2299,14 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/Icon.qml",
                 "target": "home/.config/quickshell/desktop/ui/Icon.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/InfoPopover.qml",
+                "target": "home/.config/quickshell/desktop/ui/InfoPopover.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/InfoRow.qml",
+                "target": "home/.config/quickshell/desktop/ui/InfoRow.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/InteractionState.qml",

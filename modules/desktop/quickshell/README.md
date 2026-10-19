@@ -6,6 +6,7 @@
 | -------------------------- | --------------------------------------------------- |
 | Win+R                      | Open / close application search.                    |
 | Ctrl+1                     | Open / close Spaces.                                |
+| Ctrl+Shift+P               | Open / close Performance, including over fullscreen apps. |
 | Ctrl+D (in search)         | Toggle the selected app's favorite.                 |
 | Ctrl+Win+Up / Down         | Go to the workspace above / below.                  |
 | Ctrl+Win+Shift+Up / Down   | Move the active window above / below and follow it. |
@@ -42,15 +43,24 @@ Powersave; Performance stays selected. See the
 [mode comparison](../../hardware/power/README.md) for CPU, cooling and playback behavior.
 Detailed readings refresh while the drawers are open; sleeping GPUs stay asleep.
 
-**Record performance** observes the current workload for the chosen number of
-minutes and saves readings and a summary. It requires `power-study`, continues
-with the drawer closed, and stops on shell exit or reload.
+**Record performance** observes the current workload until you stop it and saves
+readings and a summary. It requires `power-study`, continues with the drawer
+closed, and stops on shell exit or reload.
 See [power implementation notes](ARCHITECTURE.md#battery-and-performance).
 
 ## Networking
 
 Wi-Fi, VPN and Cloudflare WARP controls, with transfer rates and an internet
 speed test that follows the current route, including VPNs.
+
+**Ports** opens TCP/IPv4 ports to devices on the connected local network. Use
+the × to close one; there is no time limit. Openings clear on disconnect,
+network changes, reboot or UFW reload. Closing removes the temporary allowance; existing
+connections may continue.
+
+The header info button shows connection details with copy actions for addresses
+and interface names. The public IPv4 address follows the current route, including
+VPN/WARP, and is fetched only when information opens, with a ten-minute cache.
 
 ## Audio
 
@@ -66,7 +76,8 @@ and reported battery levels. Pairing and Connect also authorize that device's
 future reconnections. Searching stops after 30 seconds or when the drawer
 closes. Closing also cancels unfinished pairing. Hold the trash icon to forget a device.
 The bar shows whether Bluetooth is on and lists connected devices on hover.
-The header pencil opens Blueman for advanced Bluetooth settings.
+The header info button shows adapter details with copy actions; the pencil opens
+Blueman for advanced Bluetooth settings.
 
 ## Time and weather
 

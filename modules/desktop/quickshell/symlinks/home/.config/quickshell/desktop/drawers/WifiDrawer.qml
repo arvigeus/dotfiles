@@ -16,7 +16,22 @@ DrawerPage {
     property bool showPassword: false
     property bool passwordRequired: false
     property var speedTest: SpeedTestService
-    headerSubtitle: adapter?.interface ?? ""
+    property var portsService: PortsService
+    property var publicIp: PublicIpService
+    property Popup informationPopup: null
+    readonly property string localAddress: adapter?.connected ? (adapter.ipv4?.[0]
+        ?? adapter.details?.match(/^IPv4: ([^/\s,]+)/m)?.[1] ?? "") : ""
+    readonly property string routeContext: networkState.available ? JSON.stringify([
+        networkState.routeKey ?? "", [...networkState.adapters, ...networkState.wired].map(device =>
+            [device.interface, device.connected, device.uuid, device.details]),
+        networkState.profiles.filter(p => p.active).map(profile => [profile.uuid, profile.state]),
+        networkState.warp.running, networkState.warp.connected, networkState.warp.mode]) : ""
+    escapeHandler: informationPopup ? (() => informationPopup.close())
+        : ports.popupOpen ? (() => ports.closePopup()) : null
+    onRouteContextChanged: {
+        publicIp.context = routeContext;
+        if (informationPopup && active) Qt.callLater(publicIp.lookup);
+    }
     headerActions: RowLayout {
         spacing: 4
         ShellSwitch {
@@ -28,6 +43,30 @@ DrawerPage {
                 const requested = checked;
                 checked = Qt.binding(() => root.networkState.wifiEnabled);
                 root.service.run("radio", {enabled: requested});
+            }
+        }
+        NetworkIconButton {
+            id: information
+            objectName: "wifiInfo"; iconName: "info"; text: qsTr("Wi-Fi information")
+            enabled: root.active; checked: networkInfo.visible
+            onClicked: { if (networkInfo.visible) networkInfo.close(); else networkInfo.open(); }
+            InfoPopover {
+                id: networkInfo
+                objectName: "wifiInfoPopup"; button: information; active: root.active
+                onAboutToShow: {
+                    root.informationPopup = networkInfo;
+                    ports.closePopup(); warpMenu.close(); root.publicIp.lookup();
+                }
+                onDismissed: if (root.informationPopup === networkInfo) root.informationPopup = null
+                ShellText { text: root.accessStatus; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.muted }
+                InfoRow { objectName: "wifiNetworkInfo"; label: qsTr("Network"); value: root.adapter?.connection ?? "" }
+                InfoRow { objectName: "wifiInterfaceInfo"; label: qsTr("Interface"); value: root.adapter?.interface ?? "" }
+                InfoRow { objectName: "wifiLocalIpInfo"; label: qsTr("Local IP"); value: root.localAddress }
+                InfoRow { objectName: "wifiPublicIpInfo"; label: qsTr("Public IP"); value: root.publicIp.label; copyText: root.publicIp.address }
+                InfoRow { objectName: "wifiMacInfo"; label: qsTr("MAC address"); value: root.adapter?.mac ?? "" }
+                InfoRow { objectName: "wifiGatewayInfo"; label: qsTr("Gateway"); value: root.ipDetail("IPv4 gateway") || root.ipDetail("IPv6 gateway"); visible: value !== "" }
+                InfoRow { objectName: "wifiDnsInfo"; label: qsTr("DNS"); value: [root.ipDetail("IPv4 DNS"), root.ipDetail("IPv6 DNS")].filter(Boolean).join("\n"); visible: value !== "" }
+                InfoRow { objectName: "wifiIpv6Info"; label: qsTr("IPv6"); value: root.ipDetail("IPv6"); visible: value !== "" }
             }
         }
         NetworkIconButton {
@@ -84,7 +123,7 @@ DrawerPage {
         service.observing = active;
         if (!active) speedTest.cancel();
     }
-    Component.onCompleted: { syncModels(); service.observing = active; }
+    Component.onCompleted: { syncModels(); service.observing = active; publicIp.context = routeContext; }
     Component.onDestruction: { service.observing = false; speedTest.cancel(); }
 
     function choose(network): void {
@@ -127,13 +166,15 @@ DrawerPage {
     ]
     readonly property string activeWarpMode: networkState.warp.running && warpModes.some(m => m.value === networkState.warp.mode)
         ? networkState.warp.mode : service.warpMode
-    readonly property string connectionHint: accessStatus + (adapter ? "\n" + adapter.interface + " · " + adapter.state
-        + "\n" + adapter.details + "\nMAC: " + adapter.mac : "")
+    function ipDetail(label: string): string {
+        const prefix = label + ": ";
+        return (adapter?.details ?? "").split("\n").find(line => line.startsWith(prefix))?.slice(prefix.length) ?? "";
+    }
     function networkHint(network): string {
         return network.ssid + "\n" + network.strength + qsTr("% signal") + " · " + securityNames[network.security]
             + "\n" + network.frequency + " MHz · " + network.bssid + "\n" + network.interface
             + (network.uuid ? qsTr(" · Saved") : "")
-            + (network.connected ? "\n" + connectionHint + "\n" + qsTr("Click to disconnect") : "\n" + qsTr("Click to connect"));
+            + (network.connected ? "\n" + qsTr("Click to disconnect") : "\n" + qsTr("Click to connect"));
     }
     function networkAction(network): void {
         if (network.connected) service.run("disconnect", {uuid: adapter.uuid}, network.key);
@@ -154,6 +195,7 @@ DrawerPage {
     }
     Connections {
         target: root.service
+        function onInterfaceNameChanged(): void { root.informationPopup?.close(); }
         function onCompleted(operation, success): void {
             if (operation !== "connect" || root.service.pendingKey !== root.selected?.key) return;
             if (success) { root.passwordText = ""; root.selected = null; }
@@ -206,7 +248,6 @@ DrawerPage {
             NetworkSection {
                 objectName: "wirelessSection"
                 title: qsTr("Wireless"); flat: true; collapsible: false
-                hint: root.connectionHint
                 NetworkChoice {
                     objectName: "wifiAdapter"; Layout.fillWidth: true
                     visible: root.networkState.adapters.length > 1
@@ -321,6 +362,7 @@ DrawerPage {
                         onClicked: warpMenu.open()
                         Menu {
                             id: warpMenu
+                            onAboutToShow: { root.informationPopup?.close(); ports.closePopup(); }
                             objectName: "warpMenu"
                             popupType: Popup.Item
                             x: warpSettings.width - width; y: warpSettings.height
@@ -369,6 +411,16 @@ DrawerPage {
                         onClicked: root.service.run(record.active ? "disconnect" : "connect", {uuid: record.uuid}, record.uuid)
                     }
                 }
+            }
+            PortsControls {
+                id: ports
+                objectName: "portsSection"; Layout.fillWidth: true
+                Layout.leftMargin: 4; Layout.rightMargin: 4
+                service: root.portsService; active: root.active
+                interfaceName: root.adapter?.connected ? root.adapter.interface
+                    : root.networkState.wired.find(device => device.connected)?.interface ?? ""
+                connected: interfaceName !== ""
+                onPopupOpened: { warpMenu.close(); root.informationPopup?.close(); }
             }
         }
         Button {

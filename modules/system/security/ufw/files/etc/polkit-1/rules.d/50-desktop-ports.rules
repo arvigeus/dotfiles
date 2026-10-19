@@ -1,0 +1,6 @@
+// Only the narrow port service action; no general firewall administration.
+polkit.addRule(function(action, subject) {
+    if (action.id === "org.dotfiles.ports.manage" && subject.local && subject.active && subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+    }
+});

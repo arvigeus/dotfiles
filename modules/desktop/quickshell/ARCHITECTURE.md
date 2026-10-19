@@ -20,8 +20,7 @@ integration to `files/dolphin`, GTK to `look-and-feel/gtk`, terminal launching t
 the page survives only the exit animation. Bind observation to `active`, and keep
 operations that must survive dismissal in feature-local services. Header actions
 belong to the page and are loaded by the host; the catalogue must not import services.
-Pages can supply `headerSubtitle`; the host centers the title/subtitle block
-vertically alongside header actions and elides long adapter names.
+Headers use a single title, vertically centered beside page-owned actions.
 
 The installed shell uses individual file symlinks. Editing an existing linked
 file reloads it, but adding a component or helper also requires installing its
@@ -55,7 +54,7 @@ new ordinary actions rather than recreating their padding and content layouts.
 `DrawerActionButton` supplies the 48 px drawer footer variant, centering the icon
 and label together with a 22 px icon and 12 px gap, matching the audio/speed-test
 actions. Cleanup, one-time charging and performance recording use this variant;
-the recording duration field fills the same row height.
+the recording toggle fills the footer row.
 `HoldButton` adds gesture/progress handling; specialized icon buttons, multi-line
 audio tests and device rows retain their feature-specific layouts. Overriding
 `contentItem` makes that component responsible for its own size and alignment.
@@ -77,8 +76,62 @@ updates must never dispatch mutations.
   to preserve focus, password input and ordering through refreshes.
 - `bar/NetworkStatus.qml` uses native NetworkManager notifications with scanning
   disabled. Keep it independent of the drawer service so bar updates stay cheap.
-- Wi-Fi power, scan and editor actions live in the header, with the selected
-  interface as its subtitle. Section headings have no leading icons.
+- Wi-Fi information, power, scan and editor actions live in the header.
+  Section headings have no leading icons or connection-detail tooltips.
+
+### Connection information and ports
+
+Wi-Fi and Bluetooth use Lucide info buttons and shared `InfoPopover` / `InfoRow`
+components. Popovers anchor to their header button, constrain themselves to the
+window and scroll long detail lists. Escape and outside clicks dismiss them;
+closing restores focus to the trigger. Drawer dismissal and changing the selected
+adapter close information. Wi-Fi keeps its information, WARP and port popovers
+mutually exclusive. Bluetooth's Escape handler closes information before
+cancelling an unfinished pairing operation. Headers have no adapter subtitles.
+
+Wi-Fi information shows connection status, network, interface, local/public IPv4,
+MAC, gateway, DNS and available IPv6 details. Bluetooth shows the selected adapter
+name, interface and address. `InfoRow` copies the complete value through
+`Quickshell.clipboardText`, with brief checkmark feedback. Empty values and
+public-IP placeholders cannot be copied. Values remain live while the popover is
+open; public-IP completion does not dismiss it. Adapter details are no longer
+repeated in the connected-network hover hint.
+
+`PortsControls.qml` follows the Focus editor pattern: cards with TCP port numbers
+and × actions, then a full-width Open port button. Its popover has a `NumberField`
+(1–65535), six port presets and Open. Presets fill the field without submitting.
+Escape closes the popover before the drawer; dismissal and interface changes close
+it too. Wi-Fi is preferred while connected, otherwise a connected Ethernet device
+is used. The UFW module owns the privileged service; see its
+[implementation notes](../../system/security/ufw/ARCHITECTURE.md).
+
+`PortsService.qml` runs the installed D-Bus client separately from network controls.
+Status refreshes every five seconds only while the drawer is active. Actions queue
+ahead of subsequent reads and finish after dismissal. Unchanged lists retain card
+instances and focus. Only confirmed backend state creates or removes cards.
+Failed client launches clear the pending request, allowing later refreshes to
+recover after the helper is installed.
+
+`PublicIpService.qml` launches curl against `https://api.ipify.org` only when Wi-Fi
+information opens. Local IPv4 comes from the selected adapter's
+snapshot and needs no lookup. Public lookup has a two-second overall curl deadline,
+a three-second process watchdog and a 64-byte response limit; only a valid IPv4
+address is displayed. Failures quietly show Unavailable and cache for one minute;
+successes cache for ten minutes. No periodic lookup runs. This worker is separate
+from network mutations and speed tests.
+
+The public-IP cache key includes active NetworkManager connection paths, stable
+IPv4/IPv6 route fields, interface addresses and VPN/WARP state. Traffic counters
+are excluded. A changed key discards cached values; an in-flight old-route reply
+is ignored. Opening information during that request queues a lookup for the new context. Closing
+the drawer allows an already requested lookup to finish and populate the cache.
+
+```sh
+python3 -m unittest discover -s tests -p test_network_ports.py
+python3 -m unittest discover -s tests -p test_connection_info.py
+```
+
+Tests use a fake kernel and service; they never change host firewall rules.
 
 WARP connects by starting `warp-svc.service`; disconnects and failed connection
 attempts stop it. It is never enabled at boot. The polkit rule grants active local
@@ -108,7 +161,7 @@ scrolling components as the audio and keyboard drawers. A keyed model preserves
 device delegates across BlueZ updates. Connected, paired and available sections
 share one selected adapter; changing adapters releases this drawer's discovery.
 The header refresh action toggles discovery and stays highlighted while searching;
-the power switch controls the selected adapter, whose alias is the header subtitle;
+the power switch controls the selected adapter; the info popover shows its identity;
 the pencil launches `blueman-manager` and dismisses the drawer. The Bluetooth
 hardware module declares Blueman as the editor dependency.
 Device summaries keep actions beside the identity block at widths of at least
@@ -999,8 +1052,9 @@ Both drawers use a scrolling body and a separate footer. Battery offers one-time
 full charging for supported limits below 100% while plugged in; a pending action
 replaces it with **Restore charge limit**, also available when restoration needs a
 retry. Performance has mode choices and CPU, memory, GPU and fan cards. Its
-recording footer uses a 1–60 minute `NumberField` (default 2), disabled during
-recording. Results appear above the controls.
+recording footer toggles between starting and stopping an open-ended workload
+recording. Results appear above the controls. Hyprland's Ctrl+Shift+P global
+shortcut opens or closes this drawer even over fullscreen applications.
 
 `PowerSession.qml` starts `session.py` once from `shell.qml`, independently of
 drawer lifetimes. It subscribes to UPower and login1 events, but only queries
@@ -1030,8 +1084,8 @@ for subsequent events or an explicit retry. Externally changed limits are respec
 Actions need the shell running: unplug/replug cycles entirely while stopped cannot
 be reconstructed. The ordinary charge-limit slider can end a full-charge override.
 
-Recording is available when `power-study` is installed. It runs for the chosen
-1–60 minutes at two-second intervals, with no child workload or GPU sensor
+Recording is available when `power-study` is installed. It runs until stopped
+at two-second intervals, with no child workload or GPU sensor
 telemetry. The helper checks completion every two seconds only during recording.
 Results live in timestamped directories under the power state directory. The
 drawer shows CPU usage, peak memory/temperature and comparable battery discharge,

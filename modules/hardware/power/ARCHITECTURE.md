@@ -172,10 +172,12 @@ trials observe runtime state without reading GPU sensors, even if the GPU is
 already active: sensor reads can repeatedly reset its autosuspend delay.
 Hardware protections are never changed.
 
-Options precede the label; an optional workload follows it:
+Options precede the label; an optional workload follows it. `--until-stopped`
+keeps sampling until SIGINT/SIGTERM instead of ending at `--duration`:
 
 ```sh
 power-study --warmup 30 --duration 600 idle
+power-study --until-stopped --warmup 0 desktop
 power-study --gpu-telemetry --interval .5 --warmup 30 --duration 900 game -- GAME ARGUMENTS
 power-mode powersave
 tuned-adm active

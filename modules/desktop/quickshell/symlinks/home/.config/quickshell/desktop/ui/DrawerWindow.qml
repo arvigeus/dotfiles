@@ -8,7 +8,6 @@ InteractionWindow {
     id: root
 
     property string title: ""
-    property string subtitle: ""
     property bool leftEdge: false
     readonly property int drawerWidth: Theme.drawerWidth
     property real slideProgress: 0
@@ -85,29 +84,14 @@ InteractionWindow {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Theme.gap
-                ColumnLayout {
+                ShellText {
                     objectName: "drawerTitleBlock"
+                    text: root.title
+                    font.pixelSize: Theme.titleFontSize
+                    font.weight: Font.DemiBold
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignVCenter
-                    spacing: 2
-                    ShellText {
-                        text: root.title
-                        font.pixelSize: Theme.titleFontSize
-                        font.weight: Font.DemiBold
-                        Layout.fillWidth: true
-                        elide: Text.ElideRight
-                    }
-                    ShellText {
-                        id: subtitleLabel
-                        objectName: "drawerSubtitle"
-                        text: root.subtitle
-                        visible: text !== ""
-                        font.pixelSize: Theme.smallFontSize
-                        color: Theme.muted
-                        Layout.fillWidth: true
-                        elide: Text.ElideRight
-                        PassiveToolTip { target: subtitleLabel; text: root.subtitle }
-                    }
+                    elide: Text.ElideRight
                 }
                 Loader {
                     objectName: "drawerHeaderActions"

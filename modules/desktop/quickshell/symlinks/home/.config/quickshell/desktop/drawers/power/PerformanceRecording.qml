@@ -51,25 +51,13 @@ ColumnLayout {
         DrawerActionButton {
             id: recordButton
             objectName: "performanceRecord"
-            Layout.fillWidth: true; Layout.preferredWidth: 1; Layout.minimumWidth: 0; Layout.fillHeight: true
+            Layout.fillWidth: true; Layout.fillHeight: true
             horizontalPadding: 6
             text: root.running ? qsTr("Stop recording") : qsTr("Record performance")
             iconName: root.running ? "square" : "circle-dot"
-            enabled: root.active && root.session.ready && !root.session.busy && (root.running || duration.acceptableInput)
-            onClicked: {
-                duration.commit();
-                root.session.send(root.running ? {op: "stop-recording"} : {op: "record", minutes: duration.number});
-            }
-            PassiveToolTip { target: recordButton; text: qsTr("Record the current workload for the duration in minutes.") }
-        }
-        NumberField {
-            id: duration
-            objectName: "performanceRecordDuration"
-            Layout.preferredWidth: 60; Layout.minimumWidth: 60; Layout.maximumWidth: 60
-            Layout.fillHeight: true
-            from: 1; to: 60; value: 2
-            Accessible.name: qsTr("Performance recording minutes")
-            enabled: root.active && !root.session.busy && !root.running
+            enabled: root.active && root.session.ready && !root.session.busy
+            onClicked: root.session.send(root.running ? {op: "stop-recording"} : {op: "record"})
+            PassiveToolTip { target: recordButton; text: root.running ? qsTr("Stop recording the current workload.") : qsTr("Record the current workload until stopped.") }
         }
     }
 }

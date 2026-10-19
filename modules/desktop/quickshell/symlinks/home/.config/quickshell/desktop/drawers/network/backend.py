@@ -5,6 +5,7 @@ Secrets travel over stdin and D-Bus, never argv, logs, or status snapshots. No
 discovery happens here unless explicitly requested by the visible drawer.
 """
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -135,6 +136,22 @@ def ip_details(device):
     return "\n".join(lines)
 
 
+def route_key(active):
+    # Ignore route packet/use counters, which would invalidate the cache on traffic.
+    routes = []
+    for path, columns in (('/proc/net/route', (0, 1, 2, 3, 6, 7)),
+                          ('/proc/net/ipv6_route', (0, 1, 2, 3, 4, 5, 8, 9))):
+        try:
+            for line in Path(path).read_text().splitlines():
+                fields = line.split()
+                if len(fields) > max(columns):
+                    routes.append([fields[index] for index in columns])
+        except OSError:
+            pass
+    connections = sorted(connection.get_path() for connection in active)
+    return hashlib.sha256(json.dumps([sorted(routes), connections]).encode()).hexdigest()
+
+
 def traffic_counters(interface):
     """Local interface counters only; never perform a speed test or send traffic."""
     if not re.fullmatch(r"[\w.:-]{1,15}", interface) or interface in (".", ".."):
@@ -236,6 +253,7 @@ class Network:
                      "state": d.get_state().value_nick, "connected": d.get_state() == NM.DeviceState.ACTIVATED,
                      "uuid": a.get_uuid() if a else "", "connection": a.get_id() if a else "",
                      "details": ip_details(d), "mac": d.get_hw_address() or "",
+                     "ipv4": [a.get_address() for a in d.get_ip4_config().get_addresses()] if d.get_ip4_config() else [],
                      "traffic": traffic_counters(d.get_iface()) if d.get_state() == NM.DeviceState.ACTIVATED else {}}
             if kind == NM.DeviceType.ETHERNET:
                 entry.update(carrier=d.get_carrier(), speed=d.get_speed())
@@ -268,6 +286,7 @@ class Network:
                 "hardwareEnabled": self.client.wireless_hardware_get_enabled(),
                 "connectivity": self.client.get_connectivity().value_nick,
                 "adapters": adapters, "wired": wired, "networks": networks, "profiles": profiles,
+                "routeKey": route_key(active.values()),
                 "sampleTime": time.monotonic()}
 
     def wait_active(self, active):

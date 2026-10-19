@@ -13,6 +13,7 @@ DrawerPage {
     id: root
     property var service: BluetoothService
     property string adapterKey: ""
+    property Popup informationPopup: null
     readonly property var adapter: service.state.adapters.find(a => a.key === adapterKey) ?? null
     readonly property var devices: service.state.devices.filter(d => d.adapter === adapterKey)
     readonly property bool canAct: active && service.loaded && service.state.available && !service.busy
@@ -25,7 +26,6 @@ DrawerPage {
     TextMetrics { id: disconnectingMetrics; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; text: qsTr("Disconnecting…") }
     TextMetrics { id: pairingMetrics; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; text: qsTr("Pairing…") }
     TextMetrics { id: forgettingMetrics; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; text: qsTr("Forgetting…") }
-    headerSubtitle: adapter?.name ?? ""
     headerActions: RowLayout {
         spacing: 4
         ShellSwitch {
@@ -37,6 +37,27 @@ DrawerPage {
                 const requested = checked;
                 checked = Qt.binding(() => !!root.adapter?.powered);
                 root.service.run("power", root.adapter, {enabled: requested});
+            }
+        }
+        AudioIconButton {
+            id: information
+            objectName: "bluetoothInfo"; iconName: "info"; text: qsTr("Bluetooth information")
+            enabled: root.active; checked: adapterInfo.visible
+            onClicked: { if (adapterInfo.visible) adapterInfo.close(); else adapterInfo.open(); }
+            InfoPopover {
+                id: adapterInfo
+                objectName: "bluetoothInfoPopup"; button: information; active: root.active
+                onAboutToShow: root.informationPopup = adapterInfo
+                onDismissed: if (root.informationPopup === adapterInfo) root.informationPopup = null
+                ShellText {
+                    Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.muted
+                    text: !root.service.loaded ? qsTr("Reading Bluetooth status…")
+                        : !root.adapter ? qsTr("No Bluetooth adapter found")
+                        : root.adapter.powered ? qsTr("Bluetooth is on") : qsTr("Bluetooth is off")
+                }
+                InfoRow { objectName: "bluetoothAdapterInfo"; label: qsTr("Adapter"); value: root.adapter?.name ?? "" }
+                InfoRow { objectName: "bluetoothInterfaceInfo"; label: qsTr("Interface"); value: root.adapter?.key.split("/").pop() ?? "" }
+                InfoRow { objectName: "bluetoothAddressInfo"; label: qsTr("Address"); value: root.adapter?.address ?? "" }
             }
         }
         AudioIconButton {
@@ -58,12 +79,13 @@ DrawerPage {
         const current = service.state.devices.filter(d => d.adapter === adapterKey);
         Models.sync(deviceModel, current, "key", false);
     }
-    onAdapterKeyChanged: Qt.callLater(root.sync)
+    onAdapterKeyChanged: { informationPopup?.close(); Qt.callLater(root.sync); }
     Connections { target: root.service; function onStateChanged(): void { root.sync(); } }
     onActiveChanged: service.observe(root, active)
     Component.onCompleted: { sync(); service.observe(root, active); }
     Component.onDestruction: service.observe(root, false)
-    escapeHandler: service.pending === "pair" ? (() => service.cancel()) : null
+    escapeHandler: informationPopup ? (() => informationPopup.close())
+        : service.pending === "pair" ? (() => service.cancel()) : null
     function icon(device): string {
         if (/headset|headphone/.test(device.icon)) return "headphones";
         if (/audio/.test(device.icon)) return "speaker";

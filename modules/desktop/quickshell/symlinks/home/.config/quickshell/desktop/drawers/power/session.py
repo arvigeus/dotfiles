@@ -137,15 +137,12 @@ class Session:
     def record(self, request):
         if self.child or not self.record_available:
             raise ValueError('Performance recording is unavailable or already running.')
-        minutes = request.get('minutes', 2)
-        if type(minutes) is not int or not 1 <= minutes <= 60:
-            raise ValueError('Choose a recording duration from 1 to 60 minutes.')
         path = self.directory / ('recording-' + time.strftime('%Y%m%d-%H%M%S') + '-' + str(time.time_ns() % 1000000))
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.log = (self.directory / 'recording.log').open('w')
         try:
             # Battery-safe default: no GPU sensor reads, no synthetic workload.
-            self.child = subprocess.Popen(['power-study', '--duration', str(minutes * 60), '--warmup', '0',
+            self.child = subprocess.Popen(['power-study', '--until-stopped', '--warmup', '0',
                 '--interval', '2', '--output', str(path), 'desktop'], stdout=self.log, stderr=self.log)
         except Exception:
             self.log.close()

@@ -16,7 +16,6 @@ DrawerWindow {
     readonly property DrawerPage currentPage: page.item as DrawerPage
 
     title: currentDrawer?.title ?? ""
-    subtitle: currentPage?.headerSubtitle ?? ""
     leftEdge: currentDrawer?.edge === DrawerDefinition.Left
     contentInitialFocus: currentPage?.initialFocus ?? null
     headerActions: currentPage?.headerActions ?? null
