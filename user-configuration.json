@@ -232,13 +232,11 @@
             "pipewire-jack",
             "pipewire-pulse",
             "gst-plugin-pipewire",
-            "libpulse",
             "wireplumber",
             "bluez",
             "bluez-utils",
             "networkmanager",
             "iwd",
-            "network-manager-applet",
             "tuned",
             "tuned-ppd",
             "ufw"
@@ -1441,6 +1439,10 @@
                 "target": "home/.config/quickshell/desktop/bar/BatteryStatus.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/BluetoothStatus.qml",
+                "target": "home/.config/quickshell/desktop/bar/BluetoothStatus.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/MicrophoneStatus.qml",
                 "target": "home/.config/quickshell/desktop/bar/MicrophoneStatus.qml"
             },
@@ -1491,10 +1493,6 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/Drawers.qml",
                 "target": "home/.config/quickshell/desktop/drawers/Drawers.qml"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/GeneralDrawer.qml",
-                "target": "home/.config/quickshell/desktop/drawers/GeneralDrawer.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/KeyboardDrawer.qml",
@@ -1575,6 +1573,18 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/audio/qmldir",
                 "target": "home/.config/quickshell/desktop/drawers/audio/qmldir"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/bluetooth/BluetoothService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/bluetooth/BluetoothService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/bluetooth/backend.py",
+                "target": "home/.config/quickshell/desktop/drawers/bluetooth/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/bluetooth/qmldir",
+                "target": "home/.config/quickshell/desktop/drawers/bluetooth/qmldir"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/disks/CleanupControl.qml",
@@ -1849,6 +1859,10 @@
                 "target": "home/.config/quickshell/desktop/icons/bell.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/bluetooth-off.svg",
+                "target": "home/.config/quickshell/desktop/icons/bluetooth-off.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/bluetooth.svg",
                 "target": "home/.config/quickshell/desktop/icons/bluetooth.svg"
             },
@@ -1883,6 +1897,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/chevron-up.svg",
                 "target": "home/.config/quickshell/desktop/icons/chevron-up.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/circle-dot.svg",
+                "target": "home/.config/quickshell/desktop/icons/circle-dot.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/clipboard.svg",
@@ -2073,6 +2091,10 @@
                 "target": "home/.config/quickshell/desktop/icons/speaker.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/square.svg",
+                "target": "home/.config/quickshell/desktop/icons/square.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/star-filled.svg",
                 "target": "home/.config/quickshell/desktop/icons/star-filled.svg"
             },
@@ -2197,6 +2219,10 @@
                 "target": "home/.config/quickshell/desktop/ui/ButtonBackground.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/DrawerActionButton.qml",
+                "target": "home/.config/quickshell/desktop/ui/DrawerActionButton.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/DrawerBrief.qml",
                 "target": "home/.config/quickshell/desktop/ui/DrawerBrief.qml"
             },
@@ -2255,6 +2281,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ShellButton.qml",
                 "target": "home/.config/quickshell/desktop/ui/ShellButton.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ShellSwitch.qml",
+                "target": "home/.config/quickshell/desktop/ui/ShellSwitch.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ShellText.qml",
@@ -2369,6 +2399,7 @@
         "7zip",
         "bash",
         "bash-completion",
+        "xdg-terminal-exec",
         "bc",
         "less",
         "rsync",
@@ -2393,29 +2424,11 @@
         "ksnip",
         "kooha",
         "xdg-desktop-portal-gtk",
-        "brightnessctl",
         "playerctl",
-        "libnotify",
         "wl-clipboard",
-        "kio-admin",
-        "quickshell",
-        "upower",
-        "polkit",
-        "gtk3",
-        "xdg-terminal-exec",
-        "python-gobject",
-        "network-manager-applet",
-        "libpulse",
-        "pavucontrol-qt",
-        "alsa-utils",
-        "ddcutil",
-        "wdisplays",
+        "libnotify",
         "dunst",
-        "udisks2",
-        "partitionmanager",
-        "filelight",
-        "pacman-contrib",
-        "dolphin",
+        "quickshell",
         "sqlite",
         "sqlitebrowser",
         "kate",
@@ -2433,6 +2446,7 @@
         "uv",
         "ruff",
         "ty",
+        "python-gobject",
         "rust",
         "lldb",
         "bat",
@@ -2453,6 +2467,8 @@
         "podman-compose",
         "shellcheck",
         "shfmt",
+        "dolphin",
+        "kio-admin",
         "dosbox",
         "gamescope",
         "mangohud",
@@ -2462,11 +2478,19 @@
         "ttf-dejavu",
         "steam",
         "steam-devices",
+        "libpulse",
+        "pavucontrol-qt",
+        "alsa-utils",
+        "upower",
+        "blueman",
         "amd-ucode",
         "cpupower",
         "switcheroo-control",
         "ogc/asusctl",
         "ogc/rog-control-center",
+        "brightnessctl",
+        "ddcutil",
+        "wdisplays",
         "fwupd",
         "radeontop",
         "nvtop",
@@ -2485,13 +2509,18 @@
         "fcitx5-unikey",
         "whois",
         "bind",
+        "network-manager-applet",
         "evtest",
         "chaotic-aur/logiops",
         "solaar",
+        "udisks2",
+        "partitionmanager",
+        "filelight",
         "wireless-regdb",
         "wavemon",
         "qbittorrent",
         "rclone",
+        "gtk3",
         "koko",
         "fooyin",
         "ffmpeg",
@@ -2517,6 +2546,7 @@
         "ebook-tools",
         "archinstall",
         "pkgstats",
+        "pacman-contrib",
         "reflector",
         "flatpak",
         "chaotic-keyring",
@@ -2531,6 +2561,7 @@
         "libva-utils",
         "vulkan-tools",
         "gnupg",
+        "polkit",
         "openssh",
         "sudo",
         "virt-manager",

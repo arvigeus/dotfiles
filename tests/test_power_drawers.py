@@ -166,7 +166,7 @@ class ProfileTests(unittest.TestCase):
         with patch.object(backend, 'policy_warning', return_value=''):
             result = backend.profile_snapshot(bus)
         self.assertEqual(result['service'], 'net.hadess.PowerProfiles')
-        self.assertEqual(result['choices'], ['performance', 'balanced'])
+        self.assertEqual(result['choices'], ['balanced', 'performance'])
         self.assertEqual(result['holds'][0]['reason'], 'Playing')
         self.assertEqual(result['degraded'], 'high-operating-temperature')
 
@@ -337,6 +337,8 @@ ShellRoot {
  property int stage:0
  Timer {interval:200;repeat:true;running:true;onTriggered:{try{
   if(stage===0){
+   const modes=["power-saver","balanced","performance"].map(name=>find(performance,"powerProfile:"+name));
+   check(modes[0].x < modes[1].x && modes[1].x < modes[2].x,"power modes are not ordered from savings to performance");
    check(find(battery,"batteryPercentage").text==="76%","battery percentage");
    check(find(battery,"batteryEstimate").detail.indexOf("remaining")>=0,"estimate missing");
    check(barBattery.label==="76%"&&!barBattery.charging,"bar percentage normalization");

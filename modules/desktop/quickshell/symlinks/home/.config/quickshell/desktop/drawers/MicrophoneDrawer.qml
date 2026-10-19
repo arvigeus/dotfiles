@@ -49,6 +49,7 @@ DrawerPage {
             objectName: "inputDefault:" + title.record.key
             iconName: "check"; text: qsTr("Use %1 as the default microphone").arg(title.record.label)
             checked: title.live && title.record.selected; iconColor: checked ? Theme.accent : Theme.muted
+            highlightChecked: false
             Accessible.checkable: true; Accessible.checked: checked
             enabled: title.live && root.canAct && !root.service.busy && root.destinations.some(node => node.name === title.record.name)
             onClicked: root.service.run("input-default", {name: title.record.name})
@@ -102,7 +103,9 @@ DrawerPage {
         InputTitle { record: input.record; live: input.record.live }
         Note {
             objectName: "inputState:" + input.record.key
-            text: !input.record.live ? (input.deviceRecord.enabled ? qsTr("Input unavailable") : qsTr("Input disabled")) : input.record.muted ? qsTr("Muted") : root.service.state.recordings?.some(app => app.source === input.record.index && app.recording && !app.muted) ? qsTr("In use") : qsTr("Ready")
+            visible: text !== ""
+            text: !input.record.live && input.deviceRecord.enabled ? qsTr("Input unavailable")
+                : input.record.live && !input.record.muted && root.service.state.recordings?.some(app => app.source === input.record.index && app.recording && !app.muted) ? qsTr("In use") : ""
         }
         RowLayout {
             Layout.fillWidth: true; spacing: 8

@@ -78,11 +78,6 @@ DrawerHost {
             source: Qt.resolvedUrl("PerformanceDrawer.qml")
         },
         DrawerDefinition {
-            key: "general"
-            title: qsTr("General")
-            source: Qt.resolvedUrl("GeneralDrawer.qml")
-        },
-        DrawerDefinition {
             key: "weather"
             title: qsTr("Time and weather")
             source: Qt.resolvedUrl("WeatherDrawer.qml")

@@ -56,6 +56,12 @@ if __name__=="__main__":
   print(json.dumps(dict(ok=True,error="",data=state)),flush=True)
 ''')
             (root / 'drawers/displays/brightness.py').write_text('import json,sys;json.loads(sys.stdin.readline());print(json.dumps(dict(ok=True,values=[])))')
+            (root / 'drawers/bluetooth/backend.py').write_text('''import json,sys
+for line in sys.stdin:
+ request=json.loads(line)
+ if request.get('active'):print(json.dumps(dict(type='state',available=True,adapters=[dict(key='a',name='Laptop',address='00',powered=True)],devices=[])),flush=True)
+ else:print(json.dumps(dict(type='scan',key='')),flush=True)
+''')
             # Storage uses fixture inventory; opening or dismissing must never touch host disks.
             (root / 'drawers/disks/backend.py').write_text('''import json,sys
 volume=dict(key="vault",identity="vault",label="Vault",device="/dev/test1",fs="crypto_LUKS",size=1000,capacity=None,free=None,used=None,capacityError="",mounts=[],encrypted=True,locked=True,canMount=False,canUnmount=False,reason="",target="/")
@@ -84,7 +90,7 @@ QtObject {
 ''')
             with (root / 'ui/qmldir').open('a') as manifest:
                 manifest.write('singleton ProbeState 1.0 ProbeState.qml\n')
-            for key, name in (('general', 'General'), ('spaces', 'Spaces'),
+            for key, name in (('displays', 'Displays'), ('spaces', 'Spaces'),
                               ('wifi', 'Wifi'), ('bluetooth', 'Bluetooth')):
                 path = root / f'drawers/{name}Drawer.qml'
                 source = path.read_text()
@@ -157,7 +163,7 @@ ShellRoot {
     property int ticksBefore: 0
     property real buttonWidthBefore: 0
     property var previewKeys: ["tray", "clipboard", "screenshot", "recording",
-        "wifi", "bluetooth", "sound", "microphone", "keyboard", "displays", "disks", "battery", "performance", "general", "weather", "notifications"]
+        "wifi", "bluetooth", "sound", "microphone", "keyboard", "displays", "disks", "battery", "performance", "weather", "notifications"]
     function snapshot(name, window) {
         window = window || bar;
         const directory = Quickshell.env("DRAWER_PREVIEW_DIR");
@@ -186,41 +192,44 @@ ShellRoot {
                 launcher.openOn(screen); sole("launcher");
             } else if (stage === 1) {
                 check(find(launcher.contentItem, "applicationSearch").activeFocus, "search activation focus");
-                open("general");
-                launcher.dismiss(); sole("general");
-                drawers.openDrawer("wifi", null); sole("general");
-                drawers.toggleDrawer("wifi", null); sole("general");
-                drawers.openDrawer("unknown", screen); sole("general");
+                open("displays");
+                launcher.dismiss(); sole("displays");
+                drawers.openDrawer("wifi", null); sole("displays");
+                drawers.toggleDrawer("wifi", null); sole("displays");
+                drawers.openDrawer("unknown", screen); sole("displays");
             } else if (stage === 2) {
-                check(ProbeState.count("created:general") === 1 && !ProbeState.count("created:wifi")
+                check(ProbeState.count("created:displays") === 1 && !ProbeState.count("created:wifi")
                     && !ProbeState.count("created:bluetooth") && !ProbeState.count("created:spaces"), "unrelated content loaded");
-                check(find(drawers.contentItem, "theme-dark").activeFocus, "lazy content activation focus: " + drawers.initialFocus + " / " + drawers.currentPage.initialFocus + " / " + drawers.activeFocusItem);
+                check(find(drawers.contentItem, "drawerClose").activeFocus, "lazy content activation focus");
+                check(!find(bar.contentItem, "generalButton"), "removed General button remains");
+                check(find(drawers.contentItem, "darkModeEnabled").checked, "saved dark mode not reflected");
                 const card = find(drawers.contentItem, "drawerCard");
                 check(card.x + card.width === drawers.width && card.y === 0
                     && card.height === drawers.height && card.radius === 0, "flush right geometry");
-                input.mouseClick(card, card.width / 2, card.height - 20); sole("general");
-                input.mouseClick(find(drawers.contentItem, "theme-light"), 80, 20);
+                input.mouseClick(card, card.width / 2, card.height - 20); sole("displays");
+                input.mouseClick(find(drawers.contentItem, "darkModeEnabled"), 19, 17);
             } else if (stage === 3) {
                 check(Theme.mode === "light", "theme save failed");
                 input.keyClick(Qt.Key_Escape); sole(null);
                 check(!drawers.currentPage.active, "closing page retained active services");
             } else if (stage === 4) {
-                check(drawers.currentPage === null && ProbeState.count("destroyed:general") === 1, "closed page retained: " + drawers.currentPage + " / " + drawers.slideProgress + " / " + drawers.keepVisible + " / " + JSON.stringify(ProbeState.events));
-                open("general");
+                check(drawers.currentPage === null && ProbeState.count("destroyed:displays") === 1, "closed page retained: " + drawers.currentPage + " / " + drawers.slideProgress + " / " + drawers.keepVisible + " / " + JSON.stringify(ProbeState.events));
+                open("displays");
             } else if (stage === 5) {
-                check(find(drawers.contentItem, "theme-light").activeFocus, "recreated page saved mode focus");
-                input.keyClick(Qt.Key_Tab, Qt.ShiftModifier);
-                check(find(drawers.contentItem, "theme-dark").activeFocus, "Tab did not reach Dark");
+                const darkMode = find(drawers.contentItem, "darkModeEnabled");
+                check(!darkMode.checked, "recreated page lost saved light mode");
+                for (let count = 0; count < 12 && !darkMode.activeFocus; count++) input.keyClick(Qt.Key_Tab);
+                check(darkMode.activeFocus, "Tab did not reach Dark mode");
                 input.keyClick(Qt.Key_Space);
             } else if (stage === 6) {
                 check(Theme.mode === "dark", "keyboard theme save");
-                input.keyClick(Qt.Key_Tab); input.keyClick(Qt.Key_Space);
+                input.keyClick(Qt.Key_Space);
             } else if (stage === 7) {
                 check(Theme.mode === "light", "keyboard theme return");
                 input.mouseClick(drawers.contentItem, 10, 350); sole(null);
-                open("general");
+                open("displays");
                 input.mouseClick(find(drawers.contentItem, "drawerClose"), 17, 17); sole(null);
-                open("general");
+                open("displays");
                 input.mouseClick(find(bar.contentItem, "spacesButton"), 40, 17); sole("spaces");
             } else if (stage === 8) {
                 const card = find(drawers.contentItem, "drawerCard");
@@ -294,8 +303,21 @@ ShellRoot {
             } else if (stage >= 20 && stage < 20 + previewKeys.length) {
                 if (stage > 20) {
                     check(drawers.currentPage !== null, "preview page did not load");
+                    if (["wifi", "bluetooth"].includes(previewKeys[stage - 21])) {
+                        const title = find(drawers.contentItem, "drawerTitleBlock");
+                        const actions = find(drawers.contentItem, "drawerHeaderActions");
+                        check(drawers.subtitle === drawers.currentPage.headerSubtitle
+                            && find(drawers.contentItem, "drawerSubtitle").text === drawers.subtitle, "adapter subtitle not forwarded");
+                        check(Math.abs(title.mapToItem(drawers.contentItem, 0, title.height / 2).y
+                            - actions.mapToItem(drawers.contentItem, 0, actions.height / 2).y) < 1, "title block is not vertically centered");
+                    }
                     if (previewKeys[stage - 21] === "wifi")
-                        check(find(drawers.contentItem, "networkScroll"), "Wi-Fi controls missing");
+                        check(find(drawers.contentItem, "networkScroll") && find(drawers.contentItem, "wifiToggle")
+                            && find(drawers.contentItem, "wifiScan") && !find(drawers.currentPage, "wifiScan"), "Wi-Fi controls missing");
+                    else if (previewKeys[stage - 21] === "bluetooth")
+                        check(find(drawers.contentItem, "bluetoothPower") && find(drawers.contentItem, "bluetoothScan")
+                            && find(drawers.contentItem, "bluetoothEdit") && !find(drawers.currentPage, "bluetoothScan")
+                            && !find(drawers.contentItem, "drawerBrief"), "Bluetooth controls missing");
                     else if (previewKeys[stage - 21] === "sound")
                         check(find(drawers.contentItem, "audioOutputsEmpty") && find(drawers.contentItem, "audioScroll"), "playback controls missing");
                     else if (previewKeys[stage - 21] === "microphone")

@@ -371,6 +371,14 @@ ShellRoot {
  function typeNumber(control,value){control.focusEditor();input.keyClick(Qt.Key_A,Qt.ControlModifier);for(const c of value)input.keyClick(c.charCodeAt(0));}
  function capture(name,item){const dir=Quickshell.env("DISPLAY_PREVIEW_DIR");if(dir)item.grabToImage(result=>result.saveToFile(dir+"/power-utilities-"+name+".png"));}
  function bottom(item,drawer){return item.mapToItem(drawer,0,item.height).y;}
+ function checkAction(button){
+  const icon=find(button,button.objectName+"Icon"),label=find(button,button.objectName+"Label");
+  check(icon.visible&&icon.status===Image.Ready,"footer icon failed to load");
+  const left=icon.mapToItem(button,0,0).x,right=label.mapToItem(button,label.width,0).x;
+  check(Math.abs((left+right)/2-button.width/2)<1,"footer group is not centered");
+  check(Math.abs(label.mapToItem(button,0,0).x-left-icon.width-12)<1,"footer icon is not next to text");
+  check(button.height===48&&label.height>=label.implicitHeight,"footer height or label clipping");
+ }
  property int stage:0
  Timer {interval:180;repeat:true;running:true;onTriggered:{try{
   if(stage===0){update(s=>s.battery.onBattery=false);
@@ -380,6 +388,7 @@ ShellRoot {
    check(!find(battery,"batteryHistoryGraph")&&!find(battery,"batteryNotify"),"removed battery features remain");
    const action=find(battery,"batteryChargeOnce");
    check(action.visible&&Math.abs(bottom(action,battery)-battery.height)<1,"charge action is not pinned to bottom");
+   checkAction(action);
    click(action);check(utilities.sent.op==="charge-once","charge action");
    capture("battery",battery);
   }else if(stage===1){
@@ -398,9 +407,10 @@ ShellRoot {
    check(!find(performance,"temporaryModeApply"),"temporary modes remain");
    const row=find(performance,"performanceRecordRow"),button=find(performance,"performanceRecord"),duration=find(performance,"performanceRecordDuration");
    check(Math.abs(bottom(row,performance)-performance.height)<1,"record row is not pinned to bottom");
-   check(button.text==="Record performance","record label");
+   check(button.text==="Record performance"&&button.iconName==="circle-dot","record label/icon");
+   checkAction(button);
    check(duration.number===2&&duration.width<=64&&button.width>3*duration.width,"duration default/width");
-   check(row.height<=40&&Math.abs(button.height-duration.height)<1,"recording row stretched vertically");
+   check(row.height===48&&Math.abs(button.height-duration.height)<1,"recording row stretched vertically");
    click(button);check(utilities.sent.op==="record"&&utilities.sent.minutes===2,"default recording");
    typeNumber(duration,"12");input.mouseClick(duration.up.indicator,12,9);
    check(duration.number===13,"numeric arrows after typing");
@@ -413,20 +423,22 @@ ShellRoot {
    typeNumber(duration,"2");utilityUpdate(s=>s.recording={running:true,path:"/tmp/test-recording",summary:null,error:""});
   }else if(stage===5){
    check(!find(performance,"performanceRecordDuration").enabled,"duration editable during recording");
+   check(find(performance,"performanceRecord").iconName==="square","recording has no stop icon");
    click(find(performance,"performanceRecord"));check(utilities.sent.op==="stop-recording","stop action");
    utilityUpdate(s=>s.recording={running:false,path:"/tmp/test-recording",error:"",summary:{samples:60,measured_seconds:118,cpu_usage:24,peak_memory_used:1073741824,observed_peak_temperatures_c:{cpu:60},batteries:{BAT0:{mean_w:8}}}});
    update(s=>s.metrics.cpu.usage=32);performance.width=268;battery.width=268;Theme.setMode("light");
   }else if(stage===6){
    const button=find(performance,"performanceRecord"),duration=find(performance,"performanceRecordDuration"),label=find(button,"performanceRecordLabel");
    check(button.width>3*duration.width,"narrow button does not dominate row");
-   check(find(performance,"performanceRecordRow").height<=40&&Math.abs(button.height-duration.height)<1,"narrow recording row stretched vertically");
+   checkAction(button);
+   check(find(performance,"performanceRecordRow").height===48&&Math.abs(button.height-duration.height)<1,"narrow recording row stretched vertically");
    check(label.width>=label.implicitWidth,"narrow record label clipped: "+label.width+"/"+label.implicitWidth);
    check(Math.abs(bottom(find(performance,"performanceRecordRow"),performance)-performance.height)<1,"narrow recording footer moved");
    check(find(performance,"performanceDevicesHeading").text==="Devices","devices section missing");
    check(!find(performance,"cpuTrend")&&!find(performance,"memoryTrend"),"time graphs remain");
    capture("performance-narrow-light",performance);
   }else if(stage===7){performance.visible=false;performance.active=false;battery.visible=true;battery.active=true;
-  }else if(stage===8){check(Math.abs(bottom(find(battery,"batteryChargeOnce"),battery)-battery.height)<1,"narrow battery footer moved");capture("battery-narrow-light",battery);
+  }else if(stage===8){check(Math.abs(bottom(find(battery,"batteryChargeOnce"),battery)-battery.height)<1,"narrow battery footer moved");checkAction(find(battery,"batteryChargeOnce"));capture("battery-narrow-light",battery);
   }else if(stage===9){console.log("DISPLAY_PASS");Qt.quit();}
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}

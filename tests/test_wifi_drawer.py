@@ -196,6 +196,8 @@ class WifiDrawerTests(unittest.TestCase):
                      wired=[dict(interface='eth0', state='unavailable', connected=False, carrier=False, speed=0, uuid='', connection='', details='')],
                      warp=dict(available=True, connected=False, running=False, state='Off · daemon stopped', mode=''))
         qml = '''import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
 import QtTest
 import Quickshell
 import "drawers"
@@ -235,15 +237,30 @@ FloatingWindow {
   function cancel() { running = false; }
  }
  property var drawer: drawerLoader.item
+ Item { id: preview; width: 480; height: 900
+ Rectangle { anchors.fill: parent; color: UI.Theme.background }
+ RowLayout {
+  id: header
+  x: 16; y: 16; width: 448; spacing: 12
+  ColumnLayout {
+   Layout.fillWidth: true; spacing: 2
+   UI.ShellText { text: "Wi-Fi"; font.pixelSize: UI.Theme.titleFontSize; Layout.fillWidth: true; elide: Text.ElideRight }
+   UI.ShellText { text: drawer?.headerSubtitle ?? ""; font.pixelSize: UI.Theme.smallFontSize; color: UI.Theme.muted; Layout.fillWidth: true }
+  }
+  Loader { sourceComponent: drawer?.headerActions ?? null }
+  UI.ShellButton { text: "×"; Layout.preferredWidth: 34 }
+ }
+ Rectangle { x: 16; y: header.y + header.height + 16; width: 448; height: 1; color: UI.Theme.border }
  Loader {
   id: drawerLoader
-  width: 448; height: 868; anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 16
+  width: 448; height: 900 - y - 16; x: 16; y: header.y + header.height + 33
   asynchronous: true
   sourceComponent: Component {
    WifiDrawer { service: fake; speedTest: speed; active: true
     Rectangle { anchors.fill: parent; color: UI.Theme.background; z: -1 }
    }
   }
+ }
  }
  TestCase { id: input; when: false; parent: window.contentItem }
  function find(item, name) {
@@ -255,7 +272,7 @@ FloatingWindow {
  function capture(item, name) {
   const output = Quickshell.env("WIFI_PREVIEW_DIR") || "/tmp";
   const requested = item.grabToImage(result => console.log("PREVIEW_SAVED", name, result.saveToFile(output + "/" + name)));
-  console.log("PREVIEW_REQUESTED", name, requested, item.width, item.height);
+  check(requested, "capture request failed: " + name);
  }
  property var savedNetworkRow: null
  property var savedVpnRow: null
@@ -273,15 +290,22 @@ FloatingWindow {
     check(!find(drawer, "connectionDetails") && !find(drawer, "connectionInfo"), "info controls remain");
     const row = find(drawer, "wifiNetwork:home");
     check(row.leftPadding >= 0 && row.hint.includes("192.0.2.1") && row.hint.includes("82%"), "tooltip lost connection details");
-    check(row.x > find(drawer, "wifiToggle").x + 20, "wireless rows are not indented");
+    check(drawer.headerSubtitle === "wlan0", "interface is not in the header subtitle");
+    for (const name of ["wirelessSection", "ethernetSection", "vpnSection"])
+     check(find(drawer, name).iconName === "" && find(drawer, name).leading === null, "section still has an icon");
+    check(find(window.contentItem, "wifiScan") && !find(drawer, "wifiScan") && !find(drawer, "wifiToggle"), "power/scan did not move to header");
     check(row.foreground.toString() === UI.Theme.text.toString(), "connected row should use normal text");
     input.mouseMove(row, 8, row.height / 2);
     check(row.highlighted && row.foreground.toString() === UI.Theme.accent.toString(), "row hover did not cover icon and name");
     input.mouseMove(drawer, 0, drawer.height - 1);
-    check(find(drawer, "wifiToggle").hint === find(drawer, "wifiToggle").text, "toggle tooltip includes network details");
+    check(find(window.contentItem, "wifiToggle").checked && fake.calls.length === 0, "initial power read issued a mutation");
+    const scan = find(window.contentItem, "wifiScan");
+    input.mouseClick(scan, scan.width / 2, scan.height / 2);
+    check(fake.calls.length === 1 && fake.calls[0].op === "scan", "header refresh did not request a scan");
+    fake.calls = [];
     check(find(drawer, "downloadRate").text === "2.0 KiB/s", "compact transfer statistics missing");
     check(find(drawer, "networkActivity").foreground.toString() === UI.Theme.text.toString(), "spinner does not follow theme");
-    capture(drawer, "wifi-drawer-compact.png");
+    capture(preview, "wifi-drawer-compact.png");
    } else if (window.stage === 1) {
     check(fake.observing && drawer.networks.length === 3, "activation/network list");
     const newNetwork = find(drawer, "wifiNetwork:new");
@@ -295,7 +319,7 @@ FloatingWindow {
     fake.error = "Incorrect password"; fake.completed("connect", false);
     check(password.text === "retry-password", "failure discarded password");
     fake.busy = true;
-    check(!find(drawer, "wifiToggle").enabled, "duplicate action allowed");
+    check(!find(window.contentItem, "wifiToggle").enabled, "duplicate action allowed");
     drawer.active = false; check(!fake.observing, "observation survived dismissal");
     fake.completed("connect", true); check(password.text === "", "success retained password");
     drawer.active = true; fake.busy = false; fake.error = "";
@@ -313,16 +337,16 @@ FloatingWindow {
     const vpnRow = find(drawer, "networkProfile:vpn");
     const offset = scroll.contentItem.contentY;
     fake.pending = "status";
-    check(find(drawer, "wifiToggle").enabled, "background read disabled controls");
+    check(find(window.contentItem, "wifiToggle").enabled, "background read disabled controls");
     fake.state = Object.assign({}, fake.state, {networks: fake.state.networks.map(n => Object.assign({}, n, {strength: 25})).reverse()});
     check(find(drawer, "wifiNetwork:new") === networkRow && find(drawer, "networkProfile:vpn") === vpnRow, "refresh recreated delegates");
     check(fake.warpMode === "tunnel_only", "refresh reset WARP preference");
-    capture(drawer, "wifi-drawer-password.png");
+    capture(preview, "wifi-drawer-password.png");
     check(password.activeFocus && password.text === "keep-this-password", "refresh lost form focus/text");
     check(scroll.contentItem.contentY === offset, "refresh moved scroll position");
     fake.pending = "";
     fake.state = Object.assign({}, fake.state, {hardwareEnabled: false});
-    check(!find(drawer, "wifiToggle").enabled, "hardware block ignored");
+    check(!find(window.contentItem, "wifiToggle").enabled, "hardware block ignored");
     fake.state = Object.assign({}, fake.state, {hardwareEnabled: true});
    } else if (window.stage === 3) {
     const row = find(drawer, "wifiNetwork:guest");
@@ -331,25 +355,27 @@ FloatingWindow {
     const vpn = find(drawer, "networkProfile:vpn");
     input.mouseClick(vpn, 8, vpn.height / 2);
     check(fake.calls[fake.calls.length - 1].values.uuid === "vpn", "VPN icon click did not connect");
-    const toggle = find(drawer, "wifiToggle");
+    const toggle = find(window.contentItem, "wifiToggle");
     input.mouseClick(toggle, toggle.width / 2, toggle.height / 2);
-    check(fake.calls[fake.calls.length - 1].op === "radio", "header icon did not toggle Wi-Fi");
+    check(fake.calls[fake.calls.length - 1].op === "radio", "header switch did not toggle Wi-Fi");
     fake.state = Object.assign({}, fake.state, {wifiEnabled: false});
-    check(toggle.iconName === "wifi-off", "disabled Wi-Fi icon incorrect");
+    check(!toggle.checked && !find(window.contentItem, "wifiScan").enabled, "power/scan state ignored readback");
+    check(fake.calls.filter(c => c.op === "radio").length === 1 && fake.calls[fake.calls.length - 1].values.enabled === false, "readback issued extra radio requests");
     fake.state = Object.assign({}, fake.state, {wifiEnabled: true});
+    check(toggle.checked, "external power update broke switch binding");
     input.mouseClick(find(drawer, "warpToggle"), 10, 20);
     check(fake.calls[fake.calls.length - 1].op === "warp" && fake.calls[fake.calls.length - 1].values.mode === "tunnel_only", "Cloudflare row click lost mode");
     fake.busy = true;
     capture(scroll.contentChildren[0], "wifi-drawer-full.png");
    } else if (window.stage === 4) {
-    capture(drawer, "wifi-drawer-loading.png");
+    capture(preview, "wifi-drawer-loading.png");
    } else if (window.stage === 5) {
     fake.busy = false;
     drawer.selected = null;
     scroll.contentItem.contentY = 0; UI.Theme.setMode("light");
    } else if (window.stage === 6) {
     check(find(drawer, "networkActivity").foreground.toString() === UI.Theme.text.toString(), "spinner missed theme change");
-    capture(drawer, "wifi-drawer-light.png");
+    capture(preview, "wifi-drawer-light.png");
    } else if (window.stage === 7) {
     UI.Theme.setMode("dark");
     input.mouseClick(find(drawer, "warpSettings"), 16, 16);
@@ -398,11 +424,11 @@ FloatingWindow {
    } else if (window.stage === 15) {
     check(find(drawer, "speedTestResult").visible && find(drawer, "speedTestButton").height === 64, "speed result is not inside expanded button");
     check(find(drawer, "speedTestResult").text === "↓ 7.6 Mb/s   ↑ 15.6 Mb/s · 232 ms", "speed result is missing a unit");
-    capture(drawer, "wifi-speed-result.png");
+    capture(preview, "wifi-speed-result.png");
    } else if (window.stage === 16) {
     speed.start();
    } else if (window.stage === 17) {
-    capture(drawer, "wifi-speed-running.png");
+    capture(preview, "wifi-speed-running.png");
    } else if (window.stage >= 18 && window.stage <= 22) {
     speed.cancel();
     speed.error = "The speed-test server returned no usable result. Check the connection and try again.";

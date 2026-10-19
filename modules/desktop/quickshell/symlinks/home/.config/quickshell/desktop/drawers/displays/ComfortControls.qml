@@ -12,6 +12,21 @@ ColumnLayout {
     spacing: 8
     RowLayout {
         Layout.fillWidth: true; Layout.topMargin: 8
+        ShellText { text: qsTr("Dark mode"); font.weight: Font.DemiBold; Layout.fillWidth: true }
+        ShellSwitch {
+            objectName: "darkModeEnabled"; text: qsTr("Dark mode")
+            Layout.preferredWidth: 38
+            checked: Theme.mode === "dark"
+            enabled: root.active
+            onToggled: {
+                const requested = checked;
+                checked = Qt.binding(() => Theme.mode === "dark");
+                Theme.setMode(requested ? "dark" : "light");
+            }
+        }
+    }
+    RowLayout {
+        Layout.fillWidth: true; Layout.topMargin: 8
         ShellText { text: qsTr("Night light"); font.weight: Font.DemiBold; Layout.fillWidth: true }
         Switch {
             id: toggle

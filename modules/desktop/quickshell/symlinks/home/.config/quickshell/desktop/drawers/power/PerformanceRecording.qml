@@ -48,12 +48,13 @@ ColumnLayout {
     RowLayout {
         objectName: "performanceRecordRow"
         Layout.fillWidth: true; spacing: 8
-        ShellButton {
+        DrawerActionButton {
             id: recordButton
             objectName: "performanceRecord"
             Layout.fillWidth: true; Layout.preferredWidth: 1; Layout.minimumWidth: 0; Layout.fillHeight: true
             horizontalPadding: 6
             text: root.running ? qsTr("Stop recording") : qsTr("Record performance")
+            iconName: root.running ? "square" : "circle-dot"
             enabled: root.active && root.session.ready && !root.session.busy && (root.running || duration.acceptableInput)
             onClicked: {
                 duration.commit();
@@ -65,6 +66,7 @@ ColumnLayout {
             id: duration
             objectName: "performanceRecordDuration"
             Layout.preferredWidth: 60; Layout.minimumWidth: 60; Layout.maximumWidth: 60
+            Layout.fillHeight: true
             from: 1; to: 60; value: 2
             Accessible.name: qsTr("Performance recording minutes")
             enabled: root.active && !root.session.busy && !root.running

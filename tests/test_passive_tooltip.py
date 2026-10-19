@@ -35,6 +35,8 @@ FloatingWindow {
     }
     TextField { id: field; x: 20; y: 120; width: 200; height: 40 }
     UI.PassiveToolTip { id: tip; target: button }
+    Text { id: info; x: 300; y: 20; width: 160; height: 40; text: "A long informational device name"; elide: Text.ElideRight }
+    UI.PassiveToolTip { id: infoTip; target: info; text: info.text }
     TestCase { id: input; parent: root.contentItem; when: false }
     function check(condition, message) { if (!condition) throw new Error(message); }
     function hoverButton() {
@@ -92,6 +94,14 @@ FloatingWindow {
                 check(!tip.visible, "disabled button retained tooltip");
                 button.visible = false;
                 check(!tip.visible, "hidden button retained tooltip");
+            } else if (stage === 8) {
+                input.mouseMove(info, 40, 20);
+                check(!infoTip.visible, "informational tooltip skipped delay");
+            } else if (stage === 9) {
+                check(infoTip.visible && field.activeFocus, "informational tooltip missing or took focus: hovered="+infoTip.hovered+", requested="+infoTip.requested+", ready="+infoTip.ready+", focus="+field.activeFocus);
+                check(infoTip.text === info.text, "informational tooltip lost the full name");
+                info.visible = false;
+                check(!infoTip.visible, "hidden informational item retained tooltip");
                 console.log("PASSIVE_TOOLTIP_PASS"); Qt.quit(); return;
             }
             stage++;
@@ -106,8 +116,9 @@ FloatingWindow {
             config = root / 'config/quickshell/desktop'
             config.mkdir(parents=True)
             (config / 'theme-mode').write_text('dark\n')
+            (root / 'runtime').mkdir(mode=0o700)
             env = {**os.environ, 'QT_QPA_PLATFORM': 'offscreen',
-                   'XDG_CONFIG_HOME': str(root / 'config')}
+                   'XDG_CONFIG_HOME': str(root / 'config'), 'XDG_RUNTIME_DIR': str(root / 'runtime')}
             for key in ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE'):
                 env.pop(key, None)
             result = subprocess.run(

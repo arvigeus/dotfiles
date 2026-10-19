@@ -858,6 +858,15 @@ FloatingWindow {
    const usbSlider = find(drawer, "inputVolume:usb:slider");
    if (stage === 0) {
     check(fake.observing && enabled.enabled && !enabled.checked && usbSlider.enabled, "disabled card blocked an independent microphone");
+    check(!find(drawer, "inputState:card/input/0").visible && !find(drawer, "inputState:usb").visible, "routine microphone status remains");
+    const marker = find(drawer, "inputDefault:usb");
+    check(marker.checked && marker.iconColor.toString() === UI.Theme.accent.toString() && marker.background.color.a === 0 && marker.background.border.color.a === 0, "default microphone marker is not plain at rest");
+    input.mouseMove(marker, marker.width/2, marker.height/2);
+    check(marker.background.highlighted, "default microphone marker has no hover feedback");
+    input.mouseMove(drawer, 0, drawer.height-1);
+    marker.forceActiveFocus(Qt.TabFocusReason);
+    check(marker.background.highlighted, "default microphone marker has no keyboard feedback");
+    enabled.forceActiveFocus();
     check(!find(drawer, "inputVolume:microphone"), "disabled card has a fake independent source");
     const disabledSlider = find(drawer, "inputVolume:card/input/0:slider");
     check(!find(drawer, "inputDefault:card/input/0").enabled, "disabled presentation slot offers a default action");
@@ -885,7 +894,7 @@ FloatingWindow {
     fake.state = Object.assign({}, fake.state, {inputs: fake.state.inputs.map(n => n.name === "microphone" ? Object.assign({}, n, {muted: false, volume: 60}) : n)});
    } else if (stage === 2) {
     check(find(drawer, "audioInput:microphone") === savedInput && slider === savedSlider && slider.activeFocus, "refresh recreated microphone/focus");
-    check(find(drawer, "inputState:microphone").text === "In use" && find(drawer, "inputState:usb").text === "Ready", "activity confused with default");
+    check(find(drawer, "inputState:microphone").text === "In use" && !find(drawer, "inputState:usb").visible, "activity confused with default");
     check(find(drawer, "inputConnection:microphone").visible, "shared input connections not grouped");
     const connection = find(drawer, "inputConnection:microphone");
     connection.currentIndex = 1; connection.activated(1);
@@ -1222,6 +1231,13 @@ FloatingWindow {
     check(slider.enabled && find(drawer, "outputVolume:aux:slider").enabled && find(drawer, "outputVolume:display:slider").enabled, "independent output sliders missing");
     check(drawer.destinations.length === 3 && find(drawer, "outputConnection:laptop").count === 2, "shared or disconnected ports treated as independent outputs");
     check(find(drawer, "outputDefault:laptop").checked && !find(drawer, "outputDefault:display").checked, "default markers incorrect");
+    const marker = find(drawer, "outputDefault:laptop");
+    check(marker.iconColor.toString() === UI.Theme.accent.toString() && marker.background.color.a === 0 && marker.background.border.color.a === 0, "default output marker is not plain at rest");
+    input.mouseMove(marker, marker.width/2, marker.height/2);
+    check(marker.background.highlighted, "default output marker has no hover feedback");
+    input.mouseMove(drawer, 0, drawer.height-1);
+    marker.forceActiveFocus(Qt.TabFocusReason);
+    check(marker.background.highlighted, "default output marker has no keyboard feedback");
     click(find(drawer, "outputVolume:aux:mute"));
     check(last().op === "mute" && last().values.name === "aux" && last().values.muted, "nondefault output mute dispatch");
     savedOutput = find(drawer, "audioOutput:laptop"); savedSlider = slider;

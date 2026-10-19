@@ -5,12 +5,19 @@ import Quickshell
 PopupWindow {
     id: root
 
-    required property T.AbstractButton target
+    required property Item target
     property string text: target?.text || ""
     property int maximumLineCount: 6
     property bool ready: false
-    readonly property bool requested: !!target && target.hovered && !target.down
+    readonly property bool hovered: target instanceof T.AbstractButton ? target.hovered : targetHover.hovered
+    readonly property bool requested: !!target && hovered && !(target instanceof T.AbstractButton && target.down)
         && target.enabled && target.visible && text.length > 0
+
+    HoverHandler {
+        id: targetHover
+        parent: root.target
+        enabled: !(root.target instanceof T.AbstractButton)
+    }
 
     onRequestedChanged: {
         ready = false;

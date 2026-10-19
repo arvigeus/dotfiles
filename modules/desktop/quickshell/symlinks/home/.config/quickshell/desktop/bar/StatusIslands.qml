@@ -30,6 +30,7 @@ Item {
 
     // Feature pages stay lazy; live status does not depend on an open drawer.
     NetworkStatus { id: networkStatus }
+    BluetoothStatus { id: bluetoothStatus }
     AudioStatus { id: audioStatus }
     MicrophoneStatus { id: microphoneStatus }
     BatteryStatus { id: batteryStatus }
@@ -85,7 +86,7 @@ Item {
                 objectName: "systemIsland"
                 entries: [
                     BarEntry { key: "wifi"; title: qsTr("Wi-Fi"); iconName: networkStatus.iconName; description: networkStatus.description },
-                    BarEntry { key: "bluetooth"; title: qsTr("Bluetooth"); iconName: "bluetooth" },
+                    BarEntry { key: "bluetooth"; title: qsTr("Bluetooth"); iconName: bluetoothStatus.iconName; iconColor: bluetoothStatus.iconColor; description: bluetoothStatus.description },
                     BarEntry { key: "sound"; title: qsTr("Sound"); iconName: audioStatus.iconName; iconColor: audioStatus.iconColor; description: audioStatus.description },
                     BarEntry { key: "microphone"; title: qsTr("Microphone"); iconName: microphoneStatus.iconName; iconColor: microphoneStatus.iconColor; description: microphoneStatus.description },
                     BarEntry { key: "keyboard"; title: qsTr("Keyboard"); iconName: "keyboard"; label: root.inputLanguage.label; description: root.inputLanguage.description },
@@ -99,8 +100,7 @@ Item {
                     BarEntry {
                         key: "performance"; title: qsTr("Performance"); iconName: PowerFormat.profileIcon(root.powerProfile)
                         description: qsTr("Performance · %1").arg(PowerFormat.profile(root.powerProfile))
-                    },
-                    BarEntry { key: "general"; title: qsTr("General"); iconName: "settings" }
+                    }
                 ]
                 onDrawerRequested: key => root.drawerRequested(key)
             }

@@ -5,7 +5,7 @@ import QtQuick.Layouts
 import "../../ui"
 import "../network"
 
-ShellButton {
+DrawerActionButton {
     id: root
     property var service: CleanupService
     property bool active: false

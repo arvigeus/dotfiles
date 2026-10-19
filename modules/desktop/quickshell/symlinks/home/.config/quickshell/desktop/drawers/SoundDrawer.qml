@@ -78,6 +78,7 @@ DrawerPage {
                 objectName: "outputDefault:" + output.record.key
                 iconName: "check"; text: qsTr("Use %1 as the default output").arg(output.record.label)
                 checked: output.record.selected; iconColor: checked ? Theme.accent : Theme.muted
+                highlightChecked: false
                 Accessible.checkable: true; Accessible.checked: checked
                 enabled: root.canAct && !root.service.busy && root.destinations.some(node => node.name === output.record.name)
                 onClicked: root.service.run("output-default", {name: output.record.name})

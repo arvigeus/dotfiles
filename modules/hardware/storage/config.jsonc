@@ -5,7 +5,9 @@
         "uki": true
     },
     "packages": [
-        "udisks2"
+        "udisks2",
+        "partitionmanager",
+        "filelight"
     ]
     // Archinstall 4.5 deliberately skips periodic TRIM for Btrfs.
     // Leave this disabled to follow that default; uncomment to override it.

@@ -215,10 +215,15 @@ ShellRoot {
    const label=find(button,button.objectName+"Label");
    if(Math.abs(label.mapToItem(button,0,0).y+label.height/2-button.height/2)>.5)throw new Error("label not centered: "+button.objectName);
    if(label.height<label.implicitHeight)throw new Error("label clipped: "+button.objectName);
-   if(Math.abs(label.mapToItem(button,0,0).x+label.width/2-button.width/2)>.5)throw new Error("label horizontally offset");
+   if(button!==cleanup && Math.abs(label.mapToItem(button,0,0).x+label.width/2-button.width/2)>.5)throw new Error("label horizontally offset");
   }
   const icon=find(cleanup,"systemCleanupIcon");
   if(Math.abs(icon.mapToItem(cleanup,0,0).y+icon.height/2-cleanup.height/2)>.5)throw new Error("icon not centered");
+  const label=find(cleanup,"systemCleanupLabel");
+  const left=icon.mapToItem(cleanup,0,0).x, right=label.mapToItem(cleanup,label.width,0).x;
+  if(Math.abs((left+right)/2-cleanup.width/2)>.5)throw new Error("footer icon/label group is not centered");
+  if(Math.abs(label.mapToItem(cleanup,0,0).x-left-icon.width-12)>.5)throw new Error("footer icon is not next to label");
+  if(cleanup.height!==48)throw new Error("footer does not match standard action height");
  }
  property int stage:0
  Timer {interval:250;running:true;repeat:true;onTriggered:{try{

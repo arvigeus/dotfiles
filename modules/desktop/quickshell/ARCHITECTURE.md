@@ -4,12 +4,24 @@ Sources live under [desktop/](symlinks/home/.config/quickshell/desktop/).
 QML edits reload automatically.
 Repository provisioning rules are in [the root architecture](../../../ARCHITECTURE.md).
 
+## Package ownership
+
+This module declares only `quickshell`. Hardware modules own audio, Bluetooth,
+networking, storage, display tools and battery reporting, including the external
+editors launched by drawers. `hardware/battery` declares UPower and its service
+for every host; `hardware/power` owns the Zephyrus-only power policy.
+Notifications belong to `desktop/notifications`, Dolphin and its administrator
+integration to `files/dolphin`, GTK to `look-and-feel/gtk`, terminal launching to
+`base/terminal`, and Python GObject bindings to `dev/languages/python`.
+
 ## Lifetimes
 
 `DrawerHost` lazily creates one `DrawerPage`. Closing clears `active` immediately;
 the page survives only the exit animation. Bind observation to `active`, and keep
 operations that must survive dismissal in feature-local services. Header actions
 belong to the page and are loaded by the host; the catalogue must not import services.
+Pages can supply `headerSubtitle`; the host centers the title/subtitle block
+vertically alongside header actions and elides long adapter names.
 
 The installed shell uses individual file symlinks. Editing an existing linked
 file reloads it, but adding a component or helper also requires installing its
@@ -40,11 +52,20 @@ padding. Content height contributes to minimum button height so fonts cannot be
 clipped inside the 34 px default. Cleanup, hold confirmation, Reminders/Focus and
 the existing `network/NetworkButton.qml` wrapper share this layout. Use it for
 new ordinary actions rather than recreating their padding and content layouts.
+`DrawerActionButton` supplies the 48 px drawer footer variant, centering the icon
+and label together with a 22 px icon and 12 px gap, matching the audio/speed-test
+actions. Cleanup, one-time charging and performance recording use this variant;
+the recording duration field fills the same row height.
 `HoldButton` adds gesture/progress handling; specialized icon buttons, multi-line
 audio tests and device rows retain their feature-specific layouts. Overriding
 `contentItem` makes that component responsible for its own size and alignment.
 Reserve hover and pressed styling for actionable controls. Informational icons
 and readings retain their tooltips without changing appearance on hover.
+`PassiveToolTip` accepts any Item, using a passive HoverHandler for informational
+labels/readings and the native hover/press state for buttons.
+`ShellSwitch` supplies the compact themed switch used in radio headers. Rebind
+`checked` after a user toggle so backend readback remains authoritative; external
+updates must never dispatch mutations.
 
 ## Networking
 
@@ -56,6 +77,8 @@ and readings retain their tooltips without changing appearance on hover.
   to preserve focus, password input and ordering through refreshes.
 - `bar/NetworkStatus.qml` uses native NetworkManager notifications with scanning
   disabled. Keep it independent of the drawer service so bar updates stay cheap.
+- Wi-Fi power, scan and editor actions live in the header, with the selected
+  interface as its subtitle. Section headings have no leading icons.
 
 WARP connects by starting `warp-svc.service`; disconnects and failed connection
 attempts stop it. It is never enabled at boot. The polkit rule grants active local
@@ -77,6 +100,85 @@ python3 -m unittest discover -s tests -p test_desktop_interactions.py
 The tests mock network mutations. Set `WIFI_PREVIEW_PLATFORM=wayland` and
 `WIFI_PREVIEW_DIR=/tmp` for native drawer captures; offscreen rendering cannot verify
 icon tinting. Treat layout/polish warnings as failures, including during resizing.
+
+## Bluetooth
+
+`BluetoothDrawer.qml` uses the same device-card, icon-action, text-button and
+scrolling components as the audio and keyboard drawers. A keyed model preserves
+device delegates across BlueZ updates. Connected, paired and available sections
+share one selected adapter; changing adapters releases this drawer's discovery.
+The header refresh action toggles discovery and stays highlighted while searching;
+the power switch controls the selected adapter, whose alias is the header subtitle;
+the pencil launches `blueman-manager` and dismisses the drawer. The Bluetooth
+hardware module declares Blueman as the editor dependency.
+Device summaries keep actions beside the identity block at widths of at least
+420 logical pixels, with actions below it on narrower drawers. Names stay vertically
+centered independently of connection state and battery reporting. A three-pixel
+vertical charge bar sits in the card's existing left padding. Its twelve-pixel
+hover area remains reserved when unavailable; the tooltip gives the percentage or
+says that the level is not reported. Zero charge retains a one-pixel warning fill.
+Long names elide and retain a full name/address tooltip. The Connect/Disconnect/Pair
+button stays visible and shows the operation text while pending. Its fixed width
+accounts for both idle and progress labels, keeping the forget button stationary.
+Pair still pairs and then connects.
+Section headings and actions communicate normal connection/pairing states. Only
+blocked devices retain a status subtitle. Pairing instructions, their response
+buttons and errors expand below the stable summary row.
+The ghost trash button uses `HoldButton`'s 1.3-second confirmation and progress
+underline. Early release, pointer exit, deactivation and device removal cancel
+the gesture; it adds no confirmation row. Keyboard Space uses the same hold.
+Reported Battery1 percentages distinguish zero from unavailable. Blocked devices
+remain visible with connection/pairing disabled; forgetting is still available.
+
+`drawers/bluetooth/BluetoothService.qml` owns a JSON-lines GLib/Gio worker.
+Owner registration follows `DrawerPage.active`. The worker reads BlueZ's object
+manager and debounces property/interface signals while the drawer is active.
+Mutations serialize and validate the live adapter, device address, power, pairing
+and blocked state. Connect, disconnect, forget and power changes finish across
+dismissal; the helper exits afterwards. The passive bar uses native
+`Quickshell.Bluetooth` notifications independently, without starting the helper,
+polling or discovery. The hardware Bluetooth module supplies BlueZ; the existing
+Quickshell module supplies Python GObject.
+
+Discovery starts only on request, owns one BlueZ client session and ends after
+30 seconds, explicit stop, adapter switching, adapter loss or dismissal.
+StopDiscovery releases this client's session without stopping another client's
+scan. An asynchronous start completing after dismissal is released immediately.
+The worker's bus connection also releases its discovery session on process exit.
+
+Pairing registers a KeyboardDisplay Agent1 for this client without requesting the
+global default-agent role. Requests must come from BlueZ and match this client's
+pending device. Confirmation, authorization, PIN/passkey entry and keyboard code
+display remain in the device card. Prompt ids reject expired replies; passkeys
+retain six-digit formatting. Input remains on stdin/stdout, never argv or files.
+Rejection, CancelPairing, dismissal, device/adapter loss and a 60-second deadline
+end the interaction. After successful Pair, the worker transitions to the connection
+phase, which survives dismissal. Explicit Connect and completed Pair set that
+selected paired device's Trusted property before connecting, allowing future
+incoming audio connections without a persistent default agent. The worker revalidates
+address, pairing, power and blocked state and confirms trust before Connect.
+Observation, discovery, failed/canceled pairing and unrelated devices never grant
+trust. Already-trusted devices need no write. Trust failures prevent connecting;
+a later connection failure retains the saved trust and pairing and reports that
+distinction. Action errors remain beside their device, or at
+the top when that device is no longer visible. Forget uses RemoveDevice only
+after the hold completes. The worker never changes discoverability or pairability.
+
+BlueZ API references: [Agent](https://bluez.readthedocs.io/en/latest/agent-api/),
+[Adapter](https://bluez.readthedocs.io/en/latest/adapter-api/) and
+[Device](https://bluez.readthedocs.io/en/latest/device-api/).
+
+```sh
+python3 -m unittest discover -s tests -p test_bluetooth_drawer.py
+python3 -m unittest discover -s tests -p test_desktop_interactions.py
+```
+
+Tests mock BlueZ mutations and worker replies. They cover discovery ownership and
+start/dismiss races, request validation, agent prompts/replies, rejection and
+cancellation, disappearing/off adapters, battery availability, forget confirmation,
+input, narrowing and helper shutdown/reopening. Set
+`DISPLAY_PREVIEW_PLATFORM=wayland` and `DISPLAY_PREVIEW_DIR=/tmp/bluetooth-preview`
+for native captures. Software rendering cannot verify icon tinting.
 
 ## Playback
 
@@ -126,7 +228,11 @@ icon tinting. Treat layout/polish warnings as failures, including during resizin
   several sources. It preserves playback family and existing defaults; unsupported
   combinations show an explanation. Disabled devices keep an inert volume
   control without adding a fake source to the inventory. All switches stay in
-  the device header; every input retains a title/checkmark, status and gain row.
+  the device header; every input retains a title/checkmark and gain row. Source
+  subtitles show only active capture ("In use") or unexpected unavailability;
+  routine ready, disabled and muted states use the existing controls. Default
+  input/output checkmarks retain their selected accent color, with fill and border
+  appearing only on hover, press or keyboard focus.
   Device-local presentation history preserves input rows and connection-selector
   space across profile changes. Backend `inputSlots` metadata provides inert
   initial rows for disabled devices, without native endpoint identities. Muted
@@ -438,7 +544,11 @@ startup/reconnect; retention is owned by the hardware and other system services.
 `ComfortService.qml` serializes requests to `comfort.py` and observes state every
 three seconds. `shell.qml` starts the service once; drawer dismissal leaves it
 running. The bar reads the same singleton without starting display discovery.
-`ComfortControls.qml` presents only the Night light toggle. The monitor cog owns
+`ComfortControls.qml` presents global Dark mode and Night light toggles below the
+display cards. Dark mode uses `Theme.setMode()` and the existing user-owned
+`~/.config/quickshell/desktop/theme-mode` preference; it changes only shell
+appearance and remains available independently of display hardware/services.
+The monitor cog owns
 an indefinite Keep awake checkmark; the bar for that monitor uses `Theme.accent`
 while checked. Each bar's `screen.name` determines which output it represents.
 
@@ -798,7 +908,7 @@ tooltips. Missing values use a dash. Performance uses three compact profile
 choices, hiding captions at narrow widths; warnings remain visible. CPU, memory,
 GPU and fan details use the same chips. Sleeping GPUs omit inactive counters.
 
-The shell module declares UPower and its service for all hosts. UPower supplies
+The battery hardware module declares UPower and its service for all hosts. UPower supplies
 system batteries (`Type=Battery`, `PowerSupply`, `IsPresent`),
 external power, capacity, health, cycles and energy rate. Its display device
 supplies the aggregate percentage/state/estimate, including for multiple packs;
@@ -826,7 +936,8 @@ GPU badge or poller. Read GPU telemetry only while the Performance drawer is act
 
 Profiles use the public `org.freedesktop.UPower.PowerProfiles` API, with the older
 `net.hadess.PowerProfiles` interface as fallback. This includes tuned-ppd. Only
-advertised standard profiles appear, with degradation, inhibition and application
+advertised standard profiles appear, ordered Powersave, Balanced, Performance,
+with degradation, inhibition and application
 hold information. Mutations revalidate the daemon's unique bus owner, previously
 observed profile and supported choices, then read back the active profile.
 The drawer never writes platform profiles, CPU governors or EPP directly.
@@ -1103,7 +1214,7 @@ Stopping an entry removes it immediately; there is no background worker or
 persisted state.
 
 Delivery uses `notify-send` with literal arguments and escaped body markup.
-The module declares `libnotify` and Dunst, whose notification service activates
+The notifications module declares `libnotify` and Dunst, whose notification service activates
 over D-Bus. Desktop notification policies, including do-not-disturb, apply.
 The alarm icon is from Lucide under the existing icon license.
 

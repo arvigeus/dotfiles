@@ -59,6 +59,15 @@ routing, playback controls, speaker/microphone tests and optional volume boost.
 Custom device names and volume limits are described under
 [audio configuration](ARCHITECTURE.md#audio-configuration).
 
+## Bluetooth
+
+Connect paired devices or search nearby devices to pair, with passkey prompts
+and reported battery levels. Pairing and Connect also authorize that device's
+future reconnections. Searching stops after 30 seconds or when the drawer
+closes. Closing also cancels unfinished pairing. Hold the trash icon to forget a device.
+The bar shows whether Bluetooth is on and lists connected devices on hover.
+The header pencil opens Blueman for advanced Bluetooth settings.
+
 ## Time and weather
 
 Choose a saved place for its local time, current weather, hourly rain chances and
@@ -114,6 +123,7 @@ and a motion test. In fullscreen tests, Space/arrow keys cycle patterns, H hides
 controls, and Escape or a click exits. Mirrored outputs share their source’s image.
 External brightness needs DDC/CI support and the monitor's DDC/CI setting enabled.
 
+Dark mode switches the shell's appearance between light and dark.
 Night light starts/stops hyprsunset for all active displays. Configure warmth
 and optional timing in `~/.config/hypr/hyprsunset.conf`; restart
 `hyprsunset.service` after editing it while active.

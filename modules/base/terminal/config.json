@@ -3,5 +3,8 @@
         "packages": [
             "kitty"
         ]
-    }
+    },
+    "packages": [
+        "xdg-terminal-exec"
+    ]
 }

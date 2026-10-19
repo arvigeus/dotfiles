@@ -106,7 +106,7 @@ def profile_snapshot(bus):
         try:
             props = bus.properties(service, path, service)
             advertised = {row.get('Profile') for row in props.get('Profiles', [])}
-            choices = [name for name in ('performance', 'balanced', 'power-saver') if name in advertised]
+            choices = [name for name in ('power-saver', 'balanced', 'performance') if name in advertised]
             if not choices:
                 continue
             warnings = [props.get('PerformanceDegraded', ''), policy_warning()]

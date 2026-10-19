@@ -1,0 +1,7 @@
+{
+    "packages": [
+        "brightnessctl",
+        "ddcutil",
+        "wdisplays"
+    ]
+}

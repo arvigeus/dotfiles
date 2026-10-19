@@ -21,6 +21,7 @@ ShellRoot {
     // PowerSession owns one-time charging and recording lifetimes, with
     // supervised cleanup and no background sensor polling.
     // Audio test workers belong to the pages and stop on dismissal.
+    // Bluetooth discovery and pending pairing also stop on dismissal.
     Drawers { id: drawers; interactionState: interactions }
 
     // WORKAROUND: Hyprland lacks geometry/order events; bindings.lua supplies them.

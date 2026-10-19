@@ -21,11 +21,8 @@
     "ksnip",
     "kooha",
     "xdg-desktop-portal-gtk",
-    "brightnessctl",
     "playerctl",
-    "libnotify",
-    "wl-clipboard",
-    "kio-admin"
+    "wl-clipboard"
   ],
   "services": ["getty@tty1.service"]
 }

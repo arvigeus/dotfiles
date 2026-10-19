@@ -7,7 +7,6 @@ import Quickshell
 import "../ui"
 import "network"
 import "network/Models.js" as Models
-import "../ui/NetworkIcons.js" as NetworkIcons
 
 DrawerPage {
     id: root
@@ -17,11 +16,30 @@ DrawerPage {
     property bool showPassword: false
     property bool passwordRequired: false
     property var speedTest: SpeedTestService
-    headerActions: NetworkIconButton {
-        objectName: "networkEdit"
-        iconName: "pencil"
-        text: qsTr("Manage network connections")
-        onClicked: root.editor()
+    headerSubtitle: adapter?.interface ?? ""
+    headerActions: RowLayout {
+        spacing: 4
+        ShellSwitch {
+            objectName: "wifiToggle"
+            text: checked ? qsTr("Turn Wi-Fi off") : qsTr("Turn Wi-Fi on")
+            checked: root.networkState.wifiEnabled
+            enabled: root.canAct && root.networkState.hardwareEnabled && root.networkState.adapters.length > 0
+            onToggled: {
+                const requested = checked;
+                checked = Qt.binding(() => root.networkState.wifiEnabled);
+                root.service.run("radio", {enabled: requested});
+            }
+        }
+        NetworkIconButton {
+            objectName: "wifiScan"; iconName: "refresh-cw"; text: qsTr("Scan for Wi-Fi networks")
+            enabled: root.canAct && root.networkState.wifiEnabled && !!root.adapter
+            onClicked: root.service.scan()
+        }
+        NetworkIconButton {
+            objectName: "networkEdit"; iconName: "pencil"
+            text: qsTr("Manage network connections")
+            onClicked: root.editor()
+        }
     }
     readonly property var passwordField: {
         if (!selected) return null;
@@ -189,20 +207,6 @@ DrawerPage {
                 objectName: "wirelessSection"
                 title: qsTr("Wireless"); flat: true; collapsible: false
                 hint: root.connectionHint
-                leading: NetworkIconButton {
-                    objectName: "wifiToggle"
-                    iconName: NetworkIcons.wifi(root.networks.find(n => n.connected)?.strength ?? 0,
-                        root.networkState.wifiEnabled && root.networkState.hardwareEnabled, !!root.adapter?.connected)
-                    text: root.networkState.wifiEnabled ? qsTr("Turn Wi-Fi off") : qsTr("Turn Wi-Fi on")
-                    iconColor: root.networkState.wifiEnabled ? Theme.text : Theme.muted
-                    enabled: root.canAct && root.networkState.hardwareEnabled && root.networkState.adapters.length > 0
-                    onClicked: root.service.run("radio", {enabled: !root.networkState.wifiEnabled})
-                }
-                action: NetworkIconButton {
-                    objectName: "wifiScan"; iconName: "refresh-cw"; text: qsTr("Scan for Wi-Fi networks")
-                    enabled: root.canAct && root.networkState.wifiEnabled && !!root.adapter
-                    onClicked: root.service.scan()
-                }
                 NetworkChoice {
                     objectName: "wifiAdapter"; Layout.fillWidth: true
                     visible: root.networkState.adapters.length > 1
@@ -280,7 +284,7 @@ DrawerPage {
             }
             NetworkSection {
                 objectName: "ethernetSection"; visible: wiredModel.count > 0
-                title: qsTr("Ethernet"); iconName: "network"; flat: true; collapsible: false
+                title: qsTr("Ethernet"); flat: true; collapsible: false
                 Repeater {
                     model: wiredModel
                     delegate: NetworkRow {
@@ -296,7 +300,7 @@ DrawerPage {
             }
             NetworkSection {
                 objectName: "vpnSection"
-                title: qsTr("VPN"); iconName: "shield-lock"; flat: true; collapsible: false
+                title: qsTr("VPN"); flat: true; collapsible: false
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 0

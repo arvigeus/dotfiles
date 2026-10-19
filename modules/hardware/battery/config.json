@@ -1,0 +1,8 @@
+{
+    "packages": [
+        "upower"
+    ],
+    "services": [
+        "upower.service"
+    ]
+}

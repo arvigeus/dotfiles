@@ -1,7 +1,8 @@
 {
     "packages": [
         "whois",
-        "bind"
+        "bind",
+        "network-manager-applet"
     ],
     "network_config": {
         "type": "nm_iwd"
@@ -12,8 +13,7 @@
         ],
         "packages": [
             "networkmanager",
-            "iwd",
-            "network-manager-applet"
+            "iwd"
         ],
         "services": [
             "NetworkManager.service"

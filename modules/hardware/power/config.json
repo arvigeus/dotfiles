@@ -4,13 +4,8 @@
             "power_management": "tuned"
         }
     },
-    "packages": [
-        "upower",
-        "python-gobject"
-    ],
     "services": [
         "tuned-ppd.service",
-        "upower.service",
         "power-source.service"
     ],
     "extra": {

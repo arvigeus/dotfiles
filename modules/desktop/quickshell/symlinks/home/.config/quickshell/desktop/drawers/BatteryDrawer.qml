@@ -178,7 +178,7 @@ DrawerPage {
             }
             Repeater { model: root.service.state.hardwareErrors; delegate: Note { required property string modelData; text: modelData; color: Theme.danger } }
         }
-        ShellButton {
+        DrawerActionButton {
             objectName: "batteryChargeOnce"; Layout.fillWidth: true
             text: root.chargePending ? qsTr("Restore charge limit") : qsTr("Charge to 100% once"); iconName: "battery-charging"
             visible: root.chargePending || (!!root.summary && !!root.care && root.care.maximum >= 100 && root.care.limit < 100)

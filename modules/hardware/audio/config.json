@@ -11,8 +11,12 @@
             "pipewire-jack",
             "pipewire-pulse",
             "gst-plugin-pipewire",
-            "libpulse",
             "wireplumber"
         ]
-    }
+    },
+    "packages": [
+        "libpulse",
+        "pavucontrol-qt",
+        "alsa-utils"
+    ]
 }

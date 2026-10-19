@@ -4,6 +4,7 @@
         "python-pip",
         "uv",
         "ruff",
-        "ty"
+        "ty",
+        "python-gobject"
     ]
 }

@@ -1,0 +1,6 @@
+{
+    "packages": [
+        "libnotify",
+        "dunst"
+    ]
+}
