@@ -26,9 +26,11 @@ hl.gesture({
     action = "scroll_move"
 })
 
+-- Swipe direction is natural: up goes to the workspace below, down to the one
+-- above. Keyboard shortcuts keep their conventional up/below mapping.
 -- One workspace per completed swipe, with the same empty-edge guard as keys/UI.
 -- Native 1:1 workspace swipes bypass that guard and use numeric workspace order.
-for _, step in ipairs({ { "up", -1 }, { "down", 1 } }) do
+for _, step in ipairs({ { "up", 1 }, { "down", -1 } }) do
     local direction = step[2]
     hl.gesture({
         fingers = 3,

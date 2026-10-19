@@ -26,7 +26,8 @@ current one. Scroll over the bar islands to reach buttons on narrow displays.
 
 Workspace navigation stays on the current display without wrapping. A populated
 workspace can create a new neighbor; empty workspaces disappear when left.
-Three-finger vertical swipes switch workspaces; horizontal swipes scroll columns.
+Three-finger swipes follow their natural direction: up goes to the workspace
+below and down to the one above; horizontal swipes scroll columns.
 Notification indicators are currently samples.
 
 ## Clipboard
