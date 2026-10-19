@@ -4,7 +4,6 @@ singleton PublicIpService 1.0 PublicIpService.qml
 singleton PortsService 1.0 PortsService.qml
 PortsControls 1.0 PortsControls.qml
 NetworkButton 1.0 NetworkButton.qml
-NetworkField 1.0 NetworkField.qml
 NetworkChoice 1.0 NetworkChoice.qml
 NetworkIconButton 1.0 NetworkIconButton.qml
 NetworkSection 1.0 NetworkSection.qml

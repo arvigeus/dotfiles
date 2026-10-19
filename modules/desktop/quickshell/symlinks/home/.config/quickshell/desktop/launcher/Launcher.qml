@@ -15,12 +15,13 @@ InteractionWindow {
     property string errorMessage: ""
     property bool launching: false
     property int session: 0
+    property string searchQuery: ""
     property string selectionToRestore: ""
     property bool pointerPositionKnown: false
     property point lastPointerPosition: Qt.point(0, 0)
     readonly property var favoriteIds: favorites.ids
     readonly property var candidates: Search.catalogue(DesktopEntries.applications.values)
-    readonly property var matches: Search.matches(candidates, search.text, favoriteIds)
+    readonly property var matches: Search.matches(candidates, searchQuery, favoriteIds)
 
     Favorites { id: favorites }
 
@@ -33,6 +34,7 @@ InteractionWindow {
             pointerPositionKnown = false;
             selectionToRestore = "";
             search.text = "";
+            search.submit();
             errorMessage = "";
             Qt.callLater(root.resetSelection);
         }
@@ -171,25 +173,21 @@ InteractionWindow {
                     Layout.preferredHeight: 32
                     Icon { anchors.centerIn: parent; name: "search" }
                 }
-                TextField {
+                    SearchInput {
                     id: search
                     objectName: "applicationSearch"
                     Layout.fillWidth: true
                     Layout.preferredHeight: Theme.pillHeight
                     placeholderText: qsTr("Search applications…")
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSize
-                    color: Theme.text
-                    placeholderTextColor: Theme.muted
-                    selectionColor: Theme.accent
-                    selectedTextColor: Theme.accentText
                     leftPadding: Theme.spacingMedium
-                    rightPadding: Theme.gap
+                    rightPadding: Theme.controlHeight + 4
+                    debounceInterval: 100
                     background: Rectangle {
                         radius: Theme.controlRadius
                         color: Theme.background
                         border.color: search.activeFocus ? Theme.accent : Theme.border
                     }
+                    onSearchRequested: query => root.searchQuery = query
                     onTextChanged: {
                         root.errorMessage = "";
                         root.selectionToRestore = "";

@@ -1,5 +1,7 @@
 {
     "packages": [
-        "quickshell"
+        "quickshell",
+        "cliphist",
+        "wl-clipboard"
     ]
 }

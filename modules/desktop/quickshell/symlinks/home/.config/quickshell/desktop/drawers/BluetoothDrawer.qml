@@ -270,7 +270,7 @@ DrawerPage {
                                     visible: entry.prompt?.kind === "DisplayPasskey"
                                     text: qsTr("%1 of 6 digits entered").arg(entry.prompt?.entered ?? 0)
                                 }
-                                NetworkField {
+                                InputField {
                                     id: codeInput
                                     objectName: "bluetoothPin:" + entry.record.key
                                     visible: entry.inputRequired

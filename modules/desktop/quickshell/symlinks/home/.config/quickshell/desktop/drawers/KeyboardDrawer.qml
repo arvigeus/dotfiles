@@ -173,7 +173,7 @@ DrawerPage {
                 Note { visible: root.backlightService.error !== ""; text: root.backlightService.error; color: Theme.danger }
             }
         }
-        NetworkField {
+        InputField {
             id: testInput
             objectName: "keyboardTestInput"
             Layout.fillWidth: true

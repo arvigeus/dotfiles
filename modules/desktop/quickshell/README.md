@@ -2,24 +2,24 @@
 
 ## Shortcuts
 
-| Shortcut                   | Action                                              |
-| -------------------------- | --------------------------------------------------- |
-| Win+R                      | Open / close application search.                    |
-| Ctrl+1                     | Open / close Spaces.                                |
+| Shortcut                   | Action                                                    |
+| -------------------------- | --------------------------------------------------------- |
+| Win+R                      | Open / close application search.                          |
+| Ctrl+1                     | Open / close Spaces.                                      |
 | Ctrl+Shift+P               | Open / close Performance, including over fullscreen apps. |
-| Ctrl+D (in search)         | Toggle the selected app's favorite.                 |
-| Ctrl+Win+Up / Down         | Go to the workspace above / below.                  |
-| Ctrl+Win+Shift+Up / Down   | Move the active window above / below and follow it. |
-| Win+Arrow                  | Focus the window in that direction.                 |
-| Win+Shift+Left / Right     | Move the active column left / right.                |
-| Win+J                      | Give a stacked window its own column.               |
-| Win+[ / Win+]              | Make the active column narrower / wider.            |
-| Win+.                      | Center the active column.                           |
-| Win+mouse wheel            | Scroll through columns.                             |
-| Win+M                      | Toggle maximization.                                |
-| Win+V                      | Toggle floating.                                    |
-| Win+left-drag / right-drag | Move / resize a window.                             |
-| Win+Q / Alt+F4             | Close the active window.                            |
+| Ctrl+D (in search)         | Toggle the selected app's favorite.                       |
+| Ctrl+Win+Up / Down         | Go to the workspace above / below.                        |
+| Ctrl+Win+Shift+Up / Down   | Move the active window above / below and follow it.       |
+| Win+Arrow                  | Focus the window in that direction.                       |
+| Win+Shift+Left / Right     | Move the active column left / right.                      |
+| Win+J                      | Give a stacked window its own column.                     |
+| Win+[ / Win+]              | Make the active column narrower / wider.                  |
+| Win+.                      | Center the active column.                                 |
+| Win+mouse wheel            | Scroll through columns.                                   |
+| Win+M                      | Toggle maximization.                                      |
+| Win+V                      | Toggle floating.                                          |
+| Win+left-drag / right-drag | Move / resize a window.                                   |
+| Win+Q / Alt+F4             | Close the active window.                                  |
 
 Escape or clicking outside closes search/drawers. Opening another replaces the
 current one. Scroll over the bar islands to reach buttons on narrow displays.
@@ -28,6 +28,13 @@ Workspace navigation stays on the current display without wrapping. A populated
 workspace can create a new neighbor; empty workspaces disappear when left.
 Three-finger vertical swipes switch workspaces; horizontal swipes scroll columns.
 Notification indicators are currently samples.
+
+## Clipboard
+
+Search recent text and image copies, preview longer entries, restore or remove
+items, and clear history. Collection can be paused from the drawer. History is
+stored locally and limited to 50 items; pause collection before copying
+sensitive data. See [clipboard implementation notes](ARCHITECTURE.md#clipboard).
 
 ## Battery and performance
 

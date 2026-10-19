@@ -129,7 +129,7 @@ DrawerPage {
             spacing: 12
             ShellText { text: qsTr("Unlock %1").arg(root.unlockVolume?.label ?? ""); Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText; font.weight: Font.DemiBold }
             Note { text: root.unlockVolume?.device ?? "" }
-            NetworkField {
+            InputField {
                 id: passphrase
                 objectName: "diskPassphrase"; Layout.fillWidth: true
                 echoMode: TextInput.Password; placeholderText: qsTr("Passphrase")

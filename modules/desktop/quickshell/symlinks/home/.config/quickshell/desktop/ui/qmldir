@@ -17,6 +17,9 @@ DrawerColumn 1.0 DrawerColumn.qml
 DrawerBrief 1.0 DrawerBrief.qml
 BusySpinner 1.0 BusySpinner.qml
 NumberField 1.0 NumberField.qml
+PlainInputField 1.0 PlainInputField.qml
+InputField 1.0 InputField.qml
+SearchInput 1.0 SearchInput.qml
 HoldButton 1.0 HoldButton.qml
 ShellButton 1.0 ShellButton.qml
 DrawerActionButton 1.0 DrawerActionButton.qml

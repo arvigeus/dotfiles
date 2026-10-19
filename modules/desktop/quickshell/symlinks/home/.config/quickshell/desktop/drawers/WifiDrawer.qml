@@ -292,7 +292,7 @@ DrawerPage {
                             visible: networkEntry.selected && root.passwordRequired && !networkEntry.record.connected
                             Layout.fillWidth: true
                             Layout.leftMargin: 64
-                            NetworkField {
+                            InputField {
                                 id: password
                                 objectName: networkEntry.selected ? "wifiPassword" : ""
                                 Layout.fillWidth: true

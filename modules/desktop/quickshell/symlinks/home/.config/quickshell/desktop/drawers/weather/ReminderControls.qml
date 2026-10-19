@@ -141,7 +141,7 @@ ColumnLayout {
                         visible: !reminderEditor.futureTime || Qt.formatDate(new Date(reminderEditor.day), "yyyy-MM-dd") !== Qt.formatDate(new Date(root.service.now), "yyyy-MM-dd")
                         text: reminderEditor.futureTime ? qsTr("Tomorrow") : qsTr("Choose a later time.")
                     }
-                    NetworkField {
+                    InputField {
                         id: message
                         objectName: "reminderAlarmMessage"
                         Layout.fillWidth: true; placeholderText: qsTr("Message (optional)"); maximumLength: 160

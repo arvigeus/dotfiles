@@ -6,6 +6,7 @@ import "ui"
 import "bar"
 import "launcher"
 import "drawers"
+import "drawers/clipboard"
 import "drawers/displays"
 import "drawers/power"
 
@@ -28,7 +29,9 @@ ShellRoot {
     // If the list order goes stale, check its layoutAction/release hooks and this
     // custom listener. Replace the paired workaround when native events suffice.
     // External reorder scripts: hyprctl dispatch 'hl.dsp.event("desktop-layout-changed")'
-    Component.onCompleted: { layoutRefresh.restart(); ComfortService.start(); DisplayService.start(); PowerSession.start(); }
+    // Capture continues while the drawer is closed; visible image rows load on demand.
+    // Plain entry and debounced search use shared controls across drawers.
+    Component.onCompleted: { layoutRefresh.restart(); ComfortService.start(); DisplayService.start(); PowerSession.start(); ClipboardService.start(); }
 
     Connections {
         target: Hyprland

@@ -6,10 +6,11 @@ Repository provisioning rules are in [the root architecture](../../../ARCHITECTU
 
 ## Package ownership
 
-This module declares only `quickshell`. Hardware modules own audio, Bluetooth,
-networking, storage, display tools and battery reporting, including the external
-editors launched by drawers. `hardware/battery` declares UPower and its service
-for every host; `hardware/power` owns the Zephyrus-only power policy.
+This module declares Quickshell, cliphist and wl-clipboard. Hardware modules own
+audio, Bluetooth, networking, storage, display tools and battery reporting,
+including the external editors launched by drawers. `hardware/battery` declares
+UPower and its service for every host; `hardware/power` owns the Zephyrus-only
+power policy.
 Notifications belong to `desktop/notifications`, Dolphin and its administrator
 integration to `files/dolphin`, GTK to `look-and-feel/gtk`, terminal launching to
 `base/terminal`, and Python GObject bindings to `dev/languages/python`.
@@ -43,6 +44,23 @@ this behavior for lists, including launcher results and display options;
 `DrawerColumn.qml` installs it on its internal Flickable for all drawer forms.
 Keep wheel behavior in these widgets rather than tuning individual drawers.
 
+## Clipboard
+
+`drawers/clipboard/ClipboardService.qml` is imported by the shell root so its
+capture worker runs for the whole shell session, independently of the drawer's
+lazy-loaded page. Its Python JSON-lines backend starts separate `wl-paste`
+watchers for text and images and stores entries with cliphist. It serializes
+search, preview, restore, deletion and clear requests. Restore sends the saved
+MIME type to `wl-copy`, which is required for images.
+
+History stays local and is limited to 50 entries. cliphist keeps its database
+in the XDG cache directory by default, where the user or system may clear it.
+Pausing is saved in `$XDG_CONFIG_HOME/quickshell/desktop/clipboard-paused` and
+stops both watchers across shell restarts. Pause collection before copying
+sensitive data. Visible image rows decode on demand into a private session cache;
+the cache keeps at most 32 images and is removed when the shell exits. Copy closes
+the drawer after restoring content, returning focus to the application.
+
 ## Buttons
 
 `ui/ShellButton.qml` styles Qt Quick Controls' `Button` for ordinary text actions,
@@ -65,6 +83,15 @@ labels/readings and the native hover/press state for buttons.
 `ShellSwitch` supplies the compact themed switch used in radio headers. Rebind
 `checked` after a user toggle so backend readback remains authoritative; external
 updates must never dispatch mutations.
+
+`ui/PlainInputField.qml` is the shared styled `TextField` with no clear action.
+`ui/InputField.qml` extends it with a trailing clear action visible whenever
+text is present, and emits `cleared` after clearing. Set `clearButtonEnabled`
+false when a field should not offer that action. `ui/SearchInput.qml` extends
+`InputField` with a configurable
+`debounceInterval` (300 ms by default) and emits `searchRequested(query)` after
+typing pauses. Clearing emits an empty query immediately. Search fields own no
+service logic; their consumers connect the signal to the relevant search.
 
 ## Networking
 
@@ -676,10 +703,10 @@ secondary language even while English is active. Choosing a language commits
 existing preedit and temporarily replaces the target row's checkmark slot with a
 spinner, without adding a status row or moving the language list. The service's
 `selectingLanguage` includes queued selections. Choosing a language also moves
-focus off the test field and, after success, refocuses it
-with a short delay so a cold-started IME can attach. The single-line test field
-uses `NetworkField` styling. Test text is page-local, never persisted and cleared
-on dismissal. The help popup has separate Telex, Phonetic and shortcut tabs,
+focus off the test field and, after success, refocuses it with a short delay so a
+cold-started IME can attach. The single-line test field uses
+`InputField`. Test text is page-local, never persisted and cleared on
+dismissal. The help popup has separate Telex, Phonetic and shortcut tabs,
 scrolls at narrow heights and consumes Escape before dismissal.
 Tabs use `QtQuick.Templates` with an explicit row, equal widths and an eight-pixel
 gap; no platform tab background, inset or underline is retained. The Telex view

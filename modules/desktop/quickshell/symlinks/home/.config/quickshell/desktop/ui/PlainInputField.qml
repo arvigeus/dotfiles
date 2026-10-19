@@ -1,9 +1,10 @@
 import QtQuick
 import QtQuick.Controls
-import "../../ui"
+import "."
 
 TextField {
     id: root
+
     implicitHeight: Theme.controlHeight + 4
     color: Theme.text
     placeholderTextColor: Theme.muted
@@ -11,9 +12,11 @@ TextField {
     selectedTextColor: Theme.accentText
     font.family: Theme.fontFamily
     font.pixelSize: Theme.fontSize
-    padding: Theme.spacingMedium
+    leftPadding: Theme.spacingMedium
+    rightPadding: Theme.spacingMedium
     selectByMouse: true
     inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
+
     background: Rectangle {
         color: Theme.surface
         radius: Theme.controlRadius
