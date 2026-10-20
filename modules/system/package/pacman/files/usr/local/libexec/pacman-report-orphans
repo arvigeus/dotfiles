@@ -1,0 +1,29 @@
+#!/usr/bin/python3
+"""Report dependency orphans without modifying the package database."""
+import subprocess
+import sys
+
+
+def main():
+    try:
+        result = subprocess.run(['pacman', '-Qtdq'], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print(f'Could not check orphan packages: {error}', file=sys.stderr)
+        return 1
+    # No matches is pacman's normal exit 1. A diagnostic is a failure, not an
+    # empty result. Keep package removal outside the transaction hook.
+    if result.returncode not in (0, 1) or result.stderr.strip() or (result.returncode and result.stdout.strip()):
+        print('Could not check orphan packages: ' + (result.stderr.strip() or f'pacman exited {result.returncode}'), file=sys.stderr)
+        return 1
+    packages = result.stdout.splitlines()
+    if packages:
+        print('Dependency orphans (review before removing; nothing removed):')
+        for package in packages:
+            print('  ' + package)
+        print('Keep a wanted package with: sudo pacman -D --asexplicit <package>')
+        print('Review the list with: pacman -Qtd')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

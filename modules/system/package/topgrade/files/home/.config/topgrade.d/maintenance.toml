@@ -1,0 +1,11 @@
+[misc]
+# Disks owns manual cleanup; retain package caches for rollback and pacdiff.
+cleanup = false
+# Use pacdiff's sudoedit support so Meld runs as the desktop user.
+disable = ["config_update"]
+
+[linux]
+show_arch_news = true
+
+[post_commands]
+"Review packages, configuration and services" = "package-maintenance"

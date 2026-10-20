@@ -1,0 +1,11 @@
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = *
+
+[Action]
+Description = Reporting services using replaced files (no restarts)...
+When = PostTransaction
+Depends = archlinux-contrib
+Depends = systemd
+Exec = /usr/local/libexec/pacman-report-services

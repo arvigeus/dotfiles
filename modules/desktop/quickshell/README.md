@@ -61,6 +61,21 @@ Webcam tests stop on drawer dismissal. Camera capture can be disabled only on
 devices exposing a privacy control. Settings reflect hardware support; other
 camera apps may change them. See [capture shortcuts](../hyprland/README.md#screenshots-and-recording).
 
+## System
+
+System brings system updates, boot times and service health together.
+Updates run Topgrade in an interactive terminal. Boot times show startup phases and
+the five slowest units. Services shows failed system/user units, their logs and
+the next scheduled timers. The info button shows the OS, kernel and uptime.
+
+Repair signing keys and Check package health run in a terminal. The latter checks
+for missing package files and dependency problems. The health report can reinstall
+affected repository packages alongside a full system update. Signing repair reloads the
+installed keyrings while keeping custom keys; use Update system for newer keyring
+package versions.
+
+See [system implementation notes](ARCHITECTURE.md#system).
+
 ## Battery and performance
 
 Battery shows system and device batteries, with charge-limit control on supported

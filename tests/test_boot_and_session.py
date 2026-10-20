@@ -31,28 +31,26 @@ class BootTests(unittest.TestCase):
                                          BOOT_TEST_LOG=str(root / 'rebuilds')))
         return result, cmdline.read_text()
 
-    def test_luks_conversion_preserves_root_and_is_idempotent(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            original = f'cryptdevice=UUID={UUID}:cryptlvm root=/dev/ArchinstallVg/root rootflags=subvol=@ rw zswap.enabled=0 loglevel=7\n'
-            result, updated = self.run_hook(root, original)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn(f'rd.luks.name={UUID}=cryptlvm', updated)
-            self.assertNotIn('cryptdevice=', updated)
-            self.assertIn('root=/dev/ArchinstallVg/root rootflags=subvol=@ rw zswap.enabled=0', updated)
-            self.assertIn('quiet loglevel=3', updated)
-            self.assertNotIn('loglevel=7', updated)
-            result, repeated = self.run_hook(root, updated)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(updated, repeated)
-            self.assertEqual((root / 'rebuilds').read_text(), '-P\n-P\n')
+    def test_console_settings_preserve_unlock_parameters_and_are_idempotent(self):
+        for unlock in (f'cryptdevice=UUID={UUID}:cryptlvm', f'rd.luks.name={UUID}=cryptlvm'):
+            with self.subTest(unlock=unlock), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                original = f'{unlock} root=/dev/ArchinstallVg/root rootflags=subvol=@ rw zswap.enabled=0 loglevel=7\n'
+                result, updated = self.run_hook(root, original)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(unlock, updated)
+                self.assertIn('root=/dev/ArchinstallVg/root rootflags=subvol=@ rw zswap.enabled=0', updated)
+                self.assertIn('quiet loglevel=3', updated)
+                self.assertNotIn('loglevel=7', updated)
+                result, repeated = self.run_hook(root, updated)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(updated, repeated)
+                self.assertEqual((root / 'rebuilds').read_text(), '-P\n-P\n')
 
     def test_rejects_invalid_boot_configuration_before_replacing_cmdline(self):
         cases = [
-            ('cryptdevice=/dev/vda2:root root=/dev/mapper/root\n', 'default_uki="image"\n'),
             ('rw\n', 'default_uki="image"\n'),
             ('root=/dev/vda2 rw\n', 'default_image="image"\n'),
-            ('root=/dev/vda2 rw\n', 'ALL_config="/etc/mkinitcpio.conf"\ndefault_uki="image"\n'),
         ]
         for parameters, preset in cases:
             with self.subTest(parameters=parameters, preset=preset), tempfile.TemporaryDirectory() as directory:
@@ -61,6 +59,27 @@ class BootTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(after, parameters)
                 self.assertFalse((root / 'rebuilds').exists())
+
+    def test_explicit_preset_configuration_remains_supported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result, updated = self.run_hook(Path(directory), 'cryptdevice=/dev/vda2:root root=/dev/mapper/root rw\n',
+                                            'ALL_config="/etc/mkinitcpio.conf"\ndefault_uki="image"\n')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('cryptdevice=/dev/vda2:root', updated)
+
+    def test_firmware_graphics_replace_only_the_stock_arch_splash(self):
+        preset = ('default_uki="image"\n'
+                  'default_options="--splash /usr/share/systemd/bootctl/splash-arch.bmp"\n'
+                  'fallback_options="--splash /custom/logo.bmp"\n'
+                  'custom_options="--splash /usr/share/systemd/bootctl/splash-arch.bmp --other"\n')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result, _ = self.run_hook(root, 'cryptdevice=/dev/vda2:root root=/dev/mapper/root rw\n', preset)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            updated = (root / 'presets/linux.preset').read_text()
+            self.assertIn('default_options=""\n', updated)
+            self.assertIn('fallback_options="--splash /custom/logo.bmp"\n', updated)
+            self.assertIn('custom_options="--splash /usr/share/systemd/bootctl/splash-arch.bmp --other"\n', updated)
 
 
 class SessionTests(unittest.TestCase):

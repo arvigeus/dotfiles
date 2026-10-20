@@ -108,7 +108,8 @@ Item {
                     BarEntry {
                         key: "performance"; title: qsTr("Performance"); iconName: PowerFormat.profileIcon(root.powerProfile)
                         description: qsTr("Performance · %1").arg(PowerFormat.profile(root.powerProfile))
-                    }
+                    },
+                    BarEntry { key: "system"; title: qsTr("System"); iconName: "settings"; description: qsTr("System · updates, boot times and services") }
                 ]
                 onDrawerRequested: key => root.drawerRequested(key)
             }

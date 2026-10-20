@@ -183,6 +183,91 @@ delay, duplicate prevention and completion independently of page lifetime.
 named-output/report/editor handoff with stub commands and literal XDG paths.
 Desktop interaction coverage checks the merged catalogue and bar entry.
 
+## System
+
+`drawers/SystemDrawer.qml` owns a local `system/SystemService.qml`. Its one-shot
+Python reader stays idle until a popover opens. Each request passes `--section`
+(`info`, `boot` or `services`) and reads only that section. Direct terminal actions
+choose their updater or check maintenance tools only after being clicked. Info
+and Services refresh every 30 seconds while their popover remains open. Boot
+reads once per opening. Closing a popover or drawer cancels observation. Section
+changes serialize readers and discard results from earlier request generations,
+including a rapid close/reopen of the same popover. Each observation command has
+a three-second deadline, with a 25-second QML watchdog. Last successful data stays
+visible during refresh within the same open popover; a new opening shows its own
+loading/error status before exposing data. Individual systemd read failures are
+shown in their section and never reported as healthy services.
+The catalogue and system island import no diagnostic service.
+
+The top actions use full-width `DrawerActionButton` rows. Boot times and Services
+open scrollable `InfoPopover` details anchored to their buttons. The header info
+button opens the OS/kernel/uptime card. Signing repair and package health are
+full-width actions with explanatory `PassiveToolTip`s. All three popovers are
+mutually exclusive, close on dismissal, and consume Escape before the drawer. The header uses a
+page-owned popup reference because the host instantiates its actions separately.
+System is the last entry in the system bar island.
+
+Boot phases come from C-locale
+`systemd-analyze time`, and the five slowest activations from `blame`. Parallel
+activation times are not additive. Failed units include both system and user
+managers; upcoming realtime timers merge both scopes, sort by deadline, and show
+five entries. systemctl JSON timestamps are microseconds, converted to milliseconds
+for QML. Reboot marker files are authoritative; missing modules for the running
+kernel produce only a qualified restart hint.
+
+Updates explicitly launch `xdg-terminal-exec python3 backend.py --action update`.
+The helper requires `topgrade` and passes no automatic-confirmation flags or
+fallback updater. The package module owns its configuration and pacman hooks;
+see [update integration](../../system/package/topgrade/ARCHITECTURE.md).
+Authentication and package confirmation remain interactive; no updater, network update check or repair runs during observation.
+The terminal waits for Enter after completion or failure. Journal actions use
+`journalctl -b -n 200`, scoped to system/user, filtered to warnings or a selected
+unit. Arguments stay separate, and unit names are validated before launching.
+Journal access follows the user's existing permissions.
+
+Maintenance tools and keyrings are checked by the backend when a direct action
+runs; missing requirements are reported in its terminal. These actions need no
+preliminary read and remain independent of drawer lifetime. No maintenance
+commands run during observation.
+
+Signing repair runs `sudo -- pacman-key --init`, `--populate` (all installed
+keyrings), then `--updatedb`, stopping on the first error. It never removes the
+keyring directory, imports arbitrary keys, resets local signatures or disables
+signature checking. It reloads the installed repository keyring data; newer
+keyring package versions still come through Update system. See
+[`pacman-key` operations](https://man.archlinux.org/man/pacman-key.8.en).
+
+Package health runs read-only `pacman -Dk` and `pacman -Qkq`, completing both
+checks even when one reports problems. It checks local database consistency and
+missing files, not content hashes or intentional configuration changes. Quiet
+file-check output supplies package/path pairs; install targets must have valid
+package names and belong to `pacman -Qnq`'s repository package set. Foreign
+packages are reported for manual repair from their original source. See
+[`pacman` checks](https://man.archlinux.org/man/pacman.8.en).
+
+When affected repository packages exist, the terminal offers a default-no
+reinstall with a full update: `sudo -- pacman -Syu -- <targets>`. Native package
+confirmation stays interactive; no overwrite or nonconfirmation flags are used.
+Successful repairs run the health checks once more without offering another
+repair. Declined, unavailable or failed repairs retain a failure status; failed
+diagnostics are never presented as healthy. Terminal actions preserve their exit
+status after the existing Enter-to-close prompt.
+
+All icons reuse the bundled Lucide assets and their existing license.
+
+```sh
+python3 -m unittest discover -s tests -p test_system_drawer.py
+python3 -m unittest discover -s tests -p test_system_cleanup.py
+python3 -m unittest discover -s tests -p test_desktop_interactions.py
+```
+
+Fixtures cover boot parsing, partial failures, timer conversion, literal journal
+arguments, updater selection, active observation, terminal handoff, top action
+placement, full/narrow layouts, header information and popup dismissal. Maintenance
+coverage checks keyring command order and early failure, read-only diagnostics,
+conservative repair targeting, declining repair, rechecking and unavailable tools.
+No test updates packages or changes the host keyring.
+
 ## Buttons
 
 `ui/ShellButton.qml` styles Qt Quick Controls' `Button` for ordinary text actions,

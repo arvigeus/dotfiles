@@ -2,6 +2,7 @@
     "packages": [
         "virt-manager",
         "libvirt",
+        "dmidecode",
         "qemu-desktop",
         "dnsmasq"
     ],

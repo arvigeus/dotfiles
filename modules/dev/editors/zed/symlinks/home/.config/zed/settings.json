@@ -1,4 +1,8 @@
 {
+  "git_panel": {
+    "group_by": "staging",
+    "tree_view": true
+  },
   "git": {
     "inline_blame": {
       "enabled": false
@@ -10,12 +14,14 @@
     }
   },
   "agent": {
-    "notify_when_agent_waiting": true,
-    "play_sound_when_agent_done": true
+    "notify_when_agent_waiting": "primary_screen",
+    "play_sound_when_agent_done": "when_hidden"
   },
   "ui_font_size": 16,
   "buffer_font_size": 14,
   "theme": {
+    "dark": "One Dark",
+    "light": "One Light",
     "mode": "system"
   },
   "auto_install_extensions": {
@@ -23,7 +29,6 @@
     "basher": true,
     "dockerfile": true,
     "stylelint": true,
-    "deno": true,
     "just": true,
     "crates-lsp": true,
     "csharp": true,
@@ -33,13 +38,13 @@
     "env": true,
     "git-firefly": true,
     "harper": true,
-    "oxc": true
+    "oxc": true,
+    "vue": true,
+    "mdx": true,
+    "scss": true
   },
   "file_types": {
-    "Dockerfile": [
-      "Dockerfile.*",
-      "Containerfile.*"
-    ]
+    "Dockerfile": ["Dockerfile.*", "Containerfile.*"]
   },
   "lsp": {
     "oxlint": {
@@ -66,34 +71,7 @@
       "prettier": {
         "allowed": false
       },
-      "language_servers": [
-        "oxlint",
-        "oxfmt",
-        "!eslint",
-        "..."
-      ],
-      "formatter": [
-        {
-          "language_server": {
-            "name": "oxfmt"
-          }
-        },
-        {
-          "code_action": "source.fixAll.oxc"
-        }
-      ]
-    },
-    "JSX": {
-      "format_on_save": "on",
-      "prettier": {
-        "allowed": false
-      },
-      "language_servers": [
-        "oxlint",
-        "oxfmt",
-        "!eslint",
-        "..."
-      ],
+      "language_servers": ["oxlint", "oxfmt", "!eslint", "..."],
       "formatter": [
         {
           "language_server": {
@@ -110,12 +88,7 @@
       "prettier": {
         "allowed": false
       },
-      "language_servers": [
-        "oxlint",
-        "oxfmt",
-        "!eslint",
-        "..."
-      ],
+      "language_servers": ["oxlint", "oxfmt", "!eslint", "..."],
       "formatter": [
         {
           "language_server": {
@@ -132,12 +105,7 @@
       "prettier": {
         "allowed": false
       },
-      "language_servers": [
-        "oxlint",
-        "oxfmt",
-        "!eslint",
-        "..."
-      ],
+      "language_servers": ["oxlint", "oxfmt", "!eslint", "..."],
       "formatter": [
         {
           "language_server": {
@@ -154,12 +122,7 @@
       "prettier": {
         "allowed": false
       },
-      "language_servers": [
-        "oxlint",
-        "oxfmt",
-        "!eslint",
-        "..."
-      ],
+      "language_servers": ["oxlint", "oxfmt", "!eslint", "..."],
       "formatter": [
         {
           "language_server": {
@@ -176,10 +139,7 @@
       "prettier": {
         "allowed": false
       },
-      "language_servers": [
-        "oxfmt",
-        "..."
-      ],
+      "language_servers": ["oxfmt", "..."],
       "formatter": [
         {
           "language_server": {
@@ -193,10 +153,7 @@
       "prettier": {
         "allowed": false
       },
-      "language_servers": [
-        "oxfmt",
-        "..."
-      ],
+      "language_servers": ["oxfmt", "..."],
       "formatter": [
         {
           "language_server": {
@@ -210,10 +167,7 @@
       "prettier": {
         "allowed": false
       },
-      "language_servers": [
-        "oxfmt",
-        "..."
-      ],
+      "language_servers": ["oxfmt", "..."],
       "formatter": [
         {
           "language_server": {
@@ -227,10 +181,7 @@
       "prettier": {
         "allowed": false
       },
-      "language_servers": [
-        "oxfmt",
-        "..."
-      ],
+      "language_servers": ["oxfmt", "..."],
       "formatter": [
         {
           "language_server": {
@@ -244,10 +195,7 @@
       "prettier": {
         "allowed": false
       },
-      "language_servers": [
-        "oxfmt",
-        "..."
-      ],
+      "language_servers": ["oxfmt", "..."],
       "formatter": [
         {
           "language_server": {
@@ -261,10 +209,7 @@
       "prettier": {
         "allowed": false
       },
-      "language_servers": [
-        "oxfmt",
-        "..."
-      ],
+      "language_servers": ["oxfmt", "..."],
       "formatter": [
         {
           "language_server": {
@@ -278,10 +223,7 @@
       "prettier": {
         "allowed": false
       },
-      "language_servers": [
-        "oxfmt",
-        "..."
-      ],
+      "language_servers": ["oxfmt", "..."],
       "formatter": [
         {
           "language_server": {
@@ -295,10 +237,7 @@
       "prettier": {
         "allowed": false
       },
-      "language_servers": [
-        "oxfmt",
-        "..."
-      ],
+      "language_servers": ["oxfmt", "..."],
       "formatter": [
         {
           "language_server": {
@@ -312,10 +251,7 @@
       "prettier": {
         "allowed": false
       },
-      "language_servers": [
-        "oxfmt",
-        "..."
-      ],
+      "language_servers": ["oxfmt", "..."],
       "formatter": [
         {
           "language_server": {

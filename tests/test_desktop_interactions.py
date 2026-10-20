@@ -70,6 +70,9 @@ for line in sys.stdin:
  json.loads(line)
  print(json.dumps(dict(ok=True,error="",data=dict(drives=[drive],editorAvailable=False))),flush=True)
 ''')
+            from test_system_drawer import snapshot as system_snapshot
+            (root / 'drawers/system/backend.py').write_text(
+                'import json\nprint(json.dumps(' + repr(system_snapshot()) + '))\n')
             # Power drawers use fixture inventory and never mutate host profiles.
             from test_power_drawers import snapshot as power_snapshot
             (root / 'drawers/power/backend.py').write_text(
@@ -163,7 +166,7 @@ ShellRoot {
     property int ticksBefore: 0
     property real buttonWidthBefore: 0
     property var previewKeys: ["tray", "clipboard", "capture",
-        "wifi", "bluetooth", "sound", "microphone", "keyboard", "displays", "disks", "battery", "performance", "weather", "notifications"]
+        "wifi", "bluetooth", "sound", "microphone", "keyboard", "displays", "disks", "battery", "performance", "system", "weather", "notifications"]
     function snapshot(name, window) {
         window = window || bar;
         const directory = Quickshell.env("DRAWER_PREVIEW_DIR");
@@ -238,6 +241,7 @@ ShellRoot {
                 const wifi = find(bar.contentItem, "wifiButton");
                 const bluetooth = find(bar.contentItem, "bluetoothButton");
                 check(wifi.parent === bluetooth.parent && wifi.parent.parent.objectName === "systemIsland", "system island");
+                check(find(bar.contentItem,"systemButton").x>find(bar.contentItem,"performanceButton").x,"System is not last in system island");
                 input.mouseClick(wifi, 17, 17); sole("wifi");
             } else if (stage === 9) {
                 check(drawers.currentPage && drawers.currentPage.active && ProbeState.count("created:wifi") === 1, "Wi-Fi lazy load");
@@ -325,6 +329,18 @@ ShellRoot {
                             && !find(drawers.contentItem, "drawerBrief"), "Bluetooth controls missing");
                     else if (previewKeys[stage - 21] === "clipboard")
                         check(find(drawers.contentItem, "clipboardPause") && !find(drawers.contentItem, "drawerBrief"), "clipboard controls missing");
+                    else if (previewKeys[stage - 21] === "system") {
+                        const page = drawers.currentPage, info = find(drawers.contentItem,"systemInfo");
+                        check(find(page,"systemBoot") && find(page,"systemServices") && find(page,"systemRepairSigning") && find(page,"systemCheckPackages") && info && find(bar.contentItem,"systemButton"),"system controls missing");
+                        check(!find(drawers.contentItem,"systemRefresh") && !find(drawers.contentItem,"systemLogs") && !find(page,"systemCleanup"),"duplicate system actions remain");
+                        info.clicked();
+                        check(page.informationPopup?.visible && page.service.section === "info" && drawers.escapeHandler,"system information did not open");
+                        input.keyClick(Qt.Key_Escape); sole("system");
+                        check(!page.informationPopup && !drawers.escapeHandler,"Escape did not close only system information");
+                        check(!find(page,"systemMaintenance") && page.service.section === "","maintenance nesting remains");
+                        for(const name of ["systemRepairSigning","systemCheckPackages"])
+                            check(Math.abs(find(page,name).width-page.width)<2,"direct action squeezed: "+name);
+                    }
                     else if (previewKeys[stage - 21] === "capture")
                         check(find(drawers.contentItem, "captureScreenshot") && find(drawers.contentItem, "captureScreenshotOptions")
                             && !find(drawers.contentItem, "drawerBrief"), "capture controls missing");

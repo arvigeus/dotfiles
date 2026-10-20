@@ -74,6 +74,11 @@ DrawerHost {
             shortcut: "performance"
         },
         DrawerDefinition {
+            key: "system"
+            title: qsTr("System")
+            source: Qt.resolvedUrl("SystemDrawer.qml")
+        },
+        DrawerDefinition {
             key: "weather"
             title: qsTr("Time and weather")
             source: Qt.resolvedUrl("WeatherDrawer.qml")

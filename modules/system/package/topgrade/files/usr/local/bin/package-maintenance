@@ -1,0 +1,140 @@
+#!/usr/bin/python3
+"""Interactive post-update review; never run from a pacman transaction hook."""
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+ENV = dict(os.environ, LC_ALL='C')
+PACKAGE = re.compile(r'[A-Za-z0-9@._+][A-Za-z0-9@._+\-]*')
+UNIT = re.compile(r"'([A-Za-z0-9_][A-Za-z0-9:_.@\\-]*\.service)'")
+SESSION_UNITS = {
+    'gdm.service', 'plasmalogin.service', 'sddm.service', 'lightdm.service',
+    'lxdm.service', 'slim.service', 'xdm.service', 'greetd.service', 'nodm.service',
+    'ly.service', 'lemurs.service', 'display-manager.service',
+    'systemd-logind.service', 'dbus.service', 'dbus-broker.service', 'auditd.service',
+}
+
+
+def query(argv, empty_is_one=False, timeout=10):
+    result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, env=ENV)
+    if empty_is_one and result.returncode == 1 and not result.stdout.strip() and not result.stderr.strip():
+        return ''
+    if result.returncode or result.stderr.strip():
+        raise RuntimeError(result.stderr.strip() or f'{argv[0]} exited {result.returncode}')
+    return result.stdout
+
+
+def run(argv):
+    return subprocess.run(argv, env=ENV, check=False).returncode
+
+
+def select_items(title, items):
+    print('\n' + title, flush=True)
+    for index, item in enumerate(items, 1):
+        print(f'  {index}. {item}', flush=True)
+    while True:
+        try:
+            answer = input('Choose numbers, 0 for all, or Enter to skip: ').strip()
+        except EOFError:
+            return []
+        if not answer:
+            return []
+        if answer.lower() in ('0', 'all'):
+            return items.copy()
+        fields = answer.split()
+        if all(field.isascii() and field.isdecimal() and 1 <= int(field) <= len(items) for field in fields):
+            return [items[index - 1] for index in sorted({int(field) for field in fields})]
+        print('Choose only numbers from the list, 0, or Enter.', flush=True)
+
+
+def orphan_packages():
+    packages = query(['pacman', '-Qtdq'], empty_is_one=True).splitlines()
+    if any(not PACKAGE.fullmatch(name) for name in packages):
+        raise ValueError('Unexpected package names in the orphan query; no removal offered.')
+    return sorted(set(packages))
+
+
+def review_orphans():
+    packages = orphan_packages()
+    if not packages:
+        print('No orphan packages found.', flush=True)
+        return 0
+    print('Keep a wanted dependency with: sudo pacman -D --asexplicit <package>', flush=True)
+    selected = select_items('Orphan packages to remove:', packages)
+    if not selected:
+        return 0
+    # A package may have become wanted while the selection was being reviewed.
+    current = set(orphan_packages())
+    selected = [name for name in selected if name in current]
+    if not selected:
+        print('Selected packages are no longer orphans; nothing removed.', flush=True)
+        return 0
+    # Pacman shows the full recursive removal set and asks for confirmation.
+    return run(['sudo', '--', 'pacman', '-Rns', '--', *selected])
+
+
+def review_services():
+    if not Path('/run/systemd/system').is_dir():
+        return 0
+    output = query(['sudo', '--', '/usr/local/libexec/pacman-report-services'], timeout=60)
+    services = set()
+    for line in output.splitlines():
+        match = UNIT.fullmatch(line.strip())
+        if not match:
+            continue
+        unit = match[1]
+        if unit in SESSION_UNITS or unit.startswith(('getty@', 'serial-getty@', 'user@')):
+            continue
+        services.add(unit)
+    if not services:
+        print('No restart candidates outside protected session services.', flush=True)
+        return 0
+    selected = select_items('Services to restart:', sorted(services))
+    status = 0
+    for unit in selected:
+        # Leave a service stopped if it stopped after the scan or user selection.
+        code = run(['sudo', '--', 'systemctl', 'try-restart', '--', unit])
+        if code:
+            print(f'Could not restart {unit} (exit {code}).', file=sys.stderr)
+            status = 1
+    return status
+
+
+def main():
+    if os.geteuid() == 0:
+        print('Run package-maintenance as your regular user.', file=sys.stderr)
+        return 1
+    status = 0
+    try:
+        if not sys.stdin.isatty():
+            # Reports need no privilege escalation or prompts in unattended runs.
+            orphan_status = run(['/usr/local/libexec/pacman-report-orphans'])
+            config_status = run(['pacnew-review'])
+            return int(bool(orphan_status or config_status))
+        try:
+            status = int(bool(review_orphans()))
+        except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
+            print(f'Orphan review failed: {error}', file=sys.stderr)
+            status = 1
+        # Review configuration before offering service restarts.
+        if run(['pacnew-review']):
+            print('Configuration review failed; service restarts were skipped.', file=sys.stderr)
+            return 1
+        try:
+            status = int(bool(review_services() or status))
+        except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
+            print(f'Service review failed: {error}', file=sys.stderr)
+            status = 1
+    except OSError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print('\nMaintenance cancelled.', file=sys.stderr)
+        return 130
+    return status
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

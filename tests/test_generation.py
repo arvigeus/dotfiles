@@ -61,6 +61,15 @@ class GenerationTests(unittest.TestCase):
             self.assertIn('/etc/systemd/system/power-source.service', power_files)
             for config, device in ((zephyrus, '/dev/nvme0n1'), (vm, '/dev/vda')):
                 files = {entry['target']: entry for entry in config['extra']['files']}
+                self.assertIn('archlinux-contrib', config['packages'])
+                self.assertIn('pacman-contrib', config['packages'])
+                self.assertEqual(files['/usr/local/libexec/pacman-report-orphans']['mode'], '0755')
+                self.assertEqual(files['/usr/local/libexec/pacman-report-services']['mode'], '0755')
+                self.assertEqual(files['/usr/local/bin/pacnew-review']['mode'], '0755')
+                self.assertEqual(files['/usr/local/bin/package-maintenance']['mode'], '0755')
+                self.assertIn('/etc/pacman.d/hooks/99-report-orphans.hook', files)
+                self.assertIn('/etc/pacman.d/hooks/99-report-stale-services.hook', files)
+                self.assertIn('home/.config/topgrade.d/maintenance.toml', files)
                 self.assertNotIn('/usr/local/libexec/desktop-cpu-boost', files)
                 self.assertNotIn('/usr/share/polkit-1/actions/org.dotfiles.desktop.cpu-boost.policy', files)
                 disk = config['disk_config']['device_modifications'][0]

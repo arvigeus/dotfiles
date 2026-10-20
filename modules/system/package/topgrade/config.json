@@ -1,7 +1,3 @@
 {
-    "extra": {
-        "aur_packages": [
-            "topgrade"
-        ]
-    }
+  "packages": ["chaotic-aur/topgrade"]
 }

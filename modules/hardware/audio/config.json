@@ -15,6 +15,7 @@
         ]
     },
     "packages": [
+        "rtkit",
         "libpulse",
         "pavucontrol-qt",
         "alsa-utils"

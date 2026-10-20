@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 # Archinstall generates the device-specific command line and UKI presets.
-# Adapt its password-based encryption parameters to systemd early userspace.
+# Preserve its initramfs hooks and disk-unlock parameters.
 jq -e '.bootloader_config | .bootloader == "Efistub" and .uki == true' \
     /run/system-configuration.json >/dev/null || {
     echo 'Boot configuration requires EFI stub boot with UKIs.' >&2; exit 1;
@@ -14,16 +14,21 @@ import sys
 import tempfile
 
 cmdline, presets = map(Path, sys.argv[1:])
-# Explicit preset configs bypass mkinitcpio.conf.d and would ignore our hooks.
 active_presets = list(presets.glob('*.preset'))
 if not active_presets or not any(re.search(r'^\w+_uki=', p.read_text(), re.M) for p in active_presets):
     sys.exit('No UKI preset found; configure UKIs before applying boot settings.')
-if any(re.search(r'^\s*\w+_config=', p.read_text(), re.M) for p in active_presets):
-    sys.exit('Remove explicit *_config settings from mkinitcpio presets to enable drop-ins.')
-
 parameters = cmdline.read_text().split()
 if not any(p.startswith('root=') for p in parameters):
     sys.exit('Kernel command line has no root device.')
+# Archinstall enables mkinitcpio's stock Arch splash. Leave firmware graphics
+# visible instead; preserve custom splash paths and other preset options.
+for preset in active_presets:
+    original = preset.read_text()
+    updated = re.sub(
+        r'(?m)^(\w+_options=)(["\'])--splash /usr/share/systemd/bootctl/splash-arch\.bmp\2$',
+        r'\1\2\2', original)
+    if updated != original:
+        preset.write_text(updated)
 quiet = {
     'quiet': 'quiet',
     'loglevel': 'loglevel=3',
@@ -35,11 +40,6 @@ quiet = {
 }
 result = []
 for parameter in parameters:
-    if parameter.startswith('cryptdevice='):
-        match = re.fullmatch(r'cryptdevice=UUID=([0-9a-fA-F-]{36}):([a-zA-Z0-9_-]+)', parameter)
-        if not match:
-            sys.exit(f'Unsupported archinstall encryption parameter: {parameter}')
-        parameter = f'rd.luks.name={match[1]}={match[2]}'
     if parameter.split('=', 1)[0] not in quiet:
         result.append(parameter)
 result.extend(quiet.values())
@@ -54,5 +54,5 @@ with tempfile.NamedTemporaryFile(mode='w', dir=cmdline.parent, delete=False) as 
     finally:
         target.unlink(missing_ok=True)
 PY_BOOT
-# Rebuild the UKIs with the updated command line and systemd hooks.
+# Rebuild the UKIs with the updated console settings and existing hooks.
 mkinitcpio -P

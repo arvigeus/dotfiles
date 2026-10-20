@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# There is no target service manager to inspect during installation in a chroot.
+if [[ ! -d /run/systemd/system ]] || /usr/bin/systemd-detect-virt --quiet --chroot; then
+    exit 0
+fi
+# Uppercase flags disable failed-unit output, pacdiff, reload/reexec and restarts.
+exec /usr/bin/timeout 30s /usr/bin/checkservices -F -P -L -R

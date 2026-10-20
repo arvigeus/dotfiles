@@ -9,7 +9,7 @@
             },
             {
                 "name": "chaotic-aur",
-                "url": "https://cdn-mirror.chaotic.cx/chaotic-aur/$arch",
+                "url": "https://geo-mirror.chaotic.cx/chaotic-aur/$arch",
                 "sign_check": "Required",
                 "sign_option": "TrustedOnly"
             }

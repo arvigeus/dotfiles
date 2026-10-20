@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# sudoedit keeps Meld in the user's graphical session and copies edits back.
+if (( EUID == 0 )); then
+    echo 'Run pacnew-review as your regular desktop user.' >&2
+    exit 1
+fi
+export DIFFPROG=meld
+# Headless and noninteractive runs can report files without launching a GUI.
+if [[ ! -t 0 || ( -z ${WAYLAND_DISPLAY:-} && -z ${DISPLAY:-} ) ]]; then
+    exec pacdiff --output "$@"
+fi
+# pacdiff recursively searches CacheDir even for a two-way View. Pacman's
+# private download-* directories are intentionally unreadable to this user.
+# Expose only readable top-level package archives, keeping old merge bases.
+cache_view=$(mktemp -d --tmpdir pacnew-cache.XXXXXXXX)
+trap 'rm -rf -- "$cache_view"' EXIT
+cache_config=$(pacman-conf CacheDir)
+mapfile -t cache_dirs <<< "$cache_config"
+shopt -s nullglob
+for cache_dir in "${cache_dirs[@]}"; do
+    for archive in "$cache_dir"/*.pkg.tar*; do
+        [[ -f $archive && -r $archive && $archive != *.sig ]] || continue
+        name=${archive##*/}
+        # Earlier configured cache directories win duplicate archive names.
+        [[ -e $cache_view/$name || -L $cache_view/$name ]] && continue
+        ln -s -- "$archive" "$cache_view/$name"
+    done
+done
+pacdiff --sudo --backup --cachedir "$cache_view" "$@"
