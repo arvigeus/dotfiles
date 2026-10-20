@@ -39,20 +39,24 @@ Edit `~/.config/hypr/hyprsunset.conf` to set its temperature or timed profiles.
 
 | Shortcut             | Action                              |
 | -------------------- | ----------------------------------- |
-| Print or Win+Shift+S | Select an area and edit it in Ksnip |
+| Print or Win+Shift+S | Select an area to capture           |
 | Win+Shift+Print      | Select an area without editing      |
 | Win+Print            | Capture the focused window          |
 | Win+Ctrl+Print       | Select a window to capture          |
 | Shift+Print          | Capture the current display         |
-| Win+Shift+R          | Open Kooha's recording controls      |
+| Win+Shift+R          | Record an area / stop recording      |
 
 Screenshots are saved under your Pictures directory in `Screenshots` and copied
 to the clipboard before the editor opens. While selecting an area, hold Space
 to move the rectangle; release Space to resize it before releasing the mouse.
 
-Ksnip is the default screenshot editor. Satty remains available with
+The Capture drawer's **Open in editor** setting applies to these screenshot
+shortcuts; Win+Shift+Print always skips editing. Ksnip is the default editor.
+Satty remains available with
 `DESKTOP_SCREENSHOT_EDITOR=satty desktop-screenshot edit`.
-Kooha provides recording controls until the wf-recorder drawer is implemented.
+The shell's [Capture drawer](../quickshell/README.md#capture) adds display capture
+with a delay, GPU Screen Recorder controls and a webcam test. Win+Shift+R selects
+an area when idle and stops the active recording.
 
 ## File dialogs and screen sharing
 

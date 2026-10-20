@@ -839,6 +839,11 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/desktop/quickshell/files/etc/systemd/user/desktop-capture.service",
+                "target": "/etc/systemd/user/desktop-capture.service",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/desktop/quickshell/files/etc/systemd/user/desktop-shell.service",
                 "target": "/etc/systemd/user/desktop-shell.service",
                 "mode": "0644"
@@ -1509,6 +1514,10 @@
                 "target": "home/.config/quickshell/desktop/drawers/BluetoothDrawer.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/CaptureDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/CaptureDrawer.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/ClipboardDrawer.qml",
                 "target": "home/.config/quickshell/desktop/drawers/ClipboardDrawer.qml"
             },
@@ -1539,14 +1548,6 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/PerformanceDrawer.qml",
                 "target": "home/.config/quickshell/desktop/drawers/PerformanceDrawer.qml"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/RecordingDrawer.qml",
-                "target": "home/.config/quickshell/desktop/drawers/RecordingDrawer.qml"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/ScreenshotDrawer.qml",
-                "target": "home/.config/quickshell/desktop/drawers/ScreenshotDrawer.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/SoundDrawer.qml",
@@ -1615,6 +1616,54 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/bluetooth/qmldir",
                 "target": "home/.config/quickshell/desktop/drawers/bluetooth/qmldir"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/CaptureButton.qml",
+                "target": "home/.config/quickshell/desktop/drawers/capture/CaptureButton.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/CaptureService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/capture/CaptureService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/WebcamCard.qml",
+                "target": "home/.config/quickshell/desktop/drawers/capture/WebcamCard.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/WebcamControls.qml",
+                "target": "home/.config/quickshell/desktop/drawers/capture/WebcamControls.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/WebcamPreview.qml",
+                "target": "home/.config/quickshell/desktop/drawers/capture/WebcamPreview.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/WebcamService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/capture/WebcamService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/qmldir",
+                "target": "home/.config/quickshell/desktop/drawers/capture/qmldir"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/recorder.py",
+                "target": "home/.config/quickshell/desktop/drawers/capture/recorder.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/webcam.py",
+                "target": "home/.config/quickshell/desktop/drawers/capture/webcam.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/clipboard/ClipboardService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/clipboard/ClipboardService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/clipboard/backend.py",
+                "target": "home/.config/quickshell/desktop/drawers/clipboard/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/clipboard/qmldir",
+                "target": "home/.config/quickshell/desktop/drawers/clipboard/qmldir"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/disks/CleanupControl.qml",
@@ -1735,10 +1784,6 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkChoice.qml",
                 "target": "home/.config/quickshell/desktop/drawers/network/NetworkChoice.qml"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkField.qml",
-                "target": "home/.config/quickshell/desktop/drawers/network/NetworkField.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkIconButton.qml",
@@ -2309,6 +2354,10 @@
                 "target": "home/.config/quickshell/desktop/ui/InfoRow.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/InputField.qml",
+                "target": "home/.config/quickshell/desktop/ui/InputField.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/InteractionState.qml",
                 "target": "home/.config/quickshell/desktop/ui/InteractionState.qml"
             },
@@ -2329,8 +2378,16 @@
                 "target": "home/.config/quickshell/desktop/ui/PassiveToolTip.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/PlainInputField.qml",
+                "target": "home/.config/quickshell/desktop/ui/PlainInputField.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ScrollListView.qml",
                 "target": "home/.config/quickshell/desktop/ui/ScrollListView.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/SearchInput.qml",
+                "target": "home/.config/quickshell/desktop/ui/SearchInput.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ShellButton.qml",
@@ -2476,13 +2533,17 @@
         "hyprshot",
         "satty",
         "ksnip",
-        "kooha",
         "xdg-desktop-portal-gtk",
         "playerctl",
         "wl-clipboard",
         "libnotify",
         "dunst",
         "quickshell",
+        "qt6-multimedia",
+        "gpu-screen-recorder",
+        "slurp",
+        "v4l-utils",
+        "cliphist",
         "sqlite",
         "sqlitebrowser",
         "kate",

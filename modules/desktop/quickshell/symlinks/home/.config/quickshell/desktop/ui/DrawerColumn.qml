@@ -6,6 +6,8 @@ import QtQuick.Layouts
 ScrollView {
     id: root
     default property alias content: body.data
+    property alias contentSpacing: body.spacing
+    readonly property real naturalContentWidth: body.implicitWidth
     clip: true
     contentWidth: availableWidth
     contentHeight: body.implicitHeight

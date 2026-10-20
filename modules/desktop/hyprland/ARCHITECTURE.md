@@ -34,8 +34,29 @@ Ksnip never needs to capture through its generic Wayland/portal fallback.
 The Ksnip preferences disable tray behavior because the shell has no tray host.
 User geometry and annotator preferences stay outside the managed defaults.
 
-The recording shortcut launches Kooha until the planned wf-recorder controls are
-implemented in the recording drawer. Satty remains an optional screenshot editor.
+The helper reads `$XDG_CONFIG_HOME/quickshell/desktop/screenshot-editor` (`on` or
+`off`, default `on`) for ordinary capture modes. `edit`/`--edit` force editing;
+`--no-edit` forces raw capture. Print and Win+Shift+S use `region` so the shared
+preference applies; Win+Shift+Print explicitly passes `--no-edit`.
+The shared `screenshot-save` preference also defaults to `on`; explicit
+`--save`/`--no-save` override it. Clipboard-only mode overrides editing and uses
+Hyprshot's raw PNG stdout, buffered in Python memory before calling wl-copy.
+No screenshot directory or temporary image is created. Empty selection leaves
+the clipboard unchanged, and this path sends no notification, including on
+failure. The raw consumer's exit status controls success so a Hyprshot monitor
+failure cannot discard a valid capture.
+
+The Capture drawer uses `output --output NAME` or `region`, plus `--report` and
+explicit editor/save flags, to read back a saved image path (or `clipboard`) and
+optionally launch the editor
+without keeping capture busy until the editor closes. Missing whole-display
+images are failures rather than selection cancellation. The drawer owns delay
+and dismissal timing; the helper performs the capture immediately.
+
+The recording shortcut invokes Quickshell's `desktop:record-region` global
+shortcut. It selects an area through Slurp when idle and stops an active recording.
+The shell owns recording preferences and the supervised recording service; see
+[Capture architecture](../quickshell/ARCHITECTURE.md#capture).
 
 Night light uses the packaged `hyprsunset.service`, with a Hyprland environment
 condition matching the other session services. Its enablement belongs to the

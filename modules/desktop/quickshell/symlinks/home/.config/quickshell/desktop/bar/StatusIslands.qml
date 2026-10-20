@@ -5,6 +5,7 @@ import "../ui"
 import "../drawers/displays"
 import "../drawers/keyboard"
 import "../drawers/weather"
+import "../drawers/capture"
 import "../drawers/power/Format.js" as PowerFormat
 
 Item {
@@ -76,8 +77,15 @@ Item {
                 objectName: "toolsIsland"
                 entries: [
                     BarEntry { key: "clipboard"; title: qsTr("Clipboard"); iconName: "clipboard" },
-                    BarEntry { key: "screenshot"; title: qsTr("Screenshot"); iconName: "camera" },
-                    BarEntry { key: "recording"; title: qsTr("Screen recording"); iconName: "video" }
+                    BarEntry {
+                        key: "capture"; title: qsTr("Capture")
+                        iconName: CaptureService.sessionActive ? "video" : "camera"
+                        iconColor: CaptureService.sessionActive ? Theme.danger : CaptureService.waiting ? Theme.accent : Theme.text
+                        label: CaptureService.sessionActive ? CaptureService.recordingTime : CaptureService.waiting ? String(CaptureService.remaining) : ""
+                        description: CaptureService.sessionActive ? (CaptureService.paused ? qsTr("Recording paused · %1") : qsTr("Recording · %1 · open to stop")).arg(CaptureService.recordingTime)
+                            : CaptureService.waiting ? qsTr("Screenshot in %1 s · open to cancel").arg(CaptureService.remaining)
+                            : qsTr("Capture · screenshots, recording and webcam")
+                    }
                 ]
                 onDrawerRequested: key => root.drawerRequested(key)
             }

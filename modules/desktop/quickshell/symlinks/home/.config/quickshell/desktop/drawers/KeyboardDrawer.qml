@@ -342,7 +342,7 @@ DrawerPage {
                             ["Win+mouse wheel", qsTr("Scroll columns")],
                             ["Win+left / right drag", qsTr("Move / resize window")],
                             ["Win+Q / Alt+F4", qsTr("Close window")], ["Win+L", qsTr("Lock screen")],
-                            ["Print / Win+Shift+S", qsTr("Screenshot editor")], ["Win+Shift+R", qsTr("Screen recording")]
+                            ["Print / Win+Shift+S", qsTr("Select screenshot area")], ["Win+Shift+R", qsTr("Record area / stop recording")]
                         ]
                         delegate: RowLayout {
                             required property var modelData

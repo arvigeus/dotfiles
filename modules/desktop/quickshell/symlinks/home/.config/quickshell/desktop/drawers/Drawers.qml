@@ -23,14 +23,9 @@ DrawerHost {
             source: Qt.resolvedUrl("ClipboardDrawer.qml")
         },
         DrawerDefinition {
-            key: "screenshot"
-            title: qsTr("Screenshot")
-            source: Qt.resolvedUrl("ScreenshotDrawer.qml")
-        },
-        DrawerDefinition {
-            key: "recording"
-            title: qsTr("Screen recording")
-            source: Qt.resolvedUrl("RecordingDrawer.qml")
+            key: "capture"
+            title: qsTr("Capture")
+            source: Qt.resolvedUrl("CaptureDrawer.qml")
         },
         DrawerDefinition {
             key: "wifi"

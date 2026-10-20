@@ -37,6 +37,30 @@ items, and clear history. Collection can be paused from the drawer. History is
 stored locally and limited to 50 items; pause collection before copying
 sensitive data. See [clipboard implementation notes](ARCHITECTURE.md#clipboard).
 
+## Capture
+
+Capture offers fullscreen and region screenshots with a timer, screen recording and
+per-webcam settings and mirrored tests. Images are saved in your Pictures
+directory under `Screenshots` and copied to the clipboard. Reopen Capture during
+a countdown to cancel.
+
+**Open in editor** is remembered and also applies to screenshot shortcuts,
+including Win+Shift+S. Win+Shift+Print always skips editing. **Save to disk** is
+on by default and also applies to shortcuts; turn it off for clipboard-only
+screenshots without an editor or notification. Delayed region captures open area
+selection after the countdown.
+
+Recording closes the drawer and records the full display with GPU Screen
+Recorder. Reopen Capture to stop or pause; the bar shows elapsed time.
+Win+Shift+R selects an area when idle and stops the active recording. Recordings
+are saved as H.264/AAC MP4 in `Videos/Recordings` (following XDG directory settings).
+System audio, microphone and pointer options are remembered. Recording continues
+through shell reloads and saves when the graphical session ends.
+
+Webcam tests stop on drawer dismissal. Camera capture can be disabled only on
+devices exposing a privacy control. Settings reflect hardware support; other
+camera apps may change them. See [capture shortcuts](../hyprland/README.md#screenshots-and-recording).
+
 ## Battery and performance
 
 Battery shows system and device batteries, with charge-limit control on supported

@@ -1,6 +1,10 @@
 {
     "packages": [
         "quickshell",
+        "qt6-multimedia",
+        "gpu-screen-recorder",
+        "slurp",
+        "v4l-utils",
         "cliphist",
         "wl-clipboard"
     ]

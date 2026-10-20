@@ -6,7 +6,8 @@ Repository provisioning rules are in [the root architecture](../../../ARCHITECTU
 
 ## Package ownership
 
-This module declares Quickshell, cliphist and wl-clipboard. Hardware modules own
+This module declares Quickshell, Qt Multimedia, AT-SPI, V4L2 control tooling, cliphist and
+wl-clipboard. Hardware modules own
 audio, Bluetooth, networking, storage, display tools and battery reporting,
 including the external editors launched by drawers. `hardware/battery` declares
 UPower and its service for every host; `hardware/power` owns the Zephyrus-only
@@ -60,6 +61,127 @@ stops both watchers across shell restarts. Pause collection before copying
 sensitive data. Visible image rows decode on demand into a private session cache;
 the cache keeps at most 32 images and is removed when the shell exits. Copy closes
 the drawer after restoring content, returning focus to the application.
+
+## Capture
+
+`CaptureDrawer.qml` combines still capture, recording controls and webcam preview under
+the `capture` catalogue/bar key. Screenshot and Recording use equal-width
+`CaptureButton` split tiles styled like Performance's modes: a large icon/label
+action and a separate chevron. The screenshot action always captures immediately;
+its compact `InfoPopover` contains paired 3/5/10 second fullscreen/region actions
+with clock icons, shared editor/save checkmarks, optional output selector and
+separated file navigation. Entry labels align left. Menu widths follow the layout's natural content width
+from the rendered, nonwrapping labels, including row/popup padding and a small
+margin, constrained only by the overlay width. Row backgrounds explicitly use
+hover or keyboard focus: standalone MenuItems do not get a Menu's highlight
+management. Checkable entries stay open naturally inside the InfoPopover; no
+close/reopen handling is needed.
+`CaptureButton` uses one background for hover, focus and press on either target.
+Recording's menu holds
+system audio, microphone and pointer checkmarks, plus separated folder/last-file
+entries with paths in folder tooltips.
+Escape closes a popup before the drawer. Both capture menus and webcam settings
+are mutually exclusive; popup widths also respect narrow drawer content.
+
+`CaptureService.editorPreference` uses a watched FileView for the user-owned
+`$XDG_CONFIG_HOME/quickshell/desktop/screenshot-editor` file (`on`/`off`). Missing
+or invalid values default to on, preserving the existing shortcut behavior. The
+same file is read by `desktop-screenshot`; explicit helper flags override it.
+The watched `screenshot-save` file uses the same on/off contract and defaults to
+on. The drawer freezes both preferences and capture mode into each pending
+request, passing `--save|--no-save` and `--edit|--no-edit`. With saving off, the
+editor menu entry is disabled while retaining its preference for later use.
+
+`capture/CaptureService.qml` owns countdowns, screenshot process and recording status
+for the shell lifetime. Capture freezes the selected output and editor choice;
+the page closes immediately. Before capture the service emits `hideRequested`,
+which dismisses drawers/search again if reopened, and leaves at least 400 ms for
+the 200 ms exit animation and compositor frames. A late timer after suspension
+still waits for dismissal. Cancel clears the pending operation. Timers run only
+during countdowns; pending capture and the last image reset on shell reload. The helper
+uses `desktop-screenshot output --output NAME` or `region`, with `--report` and
+frozen preference flags. Region selection starts only when the countdown ends;
+selection cancellation is successful and leaves the last saved image unchanged.
+Report mode returns a saved image path or `clipboard` and lets the editor run
+independently when saving. Capture failures remain
+visible on reopening.
+
+`capture/recorder.py --serve` runs on demand under `desktop-capture.service`,
+independent of the shell process. It owns exactly one GPU Screen Recorder child;
+only that child receives stop signals. A shell watcher connects to the private
+`$XDG_RUNTIME_DIR/desktop-capture/control.sock` Unix socket and reattaches after
+reloads. Commands and watched snapshots are newline JSON. Operations are `start`
+(with `source`), `stop`, `pause`, `option` (with `key` and boolean `value`),
+`clear-error` and `watch`. Idle state is event driven; while recording, a 250 ms
+check detects completion and emits elapsed-time changes once a second.
+
+The main Recording action waits 400 ms after dismissal and starts capture of the
+selected output. During a session it becomes Stop. Win+Shift+R dismisses the shell
+and uses `slurp -f "%wx%h+%x+%y"` for region selection when idle, or stops the
+active session. Cancelling Slurp starts nothing. Starting, recording, paused,
+stopping and idle are explicit phases. The first-frame timestamp sidecar marks
+actual capture readiness; the service removes it after initialization. The bar timer excludes acknowledged pauses.
+Options are locked during a session. Initialization failures and abnormal exits
+report the recorder log in the drawer; the full log is kept in the runtime directory.
+
+The recorder uses native `-ipc` `set-paused` acknowledgements and SIGINT to stop
+and finalize, including on graphical-session shutdown. The service allows 15 seconds
+for finalization within systemd's 20-second stop timeout. Closing drawers or
+reloading Quickshell never signals it. A stopped service ends its recording rather
+than recovering a detached process. Last-file navigation is published only after a
+successful exit and a nonempty output file. The service is not enabled at login;
+CaptureService's initial watcher starts it and reconnects on failure.
+
+Preferences are stored atomically in the user-owned
+`$XDG_CONFIG_HOME/quickshell/desktop/recording.json`: boolean `systemAudio`
+(default true), `microphone` (false) and `pointer` (true). These control recordings
+started from either the drawer or shortcut. Audio uses `default_output` and/or
+`default_input`; when both are selected they are mixed into one track. Before
+recording a microphone,
+`pactl` checks that the default input is a real source rather than a speaker
+monitor fallback. Audio support is provided by the hardware audio module. Output is
+60 fps H.264/AAC MP4 in XDG Videos/Recordings with a timestamped unique filename.
+There is no silent CPU-encoding fallback. Quickshell owns gpu-screen-recorder and
+slurp dependencies; Hyprland owns screenshot tools and shortcut dispatch.
+
+Qt Multimedia enumerates cameras without starting streams. `WebcamCard.qml`
+provides a device heading, settings and Test action per camera. Infrared companion
+sensors are omitted when regular cameras are present (identified by IR/infrared
+in the reported name); an infrared-only inventory remains accessible.
+`WebcamPreview.qml` is loaded only after Test, with that card's QCameraDevice and
+a mirrored video output. No audio input, image capture or media recorder is
+attached. Dismissal unloads it immediately; reopening never reactivates it.
+
+`WebcamService.qml` reads `webcam.py` every five seconds while the page is active.
+V4L2 control enumeration never starts a stream. Mutations are serialized with
+per-control coalescing, followed by fresh device readback. Keyed controls retain
+their delegates and keyboard focus during polling; sliders commit on release.
+Their custom track/handle supply no implicit height, so the slider explicitly
+reserves `Theme.controlHeight` for layout and pointer input.
+The backend accepts only ordinary supported controls, rechecks device identity,
+flags, range, step and menu membership before writing, and rejects replacement
+devices and unavailable/automatic controls. Settings stay with the hardware;
+there is no startup restoration competing with other apps.
+
+Only cameras exposing V4L2 `privacy` show a capture-enable switch. Its inverse is
+displayed, and read-only hardware privacy controls cannot be toggled. Blocking
+capture unloads preview too. The backend does not unload kernel drivers, change
+device permissions or disable unrelated USB functions. See the kernel's
+[privacy-control contract](https://docs.kernel.org/userspace-api/media/v4l/ext-ctrls-camera.html).
+
+`tests/test_capture_drawer.py` covers request freezing, duplicate prevention,
+countdown cancellation, late timer dismissal, process completion, responsive
+controls, popup dismissal, settings readback and webcam component lifetime.
+Slider coverage uses pointer dragging and keyboard input, including a readback
+update during dragging and the value committed on release.
+`tests/test_webcam_controls.py` checks device replacement and mutation validation.
+`tests/test_capture_recorder.py` covers source validation, mixed audio, persistent
+options, native pause acknowledgements, failure/completion and reconnecting clients.
+Its fake-recorder service integration also verifies graceful shutdown finalization. The QML recording test verifies dismissal
+delay, duplicate prevention and completion independently of page lifetime.
+`tests/test_screenshots.py` exercises the shared preference, explicit overrides,
+named-output/report/editor handoff with stub commands and literal XDG paths.
+Desktop interaction coverage checks the merged catalogue and bar entry.
 
 ## Buttons
 

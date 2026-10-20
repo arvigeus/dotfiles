@@ -7,6 +7,7 @@ Popup {
     id: root
     required property Item button
     property bool active: false
+    property real contentSpacing: Theme.gap
     default property alias details: form.content
     signal dismissed()
     parent: button
@@ -18,7 +19,7 @@ Popup {
     padding: 16; margins: 8; focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
     background: Surface { color: Theme.background; radius: Theme.controlRadius }
-    contentItem: DrawerColumn { id: form }
+    contentItem: DrawerColumn { id: form; contentSpacing: root.contentSpacing }
     onActiveChanged: if (!active) close()
     onClosed: {
         if (active && button.visible && button.enabled) button.forceActiveFocus();

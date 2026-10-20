@@ -3,18 +3,52 @@ set -Eeuo pipefail
 
 fail() {
     printf '%s\n' "$*" >&2
-    notify-send 'Screenshot' "$*" || true
+    [[ ${save:-auto} == false ]] || notify-send 'Screenshot' "$*" || true
     exit 1
 }
 
 mode=${1:-}
-edit=false
+[[ $# -gt 0 ]] && shift
+edit=auto
+save=auto
+report=false
+output=
 editor=${DESKTOP_SCREENSHOT_EDITOR:-ksnip}
 case $mode in
     edit) mode=region; edit=true ;;
     region|window|output|active-window) ;;
     *) fail 'Choose edit, region, window, active-window, or output.' ;;
 esac
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --output)
+            [[ $# -ge 2 && -n $2 && $mode == output ]] || fail '--output needs a display name in output mode.'
+            output=$2; shift 2 ;;
+        --edit) edit=true; shift ;;
+        --no-edit) edit=false; shift ;;
+        --save) save=true; shift ;;
+        --no-save) save=false; shift ;;
+        --report) report=true; shift ;;
+        *) fail "Unknown option: $1" ;;
+    esac
+done
+config=${XDG_CONFIG_HOME:-$HOME/.config}
+[[ $config == /* ]] || config=$HOME/.config
+if [[ $save == auto ]]; then
+    preference=on
+    if [[ -f $config/quickshell/desktop/screenshot-save ]]; then
+        read -r preference < "$config/quickshell/desktop/screenshot-save" || true
+    fi
+    if [[ $preference == off ]]; then save=false; else save=true; fi
+fi
+if [[ $edit == auto ]]; then
+    preference=on
+    if [[ -f $config/quickshell/desktop/screenshot-editor ]]; then
+        read -r preference < "$config/quickshell/desktop/screenshot-editor" || true
+    fi
+    if [[ $preference == off ]]; then edit=false; else edit=true; fi
+fi
+$save || edit=false
 
 command -v hyprshot >/dev/null || fail 'Install hyprshot to take screenshots.'
 if $edit; then
@@ -25,33 +59,68 @@ if $edit; then
     command -v "$editor" >/dev/null || fail "Install $editor to edit screenshots."
 fi
 
+args=(-m "$mode")
+if [[ $mode == active-window ]]; then
+    args=(-m window -m active)
+elif [[ $mode == output ]]; then
+    args+=(-m "${output:-active}")
+fi
+if ! $save; then
+    # Buffer in memory until Hyprshot's child closes stdout. Cancellation must
+    # leave the existing clipboard intact. No temporary image is written.
+    if hyprshot "${args[@]}" --raw --silent | python3 -c '
+import subprocess, sys
+image = sys.stdin.buffer.read()
+if not image:
+    raise SystemExit(3)
+if not image.startswith(b"\x89PNG\r\n\x1a\n"):
+    raise SystemExit("Could not capture a PNG image.")
+subprocess.run(["wl-copy", "--type", "image/png"], input=image, check=True)
+if sys.argv[1] == "true":
+    print("clipboard")
+' "$report"; then
+        exit 0
+    else
+        status=${PIPESTATUS[1]}
+        # Hyprshot's monitor may fail after its child supplied a valid image.
+        [[ $status == 0 ]] && exit 0
+        if [[ $status == 3 && $mode != output ]]; then exit 0; fi
+        fail 'Could not copy the screenshot to the clipboard.'
+    fi
+fi
+
 pictures=$(xdg-user-dir PICTURES) || pictures=$HOME/Pictures
 folder=${pictures:-$HOME/Pictures}/Screenshots
 mkdir -p -- "$folder"
 filename="Screenshot-$(date +%Y-%m-%d-%H%M%S-%N).png"
-args=(-m "$mode" -o "$folder" -f "$filename")
-if [[ $mode == active-window ]]; then
-    args=(-m window -m active -o "$folder" -f "$filename")
-elif [[ $mode == output ]]; then
-    args+=(-m active)
-fi
+args+=(-o "$folder" -f "$filename")
 $edit && args+=(--silent)
 
 # Hyprshot captures in a child process; keep the pipe open until it finishes.
 # Its monitor can fail to kill a nonexistent hyprpicker after a successful grab.
 # Use the resulting image, rather than the monitor's exit status, for handoff.
-hyprshot "${args[@]}" | cat || true
+hyprshot "${args[@]}" | cat >&2 || true
 image=$folder/$filename
 # Cancelling selection produces no image and should not open the editor.
-[[ -s $image ]] || exit 0
+if [[ ! -s $image ]]; then
+    # A whole-display capture has no selection to cancel.
+    [[ $mode != output ]] || fail 'Could not capture the display. It may have disconnected.'
+    exit 0
+fi
+$report && printf '%s\n' "$image"
 if $edit; then
     case $editor in
-        ksnip) exec ksnip --edit "$image" ;;
+        ksnip) editor_args=(ksnip --edit "$image") ;;
         satty)
-            exec satty --filename "$image" --output-filename "$image" \
-                --copy-command 'wl-copy --type image/png' \
-                --actions-on-enter save-to-file,save-to-clipboard,exit \
-                --actions-on-escape exit
+            editor_args=(satty --filename "$image" --output-filename "$image"
+                --copy-command 'wl-copy --type image/png'
+                --actions-on-enter save-to-file,save-to-clipboard,exit
+                --actions-on-escape exit)
             ;;
     esac
+    if $report; then
+        "${editor_args[@]}" >/dev/null 2>&1 &
+    else
+        exec "${editor_args[@]}"
+    fi
 fi

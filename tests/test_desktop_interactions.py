@@ -162,7 +162,7 @@ ShellRoot {
     property real progressBefore: 0
     property int ticksBefore: 0
     property real buttonWidthBefore: 0
-    property var previewKeys: ["tray", "clipboard", "screenshot", "recording",
+    property var previewKeys: ["tray", "clipboard", "capture",
         "wifi", "bluetooth", "sound", "microphone", "keyboard", "displays", "disks", "battery", "performance", "weather", "notifications"]
     function snapshot(name, window) {
         window = window || bar;
@@ -323,6 +323,11 @@ ShellRoot {
                         check(find(drawers.contentItem, "bluetoothPower") && find(drawers.contentItem, "bluetoothScan")
                             && find(drawers.contentItem, "bluetoothEdit") && !find(drawers.currentPage, "bluetoothScan")
                             && !find(drawers.contentItem, "drawerBrief"), "Bluetooth controls missing");
+                    else if (previewKeys[stage - 21] === "clipboard")
+                        check(find(drawers.contentItem, "clipboardPause") && !find(drawers.contentItem, "drawerBrief"), "clipboard controls missing");
+                    else if (previewKeys[stage - 21] === "capture")
+                        check(find(drawers.contentItem, "captureScreenshot") && find(drawers.contentItem, "captureScreenshotOptions")
+                            && !find(drawers.contentItem, "drawerBrief"), "capture controls missing");
                     else if (previewKeys[stage - 21] === "sound")
                         check(find(drawers.contentItem, "audioOutputsEmpty") && find(drawers.contentItem, "audioScroll"), "playback controls missing");
                     else if (previewKeys[stage - 21] === "microphone")

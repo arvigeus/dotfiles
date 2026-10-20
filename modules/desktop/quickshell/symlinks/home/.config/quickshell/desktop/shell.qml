@@ -9,6 +9,7 @@ import "drawers"
 import "drawers/clipboard"
 import "drawers/displays"
 import "drawers/power"
+import "drawers/capture"
 
 ShellRoot {
     id: root
@@ -22,6 +23,9 @@ ShellRoot {
     // PowerSession owns one-time charging and recording lifetimes, with
     // supervised cleanup and no background sensor polling.
     // Audio test workers belong to the pages and stop on dismissal.
+    // CaptureService attaches to the recording owner and retains screenshot
+    // preferences/countdowns; camera controls
+    // belong to the drawer and preview streams stop as soon as it is dismissed.
     // Bluetooth discovery and pending pairing also stop on dismissal.
     Drawers { id: drawers; interactionState: interactions }
 
@@ -31,7 +35,24 @@ ShellRoot {
     // External reorder scripts: hyprctl dispatch 'hl.dsp.event("desktop-layout-changed")'
     // Capture continues while the drawer is closed; visible image rows load on demand.
     // Plain entry and debounced search use shared controls across drawers.
-    Component.onCompleted: { layoutRefresh.restart(); ComfortService.start(); DisplayService.start(); PowerSession.start(); ClipboardService.start(); }
+    Component.onCompleted: { layoutRefresh.restart(); ComfortService.start(); DisplayService.start(); PowerSession.start(); ClipboardService.start(); CaptureService.start(); }
+
+    GlobalShortcut {
+        appid: "desktop"; name: "record-region"
+        description: qsTr("Record an area or stop the current recording")
+        onPressed: CaptureService.recordRegion()
+    }
+
+    Connections {
+        target: CaptureService
+        function onHideRequested(): void { drawers.dismiss(); launcher.dismiss(); }
+    }
+    Connections {
+        target: interactions
+        function onActiveSurfaceChanged(): void {
+            if (interactions.activeSurface) CaptureService.guardDismissal();
+        }
+    }
 
     Connections {
         target: Hyprland
