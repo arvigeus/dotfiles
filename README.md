@@ -69,9 +69,11 @@ Managed configuration is replaced on each apply. Omitted files, packages, and
 services are left in place; removal and migration are manual. There is no
 backward compatibility support: update your system when the configuration changes.
 
-Hyprland starts automatically on TTY1. Exiting it returns to your terminal;
-run `desktop-session` to reopen Hyprland or `gaming-session` to enter Steam
-Gaming Mode. Exiting either session returns to the terminal.
+Hyprland starts automatically on TTY1. Spaces offers **Go to gaming mode**;
+Steam's **Go to Desktop** or **Exit Steam** returns to Hyprland. Gaming mode is
+temporary: rebooting starts the desktop. **Restart → Reload** closes applications
+and immediately starts a fresh desktop session. Gaming startup failures return
+to the desktop automatically.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the module conventions and execution
 model, and [execution-tool details](scripts/ARCHITECTURE.md) for the scripts.

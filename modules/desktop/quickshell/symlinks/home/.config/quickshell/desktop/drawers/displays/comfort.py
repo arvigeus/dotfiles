@@ -13,11 +13,11 @@ import time
 import backend
 
 
-def session_directory():
+def session_directory(kind='desktop-keep-awake'):
     signature = os.environ.get('HYPRLAND_INSTANCE_SIGNATURE')
     if not signature:
         raise RuntimeError('Display controls require a Hyprland session.')
-    return Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')) / 'hypr' / signature / 'desktop-keep-awake'
+    return Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')) / 'hypr' / signature / kind
 
 
 def systemctl(*args):
@@ -29,7 +29,8 @@ def systemctl(*args):
 
 class Lease:
     """A lock proves liveness; an atomic JSON file describes protected hardware."""
-    def __init__(self):
+    def __init__(self, kind='desktop-keep-awake'):
+        self.kind = kind
         self.fd = None
         self.lock = None
         self.path = None
@@ -38,7 +39,7 @@ class Lease:
         if not displays:
             self.close()
             return
-        directory = session_directory()
+        directory = session_directory(self.kind)
         directory.mkdir(parents=True, exist_ok=True)
         if self.fd is None:
             self.fd, name = tempfile.mkstemp(dir=directory, prefix='lease-', suffix='.lock')
@@ -61,13 +62,11 @@ class Lease:
             self.fd = None
 
 
-def protected(displays):
+def live_leases(kind='desktop-keep-awake'):
     try:
-        directory = session_directory()
+        directory = session_directory(kind)
     except RuntimeError:
-        return set()
-    live = {row['name']: row['identity'] for row in displays if row['enabled']}
-    names = set()
+        return
     for path in directory.glob('lease-*.lock'):
         try:
             with path.open() as descriptor:
@@ -75,11 +74,21 @@ def protected(displays):
                     fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     values = json.loads(path.with_suffix('.json').read_text())
-                    names.update(name for name, identity in values.items() if name in live and live[name] == identity)
+                    if isinstance(values, dict):
+                        yield values
                 # An unlocked file is a dead lease, including after a crash.
         except (OSError, ValueError, AttributeError):
             continue
-    return names
+
+
+def protected(displays):
+    live = {row['name']: row['identity'] for row in displays if row['enabled']}
+    return {name for values in live_leases() for name, identity in values.items()
+            if name in live and live[name] == identity}
+
+
+def paused(kind):
+    return any(values.get(kind) is True for values in live_leases('desktop-session-pauses'))
 
 
 def idle_action(op):
@@ -87,9 +96,11 @@ def idle_action(op):
         backend.command('dispatch', 'hl.dsp.dpms({action="on"})')
         backend.command('dispatch', 'hl.dsp.event("desktop-displays-changed")')
         return 0
+    if op in ('allow-lock', 'allow-sleep') and paused('locking' if op == 'allow-lock' else 'sleep'):
+        return 1
     displays = backend.snapshot()['displays']
     awake = protected(displays)
-    if op == 'allow-session-idle':
+    if op in ('allow-session-idle', 'allow-lock', 'allow-sleep'):
         return 1 if awake else 0
     if op != 'blank':
         raise ValueError('Unknown idle action.')
@@ -102,6 +113,8 @@ def idle_action(op):
 class Controller:
     def __init__(self):
         self.lease = Lease()
+        self.pause_lease = Lease('desktop-session-pauses')
+        self.pauses = {}
         self.awake = {}
         self.night_available = False
         self.night_enabled = False
@@ -148,15 +161,34 @@ class Controller:
                 values.pop(name, None)
             self.lease.publish(values)
             self.awake = values
+        elif op in ('pause-sleep', 'pause-locking'):
+            enabled = request.get('enabled')
+            if type(enabled) is not bool:
+                raise ValueError('Invalid session pause switch.')
+            # Publishing a live lease requires a compositor session and never
+            # writes preferences. Released locks make crash leftovers inert.
+            session_directory('desktop-session-pauses')
+            values = dict(self.pauses)
+            key = 'sleep' if op == 'pause-sleep' else 'locking'
+            if enabled:
+                values[key] = True
+            else:
+                values.pop(key, None)
+            self.pause_lease.publish(values)
+            self.pauses = values
         elif op != 'status':
             raise ValueError('Unknown display comfort action.')
         self.tick()
 
     def snapshot(self):
-        return dict(nightEnabled=self.night_enabled, nightAvailable=self.night_available, awake=self.awake, error=self.error)
+        return dict(nightEnabled=self.night_enabled, nightAvailable=self.night_available, awake=self.awake, error=self.error,
+                    pausesAvailable=bool(os.environ.get('HYPRLAND_INSTANCE_SIGNATURE')),
+                    sleepPaused=bool(self.pauses.get('sleep')), lockingPaused=bool(self.pauses.get('locking')))
 
     def close(self):
         self.lease.close()
+        self.pause_lease.close()
+        self.pauses = {}
         self.awake = {}
 
 

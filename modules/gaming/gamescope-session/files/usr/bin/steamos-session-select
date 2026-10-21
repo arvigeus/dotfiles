@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Steam's Go to Desktop hook is always a one-shot return, never a boot setting.
+set -euo pipefail
+# Steam versions pass different desktop/session identifiers. They all mean a
+# return to this machine's desktop, never a saved display-manager selection.
+exec session-mode desktop

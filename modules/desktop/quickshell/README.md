@@ -33,6 +33,23 @@ Windows requesting attention show an amber tab and dot. An amber workspace arrow
 means a window above or below needs attention. Apps must send an urgency request;
 an unread browser tab alone may not trigger it.
 
+## Spaces
+
+Spaces lists Applications, Files, Terminal, Projects, Movies, TV Series,
+Music, Radio, Pictures, Games and Books. These entries are placeholders for now.
+
+The header photo opens Mugshot to edit your account picture and display name.
+Phone fields are disabled; this setup uses AccountsService for profile changes.
+Reopen Spaces after saving to refresh the photo.
+
+Hold a session action for two seconds to enter gaming mode, sleep, restart or power off.
+The power-off arrow offers shutdown timers from 15 minutes to five hours and
+cancellation of a scheduled shutdown. Timers continue with the drawer closed.
+The Restart menu offers **Reload**, which closes applications and starts a fresh
+desktop session. The Sleep and gaming-mode menus can pause automatic sleep and locking independently.
+Click coffee or the open lock to restore them. Pauses clear on shell reload or
+exit; screen blanking and manual lock/sleep commands remain available.
+
 ## System tray
 
 The tray drawer lists background apps and their status, including idle apps.

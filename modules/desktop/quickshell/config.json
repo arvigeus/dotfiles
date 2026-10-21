@@ -1,6 +1,8 @@
 {
     "packages": [
         "quickshell",
+        "mugshot",
+        "accountsservice",
         "adwaita-icon-theme",
         "qt6-multimedia",
         "python-dateutil",

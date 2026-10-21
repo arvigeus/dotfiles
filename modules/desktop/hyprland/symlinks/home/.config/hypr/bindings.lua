@@ -21,7 +21,7 @@ hl.bind(mainMod .. " + B", hl.dsp.exec_cmd(browser))
 hl.bind(mainMod .. " + Q", hl.dsp.window.close())
 hl.bind("ALT + F4", hl.dsp.window.close())
 hl.bind(mainMod .. " + M", hl.dsp.window.fullscreen({ mode = "maximized", action = "toggle" }))
-hl.bind("CTRL + ALT + DELETE", hl.dsp.exec_cmd("uwsm stop"))
+hl.bind("CTRL + ALT + DELETE", hl.dsp.exec_cmd("session-mode gaming"))
 -- Lock requests are handled by hypridle/hyprlock once locking is configured.
 hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("loginctl lock-session"))
 hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }))

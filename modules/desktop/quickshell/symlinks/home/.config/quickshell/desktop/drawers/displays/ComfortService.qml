@@ -8,7 +8,7 @@ QtObject {
     property bool ready: false
     property var request: null
     property var queue: []
-    property var state: ({nightEnabled: false, nightAvailable: false, awake: {}, error: ""})
+    property var state: ({nightEnabled: false, nightAvailable: false, awake: {}, error: "", pausesAvailable: false, sleepPaused: false, lockingPaused: false})
     property string error: ""
     readonly property bool busy: request !== null || queue.length > 0
     function awakeFor(name: string): bool { return !!state.awake[name]; }
@@ -41,7 +41,7 @@ QtObject {
         stderr: StdioCollector {}
         onExited: {
             root.ready = false; root.request = null; root.queue = [];
-            root.state = Object.assign({}, root.state, {nightAvailable: false, nightEnabled: false, awake: {}});
+            root.state = Object.assign({}, root.state, {nightAvailable: false, nightEnabled: false, awake: {}, pausesAvailable: false, sleepPaused: false, lockingPaused: false});
             root.error = qsTr("Display comfort helper stopped. Reopen the drawer to retry.");
         }
     }

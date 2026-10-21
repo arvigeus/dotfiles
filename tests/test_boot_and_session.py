@@ -94,14 +94,19 @@ class SessionTests(unittest.TestCase):
             command = binary / 'systemctl'
             command.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$SESSION_TEST_LOG"\n')
             command.chmod(0o755)
+            tmpfiles = binary / 'systemd-tmpfiles'
+            tmpfiles.write_text('#!/bin/sh\nexit 0\n')
+            tmpfiles.chmod(0o755)
             script = (REPO / 'modules/desktop/hyprland/scripts/50_session.sh').read_text()
             script = script.replace('/etc/systemd/system/getty@tty1.service.d/autologin.conf', str(config))
             script = script.replace('/etc/login.defs', str(login_defs))
+            script = script.replace('/etc/tmpfiles.d/desktop-session.conf', str(root / 'tmpfiles.conf'))
             subprocess.run(['bash', '-c', script], check=True,
                            env=dict(os.environ, PATH=str(binary) + ':' + os.environ['PATH'],
                                     DOTFILES_REPO=str(REPO), USERNAME='tester', SESSION_TEST_LOG=str(root / 'calls')))
             self.assertIn('ExecStart=\nExecStart=-/usr/bin/agetty --autologin tester', config.read_text())
             self.assertIn('--noissue --skip-login - ${TERM}', config.read_text())
+            self.assertEqual((root / 'tmpfiles.conf').read_text(), 'd /run/desktop-session-tester 0700 tester - -\n')
             self.assertEqual((root / 'calls').read_text(),
                              'set-default graphical.target\n'
                              '--global enable hyprpolkitagent.service\n'
@@ -117,8 +122,9 @@ class SessionTests(unittest.TestCase):
             command.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$SESSION_TEST_LOG"\n'
                                'if [ "$1" = start ]; then exit "$SESSION_TEST_STATUS"; fi\n')
             command.chmod(0o755)
-            (binary / 'desktop-session').symlink_to(
-                REPO / 'modules/desktop/hyprland/files/usr/local/bin/desktop-session')
+            launcher = binary / 'session-mode'
+            launcher.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$SESSION_TEST_LOG"\nexit "$SESSION_TEST_STATUS"\n')
+            launcher.chmod(0o755)
             additions = root / 'shell.d'
             additions.mkdir()
             (additions / 'hyprland.sh').write_text(
@@ -134,20 +140,20 @@ class SessionTests(unittest.TestCase):
                        SESSION_TEST_STATUS=str(start_status),
                        SESSION_TEST_PROFILE=str(profile))
             env.update(overrides or {})
-            # Run the real profile in a shell that survives the session command.
+            # The real profile must replace the console shell with the owner.
             result = subprocess.run(['bash', '--noprofile', '--norc', ('-lic' if login else '-ic') if interactive else '-c',
                                      'source "$SESSION_TEST_PROFILE"; source "$SESSION_TEST_PROFILE"; printf "terminal\\n"'],
                                     env=env, text=True, capture_output=True)
             calls = (root / 'calls').read_text() if (root / 'calls').exists() else ''
             return result, calls
 
-    def test_normal_exit_and_startup_failure_return_to_terminal(self):
+    def test_console_executes_supervisor_and_never_reveals_a_prompt(self):
         for status in (0, 1):
             with self.subTest(status=status):
                 result, calls = self.run_profile(start_status=status)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn('terminal', result.stdout)
-                self.assertEqual(calls, 'check may-start\nstart -e -D Hyprland hyprland.desktop\n')
+                self.assertEqual(result.returncode, status, result.stderr)
+                self.assertNotIn('terminal', result.stdout)
+                self.assertEqual(calls, 'run\n')
 
     def test_other_consoles_ssh_existing_sessions_and_preloader_do_not_start(self):
         cases = [

@@ -101,6 +101,10 @@ fi
 gamescope_bin=${SYSTEM_GAMING_GAMESCOPE:-gamescope}
 steam_bin=${SYSTEM_GAMING_STEAM:-steam}
 args=(--backend drm --steam --xwayland-count 2 --adaptive-sync --mangoapp)
+if [[ -n ${SESSION_MODE_READY_FD:-} ]]; then
+    [[ $SESSION_MODE_READY_FD =~ ^[0-9]+$ ]] || { printf 'Invalid readiness descriptor.\n' >&2; exit 2; }
+    args+=(--ready-fd "$SESSION_MODE_READY_FD")
+fi
 
 output=$SYSTEM_GAMING_OUTPUT
 [[ $output != auto ]] || output=$(connected_outputs)
@@ -116,7 +120,7 @@ if [[ $SYSTEM_GAMING_GPU != auto ]]; then
 fi
 [[ $SYSTEM_GAMING_HDR == 0 ]] || args+=(--hdr-enabled)
 
-command=("$gamescope_bin" "${args[@]}" -- "$steam_bin" -gamepadui)
+command=("$gamescope_bin" "${args[@]}" -- "$steam_bin" -gamepadui -steamos3)
 if [[ ${SYSTEM_GAMING_DRY_RUN:-0} == 1 ]]; then
 	printf '%q ' "${command[@]}"
 	printf '\n'
@@ -134,4 +138,5 @@ command -v "$steam_bin" >/dev/null || {
 
 export XDG_CURRENT_DESKTOP=gamescope
 export XDG_SESSION_DESKTOP=gamescope
+export XDG_SESSION_TYPE=wayland
 exec "${command[@]}"

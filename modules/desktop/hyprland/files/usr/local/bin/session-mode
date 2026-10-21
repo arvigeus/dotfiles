@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+"""Supervise the local desktop/gaming session and request one-shot transitions."""
+import argparse
+import fcntl
+import json
+import os
+from pathlib import Path
+import pwd
+import select
+import shutil
+import signal
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+
+
+MODES = ('desktop', 'gaming')
+
+
+def runtime_directory():
+    directory = Path('/run/desktop-session-' + pwd.getpwuid(os.getuid()).pw_name)
+    info = directory.stat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise ValueError('The session runtime directory must be private and owned by the login user.')
+    return directory
+
+
+def atomic_json(path, value):
+    fd, name = tempfile.mkstemp(prefix='.' + path.name, dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w') as output:
+            json.dump(value, output)
+        os.replace(name, path)
+    finally:
+        Path(name).unlink(missing_ok=True)
+
+
+def owner_live(directory):
+    with (directory / 'owner.lock').open('a') as guard:
+        try:
+            fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+    return False
+
+
+def login_session():
+    def validate(session):
+        try:
+            result = subprocess.run(['loginctl', 'show-session', session, '-p', 'User', '-p', 'TTY', '-p', 'Remote'],
+                                    check=True, capture_output=True, text=True, timeout=5)
+            values = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+            return values.get('User') == str(os.getuid()) and values.get('TTY') == 'tty1' and values.get('Remote') == 'no'
+        except (OSError, subprocess.SubprocessError):
+            return False
+
+    session = os.environ.get('XDG_SESSION_ID')
+    if session and validate(session):
+        return session
+    # User services/apps can lack a session ID or belong to logind's manager
+    # session. Resolve the local console by UID/TTY, never that manager session.
+    result = subprocess.run(['loginctl', 'list-sessions', '--json=short'], check=True,
+                            capture_output=True, text=True, timeout=5)
+    for row in json.loads(result.stdout):
+        if row.get('uid') == os.getuid() and row.get('tty') == 'tty1' and row.get('class') == 'user':
+            session = row.get('session')
+            if session and validate(session):
+                return session
+    raise ValueError('Session switching requires your local TTY1 login.')
+
+
+def gaming_available():
+    return all(shutil.which(command) for command in ('gaming-session', 'gamescope', 'steam'))
+
+
+def status(directory):
+    supervised = owner_live(directory)
+    available = supervised
+    if not available:
+        try:
+            login_session()
+            available = True
+        except (ValueError, OSError, subprocess.SubprocessError):
+            pass
+    return dict(available=available, supervised=supervised, gaming=available and gaming_available())
+
+
+def request_mode(directory, mode):
+    if mode not in MODES:
+        raise ValueError('Unsupported session mode.')
+    if mode == 'gaming' and not gaming_available():
+        raise ValueError('Install Gamescope and Steam to enter gaming mode.')
+    with (directory / 'request.lock').open('a') as guard:
+        fcntl.flock(guard, fcntl.LOCK_EX)
+        supervised = owner_live(directory)
+        session = None if supervised else login_session()
+        path = directory / ('next.json' if supervised else 'handoff.json')
+        atomic_json(path, dict(mode=mode, created=time.monotonic()))
+        if not supervised:
+            # First transition from the old Bash startup: let agetty immediately
+            # autologin into the new supervisor. /run survives the PAM handoff,
+            # while the one-shot request can never survive a reboot.
+            try:
+                subprocess.run(['loginctl', 'terminate-session', session], check=True, timeout=15)
+            except (OSError, subprocess.SubprocessError):
+                path.unlink(missing_ok=True)
+                raise
+
+
+def take_request(directory, name):
+    path = directory / name
+    claimed = directory / (name + f'.consuming-{os.getpid()}')
+    try:
+        path.rename(claimed)
+    except FileNotFoundError:
+        return None
+    try:
+        value = json.loads(claimed.read_text())
+        age = time.monotonic() - float(value['created'])
+        return value['mode'] if value['mode'] in MODES and 0 <= age < 60 else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    finally:
+        claimed.unlink(missing_ok=True)
+
+
+def session_environment():
+    # Each child starts from the console environment, never the previous
+    # compositor's display/socket values or UWSM preloader state.
+    env = dict(os.environ)
+    for key in ('WAYLAND_DISPLAY', 'DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE', 'XDG_CURRENT_DESKTOP',
+                'XDG_SESSION_DESKTOP', 'IN_UWSM_ENV_PRELOADER'):
+        env.pop(key, None)
+    return env
+
+
+class Supervisor:
+    def __init__(self, directory, initial='desktop', startup_timeout=45, stop_timeout=20):
+        self.directory = directory
+        self.mode = take_request(directory, 'handoff.json') or initial
+        self.startup_timeout = startup_timeout
+        self.stop_timeout = stop_timeout
+        self.stopping = False
+        self.child = None
+        self.transition_requested = False
+
+    def stop_signal(self, *_):
+        self.stopping = True
+
+    def stop_child(self, mode):
+        command = ['uwsm', 'stop'] if mode == 'desktop' else ['steam', '-shutdown']
+        try:
+            subprocess.run(command, timeout=8, check=False)
+        except (OSError, subprocess.SubprocessError) as error:
+            print(f'Session stop: {error}', file=sys.stderr, flush=True)
+        if self.child and self.child.poll() is None:
+            try:
+                self.child.wait(timeout=self.stop_timeout)
+            except subprocess.TimeoutExpired:
+                # Only the process group created for this owned session.
+                os.killpg(self.child.pid, signal.SIGTERM)
+                try:
+                    self.child.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(self.child.pid, signal.SIGKILL)
+                    self.child.wait()
+
+    def run_once(self, mode):
+        self.transition_requested = False
+        env = session_environment()
+        read_fd = write_fd = None
+        if mode == 'gaming':
+            read_fd, write_fd = os.pipe()
+            os.set_blocking(read_fd, False)
+            env['SESSION_MODE_READY_FD'] = str(write_fd)
+            command = ['gaming-session']
+        else:
+            command = ['uwsm', 'start', '-e', '-D', 'Hyprland', 'hyprland.desktop']
+        try:
+            self.child = subprocess.Popen(command, env=env, process_group=0,
+                                          pass_fds=() if write_fd is None else (write_fd,))
+            if os.isatty(0):
+                # Keep the PAM/controlling-terminal session; only the owned
+                # process group changes while a compositor is in foreground.
+                signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+                os.tcsetpgrp(0, self.child.pid)
+            if write_fd is not None:
+                os.close(write_fd)
+                write_fd = None
+            deadline = time.monotonic() + self.startup_timeout
+            ready = mode == 'desktop'
+            while self.child.poll() is None:
+                if self.stopping:
+                    self.stop_child(mode)
+                    return 'desktop'
+                requested = take_request(self.directory, 'next.json')
+                if requested:
+                    self.transition_requested = True
+                    self.stop_child(mode)
+                    return requested
+                if not ready:
+                    if select.select([read_fd], [], [], 0)[0]:
+                        ready = bool(os.read(read_fd, 4096))
+                    if not ready and time.monotonic() >= deadline:
+                        print('Gaming startup timed out; returning to desktop.', file=sys.stderr, flush=True)
+                        self.stop_child(mode)
+                        return 'desktop'
+                time.sleep(0.2)
+            # A Steam Exit, compositor crash or startup failure always returns
+            # to Hyprland, rather than retrying gaming or revealing a prompt.
+            requested = take_request(self.directory, 'next.json')
+            self.transition_requested = requested is not None
+            return requested or 'desktop'
+        finally:
+            if os.isatty(0):
+                os.tcsetpgrp(0, os.getpgrp())
+            for fd in (read_fd, write_fd):
+                if fd is not None:
+                    os.close(fd)
+            self.child = None
+
+    def run(self):
+        with (self.directory / 'owner.lock').open('a') as guard:
+            fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            (self.directory / 'next.json').unlink(missing_ok=True)
+            # A first live handoff can autologin before the old UWSM envelope
+            # has finished stopping. Drain it before acquiring DRM again.
+            active = subprocess.run(['uwsm', 'check', 'is-active'], check=False)
+            if active.returncode == 0:
+                subprocess.run(['uwsm', 'stop'], check=False, timeout=30)
+            retry = 1
+            while not self.stopping:
+                started = time.monotonic()
+                current = self.mode
+                try:
+                    self.mode = self.run_once(current)
+                except (OSError, subprocess.SubprocessError) as error:
+                    print(f'{current} session failed: {error}', file=sys.stderr, flush=True)
+                    self.mode = 'desktop'
+                if current == 'desktop' and not self.transition_requested and time.monotonic() - started < 5 and not self.stopping:
+                    time.sleep(retry)
+                    retry = min(10, retry * 2)
+                else:
+                    retry = 1
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('run', 'desktop', 'gaming', 'status'))
+    parser.add_argument('--initial', choices=MODES, default='desktop')
+    args = parser.parse_args()
+    try:
+        directory = runtime_directory()
+        if args.action == 'run':
+            login_session()
+            supervisor = Supervisor(directory, args.initial)
+            for sig in (signal.SIGTERM, signal.SIGHUP):
+                signal.signal(sig, supervisor.stop_signal)
+            # Ctrl+C must not turn the graphical login into a Bash prompt.
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            supervisor.run()
+        elif args.action == 'status':
+            print(json.dumps(status(directory)))
+        else:
+            request_mode(directory, args.action)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

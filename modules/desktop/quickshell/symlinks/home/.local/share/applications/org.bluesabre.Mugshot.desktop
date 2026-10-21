@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=About Me
+Comment=Edit your account picture and display name
+Exec=/usr/local/bin/mugshot
+Icon=mugshot
+Terminal=false
+StartupNotify=true
+StartupWMClass=Mugshot
+Categories=Settings;DesktopSettings;

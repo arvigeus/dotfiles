@@ -1,17 +1,61 @@
+pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Layouts
+import Quickshell
 import "../ui"
+import "spaces"
 
-// Session controls belong on the left; their implementation remains deferred.
 DrawerPage {
-    DrawerColumn {
-        anchors.fill: parent
-
-        DrawerBrief {
-            text: [
-                qsTr("Provide direct access to Desktop and the spaces or modules that are available. Make the current destination clear, and let people return to Desktop without unexpectedly closing application windows. Spaces remains a static navigation button in the bar."),
-                qsTr("Place session actions here on the left: lock, suspend, log out, restart and shut down, showing only the actions the system supports. Keep these distinct from navigation and label their effects clearly. The existing immediate Ctrl+Alt+Delete logout shortcut remains independent."),
-                qsTr("Include temporary Stay awake and Keep screen on choices, with a clear indication of what is being held awake and how to return to normal behavior. Any temporary automatic-lock pause should be explicit and end with the session. Session controls and awake modes are still proposals, not working controls.")
-            ].join("\n\n")
+    id: root
+    property var service: SessionService
+    property var launch: argv => Quickshell.execDetached(argv)
+    headerActions: Component {
+        ProfileButton {
+            active: root.active
+            onEditRequested: { root.closeRequested(); root.launch(["/usr/local/bin/mugshot"]); }
         }
+    }
+    escapeHandler: sessionActions.popupOpen ? () => { sessionActions.closePopup(); return true; } : null
+    onActiveChanged: if (active) service.refresh()
+
+    ColumnLayout {
+        anchors.fill: parent; spacing: Theme.gap
+        DrawerColumn {
+            Layout.fillWidth: true; Layout.fillHeight: true
+            contentSpacing: 8
+            Repeater {
+                model: [
+                    {id: "apps", name: qsTr("Applications"), icon: "layout-grid"},
+                    {id: "files", name: qsTr("Files"), icon: "folder"},
+                    {id: "terminal", name: qsTr("Terminal"), icon: "terminal"},
+                    {id: "projects", name: qsTr("Projects"), icon: "folder-git-2"},
+                    {id: "movies", name: qsTr("Movies"), icon: "film"},
+                    {id: "series", name: qsTr("TV Series"), icon: "tv"},
+                    {id: "music", name: qsTr("Music"), icon: "music"},
+                    {id: "radio", name: qsTr("Radio"), icon: "boom-box"},
+                    {id: "pictures", name: qsTr("Pictures"), icon: "image"},
+                    {id: "games", name: qsTr("Games"), icon: "gamepad-2"},
+                    {id: "books", name: qsTr("Books"), icon: "book-open"}
+                ]
+                ShellButton {
+                    id: entry
+                    required property var modelData
+                    objectName: "space:" + modelData.id
+                    Layout.fillWidth: true; Layout.preferredHeight: 52
+                    idleColor: "transparent"
+                    enabled: root.active
+                    text: modelData.name; iconName: modelData.icon
+                    // Navigation is intentionally deferred; these are placeholders.
+                    Accessible.description: qsTr("Not available yet")
+                    contentItem: RowLayout {
+                        spacing: 14
+                        Icon { objectName: entry.objectName + "Icon"; name: entry.iconName; color: entry.highlighted ? Theme.accent : Theme.text }
+                        ShellText { Layout.fillWidth: true; text: entry.text; elide: Text.ElideRight }
+                    }
+                }
+            }
+        }
+        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.border }
+        SessionActions { id: sessionActions; Layout.fillWidth: true; active: root.active; service: root.service }
     }
 }

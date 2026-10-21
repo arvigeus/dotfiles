@@ -6,8 +6,8 @@ Repository provisioning rules are in [the root architecture](../../../ARCHITECTU
 
 ## Package ownership
 
-This module declares Quickshell, Qt Multimedia, AT-SPI, V4L2 control tooling, cliphist and
-wl-clipboard. Hardware modules own
+This module declares Quickshell, Qt Multimedia, AT-SPI, V4L2 control tooling, cliphist,
+wl-clipboard, and Mugshot/AccountsService for the local account editor. Hardware modules own
 audio, Bluetooth, networking, storage, display tools and battery reporting,
 including the external editors launched by drawers. `hardware/battery` declares
 UPower and its service for every host; `hardware/power` owns the Zephyrus-only
@@ -38,6 +38,81 @@ of `shell.qml` to trigger that reload: touching only its timestamp can be ignore
 by the file watcher.
 Verify component loading through the installed configuration as well as
 repository fixtures, which cannot detect missing installed files.
+
+## Spaces
+
+`SpacesDrawer.qml` lists the built-in spaces in Zephyrus drawer order, starting with Applications.
+Entries are inert placeholders, with bundled Lucide icons; they do not dismiss
+the drawer, switch workspaces or start modules.
+
+Spaces owns a `ProfileButton` in `headerActions`; the shared drawer places it
+immediately before Close. It reads account data on activation through the
+read-only `spaces/profile.py` helper. AccountsService's public D-Bus properties
+supply the real name and icon path, with passwd GECOS and `~/.face`, `~/.face.icon`
+and AccountsService's icon directory as fallbacks. Missing photos use bundled
+Lucide `user-round`; missing full names leave only `@username` in the tooltip.
+Photos use a circular mask and retain their colors. A modification-time URL
+suffix and disabled image caching refresh photos when reopening the drawer.
+No polling, account writes or private AccountsService metadata reads are used.
+Clicking dismisses the drawer and launches `/usr/local/bin/mugshot` detached so
+the editor outlives the page. This module's launcher disables Mugshot 0.4.3's
+legacy `SudoDialog.check_dependencies` probes. Closing those startup sudo
+prompts registers failed logins with pam_faillock. AccountsService remains the
+name/photo backend; legacy chfn phone fields and name editing without
+AccountsService are disabled. The package's `/usr/bin/mugshot` is unchanged;
+the managed launcher also takes precedence for ordinary PATH-based launches.
+The local `org.bluesabre.Mugshot.desktop` override routes application search
+through it too; the package entry hard-codes the unwrapped executable.
+`tests/test_user_profile.py` covers account fallbacks, photo
+refresh, header placement, avatar loading and editor dispatch with no account writes.
+
+`drawers/spaces/SessionActions.qml` keeps the session controls below the scrolling
+list. Navigation and session actions use ghost buttons with the shared hover/focus
+styling and transparent idle backgrounds. The footer centers compact 64 px pairs
+in equally spaced columns: a 42 px action, a 2 px gap and a 20 px chevron.
+Each pair shares its ghost background, including hover, focus and press states.
+The pair's hover handler includes the gap between the action and chevron.
+Passive tooltips prefer the space above these buttons. Accessible names
+remain available. The shutdown popup uses a 280 px surface and a two-column
+timer grid; rows use a single icon slot and wrapping labels without truncation.
+Immediate actions and delayed shutdowns use `HoldButton` with a 2000 ms hold;
+the page's `active` state disarms holds on dismissal. Its shutdown popup consumes
+Escape before the host, closes on dismissal and restores focus to its trigger.
+Sleep and gaming-mode popovers pause automatic sleep and locking independently.
+Paused icons become coffee and lock-open; clicking them restores the corresponding
+policy without suspending or switching sessions. Main actions use custom passive
+tooltips that describe either the hold action or immediate restoration;
+`HoldButton.toolTipEnabled` suppresses their duplicate default tooltip and timer
+entry tooltips. Restart's popover adds a held Reload action. Popovers are mutually exclusive.
+
+`SessionService.qml` is a lazy singleton with one on-demand Python process per
+session-command request and no command polling. Opening Spaces refreshes login1
+capability checks, the scheduled shutdown and `ComfortService` state. Session
+pauses delegate to the existing shell-lifetime comfort helper, with combined
+busy/error state. Unsupported actions are disabled. Commands
+finish independently of the transient page; busy state prevents duplicates and
+failures remain available when reopening. `backend.py` submits suspend/reboot/
+poweroff and shutdown schedules to systemd. The stable internal `logout` action
+requests `session-mode gaming`; `reload` requests `session-mode desktop`.
+Capability checks use the installed supervisor's status, including support for
+the first live handoff. Session ownership and fallback are documented in
+[Hyprland architecture](../hyprland/ARCHITECTURE.md#session-ownership). Delays
+are restricted to 15/30/60/90/120/180/240/300 minutes. Systemd owns schedules across
+drawer dismissal and shell reload; status and cancellation use `systemctl
+poweroff --when=show|cancel`.
+
+Run `python3 -B -m unittest discover -s tests -p 'test_spaces_drawer.py'` for
+backend validation, production pointer holds, inert entries, popup dismissal,
+narrow layouts and command lifetime. Tests substitute the session executor;
+they never execute host power or logout commands.
+
+The comfort helper owns a separate locked lease under
+`$XDG_RUNTIME_DIR/hypr/<instance>/desktop-session-pauses/`, with independent
+`sleep` and `locking` flags. Only live locks affect `desktop-idle allow-sleep`
+and `allow-lock`. Restoring a flag preserves the other; closing a drawer does
+not affect either. Shell reload/exit releases both, and crash leftovers are
+inert. No preference or enablement is written. Blanking, monitor Keep awake
+leases and explicit/before-sleep locking remain independent.
 
 ## System tray
 
@@ -387,7 +462,10 @@ audio tests and device rows retain their feature-specific layouts. Overriding
 Reserve hover and pressed styling for actionable controls. Informational icons
 and readings retain their tooltips without changing appearance on hover.
 `PassiveToolTip` accepts any Item, using a passive HoverHandler for informational
-labels/readings and the native hover/press state for buttons.
+labels/readings and the native hover/press state for buttons. Its `above` option
+uses native popup anchor edges/gravity and margins against the full target
+rectangle. The default prefers below; native screen-edge adjustment remains
+available in either direction, without positioning callbacks or manual popup-height offsets.
 `ShellSwitch` supplies the compact themed switch used in radio headers. Rebind
 `checked` after a user toggle so backend readback remains authoritative; external
 updates must never dispatch mutations.
@@ -959,8 +1037,9 @@ Selections survive drawer dismissal and reset on shell exit/reload.
 
 The Hyprland module's `desktop-idle` wrapper runs this same helper for Hypridle.
 Its blanking action uses the public per-monitor DPMS dispatcher, skipping protected
-outputs. Lock and suspend listeners use supported `condition_cmd` hooks with a
-ten-second retry while any protected monitor remains connected. They therefore
+outputs. Lock and suspend listeners use the `allow-lock` and `allow-sleep`
+`condition_cmd` hooks, checking independent session pauses as well as protected
+monitors, with a ten-second retry. They therefore
 resume normal idle behavior after the last checkmark is cleared. Native app
 inhibitors remain effective for every listener; no global inhibitor is created
 by Keep awake. Explicit locking, sleep and lid actions retain their normal paths.

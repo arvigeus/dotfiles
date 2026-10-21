@@ -4,6 +4,7 @@ import "."
 ShellButton {
     id: root
     property string hint: ""
+    property bool toolTipEnabled: true
     property int holdDuration: 1300
     property real progress: 0
     property bool fired: false
@@ -32,5 +33,5 @@ ShellButton {
         idleColor: root.idleColor; highlighted: root.highlighted; pressed: root.down
         Rectangle { anchors.left: parent.left; anchors.bottom: parent.bottom; width: parent.width * root.progress; height: 3; radius: 1; color: Theme.danger }
     }
-    PassiveToolTip { target: root; text: [root.hint, qsTr("Hold for %1 seconds to confirm. Release early to cancel.").arg((root.holdDuration / 1000).toLocaleString(Qt.locale(), "f", 1))].filter(Boolean).join("\n") }
+    PassiveToolTip { target: root; text: root.toolTipEnabled ? [root.hint, qsTr("Hold for %1 seconds to confirm. Release early to cancel.").arg((root.holdDuration / 1000).toLocaleString(Qt.locale(), "f", 1))].filter(Boolean).join("\n") : "" }
 }

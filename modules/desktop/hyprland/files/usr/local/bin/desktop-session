@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-exec uwsm start -e -D Hyprland hyprland.desktop "$@"

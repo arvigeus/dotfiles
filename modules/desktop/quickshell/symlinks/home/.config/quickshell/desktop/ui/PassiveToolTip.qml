@@ -8,6 +8,7 @@ PopupWindow {
     required property Item target
     property string text: target?.text || ""
     property int maximumLineCount: 6
+    property bool above: false
     property bool ready: false
     readonly property bool hovered: target instanceof T.AbstractButton ? target.hovered : targetHover.hovered
     readonly property bool requested: !!target && hovered && !(target instanceof T.AbstractButton && target.down)
@@ -38,8 +39,11 @@ PopupWindow {
     mask: Region {}
     visible: requested && ready
     anchor.item: target
-    anchor.rect.x: ((target?.width || 0) - width) / 2
-    anchor.rect.y: (target?.height || 0) + Theme.spacingSmall
+    anchor.edges: above ? Edges.Top : Edges.Bottom
+    anchor.gravity: above ? Edges.Top : Edges.Bottom
+    // Expand the exclusion rectangle so native placement leaves a small gap.
+    anchor.margins.top: -Theme.spacingSmall
+    anchor.margins.bottom: -Theme.spacingSmall
     // Native window dimensions are integers; never round fractional text down.
     implicitWidth: Math.ceil(Math.min(label.implicitWidth, 480)) + Theme.spacingMedium * 2
     implicitHeight: Math.ceil(label.implicitHeight) + Theme.spacingMedium * 2

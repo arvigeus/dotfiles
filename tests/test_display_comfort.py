@@ -133,6 +133,39 @@ class ComfortTests(unittest.TestCase):
         self.assertEqual(comfort.protected(self.rows), {'eDP-1'})
         self.assertEqual(set(self.controller.awake), {'eDP-1'})
 
+    def test_session_pauses_are_independent_and_leave_blanking_alone(self):
+        self.controller.action(dict(op='pause-sleep', enabled=True))
+        self.assertTrue(self.controller.snapshot()['sleepPaused'])
+        self.assertEqual(comfort.idle_action('allow-sleep'), 1)
+        self.assertEqual(comfort.idle_action('allow-lock'), 0)
+        with patch.object(comfort.backend, 'command') as command:
+            self.assertEqual(comfort.idle_action('blank'), 0)
+        self.assertEqual(command.call_count, 2)
+        self.controller.action(dict(op='pause-locking', enabled=True))
+        self.assertEqual(comfort.idle_action('allow-lock'), 1)
+        self.controller.action(dict(op='pause-sleep', enabled=False))
+        self.assertEqual(comfort.idle_action('allow-sleep'), 0)
+        self.assertEqual(comfort.idle_action('allow-lock'), 1)
+        self.controller.close()
+        self.assertEqual(comfort.idle_action('allow-lock'), 0)
+        self.assertEqual(list(comfort.session_directory('desktop-session-pauses').iterdir()), [])
+
+    def test_session_pauses_fail_closed_after_crash_and_validate_values(self):
+        for enabled in (1, 'yes', None):
+            with self.assertRaises(ValueError):
+                self.controller.action(dict(op='pause-locking', enabled=enabled))
+        self.controller.action(dict(op='pause-locking', enabled=True))
+        self.controller.action(dict(op='pause-sleep', enabled=True))
+        self.assertTrue(comfort.paused('locking'))
+        os.close(self.controller.pause_lease.fd)
+        self.controller.pause_lease.fd = None
+        self.assertFalse(comfort.paused('locking'))
+        self.assertFalse(comfort.paused('sleep'))
+        fresh = comfort.Controller()
+        self.addCleanup(fresh.close)
+        self.assertFalse(fresh.snapshot()['sleepPaused'])
+        self.assertFalse(fresh.snapshot()['lockingPaused'])
+
     def test_worker_eof_releases_monitor_lease(self):
         root = Path(self.directory.name)
         script = root / 'worker.py'
@@ -145,10 +178,15 @@ c.systemctl=lambda *args:'inactive'
 c.main()
 ''')
         request = dict(op='awake', name=self.rows[0]['name'], identity=self.rows[0]['identity'], enabled=True)
-        result = subprocess.run([sys.executable, '-u', str(script)], input=json.dumps(request)+'\n', text=True, capture_output=True, timeout=5)
+        requests = [request, dict(op='pause-sleep', enabled=True), dict(op='pause-locking', enabled=True)]
+        result = subprocess.run([sys.executable, '-u', str(script)], input=''.join(json.dumps(value)+'\n' for value in requests), text=True, capture_output=True, timeout=5)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(json.loads(result.stdout.splitlines()[-1])['state']['awake'])
+        self.assertTrue(json.loads(result.stdout.splitlines()[-1])['state']['sleepPaused'])
+        self.assertTrue(json.loads(result.stdout.splitlines()[-1])['state']['lockingPaused'])
         self.assertEqual(comfort.protected(self.rows), set())
+        self.assertFalse(comfort.paused('sleep'))
+        self.assertFalse(comfort.paused('locking'))
         self.assertEqual(list(comfort.session_directory().iterdir()), [])
 
 

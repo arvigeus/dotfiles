@@ -1,5 +1,5 @@
 [Desktop Entry]
 Name=Steam Gaming Mode
 Comment=Steam Gamepad UI in a dedicated Gamescope session
-Exec=/usr/local/bin/gaming-session
+Exec=/usr/local/bin/session-mode run --initial gaming
 Type=Application

@@ -4,6 +4,54 @@ Desktop portals use GTK for file dialogs and Hyprland for screenshots and screen
 sharing. User-facing troubleshooting commands and session shortcuts are in
 [README.md](README.md).
 
+## Session ownership
+
+The TTY1 autologin profile replaces Bash with `session-mode run`; it has no
+interactive terminal fallback. The supervisor stays outside the graphical user
+services and owns exactly one foreground compositor process group in the same
+PAM/controlling-terminal session. Hyprland runs through `uwsm start -e -D
+Hyprland hyprland.desktop`. A desktop exit restarts Hyprland; an explicit
+`session-mode gaming` request instead starts the existing DRM `gaming-session`
+launcher. `session-mode desktop` closes the current session and starts a fresh
+Hyprland session, including when already on desktop (the Reload action).
+
+Provisioning creates a private, user-owned `/run/desktop-session-<username>`
+through `/etc/tmpfiles.d/desktop-session.conf`. An advisory owner lock proves
+supervisor liveness. Atomic `next.json` requests are consumed once; expired or
+malformed requests are discarded. Requests and the directory never survive a
+reboot, and the ordinary initial mode is always desktop. No home preference,
+display-manager default or permanent gaming selection is modified.
+
+For an already running legacy Bash/UWSM session, the first request validates its
+logind UID, TTY1 and local status, then writes a one-shot `handoff.json` and
+terminates that login. Getty immediately autologins into the new profile. The
+supervisor consumes the request and drains the previous UWSM envelope before
+starting its replacement. The dedicated `/run` directory survives this PAM
+handoff even if logind recreates the user's runtime directory. Installation
+does not terminate the active desktop. `desktop-session` is removed by cleanup;
+the manual launcher is no longer part of the startup path.
+
+The supervisor stops desktop through UWSM and gaming through `steam -shutdown`.
+An owned child process group is terminated after a bounded graceful-stop wait.
+Gaming uses Gamescope's inherited `--ready-fd`; failure to become ready within
+45 seconds returns to desktop. Any gaming child exit, including Steam Exit or a
+startup failure, returns to desktop. Repeated short desktop failures retry with
+a capped backoff rather than revealing a prompt. SIGTERM/SIGHUP end supervision
+without restarting a compositor during system shutdown; Ctrl+C is ignored.
+
+Steam's `-steamos3` exposes the `steamos-session-select` hook, installed in
+`/usr/bin` and routed to `session-mode desktop`. See the
+[gaming launcher architecture](../../gaming/gamescope-session/ARCHITECTURE.md).
+
+`tests/test_session_modes.py` runs the production supervisor and Steam hook with
+isolated compositor, Steam and logind executables. It covers both transitions,
+Reload, Steam exit, gaming failure/timeout, first live handoff, rejected/stale
+requests and the next-login desktop default. `test_boot_and_session.py` checks
+autologin provisioning and that the profile uses exec only on a local TTY1 login.
+These tests do not replace a real DRM/Steam round trip on the installed hardware.
+
+## Desktop integration
+
 `workspaces.lua` owns navigation policy for shortcuts, gestures and the bar.
 Shortcuts use the active monitor; bar buttons pass their output's numeric monitor
 ID, resolved against `hl.get_monitors()`. `hl.get_monitor()` uses a monitor
@@ -64,9 +112,11 @@ Display drawer toggle, so provisioning does not enable it globally. The native
 `hyprsunset.conf` asset defines the filter and optional profiles.
 
 Hypridle calls `desktop-idle blank` to turn off only unprotected monitors. Lock
-and suspend listeners use `desktop-idle allow-session-idle` as their condition,
+and suspend listeners use `desktop-idle allow-lock` and `allow-sleep` as their conditions,
 retrying every ten seconds. The wrapper invokes the Quickshell display helper,
-which owns the session-local Keep awake leases. See
+which owns the session-local Keep awake leases and independent temporary sleep/
+locking pauses. Pauses end when the shell exits or reloads; dead lease locks are
+ignored. See
 [the display architecture](../quickshell/ARCHITECTURE.md#night-light-and-keep-awake)
 for liveness and hardware matching. Existing application inhibitors are respected.
 Manual lock and before-sleep commands remain unconditional.

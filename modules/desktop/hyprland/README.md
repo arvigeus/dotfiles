@@ -9,6 +9,16 @@ hyprctl reload config-only
 
 Run `hyprctl configerrors` if a change does not work as expected.
 
+## Desktop and gaming mode
+
+The desktop starts automatically on TTY1. Hold Spaces' **Go to gaming mode**
+button for two seconds to enter Steam's dedicated gaming session. Steam's
+**Go to Desktop** or **Exit Steam** returns to the desktop. Ctrl+Alt+Delete also
+switches to gaming mode. Rebooting always starts Hyprland.
+
+**Restart → Reload** starts a fresh desktop session, closing running applications.
+Gaming exits, startup failures and a compositor startup timeout return to Hyprland.
+
 ## Locking
 
 **Win+L** locks the desktop.
