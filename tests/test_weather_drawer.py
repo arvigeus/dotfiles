@@ -441,6 +441,7 @@ ShellRoot {
   if(stage===0&&status.snapshot.call===1){
    check(status.snapshot.requestedRefresh,"background did not request automatic refresh");
    check(status.iconName==="weather-rain"&&status.description.includes("Rain")&&status.description.includes("18°C"),"icon and tooltip disagree");
+   check(status.temperature==="18°","background temperature missing");
    status.refresh();stage++;
   }else if(stage===1&&status.snapshot.call===2){
    check(status.lastFailure>0&&status.iconName==="weather-rain","failure lost icon or retry backoff");
@@ -449,6 +450,13 @@ ShellRoot {
    check(!status.snapshot.requestedRefresh,"failure retried before backoff");
    status.snapshot={location:{name:"East"},weather:{current:{code:0,isDay:false,temperature:8}},updated:"04:00"};
    check(status.iconName==="moon"&&status.description.includes("8°C"),"updated conditions did not update icon and tooltip");
+   check(status.temperature==="8°","updated temperature missing");
+   status.snapshot={weather:{current:{temperature:0}}};
+   check(status.temperature==="0°","zero temperature lost");
+   for(const value of [null,undefined,NaN,Infinity,"18"]){
+    status.snapshot={weather:{current:{temperature:value}}};
+    check(status.temperature==="","invalid temperature shown");
+   }
    console.log("DISPLAY_PASS");Qt.quit();
   }
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}

@@ -36,6 +36,26 @@ by the file watcher.
 Verify component loading through the installed configuration as well as
 repository fixtures, which cannot detect missing installed files.
 
+## Bar badges
+
+`ui/StatusBadge.qml` supplies the compact bubble used for input language,
+battery charge, current weather temperature and unseen notifications. Its
+`reserveText` measures a fixed slot using the label's font; empty text hides only
+the bubble, preserving the slot and surrounding spacing. The visible bubble fits
+its current text, with a circular minimum shape. Values use tabular digits
+and elide within that slot. `BarEntry.badgeReserveText` opts a status into this
+reservation even when empty; `StatusButton` centers the bubble on the icon's
+lower-right corner and reserves its full footprint inside the button, before
+optional labels such as the clock. Icons keep the same vertical center as
+unbadged icons; 14 px bubbles with 10 px text fit beneath that center without
+raising the icons. Notification counts cap at `99+`;
+their highlighted state uses the theme's accent fill and contrasting foreground.
+A trailing badge's reserved overhang replaces the button's normal right padding;
+optional text labels retain their usual end padding. The language slot uses the
+widest supported code, `BG`.
+Weather temperature follows the passive weather snapshot and stays empty when
+no finite reading is available. No additional weather request is needed.
+
 ## Scrolling
 
 `ui/WheelScroll.qml` supplies immediate 120-logical-pixel mouse-wheel steps,

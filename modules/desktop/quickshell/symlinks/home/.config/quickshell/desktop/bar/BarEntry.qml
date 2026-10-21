@@ -11,6 +11,7 @@ QtObject {
     property string label: ""
     property string secondaryIconName: ""
     property string badge: ""
+    property string badgeReserveText: ""
     property string description: ""
     property bool attention: false
     property bool available: true

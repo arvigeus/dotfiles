@@ -133,7 +133,7 @@ ShellRoot {
    capture("english",()=>choose("vi"));
   }else if(stage===1){
    check(mock.language==="vi"&&mock.secondary==="vi","VI selection");
-   check(find(status,"keyboardButton").entry.label==="VI","bar did not update");
+   check(find(status,"keyboardButton").entry.badge==="VI","bar did not update");
    check(field.activeFocus,"test input did not gain fresh focus");
    for (const key of [Qt.Key_T,Qt.Key_Y,Qt.Key_P,Qt.Key_I,Qt.Key_N,Qt.Key_G]) input.keyClick(key);check(field.text==="typing","test typing");
    capture("vietnamese",()=>choose("en"));
@@ -142,7 +142,7 @@ ShellRoot {
    check(find(drawer,"language-en").current&&!find(drawer,"language-secondary-en").visible,"English presentation");
    check(field.text==="typing","language switch discarded text");
    mock.language="bg";mock.secondary="bg";
-   check(find(status,"keyboardButton").entry.label==="BG","external change missing from bar");
+   check(find(status,"keyboardButton").entry.badge==="BG","external change missing from bar");
    check(find(drawer,"language-bg").current,"external change missing from drawer");
    find(drawer,"keyboardHelp").clicked();
   }else if(stage===3){

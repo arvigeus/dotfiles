@@ -8,6 +8,10 @@ QtObject {
     property var snapshot: ({})
     property double lastFailure: 0
     property bool pending: false
+    readonly property string temperature: {
+        const value = snapshot.weather?.current?.temperature;
+        return typeof value === "number" && isFinite(value) ? Conditions.temperature(value) : "";
+    }
     readonly property string iconName: snapshot.weather?.current
         ? Conditions.icon(snapshot.weather.current.code, snapshot.weather.current.isDay) : "cloud"
     readonly property string description: {

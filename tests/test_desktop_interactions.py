@@ -166,6 +166,37 @@ ShellRoot {
     property real progressBefore: 0
     property int ticksBefore: 0
     property real buttonWidthBefore: 0
+    property var badgeGeometry: []
+    readonly property var badgeKeys: ["keyboard", "battery", "weather", "notifications"]
+    function badgePositions() {
+        return badgeKeys.map(key => {
+            const button = find(bar.contentItem, key + "Button");
+            const badge = find(button, key + "Badge");
+            const icon = find(button, key + "Icon");
+            const position = badge.mapToItem(button, 0, 0);
+            const iconPosition = icon.mapToItem(button, 0, 0);
+            const referenceIcon = find(bar.contentItem, "soundIcon");
+            check(Math.abs(icon.mapToItem(bar.contentItem, 0, icon.height / 2).y
+                - referenceIcon.mapToItem(bar.contentItem, 0, referenceIcon.height / 2).y) < 1,
+                "badged icon is not aligned with the other icons: " + key);
+            check(position.y > iconPosition.y && position.y < iconPosition.y + icon.height,
+                "badge does not overlap the bottom of its icon: " + key);
+            check(Math.abs(position.x + badge.width / 2 - iconPosition.x - icon.width) < 1,
+                "badge is not centered on the icon's right edge: " + key);
+            check(Math.abs(position.y + badge.height / 2 - iconPosition.y - icon.height) < 1,
+                "badge is not centered on the icon's bottom edge: " + key);
+            check(position.x >= 0 && position.x + badge.width <= button.width
+                && position.y + badge.height <= button.height, "badge exceeds its button: " + key);
+            if (button.entry.label === "" && button.entry.secondaryIconName === "")
+                check(Math.abs(position.x + badge.width - button.width) < 1,
+                    "trailing badge has extra right padding: " + key);
+            return [button.mapToItem(bar.contentItem, 0, 0).x, button.width, badge.width];
+        });
+    }
+    function checkBadgePositions() {
+        check(JSON.stringify(badgePositions()) === JSON.stringify(badgeGeometry),
+            "badge updates shifted the bar: " + JSON.stringify(badgePositions()) + " vs " + JSON.stringify(badgeGeometry));
+    }
     property var previewKeys: ["tray", "clipboard", "capture",
         "wifi", "bluetooth", "sound", "microphone", "keyboard", "displays", "disks", "battery", "performance", "system", "weather", "events", "notifications"]
     function snapshot(name, window) {
@@ -434,12 +465,14 @@ ShellRoot {
                 const wifi = find(bar.contentItem, "wifiButton");
                 const bell = find(bar.contentItem, "notificationsButton");
                 check(bell.entry.badge === "2" && bell.entry.attention && bell.entry.description.includes("2 unseen"), "bell missed unseen count");
+                NotificationCenter.state = {items:Array.from({length:100}, (_, index) => ({id:"unseen-" + index,seen:false})),paused:false};
+                check(bell.entry.badge === "99+" && bell.entry.description.includes("100 unseen"), "notification badge overflowed or lost its exact tooltip count");
                 NotificationCenter.state = {items:[],paused:true};
                 check(bell.entry.badge === "" && !bell.entry.attention && bell.entry.description.includes("Do Not Disturb"), "bell retained stale unread state");
                 NotificationCenter.state = {items:[],paused:false};
                 check(wifi.width > buttonWidthBefore, "status label did not resize button");
-                check(wifi.contentItem.children.some(child => child.name === "bluetooth")
-                    && wifi.contentItem.children.some(child => child.text === "5"), "status did not update in place");
+                check(find(wifi, "wifiIcon").name === "bluetooth"
+                    && find(wifi, "wifiBadge").text === "5", "status did not update in place");
                 input.mouseClick(wifi, wifi.width / 2, 17); sole("notifications");
                 wifi.entry.label = ""; wifi.entry.iconName = "wifi"; wifi.entry.badge = "";
                 wifi.entry.attention = false; wifi.entry.available = true;
@@ -447,10 +480,14 @@ ShellRoot {
                 open("performance");
             } else if (stage === 20 + previewKeys.length + 2) {
                 snapshot("bar-dark");
+                for (const key of badgeKeys) find(bar.contentItem, key + "Button").entry.badge = "";
                 const directory = Quickshell.env("DRAWER_PREVIEW_DIR");
                 if (directory) find(drawers.contentItem, "drawerCard").grabToImage(result => result.saveToFile(directory + "/drawer.png"));
                 narrowBar = narrowComponent.createObject(root);
             } else if (stage === 20 + previewKeys.length + 3) {
+                badgeGeometry = badgePositions();
+                for (const [index, value] of ["BG", "100%", "−19°", "99+"].entries())
+                    find(bar.contentItem, badgeKeys[index] + "Button").entry.badge = value;
                 const viewport = find(narrowBar.contentItem, "statusViewport");
                 check(viewport.interactive && viewport.contentWidth > viewport.width, "narrow islands lost overflow: " + viewport.width + " / " + viewport.contentWidth + " / " + narrowBar.width + " / " + narrowBar.implicitWidth);
                 check(viewport.parent.x > find(narrowBar.contentItem, "spacesButton").width, "narrow islands overlap Spaces");
@@ -463,8 +500,21 @@ ShellRoot {
                 snapshot("bar-narrow", narrowBar);
                 Theme.setMode("light");
             } else if (stage === 20 + previewKeys.length + 4) {
+                checkBadgePositions();
+                snapshot("bar-badges-light");
                 drawers.dismiss();
             } else if (stage === 20 + previewKeys.length + 5) {
+                for (const [index, value] of ["VI", "9%", "8°", "1"].entries())
+                    find(bar.contentItem, badgeKeys[index] + "Button").entry.badge = value;
+                Theme.setMode("dark");
+            } else if (stage === 20 + previewKeys.length + 6) {
+                checkBadgePositions();
+                snapshot("bar-badges-dark");
+            } else if (stage === 20 + previewKeys.length + 7) {
+                for (const key of badgeKeys) find(bar.contentItem, key + "Button").entry.badge = "";
+            } else if (stage === 20 + previewKeys.length + 8) {
+                checkBadgePositions();
+                Theme.setMode("light");
                 check(drawers.currentPage === null && !drawers.visible, "preview teardown");
                 narrowBar.destroy();
                 console.log("INTERACTIONS_PASS"); Qt.quit(); return;

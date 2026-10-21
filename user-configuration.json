@@ -2527,6 +2527,10 @@
                 "target": "home/.config/quickshell/desktop/ui/ShellText.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/StatusBadge.qml",
+                "target": "home/.config/quickshell/desktop/ui/StatusBadge.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/Surface.qml",
                 "target": "home/.config/quickshell/desktop/ui/Surface.qml"
             },

@@ -99,14 +99,14 @@ Item {
                     BarEntry { key: "bluetooth"; title: qsTr("Bluetooth"); iconName: bluetoothStatus.iconName; iconColor: bluetoothStatus.iconColor; description: bluetoothStatus.description },
                     BarEntry { key: "sound"; title: qsTr("Sound"); iconName: audioStatus.iconName; iconColor: audioStatus.iconColor; description: audioStatus.description },
                     BarEntry { key: "microphone"; title: qsTr("Microphone"); iconName: microphoneStatus.iconName; iconColor: microphoneStatus.iconColor; description: microphoneStatus.description },
-                    BarEntry { key: "keyboard"; title: qsTr("Keyboard"); iconName: "keyboard"; label: root.inputLanguage.label; description: root.inputLanguage.description },
+                    BarEntry { key: "keyboard"; title: qsTr("Keyboard"); iconName: "keyboard"; badge: root.inputLanguage.label; badgeReserveText: "BG"; description: root.inputLanguage.description },
                     BarEntry {
                         key: "displays"; title: qsTr("Displays"); iconName: "monitor"
                         iconColor: root.displayComfort.awakeFor(root.outputName) ? Theme.accent : Theme.text
                         description: root.displayComfort.awakeFor(root.outputName) ? qsTr("Displays · Keep awake") : qsTr("Displays")
                     },
                     BarEntry { key: "disks"; title: qsTr("Disks"); iconName: "hard-drive" },
-                    BarEntry { key: "battery"; title: qsTr("Battery"); iconName: batteryStatus.iconName; label: batteryStatus.label; iconColor: batteryStatus.iconColor; description: batteryStatus.description },
+                    BarEntry { key: "battery"; title: qsTr("Battery"); iconName: batteryStatus.iconName; badge: batteryStatus.label; badgeReserveText: "100%"; iconColor: batteryStatus.iconColor; description: batteryStatus.description },
                     BarEntry {
                         key: "performance"; title: qsTr("Performance"); iconName: PowerFormat.profileIcon(root.powerProfile)
                         description: qsTr("Performance · %1").arg(PowerFormat.profile(root.powerProfile))
@@ -121,6 +121,7 @@ Item {
                 entries: [
                     BarEntry {
                         key: "weather"; title: qsTr("Time and weather"); iconName: weatherStatus.iconName
+                        badge: weatherStatus.temperature; badgeReserveText: "−99°"
                         label: Qt.formatTime(root.localDate, "HH:mm")
                         description: Qt.formatDateTime(root.localDate, "dddd, d MMMM yyyy · HH:mm t") + "\n" + weatherStatus.description
                     },
@@ -131,7 +132,8 @@ Item {
                     },
                     BarEntry {
                         key: "notifications"; title: qsTr("Notifications"); iconName: "bell"
-                        badge: root.notificationCenter.unseenCount ? String(root.notificationCenter.unseenCount) : ""
+                        badge: root.notificationCenter.unseenCount > 99 ? "99+" : root.notificationCenter.unseenCount ? String(root.notificationCenter.unseenCount) : ""
+                        badgeReserveText: "99+"
                         attention: root.notificationCenter.unseenCount > 0
                         iconColor: attention ? Theme.accent : root.notificationCenter.state.paused ? Theme.muted : Theme.text
                         description: (root.notificationCenter.unseenCount === 1 ? qsTr("1 unseen notification") : qsTr("%1 unseen notifications").arg(root.notificationCenter.unseenCount))

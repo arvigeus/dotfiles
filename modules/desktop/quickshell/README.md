@@ -129,7 +129,7 @@ Blueman for advanced Bluetooth settings.
 
 Choose a saved place for its local time, current weather, hourly rain chances and
 five-day forecast. Selection leaves the system island unchanged. Temperatures
-are in °C. The island icon and tooltip refresh weather every 30 minutes, even
+are in °C. The bar's temperature badge, icon and tooltip refresh every 30 minutes, even
 with the drawer closed. The drawer shares that cache and refreshes a selected
 place when its data is older than 30 minutes. The refresh button updates it
 immediately. Each place in the picker shows its local time. Cached forecasts
