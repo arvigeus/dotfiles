@@ -28,7 +28,6 @@ Workspace navigation stays on the current display without wrapping. A populated
 workspace can create a new neighbor; empty workspaces disappear when left.
 Three-finger swipes follow their natural direction: up goes to the workspace
 below and down to the one above; horizontal swipes scroll columns.
-Notification indicators are currently samples.
 
 ## Clipboard
 
@@ -229,3 +228,40 @@ journalctl --user -b -u desktop-shell.service -n 50
 ```
 
 See [implementation notes](ARCHITECTURE.md) for development and troubleshooting.
+
+## Events, tasks and notifications
+
+Events and tasks has a month calendar, an upcoming agenda, and searchable task
+lists with start/due times, priorities, progress, tags and subtasks. Repeating
+tasks support daily, weekday, weekly, monthly and yearly presets, plus custom
+rules. Completing an occurrence advances the next one; completed tasks can be
+reopened. Cached content opens immediately and syncs quietly in the background.
+Actions appear immediately; failed writes restore the item and preserve save
+drafts. Saved calendar data remains available offline. Writes require a connection.
+Recurring events and individual task exceptions are read-only in the drawer.
+
+Notifications use themed popups with app icons, images, progress and inline app
+actions. Hovering pauses the popup timer. The Notifications drawer keeps recent
+history and Do Not Disturb; quiet notifications go straight to history. The bell
+counts unseen notifications; opening the drawer acknowledges them.
+
+Nextcloud uses one shared account in
+`~/.config/quickshell/desktop/integrations/nextcloud.json` for all consumers.
+Start from the [account example](symlinks/home/.config/quickshell/desktop/integrations/nextcloud.example.json).
+Put its referenced DAV app password in
+`integrations/credentials/nextcloud/dav-app-password`, with directory permissions
+`0700` and file permissions `0600`. Generate an app password in Nextcloud's
+Personal settings → Security.
+
+To copy an existing account and its credential files, preserving the originals:
+
+```sh
+python3 ~/.config/quickshell/desktop/integrations/import_account.py \
+  /path/to/nextcloud.json --calendar /path/to/calendar-settings.json
+```
+
+Optional `~/.config/quickshell/desktop/calendar.json` selects calendars and task
+lists by name or slug; see the [selection example](symlinks/home/.config/quickshell/desktop/drawers/events/calendar.example.json).
+Omitted selections include all collections; an empty array includes none.
+See [integration architecture](symlinks/home/.config/quickshell/desktop/integrations/ARCHITECTURE.md)
+and [calendar implementation](symlinks/home/.config/quickshell/desktop/drawers/events/ARCHITECTURE.md).

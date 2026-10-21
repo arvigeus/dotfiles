@@ -14,7 +14,8 @@ Breaking changes require manual migration; compatibility layers are not maintain
 Modules are discovered under `modules/`. A directory containing configuration,
 assets, or hooks is a module; discovery stops there. Configuration fragments use
 `config.json`, `config.jsonc`, `config.sh`, `NAME.config.json`, or
-`NAME.config.jsonc`. Other JSON files are assets, not configuration fragments.
+`NAME.config.jsonc`. JSONC accepts comments and trailing commas. Other JSON files
+are assets, not configuration fragments.
 
 Objects merge recursively. Supported native lists and lists under `extra` are
 combined; duplicate entries are removed except for `custom_commands`. Conflicting

@@ -6,6 +6,7 @@ import "../drawers/displays"
 import "../drawers/keyboard"
 import "../drawers/weather"
 import "../drawers/capture"
+import "../drawers/notifications"
 import "../drawers/power/Format.js" as PowerFormat
 
 Item {
@@ -14,6 +15,7 @@ Item {
     property string outputName: ""
     property var displayComfort: ComfortService
     property var inputLanguage: InputLanguage
+    property var notificationCenter: NotificationCenter
     property date localDate: new Date()
     readonly property string powerProfile: PowerProfiles.profile === PowerProfile.PowerSaver ? "power-saver"
         : PowerProfiles.profile === PowerProfile.Performance ? "performance" : "balanced"
@@ -123,10 +125,17 @@ Item {
                         description: Qt.formatDateTime(root.localDate, "dddd, d MMMM yyyy · HH:mm t") + "\n" + weatherStatus.description
                     },
                     BarEntry {
-                        key: "notifications"; title: qsTr("Events and notifications"); iconName: "calendar-days"
+                        key: "events"; title: qsTr("Events and tasks"); iconName: "calendar-days"
                         label: Qt.formatDate(root.localDate, "ddd d")
-                        secondaryIconName: "bell"; badge: "2"; attention: true
-                        description: qsTr("Events and notifications preview")
+                        description: qsTr("Calendar, agenda and tasks")
+                    },
+                    BarEntry {
+                        key: "notifications"; title: qsTr("Notifications"); iconName: "bell"
+                        badge: root.notificationCenter.unseenCount ? String(root.notificationCenter.unseenCount) : ""
+                        attention: root.notificationCenter.unseenCount > 0
+                        iconColor: attention ? Theme.accent : root.notificationCenter.state.paused ? Theme.muted : Theme.text
+                        description: (root.notificationCenter.unseenCount === 1 ? qsTr("1 unseen notification") : qsTr("%1 unseen notifications").arg(root.notificationCenter.unseenCount))
+                            + (root.notificationCenter.state.paused ? " · " + qsTr("Do Not Disturb") : "")
                     }
                 ]
                 onDrawerRequested: key => root.drawerRequested(key)

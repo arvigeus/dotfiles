@@ -18,7 +18,7 @@ class DesktopInteractionTests(unittest.TestCase):
     def test_replacement_dismissal_keyboard_and_preferences(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in ('ui', 'icons', 'drawers', 'launcher', 'bar'):
+            for name in ('ui', 'icons', 'drawers', 'launcher', 'bar', 'integrations'):
                 shutil.copytree(DESKTOP / name, root / name)
             # Only native surface and shortcut registration need substitutes.
             # The owner, geometry, input, controls, persistence and launcher run
@@ -137,6 +137,7 @@ import "ui"
 import "drawers"
 import "launcher"
 import "bar"
+import "drawers/notifications"
 ShellRoot {
     id: root
     InteractionState { id: state }
@@ -166,7 +167,7 @@ ShellRoot {
     property int ticksBefore: 0
     property real buttonWidthBefore: 0
     property var previewKeys: ["tray", "clipboard", "capture",
-        "wifi", "bluetooth", "sound", "microphone", "keyboard", "displays", "disks", "battery", "performance", "system", "weather", "notifications"]
+        "wifi", "bluetooth", "sound", "microphone", "keyboard", "displays", "disks", "battery", "performance", "system", "weather", "events", "notifications"]
     function snapshot(name, window) {
         window = window || bar;
         const directory = Quickshell.env("DRAWER_PREVIEW_DIR");
@@ -406,6 +407,8 @@ ShellRoot {
                         check(!find(drawers.contentItem, "performanceHardware:asus"), "competing hardware profile editor remains");
                         check(!find(drawers.contentItem, "cpuBoost"), "independent boost control remains");
                     }
+                    else if (previewKeys[stage - 21] === "events")
+                        check(find(drawers.contentItem, "eventsDrawer") && find(drawers.contentItem, "taskSearch"), "calendar/tasks controls missing");
                     else
                         check(find(drawers.contentItem, "drawerBrief").text.length > 0, "preview draft missing");
                 }
@@ -415,9 +418,10 @@ ShellRoot {
                 input.mouseClick(button, button.width / 2, 17); sole(key);
             } else if (stage === 20 + previewKeys.length + 0) {
                 check(drawers.currentPage !== null, "last preview page did not load");
-                check(find(drawers.contentItem, "drawerBrief").text.length > 0, "last preview draft missing");
+                check(find(drawers.contentItem, "notificationsDrawer") && !find(drawers.contentItem, "drawerBrief"), "notification controls missing");
                 check(["trayIsland", "toolsIsland", "systemIsland", "notificationsIsland"]
                     .every(name => find(bar.contentItem, name)), "missing islands");
+                NotificationCenter.state = {items:[{id:"badge-a",seen:false},{id:"badge-b",seen:false}],paused:false};
                 snapshot("bar-light");
                 const wifi = find(bar.contentItem, "wifiButton");
                 buttonWidthBefore = wifi.width;
@@ -428,6 +432,11 @@ ShellRoot {
                 wifi.entry.available = false;
             } else if (stage === 20 + previewKeys.length + 1) {
                 const wifi = find(bar.contentItem, "wifiButton");
+                const bell = find(bar.contentItem, "notificationsButton");
+                check(bell.entry.badge === "2" && bell.entry.attention && bell.entry.description.includes("2 unseen"), "bell missed unseen count");
+                NotificationCenter.state = {items:[],paused:true};
+                check(bell.entry.badge === "" && !bell.entry.attention && bell.entry.description.includes("Do Not Disturb"), "bell retained stale unread state");
+                NotificationCenter.state = {items:[],paused:false};
                 check(wifi.width > buttonWidthBefore, "status label did not resize button");
                 check(wifi.contentItem.children.some(child => child.name === "bluetooth")
                     && wifi.contentItem.children.some(child => child.text === "5"), "status did not update in place");

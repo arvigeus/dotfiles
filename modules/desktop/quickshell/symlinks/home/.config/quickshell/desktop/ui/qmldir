@@ -26,3 +26,4 @@ DrawerActionButton 1.0 DrawerActionButton.qml
 ShellSwitch 1.0 ShellSwitch.qml
 InfoPopover 1.0 InfoPopover.qml
 InfoRow 1.0 InfoRow.qml
+ShellChoice 1.0 ShellChoice.qml

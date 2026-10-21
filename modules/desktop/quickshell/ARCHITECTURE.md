@@ -280,6 +280,8 @@ new ordinary actions rather than recreating their padding and content layouts.
 and label together with a 22 px icon and 12 px gap, matching the audio/speed-test
 actions. Cleanup, one-time charging and performance recording use this variant;
 the recording toggle fills the footer row.
+`ShellChoice` shares themed selection controls between drawers, including the
+existing `NetworkChoice` wrapper.
 `HoldButton` adds gesture/progress handling; specialized icon buttons, multi-line
 audio tests and device rows retain their feature-specific layouts. Overriding
 `contentItem` makes that component responsible for its own size and alignment.
@@ -1502,8 +1504,8 @@ Stopping an entry removes it immediately; there is no background worker or
 persisted state.
 
 Delivery uses `notify-send` with literal arguments and escaped body markup.
-The notifications module declares `libnotify` and Dunst, whose notification service activates
-over D-Bus. Desktop notification policies, including do-not-disturb, apply.
+The notifications module declares `libnotify`; the shell owns the notification
+service and can activate over D-Bus. Desktop notification policies, including do-not-disturb, apply.
 The alarm icon is from Lucide under the existing icon license.
 
 ```sh
@@ -1517,3 +1519,14 @@ label centering in full and narrow layouts,
 and drawer destruction. The desktop interaction test also opens both editors in
 the production drawer host and checks their width and Escape handling. Tests
 replace delivery or the `notify-send` executable, so no real notifications fire.
+
+## Events, tasks and notification history
+
+Events/tasks and notifications have separate catalogue/bar entries. CalendarService
+warms cached data from the shell root and synchronizes quietly; its writes and
+optimistic state survive drawer dismissal. Calendar provider accounts are shared
+outside feature folders. NotificationCenter owns native notification delivery,
+popups, history and quiet state for the shell lifetime. See [shared accounts](symlinks/home/.config/quickshell/desktop/integrations/ARCHITECTURE.md)
+and [calendar lifetimes and protocol](symlinks/home/.config/quickshell/desktop/drawers/events/ARCHITECTURE.md).
+Native delivery and migration are documented in
+[notification architecture](symlinks/home/.config/quickshell/desktop/drawers/notifications/ARCHITECTURE.md).

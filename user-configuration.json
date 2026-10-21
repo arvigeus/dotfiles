@@ -59,6 +59,7 @@
         "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/dev/editors/vscode '#!/usr/bin/env bash\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\n# Extension declarations contribute settings to the user'\"'\"'s Code - OSS profile.\njq '\"'\"'\n    .extra.vscode\n    | reduce .extensions[] as $settings (.settings; . * $settings)\n'\"'\"' /run/system-configuration.json |\n    file_write \"$HOME/.config/Code - OSS/User/settings.json\"\n'",
         "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/system/boot '#!/usr/bin/env bash\nset -Eeuo pipefail\n# Archinstall generates the device-specific command line and UKI presets.\n# Preserve its initramfs hooks and disk-unlock parameters.\njq -e '\"'\"'.bootloader_config | .bootloader == \"Efistub\" and .uki == true'\"'\"' \\\n    /run/system-configuration.json >/dev/null || {\n    echo '\"'\"'Boot configuration requires EFI stub boot with UKIs.'\"'\"' >&2; exit 1;\n}\npython3 - /etc/kernel/cmdline /etc/mkinitcpio.d <<'\"'\"'PY_BOOT'\"'\"'\nfrom pathlib import Path\nimport os\nimport re\nimport sys\nimport tempfile\n\ncmdline, presets = map(Path, sys.argv[1:])\nactive_presets = list(presets.glob('\"'\"'*.preset'\"'\"'))\nif not active_presets or not any(re.search(r'\"'\"'^\\w+_uki='\"'\"', p.read_text(), re.M) for p in active_presets):\n    sys.exit('\"'\"'No UKI preset found; configure UKIs before applying boot settings.'\"'\"')\nparameters = cmdline.read_text().split()\nif not any(p.startswith('\"'\"'root='\"'\"') for p in parameters):\n    sys.exit('\"'\"'Kernel command line has no root device.'\"'\"')\n# Archinstall enables mkinitcpio'\"'\"'s stock Arch splash. Leave firmware graphics\n# visible instead; preserve custom splash paths and other preset options.\nfor preset in active_presets:\n    original = preset.read_text()\n    updated = re.sub(\n        r'\"'\"'(?m)^(\\w+_options=)([\"\\'\"'\"'])--splash /usr/share/systemd/bootctl/splash-arch\\.bmp\\2$'\"'\"',\n        r'\"'\"'\\1\\2\\2'\"'\"', original)\n    if updated != original:\n        preset.write_text(updated)\nquiet = {\n    '\"'\"'quiet'\"'\"': '\"'\"'quiet'\"'\"',\n    '\"'\"'loglevel'\"'\"': '\"'\"'loglevel=3'\"'\"',\n    '\"'\"'systemd.show_status'\"'\"': '\"'\"'systemd.show_status=auto'\"'\"',\n    '\"'\"'rd.systemd.show_status'\"'\"': '\"'\"'rd.systemd.show_status=auto'\"'\"',\n    '\"'\"'udev.log_level'\"'\"': '\"'\"'udev.log_level=3'\"'\"',\n    '\"'\"'rd.udev.log_level'\"'\"': '\"'\"'rd.udev.log_level=3'\"'\"',\n    '\"'\"'vt.global_cursor_default'\"'\"': '\"'\"'vt.global_cursor_default=0'\"'\"',\n}\nresult = []\nfor parameter in parameters:\n    if parameter.split('\"'\"'='\"'\"', 1)[0] not in quiet:\n        result.append(parameter)\nresult.extend(quiet.values())\n# Do not replace the active command line until all checks have passed.\nwith tempfile.NamedTemporaryFile(mode='\"'\"'w'\"'\"', dir=cmdline.parent, delete=False) as temporary:\n    target = Path(temporary.name)\n    try:\n        temporary.write('\"'\"' '\"'\"'.join(result) + '\"'\"'\\n'\"'\"')\n        temporary.close()\n        os.chmod(target, 0o644)\n        target.replace(cmdline)\n    finally:\n        target.unlink(missing_ok=True)\nPY_BOOT\n# Rebuild the UKIs with the updated console settings and existing hooks.\nmkinitcpio -P\n'",
         "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/desktop/hyprland '#!/usr/bin/env bash\nset -Eeuo pipefail\n\n# Archinstall'\"'\"'s Hyprland profile installs Wofi; Quickshell owns app search here.\n# Remove Wofi and unused dependencies, retaining shared dependencies and checks.\nif pacman -Q wofi >/dev/null 2>&1; then\n    pacman -Rns --noconfirm wofi\nfi\n'",
+        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/desktop/notifications '#!/usr/bin/env bash\nset -Eeuo pipefail\n\n# Archinstall installs Dunst; the desktop shell owns org.freedesktop.Notifications.\nif pacman -Q dunst >/dev/null 2>&1; then\n    pacman -Rns --noconfirm dunst\nfi\n'",
         "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --finish"
     ],
     "disk_config": {
@@ -619,7 +620,6 @@
                 "bradlc.vscode-tailwindcss": {},
                 "davidanson.vscode-markdownlint": {},
                 "unifiedjs.vscode-mdx": {},
-                "denoland.vscode-deno": {},
                 "graphql.vscode-graphql-syntax": {},
                 "graphql.vscode-graphql": {},
                 "mads-hartmann.bash-ide-vscode": {
@@ -1479,6 +1479,10 @@
                 "target": "home/.config/hypr/workspaces.lua"
             },
             {
+                "source": "modules/desktop/notifications/symlinks/home/.local/share/dbus-1/services/org.freedesktop.Notifications.service",
+                "target": "home/.local/share/dbus-1/services/org.freedesktop.Notifications.service"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/AudioStatus.qml",
                 "target": "home/.config/quickshell/desktop/bar/AudioStatus.qml"
             },
@@ -1561,6 +1565,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/Drawers.qml",
                 "target": "home/.config/quickshell/desktop/drawers/Drawers.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/EventsDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/EventsDrawer.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/KeyboardDrawer.qml",
@@ -1779,6 +1787,34 @@
                 "target": "home/.config/quickshell/desktop/drawers/displays/qmldir"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/events/ARCHITECTURE.md",
+                "target": "home/.config/quickshell/desktop/drawers/events/ARCHITECTURE.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/events/CalendarService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/events/CalendarService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/events/ItemEditor.qml",
+                "target": "home/.config/quickshell/desktop/drawers/events/ItemEditor.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/events/backend.py",
+                "target": "home/.config/quickshell/desktop/drawers/events/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/events/caldav.py",
+                "target": "home/.config/quickshell/desktop/drawers/events/caldav.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/events/calendar.example.json",
+                "target": "home/.config/quickshell/desktop/drawers/events/calendar.example.json"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/events/qmldir",
+                "target": "home/.config/quickshell/desktop/drawers/events/qmldir"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/keyboard/BacklightCard.qml",
                 "target": "home/.config/quickshell/desktop/drawers/keyboard/BacklightCard.qml"
             },
@@ -1865,6 +1901,30 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/qmldir",
                 "target": "home/.config/quickshell/desktop/drawers/network/qmldir"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/notifications/ARCHITECTURE.md",
+                "target": "home/.config/quickshell/desktop/drawers/notifications/ARCHITECTURE.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/notifications/NotificationCard.qml",
+                "target": "home/.config/quickshell/desktop/drawers/notifications/NotificationCard.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/notifications/NotificationCenter.qml",
+                "target": "home/.config/quickshell/desktop/drawers/notifications/NotificationCenter.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/notifications/NotificationPopups.qml",
+                "target": "home/.config/quickshell/desktop/drawers/notifications/NotificationPopups.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/notifications/backend.py",
+                "target": "home/.config/quickshell/desktop/drawers/notifications/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/notifications/qmldir",
+                "target": "home/.config/quickshell/desktop/drawers/notifications/qmldir"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/power/ChargeGauge.qml",
@@ -2247,6 +2307,10 @@
                 "target": "home/.config/quickshell/desktop/icons/trash.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/triangle-alert.svg",
+                "target": "home/.config/quickshell/desktop/icons/triangle-alert.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/video.svg",
                 "target": "home/.config/quickshell/desktop/icons/video.svg"
             },
@@ -2313,6 +2377,22 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/zap.svg",
                 "target": "home/.config/quickshell/desktop/icons/zap.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/integrations/ARCHITECTURE.md",
+                "target": "home/.config/quickshell/desktop/integrations/ARCHITECTURE.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/integrations/import_account.py",
+                "target": "home/.config/quickshell/desktop/integrations/import_account.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/integrations/nextcloud.example.json",
+                "target": "home/.config/quickshell/desktop/integrations/nextcloud.example.json"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/integrations/nextcloud.py",
+                "target": "home/.config/quickshell/desktop/integrations/nextcloud.py"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/launcher/Favorites.qml",
@@ -2433,6 +2513,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ShellButton.qml",
                 "target": "home/.config/quickshell/desktop/ui/ShellButton.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ShellChoice.qml",
+                "target": "home/.config/quickshell/desktop/ui/ShellChoice.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ShellSwitch.qml",
@@ -2578,9 +2662,9 @@
         "playerctl",
         "wl-clipboard",
         "libnotify",
-        "dunst",
         "quickshell",
         "qt6-multimedia",
+        "python-dateutil",
         "gpu-screen-recorder",
         "slurp",
         "v4l-utils",

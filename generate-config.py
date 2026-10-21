@@ -33,7 +33,10 @@ def strip_comments(content):
         if token.startswith('"'):
             return token
         return ''.join('\n' if char == '\n' else ' ' for char in token)
-    return tokens.sub(replace, content)
+    clean = tokens.sub(replace, content)
+    # JSONC fragments may use trailing commas; quoted values remain untouched.
+    return re.sub(r'"(?:\\.|[^"\\])*"|,(?=\s*[}\]])',
+                  lambda match: match[0] if match[0].startswith('"') else '', clean)
 
 
 LIST_SETTINGS = {

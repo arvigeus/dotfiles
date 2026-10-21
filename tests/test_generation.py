@@ -61,6 +61,10 @@ class GenerationTests(unittest.TestCase):
             self.assertIn('/etc/systemd/system/power-source.service', power_files)
             for config, device in ((zephyrus, '/dev/nvme0n1'), (vm, '/dev/vda')):
                 files = {entry['target']: entry for entry in config['extra']['files']}
+                self.assertIn('libnotify', config['packages'])
+                self.assertNotIn('dunst', config['packages'])
+                self.assertTrue(any('pacman -Rns --noconfirm dunst' in command for command in config['custom_commands']))
+                self.assertIn('home/.local/share/dbus-1/services/org.freedesktop.Notifications.service', {entry['target'] for entry in config['extra']['symlinks']})
                 self.assertIn('archlinux-contrib', config['packages'])
                 self.assertIn('pacman-contrib', config['packages'])
                 self.assertEqual(files['/usr/local/libexec/pacman-report-orphans']['mode'], '0755')
@@ -106,7 +110,7 @@ class GenerationTests(unittest.TestCase):
                 (path / 'config.json').write_text(json.dumps({'hostname': host}))
                 (path / 'check.sh').write_text(f'[[ $DOTFILES_HOST == {host} ]]\n')
             (repo / 'modules/hosts/zephyrus/storage.config.jsonc').write_text(
-                '// Host-specific disk\n{"disk_config": {"config_type": "default_layout"}}')
+                '// Host-specific disk\n{"disk_config": {"config_type": "default_layout",},}')
             shared = repo / 'modules/hardware/storage'
             shared.mkdir(parents=True)
             (shared / 'packages.config.json').write_text('{"packages": ["udisks2"]}')

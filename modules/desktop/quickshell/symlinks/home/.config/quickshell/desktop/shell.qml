@@ -10,6 +10,8 @@ import "drawers/clipboard"
 import "drawers/displays"
 import "drawers/power"
 import "drawers/capture"
+import "drawers/events"
+import "drawers/notifications"
 
 ShellRoot {
     id: root
@@ -27,7 +29,13 @@ ShellRoot {
     // preferences/countdowns; camera controls
     // belong to the drawer and preview streams stop as soon as it is dismissed.
     // Bluetooth discovery and pending pairing also stop on dismissal.
+    // CalendarService warms private snapshots quietly and keeps pending writes alive.
     Drawers { id: drawers; interactionState: interactions }
+    NotificationPopups {}
+    Binding {
+        target: NotificationCenter; property: "drawerOpen"
+        value: drawers.opened && drawers.currentDrawer?.key === "notifications"
+    }
 
     // WORKAROUND: Hyprland lacks geometry/order events; bindings.lua supplies them.
     // If the list order goes stale, check its layoutAction/release hooks and this
@@ -35,7 +43,7 @@ ShellRoot {
     // External reorder scripts: hyprctl dispatch 'hl.dsp.event("desktop-layout-changed")'
     // Capture continues while the drawer is closed; visible image rows load on demand.
     // Plain entry and debounced search use shared controls across drawers.
-    Component.onCompleted: { layoutRefresh.restart(); ComfortService.start(); DisplayService.start(); PowerSession.start(); ClipboardService.start(); CaptureService.start(); }
+    Component.onCompleted: { layoutRefresh.restart(); ComfortService.start(); DisplayService.start(); PowerSession.start(); ClipboardService.start(); CaptureService.start(); CalendarService.start(); NotificationCenter.start(); }
 
     GlobalShortcut {
         appid: "desktop"; name: "record-region"

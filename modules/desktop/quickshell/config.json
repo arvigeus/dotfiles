@@ -2,6 +2,7 @@
     "packages": [
         "quickshell",
         "qt6-multimedia",
+        "python-dateutil",
         "gpu-screen-recorder",
         "slurp",
         "v4l-utils",

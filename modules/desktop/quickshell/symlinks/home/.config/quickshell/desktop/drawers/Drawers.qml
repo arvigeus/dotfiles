@@ -84,8 +84,13 @@ DrawerHost {
             source: Qt.resolvedUrl("WeatherDrawer.qml")
         },
         DrawerDefinition {
+            key: "events"
+            title: qsTr("Events and tasks")
+            source: Qt.resolvedUrl("EventsDrawer.qml")
+        },
+        DrawerDefinition {
             key: "notifications"
-            title: qsTr("Events and notifications")
+            title: qsTr("Notifications")
             source: Qt.resolvedUrl("NotificationsDrawer.qml")
         }
     ]
