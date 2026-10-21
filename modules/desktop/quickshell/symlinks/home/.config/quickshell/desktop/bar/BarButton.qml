@@ -17,15 +17,19 @@ Button {
 
     contentItem: ShellText {
         text: button.text
-        color: button.urgent ? Theme.danger : Theme.text
+        color: button.urgent ? Theme.warning : Theme.text
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
     }
 
     background: ButtonBackground {
-        highlighted: button.selected
+        highlighted: button.selected || button.urgent
         pressed: button.down
         idleColor: button.hovered ? Theme.raised : "transparent"
+        color: button.urgent && !button.down
+            ? Qt.tint(Theme.surface, Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.16))
+            : button.down ? Theme.raised : button.selected ? Theme.accentSurface : idleColor
+        border.color: button.urgent ? Theme.warning : button.selected ? Theme.accent : "transparent"
     }
 }

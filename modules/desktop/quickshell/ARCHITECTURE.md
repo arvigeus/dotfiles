@@ -38,6 +38,14 @@ repository fixtures, which cannot detect missing installed files.
 
 ## Bar badges
 
+Window attention binds directly to `HyprlandToplevel.urgent`. `BarButton` gives
+urgent windows an amber border and fill, and `WindowList` adds a dot and tooltip.
+`WorkspaceList` derives directional indicators from urgent toplevels on the same
+monitor's higher/lower workspace IDs. It uses individual window urgency because
+`HyprlandWorkspace.urgent` clears when the workspace is focused. Hyprland owns
+clearing urgency when a window receives focus; the shell keeps no attention
+state, polling timer or focus-stealing policy.
+
 `ui/StatusBadge.qml` supplies the compact bubble used for input language,
 battery charge, current weather temperature and unseen notifications. Its
 `reserveText` measures a fixed slot using the label's font; empty text hides only

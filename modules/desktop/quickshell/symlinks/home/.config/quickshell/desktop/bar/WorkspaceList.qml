@@ -14,6 +14,12 @@ Surface {
         .sort((a, b) => a.id - b.id)
     readonly property int currentIndex: workspaces.indexOf(current)
     readonly property bool occupied: !!current && current.toplevels.values.length > 0
+    // Use the windows' live urgency: workspace urgency clears on workspace focus,
+    // even when a different window on that workspace still needs attention.
+    readonly property bool urgentAbove: !!current && workspaces.some(workspace =>
+        workspace.id < current.id && workspace.toplevels.values.some(window => window.urgent))
+    readonly property bool urgentBelow: !!current && workspaces.some(workspace =>
+        workspace.id > current.id && workspace.toplevels.values.some(window => window.urgent))
     readonly property bool canGoUp: Hyprland.usingLua && currentIndex >= 0
         && (currentIndex > 0 || (occupied && current.id > 1))
     readonly property bool canGoDown: Hyprland.usingLua && currentIndex >= 0
@@ -39,15 +45,19 @@ Surface {
         width: root.width
         height: root.height / 2
         padding: 0
-        text: qsTr("Workspace above (Ctrl+Win+Up)")
+        text: urgent ? qsTr("Window above needs attention (Ctrl+Win+Up)")
+            : qsTr("Workspace above (Ctrl+Win+Up)")
+        urgent: root.urgentAbove
         enabled: root.canGoUp
         onClicked: root.step(-1)
+        PassiveToolTip { target: up }
         contentItem: Item {
             Icon {
                 anchors.centerIn: parent
                 width: 16
                 height: 16
                 name: "chevron-up"
+                color: up.urgent ? Theme.warning : Theme.text
                 opacity: up.enabled ? 1 : 0.35
             }
         }
@@ -59,15 +69,19 @@ Surface {
         width: root.width
         height: root.height / 2
         padding: 0
-        text: qsTr("Workspace below (Ctrl+Win+Down)")
+        text: urgent ? qsTr("Window below needs attention (Ctrl+Win+Down)")
+            : qsTr("Workspace below (Ctrl+Win+Down)")
+        urgent: root.urgentBelow
         enabled: root.canGoDown
         onClicked: root.step(1)
+        PassiveToolTip { target: down }
         contentItem: Item {
             Icon {
                 anchors.centerIn: parent
                 width: 16
                 height: 16
                 name: "chevron-down"
+                color: down.urgent ? Theme.warning : Theme.text
                 opacity: down.enabled ? 1 : 0.35
             }
         }

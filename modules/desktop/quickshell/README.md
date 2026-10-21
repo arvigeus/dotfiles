@@ -29,6 +29,10 @@ workspace can create a new neighbor; empty workspaces disappear when left.
 Three-finger swipes follow their natural direction: up goes to the workspace
 below and down to the one above; horizontal swipes scroll columns.
 
+Windows requesting attention show an amber tab and dot. An amber workspace arrow
+means a window above or below needs attention. Apps must send an urgency request;
+an unread browser tab alone may not trigger it.
+
 ## Clipboard
 
 Search recent text and image copies, preview longer entries, restore or remove

@@ -99,7 +99,10 @@ Surface {
             urgent: modelData?.urgent ?? false
             enabled: Hyprland.usingLua && !!modelData && modelData.address.length > 0
             onClicked: root.activate(modelData)
-            PassiveToolTip { target: button }
+            PassiveToolTip {
+                target: button
+                text: button.urgent ? qsTr("%1 — needs attention").arg(button.text) : button.text
+            }
 
             contentItem: RowLayout {
                 spacing: Theme.spacingMedium
@@ -108,9 +111,16 @@ Surface {
                     Layout.preferredWidth: Theme.iconSize
                     Layout.preferredHeight: Theme.iconSize
                 }
+                Rectangle {
+                    visible: button.urgent
+                    Layout.preferredWidth: 6
+                    Layout.preferredHeight: 6
+                    radius: 3
+                    color: Theme.warning
+                }
                 ShellText {
                     text: button.text
-                    color: button.urgent ? Theme.danger : Theme.text
+                    color: button.urgent ? Theme.warning : Theme.text
                     elide: Text.ElideRight
                     Layout.fillWidth: true
                 }
