@@ -1,7 +1,10 @@
+//@ pragma UseQApplication
+//@ pragma IconTheme Adwaita
 pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Services.SystemTray
 import "ui"
 import "bar"
 import "launcher"
@@ -16,6 +19,8 @@ import "drawers/notifications"
 ShellRoot {
     id: root
     readonly property QtObject theme: Theme
+    // Register the tray host for the session, including while its drawer is closed.
+    readonly property var systemTray: SystemTray
 
     InteractionState { id: interactions }
     Launcher { id: launcher; interactionState: interactions }

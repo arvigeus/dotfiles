@@ -18,11 +18,12 @@ class HistoryTests(unittest.TestCase):
     def test_private_atomic_history_preserves_text_and_strips_dead_actions(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, XDG_STATE_HOME=directory):
             self.assertEqual(backend.load(), dict(items=[], paused=False))
-            state = dict(items=[dict(id='one',app='Mail',summary='New mail',body='Literal $(command) & text',timestamp=10,
+            state = dict(items=[dict(id='one',app='Mail',desktopEntry='org.example.Mail',summary='New mail',body='Literal $(command) & text',timestamp=10,
                                     appIcon='https://example.test/icon',image='image://temporary',actions=[dict(identifier='open',text='Open')],seen=False)],paused=True)
             backend.save(state)
             saved = backend.load()
             self.assertEqual(saved['items'][0]['body'], state['items'][0]['body'])
+            self.assertEqual(saved['items'][0]['desktopEntry'], 'org.example.Mail')
             self.assertTrue(saved['paused'])
             self.assertFalse(saved['items'][0]['seen'])
             self.assertEqual(saved['items'][0]['actions'], [])
@@ -276,9 +277,10 @@ ShellRoot {
  function check(v,m){if(!v)throw Error(m);}
  Timer {interval:100;running:true;repeat:true;onTriggered:{try{
   ticks++;
-  if(stage===0&&center.initialized){send(["--expire-time=1200","--wait","--action=open=Open","First","<b>Hello</b> &amp; friends"]);stage++;}
+  if(stage===0&&center.initialized){send(["--expire-time=1200","--wait","--hint=string:desktop-entry:org.example.Fixture","--action=open=Open","First","<b>Hello</b> &amp; friends"]);stage++;}
   else if(stage===1&&center.state.items.length===1&&notificationId){
    key=center.state.items[0].id;check(center.state.items[0].body==="Hello & friends","body formatting");
+   check(center.state.items[0].desktopEntry==="org.example.Fixture","notification sender desktop ID was dropped");
    check(center.state.items[0].actions.length===1&&center.popups.count===1,"action or popup missing");
    center.hoverPopup(key,true);ticks=0;stage++;
   }else if(stage===2&&ticks>15){

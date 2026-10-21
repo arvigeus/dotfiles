@@ -33,6 +33,17 @@ Windows requesting attention show an amber tab and dot. An amber workspace arrow
 means a window above or below needs attention. Apps must send an urgency request;
 an unread browser tab alone may not trigger it.
 
+## System tray
+
+The tray drawer lists background apps and their status, including idle apps.
+Its badge counts tray apps; the button highlights when an app requests attention
+or has an unseen desktop notification. Opening an app from the tray acknowledges
+its notifications. Unread messages can only be detected when the app reports
+attention or sends a desktop notification.
+Right-click an app or use its menu button for application-owned controls;
+middle-click and scrolling retain the app's tray actions. Legacy X11/XEmbed-only
+tray icons are not supported.
+
 ## Clipboard
 
 Search recent text and image copies, preview longer entries, restore or remove

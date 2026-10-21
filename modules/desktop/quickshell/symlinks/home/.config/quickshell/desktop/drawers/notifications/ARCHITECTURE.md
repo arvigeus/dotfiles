@@ -37,8 +37,12 @@ Do Not Disturb sends new notifications directly to history without replaying the
 when quiet mode ends. Popups are also suppressed while the Notifications drawer
 is open; general computer activity is never a suppression signal.
 
-Each saved record has a persisted `seen` flag. New and replacement notifications
-arriving outside the drawer start unseen. The bar bell uses `unseenCount` for its
+Each saved record has a persisted `seen` flag and retains the optional
+`desktop-entry` hint as `desktopEntry` for tray sender
+matching; older history falls back to the app name. Tray primary activation
+acknowledges only that sender's records through the ordinary `markSeen` path.
+New and replacement notifications arriving outside the drawer start unseen.
+The bar bell uses `unseenCount` for its
 highlight, count and tooltip. Opening the drawer acknowledges all saved items;
 notifications received while it stays open are already seen. Invoking an action
 or explicitly hiding a popup acknowledges that item. A timeout or quiet delivery

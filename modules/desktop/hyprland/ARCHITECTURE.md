@@ -31,7 +31,7 @@ nonzero while trying to stop an absent hyprpicker even when capture succeeds.
 The default editor launches as `ksnip --edit` with the literal image path;
 Ksnip never needs to capture through its generic Wayland/portal fallback.
 `DESKTOP_SCREENSHOT_EDITOR=satty` selects the alternative editor.
-The Ksnip preferences disable tray behavior because the shell has no tray host.
+The Ksnip preferences disable its tray icon and minimize/close-to-tray behavior.
 User geometry and annotator preferences stay outside the managed defaults.
 
 The helper reads `$XDG_CONFIG_HOME/quickshell/desktop/screenshot-editor` (`on` or

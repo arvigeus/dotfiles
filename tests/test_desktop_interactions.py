@@ -167,7 +167,7 @@ ShellRoot {
     property int ticksBefore: 0
     property real buttonWidthBefore: 0
     property var badgeGeometry: []
-    readonly property var badgeKeys: ["keyboard", "battery", "weather", "notifications"]
+    readonly property var badgeKeys: ["keyboard", "battery", "weather", "notifications", "tray"]
     function badgePositions() {
         return badgeKeys.map(key => {
             const button = find(bar.contentItem, key + "Button");
@@ -352,7 +352,9 @@ ShellRoot {
                         check(Math.abs(title.mapToItem(drawers.contentItem, 0, title.height / 2).y
                             - actions.mapToItem(drawers.contentItem, 0, actions.height / 2).y) < 1, "title block is not vertically centered");
                     }
-                    if (previewKeys[stage - 21] === "wifi")
+                    if (previewKeys[stage - 21] === "tray")
+                        check(find(drawers.contentItem, "trayScroll") && !find(drawers.contentItem, "drawerBrief"), "tray controls missing");
+                    else if (previewKeys[stage - 21] === "wifi")
                         check(find(drawers.contentItem, "networkScroll") && find(drawers.contentItem, "wifiToggle")
                             && find(drawers.contentItem, "wifiScan") && !find(drawers.currentPage, "wifiScan"), "Wi-Fi controls missing");
                     else if (previewKeys[stage - 21] === "bluetooth")
@@ -486,7 +488,7 @@ ShellRoot {
                 narrowBar = narrowComponent.createObject(root);
             } else if (stage === 20 + previewKeys.length + 3) {
                 badgeGeometry = badgePositions();
-                for (const [index, value] of ["BG", "100%", "−19°", "99+"].entries())
+                for (const [index, value] of ["BG", "100%", "−19°", "99+", "99+"].entries())
                     find(bar.contentItem, badgeKeys[index] + "Button").entry.badge = value;
                 const viewport = find(narrowBar.contentItem, "statusViewport");
                 check(viewport.interactive && viewport.contentWidth > viewport.width, "narrow islands lost overflow: " + viewport.width + " / " + viewport.contentWidth + " / " + narrowBar.width + " / " + narrowBar.implicitWidth);
@@ -504,7 +506,7 @@ ShellRoot {
                 snapshot("bar-badges-light");
                 drawers.dismiss();
             } else if (stage === 20 + previewKeys.length + 5) {
-                for (const [index, value] of ["VI", "9%", "8°", "1"].entries())
+                for (const [index, value] of ["VI", "9%", "8°", "1", "3"].entries())
                     find(bar.contentItem, badgeKeys[index] + "Button").entry.badge = value;
                 Theme.setMode("dark");
             } else if (stage === 20 + previewKeys.length + 6) {

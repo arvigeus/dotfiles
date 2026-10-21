@@ -15,6 +15,9 @@ power policy.
 Notifications belong to `desktop/notifications`, Dolphin and its administrator
 integration to `files/dolphin`, GTK to `look-and-feel/gtk`, terminal launching to
 `base/terminal`, and Python GObject bindings to `dev/languages/python`.
+The hardware modules also own suppression of their packages' login applets:
+[networking](../../hardware/network/ARCHITECTURE.md) and
+[Bluetooth](../../hardware/bluetooth/ARCHITECTURE.md).
 
 ## Lifetimes
 
@@ -36,6 +39,74 @@ by the file watcher.
 Verify component loading through the installed configuration as well as
 repository fixtures, which cannot detect missing installed files.
 
+## System tray
+
+The shell root references `Quickshell.Services.SystemTray.SystemTray` for the
+whole session so the native StatusNotifierItem watcher/host remains registered
+while the drawer is closed. `TrayDrawer.qml` binds directly to `items.values`;
+it includes passive items, follows live icon/title/status changes, and retains
+no application state or polling worker. Quickshell supplies icon URLs, including
+pixmaps and overlays; a missing icon keeps a generic outline and the app's name.
+The API exposes no watcher-availability property, so an empty inventory does not
+claim a service failure. XEmbed hosting is outside this native service.
+
+`drawers/tray/TrayService.qml` derives the bar count and attention without loading
+the drawer or starting a helper. The count includes all registered entries,
+including passive ones; the badge hides at zero, caps at `99+` and reserves that
+width. Both the bar and drawer rows use native `Status.NeedsAttention` or unseen
+notification history belonging to that app. Attention status buttons use the
+shared accent fill/border, icon and badge styling.
+
+Notification matching uses case-insensitive exact tray IDs/titles and notification
+app names/desktop-entry IDs, stripping `.desktop` and considering reverse-DNS
+IDs' final component. It makes no substring, process, title-change or icon-pixel
+guesses. Opening the tray itself acknowledges nothing. Primary app activation
+marks that app's matching notifications seen through NotificationCenter;
+notification acknowledgement/removal also clears the fallback. Native attention
+remains until the app changes its status. This fallback means unseen desktop
+notifications, not app read receipts: reading a chat elsewhere cannot clear it
+without an app signal, and silent/muted unread messages cannot be inferred.
+ZapZap's installed tray manager updates icon artwork and Qt's native badge;
+its desktop notifications supply the fallback when it does not set SNI urgency.
+
+`shell.qml` starts in `UseQApplication` mode for native platform menus and selects
+the declared Adwaita icon theme with `IconTheme`. This resolves GTK symbolic
+menu icons such as Blueman's rather than letting the default theme produce
+missing-texture squares. These startup pragmas require a shell restart when
+changed. Rows share one full-width `ButtonBackground` for hover, keyboard focus
+and either pressed action; primary activation and menu controls remain separate
+input targets with transparent backgrounds.
+Opening the tray retains the host's default close-button focus rather than
+preselecting the first app. Tab or keyboard navigation can focus the list.
+
+Primary activation dismisses the drawer before invoking the app. Menu-only
+items instead open their menu. Right-click, the menu button and Menu/Shift+F10
+use one `QsMenuAnchor`; middle-click forwards secondary activation and wheel
+events forward both signed angle-delta axes to SNI Scroll. The native menu owns
+submenus, separators, disabled entries, checks and radio state. Its Escape state
+is also exposed to the drawer host. Dismissal, item removal or loss of its menu
+closes the menu and clears its anchor; ordinary menu closure restores focus to
+its invoking control. The page guards all actions against inactive or removed
+items. The list supports Up/Down and Enter/Space, and individual controls remain
+in the Tab order.
+
+`tests/test_tray_drawer.py` exercises production pointer/keyboard input, hot
+removal, inactive guards, status changes and narrow layouts. Its native test
+runs a test-only SNI/DBusMenu publisher on a private `dbus-run-session`, covering
+closed-drawer registration, menu structure, action/scroll transport and app exit.
+It never activates real tray apps. Run it with
+`python3 -B -m unittest discover -s tests -p 'test_tray_drawer.py'`.
+Native previews use `DISPLAY_PREVIEW_PLATFORM=wayland`; set
+`DISPLAY_PREVIEW_DIR` to an existing output directory for captures.
+The native icon check covers Blueman's symbolic menu icons. DBusMenu interaction
+tests use the offscreen QPA because QTest events carry no Wayland seat serial
+for native grabbing menus. Row hover/focus and image rendering also run on Wayland.
+The shared desktop interaction test covers opening the tray from its bar button.
+
+Interface references: [SystemTrayItem](https://quickshell.org/docs/v0.3.2/types/Quickshell.Services.SystemTray/SystemTrayItem/),
+[QsMenuAnchor](https://quickshell.org/docs/v0.3.2/types/Quickshell/QsMenuAnchor/) and
+[StatusNotifierItem](https://specifications.freedesktop.org/status-notifier-item/latest/status-notifier-item.html).
+
 ## Bar badges
 
 Window attention binds directly to `HyprlandToplevel.urgent`. `BarButton` gives
@@ -47,7 +118,7 @@ clearing urgency when a window receives focus; the shell keeps no attention
 state, polling timer or focus-stealing policy.
 
 `ui/StatusBadge.qml` supplies the compact bubble used for input language,
-battery charge, current weather temperature and unseen notifications. Its
+battery charge, current weather temperature, tray app count and unseen notifications. Its
 `reserveText` measures a fixed slot using the label's font; empty text hides only
 the bubble, preserving the slot and surrounding spacing. The visible bubble fits
 its current text, with a circular minimum shape. Values use tabular digits

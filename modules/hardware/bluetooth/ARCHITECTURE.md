@@ -1,0 +1,12 @@
+# Bluetooth
+
+This module installs Blueman for its advanced settings manager.
+`scripts/50_bluetooth.sh` globally masks the generated
+`app-blueman@autostart.service` login unit in `/etc/systemd/user`.
+BlueZ and the Blueman manager remain available.
+
+The mask applies to all users of UWSM/systemd-managed XDG autostart sessions and
+survives package updates without modifying package-owned desktop entries. Desktop
+environments that launch XDG entries without systemd do not consult this mask.
+Applying it to a running session also requires reloading its user manager and
+stopping an already-running applet unit.

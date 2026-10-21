@@ -27,7 +27,7 @@ def normalize(state):
             continue
         seen.add(item['id'])
         row = {key: str(item.get(key, ''))[:limit] for key, limit in
-               [('id', 150), ('app', 250), ('summary', 2000), ('body', 16384), ('appIcon', 2000)]}
+               [('id', 150), ('app', 250), ('desktopEntry', 250), ('summary', 2000), ('body', 16384), ('appIcon', 2000)]}
         row['appIcon'] = row['appIcon'] if '://' not in row['appIcon'] or row['appIcon'].startswith('file:///') else ''
         for key, default in [('timestamp', time.time()), ('urgency', 1), ('progress', -1), ('processId', 0), ('liveId', 0)]:
             value = item.get(key, default)

@@ -7,6 +7,7 @@ import "../drawers/keyboard"
 import "../drawers/weather"
 import "../drawers/capture"
 import "../drawers/notifications"
+import "../drawers/tray"
 import "../drawers/power/Format.js" as PowerFormat
 
 Item {
@@ -16,6 +17,7 @@ Item {
     property var displayComfort: ComfortService
     property var inputLanguage: InputLanguage
     property var notificationCenter: NotificationCenter
+    property var trayStatus: TrayService
     property date localDate: new Date()
     readonly property string powerProfile: PowerProfiles.profile === PowerProfile.PowerSaver ? "power-saver"
         : PowerProfiles.profile === PowerProfile.Performance ? "performance" : "balanced"
@@ -70,7 +72,16 @@ Item {
                 id: tray
                 objectName: "trayIsland"
                 entries: [
-                    BarEntry { key: "tray"; title: qsTr("System tray"); iconName: "chevron-up" }
+                    BarEntry {
+                        key: "tray"; title: qsTr("System tray"); iconName: "chevron-up"
+                        badge: root.trayStatus.count > 99 ? "99+" : root.trayStatus.count ? String(root.trayStatus.count) : ""
+                        badgeReserveText: "99+"
+                        attention: root.trayStatus.attention
+                        iconColor: attention ? Theme.accent : Theme.text
+                        description: (root.trayStatus.count === 1 ? qsTr("1 tray app") : qsTr("%1 tray apps").arg(root.trayStatus.count))
+                            + (attention ? "\n" + qsTr("Needs attention: %1").arg(root.trayStatus.attentionItems
+                                .map(item => item.title || item.id || qsTr("Unknown application")).join(", ")) : "")
+                    }
                 ]
                 onDrawerRequested: key => root.drawerRequested(key)
             }

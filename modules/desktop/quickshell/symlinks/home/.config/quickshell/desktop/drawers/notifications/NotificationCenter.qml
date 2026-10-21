@@ -74,7 +74,8 @@ QtObject {
         const record = {
             id: key, liveId: notification.id, processId: Quickshell.processId,
             seen: drawerOpen || (notification.lastGeneration && !replacement && previous ? previous.seen !== false : false),
-            app: notification.appName || qsTr("Notification"), summary: notification.summary || qsTr("Notification"),
+            app: notification.appName || qsTr("Notification"), desktopEntry: String(notification.hints["desktop-entry"] || ""),
+            summary: notification.summary || qsTr("Notification"),
             body: plain(notification.body).slice(0, 16384), timestamp: notification.lastGeneration && !replacement ? state.items.find(row => row.id === key)?.timestamp || Date.now() / 1000 : Date.now() / 1000,
             urgency: notification.urgency, appIcon: notification.appIcon || "", image: imageSource(notification.image),
             progress: notification.hints.value !== undefined && Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : -1,

@@ -1,6 +1,7 @@
 {
     "packages": [
         "quickshell",
+        "adwaita-icon-theme",
         "qt6-multimedia",
         "python-dateutil",
         "gpu-screen-recorder",
