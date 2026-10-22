@@ -449,6 +449,62 @@ ShellRoot {
  Timer{interval:4000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }''')
 
+    def test_task_row_highlight_includes_independent_completion_control(self):
+        self.run_qml('''import QtQuick
+import QtTest
+import Quickshell
+import "drawers"
+import "ui" as UI
+ShellRoot {
+ TestCase { id:input; when:false; parent:window.contentItem }
+ QtObject {
+  id:mock
+  property bool active:false
+  property bool busy:false
+  property bool writing:false
+  property string month:"2026-10"
+  property string error:""
+  property var state:({state:"ready",calendars:[],events:[],tasks:[{uid:"task",summary:"Test task",completed:false,actionable:true,editable:true,list_slug:"tasks",list:"Tasks"}]})
+  property var requests:[]
+  function refresh(force){}
+  function mutate(op,kind,entry,completed){
+   requests=requests.concat([{op,kind,completed}]);
+   state=Object.assign({},state,{tasks:[Object.assign({},state.tasks[0],{completed})]});
+  }
+ }
+ FloatingWindow { id:window; implicitWidth:480; implicitHeight:820
+  EventsDrawer { id:drawer; anchors.fill:parent; service:mock; active:true; tab:"tasks"; taskFilter:"All" }
+ }
+ function check(v,m){if(!v)throw Error(m);}
+ function find(item,name){if(item.objectName===name)return item;for(let child of item.children??[]){const result=find(child,name);if(result)return result;}return null;}
+ property int stage:0
+ Timer { interval:180; repeat:true; running:true; onTriggered:{try{
+  const row=find(drawer,"taskRow:task"),box=find(drawer,"taskComplete:task"),edit=find(drawer,"taskEdit:task"),bg=find(drawer,"taskBackground:task");
+  if(stage===0){input.mouseMove(box,box.width/2,box.height/2);}
+  else if(stage===1){
+   check(bg.highlighted&&bg.color.toString()===UI.Theme.accentSurface.toString(),"checkbox hover did not highlight task row");
+   check(bg.width===row.width&&bg.height===row.height,"highlight does not cover the whole row");
+   input.mouseClick(box,box.width/2,box.height/2);
+   check(mock.requests.length===1&&mock.requests[0].completed===true&&!drawer.editing,"checkbox did not complete independently");
+  }else if(stage===2){
+   check(box.checked,"completion state did not reach checkbox");
+   input.mouseClick(box,box.width/2,box.height/2);
+   check(mock.requests.length===2&&mock.requests[1].completed===false&&!drawer.editing,"checkbox did not reopen independently");
+   input.mouseMove(edit,edit.width/2,edit.height/2);
+  }else if(stage===3){
+   check(!box.checked&&bg.highlighted,"text hover did not share the row highlight");
+   input.mouseMove(window.contentItem,0,0);edit.forceActiveFocus(Qt.TabFocusReason);
+  }else if(stage===4){
+   check(edit.visualFocus&&bg.highlighted,"task keyboard focus did not highlight row");
+   input.mouseClick(edit,edit.width/2,edit.height/2);
+   check(drawer.editing?.uid==="task"&&mock.requests.length===2,"editing toggled completion");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+ Timer { interval:4000; running:true; onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();} }
+}''')
+
     def test_task_editor_toolbar_stays_visible(self):
         self.run_qml('''import QtQuick
 import Quickshell

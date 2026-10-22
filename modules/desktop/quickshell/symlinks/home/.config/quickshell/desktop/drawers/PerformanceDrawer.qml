@@ -63,7 +63,7 @@ DrawerPage {
                             enabled: root.active
                             Accessible.name: Format.profile(profileName); Accessible.role: Accessible.RadioButton; Accessible.checked: current
                             onClicked: if (!current) root.profiles.profile = modelData.value
-                            background: ButtonBackground { idleColor: profile.current ? Theme.accentSurface : Theme.raised; highlighted: profile.hovered || profile.visualFocus || profile.current; pressed: profile.down }
+                            background: ButtonBackground { idleColor: profile.current ? Theme.accentSurface : Theme.surface; idleBorderColor: Theme.border; highlighted: profile.hovered || profile.visualFocus || profile.current; pressed: profile.down }
                             contentItem: ColumnLayout {
                                 spacing: 4
                                 Icon { name: Format.profileIcon(profile.profileName); color: profile.current ? Theme.accent : Theme.text; Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 18; Layout.preferredHeight: 18 }

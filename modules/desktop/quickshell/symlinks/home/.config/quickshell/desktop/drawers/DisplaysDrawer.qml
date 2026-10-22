@@ -73,14 +73,13 @@ DrawerPage {
         wrapMode: Text.Wrap; textFormat: Text.PlainText
     }
     component Heading: ShellText { Layout.fillWidth: true; font.weight: Font.DemiBold; textFormat: Text.PlainText }
-    component DisplayCard: Surface {
+    component DisplayCard: Card {
         id: card
         required property var record
         readonly property bool editable: root.canEdit && record.enabled
         readonly property var brightness: root.service.brightnessFor(record.name)
         objectName: "displayCard:" + record.name
         Layout.fillWidth: true; implicitHeight: content.implicitHeight + 24
-        color: Theme.surface; border.width: 0; radius: Theme.controlRadius
         ColumnLayout {
             id: content
             anchors.fill: parent; anchors.margins: 12; spacing: 8

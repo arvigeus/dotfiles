@@ -5,7 +5,7 @@ import QtQuick.Layouts
 import "../../ui"
 import "../../ui/Models.js" as Models
 
-Surface {
+Card {
     id: root
     required property var record
     required property var service
@@ -35,7 +35,6 @@ Surface {
     Component.onDestruction: optionsClosed(options)
     objectName: "diskCard:" + record.key
     Layout.fillWidth: true; implicitHeight: content.implicitHeight + 20
-    color: Theme.surface; border.width: 0; radius: Theme.controlRadius
     ColumnLayout {
         id: content
         anchors.fill: parent; anchors.margins: 10; spacing: 6

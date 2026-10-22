@@ -41,10 +41,9 @@ DrawerPage {
             Layout.fillWidth: true; wrapMode: Text.Wrap
             text: qsTr("Add places to ~/.config/quickshell/desktop/weather.json.")
         }
-        Surface {
+        Card {
             Layout.fillWidth: true; visible: !!root.snapshot.location
             implicitHeight: overview.implicitHeight + 32
-            color: Theme.surface; border.width: 0; radius: Theme.controlRadius
             ColumnLayout {
                 id: overview
                 anchors.fill: parent; anchors.margins: 16; spacing: 10
@@ -170,7 +169,7 @@ DrawerPage {
                     Layout.fillWidth: true; Layout.preferredWidth: 1; implicitHeight: 112
                     hoverEnabled: true
                     Accessible.name: hour.modelData.label + ", " + Conditions.description(hour.modelData.code) + ", " + Conditions.temperature(hour.modelData.temperature) + ", " + qsTr("%1 chance of rain").arg(Conditions.percent(hour.modelData.rain))
-                    background: Surface { color: Theme.surface; border.width: 0; radius: Theme.controlRadius }
+                    background: Card {}
                     contentItem: ColumnLayout {
                         spacing: 7
                         Note { text: hour.modelData.label; Layout.alignment: Qt.AlignHCenter }
@@ -183,10 +182,9 @@ DrawerPage {
             }
         }
         Heading { visible: !!root.weather; text: qsTr("Forecast") }
-        Surface {
+        Card {
             visible: !!root.weather; Layout.fillWidth: true
             implicitHeight: daily.implicitHeight + 16
-            color: Theme.surface; border.width: 0; radius: Theme.controlRadius
             ColumnLayout {
                 id: daily
                 anchors.fill: parent; anchors.margins: 8; spacing: 0

@@ -23,7 +23,6 @@ Singleton {
     property bool refreshQueued: false
     property var queuedAction: null
     property string warpMode: "warp+doh"
-    property bool warpRegisterNext: false
     readonly property bool working: pending !== ""
     // Background reads never dim or disable controls. A user action can queue
     // behind a read, then runs before the next refresh.
@@ -45,18 +44,12 @@ Singleton {
     }
     Component.onCompleted: {
         warpMode = preferences.value("warpMode", "warp+doh");
-        warpRegisterNext = preferences.value("warpRegisterNext", false);
     }
     function selectWarpMode(mode: string): void {
         warpMode = mode;
         preferences.setValue("warpMode", mode);
         preferences.sync();
         if (state.warp?.running) run("warp", {action: "mode", mode}, "warp");
-    }
-    function setWarpRegistration(value: bool): void {
-        warpRegisterNext = value;
-        preferences.setValue("warpRegisterNext", value);
-        preferences.sync();
     }
     function run(operation: string, values = {}, key = ""): void {
         if (process.running || request) {
@@ -68,7 +61,7 @@ Singleton {
         pending = operation;
         pendingKey = key;
         actionContext = {operation, key, uuid: values.uuid || "", action: values.action,
-            mode: values.mode, register: !!values.register};
+            mode: values.mode};
         request = Object.assign({op: operation}, values);
         received = false;
         process.running = true;
@@ -113,8 +106,6 @@ Singleton {
                     root.loaded = true;
                     if (result.ok) {
                         root.applySnapshot(result.data);
-                        if (root.pending === "warp" && root.actionContext?.action === "connect" && root.actionContext.register)
-                            root.setWarpRegistration(false);
                     } else {
                         root.error = result.error || qsTr("The operation failed.");
                         root.failure = root.actionContext;
@@ -152,7 +143,7 @@ Singleton {
     // VPN and WARP state can change outside the drawer; WARP reports Connected
     // only after its connect command returns.
     Timer {
-        interval: 10000
+        interval: root.state.warp?.running && !root.state.warp?.connected ? 2000 : 10000
         repeat: true
         running: root.observing
         onTriggered: if (!root.working) root.refresh()

@@ -2430,6 +2430,10 @@
                 "target": "home/.config/quickshell/desktop/ui/ButtonBackground.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/Card.qml",
+                "target": "home/.config/quickshell/desktop/ui/Card.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/DrawerActionButton.qml",
                 "target": "home/.config/quickshell/desktop/ui/DrawerActionButton.qml"
             },

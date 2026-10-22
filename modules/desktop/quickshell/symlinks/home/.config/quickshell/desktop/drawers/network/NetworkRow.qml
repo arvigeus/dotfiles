@@ -34,7 +34,7 @@ Button {
             text: root.text
             textFormat: Text.PlainText
             elide: Text.ElideRight
-            color: root.highlighted || root.connected ? Theme.text : Theme.muted
+            color: root.connected || root.highlighted ? Theme.text : Theme.muted
         }
     }
     Component {
@@ -45,6 +45,9 @@ Button {
         id: standard
         Item { Icon { anchors.centerIn: parent; width: 22; height: 22; name: root.iconName; color: root.foreground } }
     }
-    background: ButtonBackground { highlighted: root.highlighted; pressed: root.down }
+    background: ButtonBackground {
+        idleColor: root.connected ? Theme.accentSurface : "transparent"
+        highlighted: root.highlighted; pressed: root.down
+    }
     PassiveToolTip { target: root; text: root.hint; maximumLineCount: 18 }
 }

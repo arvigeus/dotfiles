@@ -213,7 +213,7 @@ DrawerPage {
     }
     function warpAction(): void {
         service.run("warp", {action: networkState.warp.running ? "disconnect" : "connect",
-            mode: activeWarpMode, register: service.warpRegisterNext}, "warp");
+            mode: activeWarpMode}, "warp");
     }
     function rateText(value): string {
         if (typeof value !== "number") return "—";
@@ -337,33 +337,16 @@ DrawerPage {
                                 if (networkEntry.network.connected && networkEntry.selected) root.clearSelection();
                             }
                         }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 0
-                            NetworkRow {
-                                objectName: "wifiNetwork:" + networkEntry.network.name
-                                text: networkEntry.network.name
-                                wireless: true
-                                strength: Math.round(networkEntry.network.signalStrength * 100)
-                                secured: !["open", "owe"].includes(root.securityKind(networkEntry.network))
-                                connected: networkEntry.network.connected
-                                hint: root.networkHint(networkEntry.network)
-                                enabled: root.canAct
-                                onClicked: root.networkAction(networkEntry.network)
-                            }
-                            HoldButton {
-                                id: forgetButton
-                                objectName: "wifiForget:" + networkEntry.network.name
-                                text: qsTr("Hold to forget %1").arg(networkEntry.network.name)
-                                Accessible.name: text
-                                implicitWidth: Theme.controlHeight; implicitHeight: Theme.controlHeight
-                                horizontalPadding: 8; verticalPadding: 8; idleColor: "transparent"
-                                contentItem: Icon { name: "trash"; color: forgetButton.hovered || forgetButton.visualFocus ? Theme.accent : Theme.muted }
-                                visible: networkEntry.network.known
-                                enabled: root.canAct
-                                armed: root.active
-                                onConfirmed: networkEntry.network.forget()
-                            }
+                        NetworkRow {
+                            objectName: "wifiNetwork:" + networkEntry.network.name
+                            text: networkEntry.network.name
+                            wireless: true
+                            strength: Math.round(networkEntry.network.signalStrength * 100)
+                            secured: !["open", "owe"].includes(root.securityKind(networkEntry.network))
+                            connected: networkEntry.network.connected
+                            hint: root.networkHint(networkEntry.network)
+                            enabled: root.canAct
+                            onClicked: root.networkAction(networkEntry.network)
                         }
                         RowLayout {
                             objectName: networkEntry.selected ? "wifiAuthentication" : ""
@@ -452,59 +435,63 @@ DrawerPage {
                         }
                     }
                 }
-                RowLayout {
+                Item {
+                    id: warpRow
+                    objectName: "warpRow"
+                    readonly property alias background: warpBackground
                     Layout.fillWidth: true
-                    spacing: 0
-                    NetworkRow {
-                        objectName: "warpToggle"
-                        text: qsTr("Cloudflare"); iconName: "cloudflare"
-                        connected: root.networkState.warp.connected
-                        hint: root.networkState.warp.state + "\n" + (root.warpModes.find(m => m.value === root.activeWarpMode)?.label ?? "")
-                            + "\n" + (root.networkState.warp.running ? qsTr("Click to disconnect and stop WARP") : qsTr("Click to connect WARP"))
-                        enabled: root.canAct && root.networkState.warp.available
-                        onClicked: root.warpAction()
+                    Layout.leftMargin: 28
+                    implicitHeight: Math.max(warpToggle.implicitHeight, warpSettings.implicitHeight)
+                    ButtonBackground {
+                        id: warpBackground
+                        anchors.fill: parent
+                        idleColor: warpToggle.connected ? Theme.accentSurface : "transparent"
+                        highlighted: warpToggle.highlighted
+                        pressed: warpToggle.down || warpSettings.down
                     }
-                    IconButton {
-                        id: warpSettings
-                        readonly property alias menu: warpMenu
-                        objectName: "warpSettings"; iconName: "settings"; text: qsTr("Cloudflare settings")
-                        enabled: root.canAct && root.networkState.warp.available
-                        onClicked: warpMenu.open()
-                        Menu {
-                            id: warpMenu
-                            onAboutToShow: { root.informationPopup?.close(); ports.closePopup(); root.vpnImportMenu?.close(); }
-                            objectName: "warpMenu"
-                            popupType: Popup.Item
-                            x: warpSettings.width - width; y: warpSettings.height
-                            width: 280
-                            padding: 6
-                            closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-                            background: Surface { color: Theme.background; radius: Theme.controlRadius }
-                            // Fixed children keep order during asynchronous drawer incubation.
-                            // Registering a device is independent of the mutually exclusive modes.
-                            WarpModeItem { mode: "warp+doh" }
-                            WarpModeItem { mode: "warp+dot" }
-                            WarpModeItem { mode: "warp" }
-                            WarpModeItem { mode: "doh" }
-                            WarpModeItem { mode: "dot" }
-                            WarpModeItem { mode: "tunnel_only" }
-                            WarpModeItem { mode: "proxy" }
-                            MenuSeparator {
-                                objectName: "warpModeSeparator"
+                    RowLayout {
+                        anchors.fill: parent
+                        spacing: 0
+                        NetworkRow {
+                            id: warpToggle
+                            objectName: "warpToggle"
+                            Layout.leftMargin: 0
+                            highlighted: hovered || visualFocus || warpSettings.hovered || warpSettings.visualFocus || warpMenu.visible
+                            background: Item {}
+                            text: qsTr("Cloudflare"); iconName: "cloudflare"
+                            connected: root.networkState.warp.connected
+                            hint: root.networkState.warp.state + "\n" + (root.warpModes.find(m => m.value === root.activeWarpMode)?.label ?? "")
+                                + "\n" + (root.networkState.warp.running ? qsTr("Click to disconnect and stop WARP")
+                                    : qsTr("Click to connect WARP. Registers automatically if needed and accepts Cloudflare's terms."))
+                            enabled: root.canAct && root.networkState.warp.available
+                            onClicked: root.warpAction()
+                        }
+                        IconButton {
+                            id: warpSettings
+                            readonly property alias menu: warpMenu
+                            objectName: "warpSettings"; iconName: "settings"; text: qsTr("Cloudflare settings")
+                            iconColor: warpToggle.foreground
+                            background: Item {}
+                            enabled: root.canAct && root.networkState.warp.available
+                            onClicked: warpMenu.open()
+                            Menu {
+                                id: warpMenu
+                                onAboutToShow: { root.informationPopup?.close(); ports.closePopup(); root.vpnImportMenu?.close(); }
+                                objectName: "warpMenu"
+                                popupType: Popup.Item
+                                x: warpSettings.width - width; y: warpSettings.height
+                                width: 280
                                 padding: 6
-                                contentItem: Rectangle { implicitHeight: 1; color: Theme.border }
-                            }
-                            ShellMenuItem {
-                                id: warpRegistration
-                                objectName: "warpRegistration"
-                                text: qsTr("Register on new connect")
-                                checkable: true
-                                checked: root.service.warpRegisterNext
-                                onTriggered: root.service.setWarpRegistration(!root.service.warpRegisterNext)
-                                PassiveToolTip {
-                                    target: warpRegistration
-                                    text: qsTr("Create a registration on the next connection. This may replace an existing registration. Connecting accepts Cloudflare's terms.")
-                                }
+                                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                                background: Surface { color: Theme.background; radius: Theme.controlRadius }
+                                // Fixed children keep order during asynchronous drawer incubation.
+                                WarpModeItem { mode: "warp+doh" }
+                                WarpModeItem { mode: "warp+dot" }
+                                WarpModeItem { mode: "warp" }
+                                WarpModeItem { mode: "doh" }
+                                WarpModeItem { mode: "dot" }
+                                WarpModeItem { mode: "tunnel_only" }
+                                WarpModeItem { mode: "proxy" }
                             }
                         }
                     }

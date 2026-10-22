@@ -2,6 +2,7 @@ singleton Theme 1.0 Theme.qml
 ShellText 1.0 ShellText.qml
 StatusBadge 1.0 StatusBadge.qml
 Surface 1.0 Surface.qml
+Card 1.0 Card.qml
 ButtonBackground 1.0 ButtonBackground.qml
 PassiveToolTip 1.0 PassiveToolTip.qml
 Icon 1.0 Icon.qml

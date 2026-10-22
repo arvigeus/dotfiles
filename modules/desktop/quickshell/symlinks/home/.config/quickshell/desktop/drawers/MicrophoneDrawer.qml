@@ -138,7 +138,7 @@ DrawerPage {
             }
         }
     }
-    component InputDevice: Surface {
+    component InputDevice: Card {
         id: device
         required property var modelData
         readonly property var record: modelData
@@ -151,7 +151,6 @@ DrawerPage {
         }
         objectName: "inputDevice:" + record.key
         Layout.fillWidth: true; implicitHeight: content.implicitHeight + 24
-        color: Theme.surface; border.width: 0; radius: Theme.controlRadius
         KeyedModel { id: sourcesModel; values: device.displaySources; keyField: "key" }
         onSourcesChanged: { if (sources.length) lastSources = sources; }
         Component.onCompleted: { if (sources.length) lastSources = sources; }
@@ -196,31 +195,35 @@ DrawerPage {
             Note { objectName: "recordingAppsEmpty"; visible: root.service.loaded && !recordingsModel.values.length; text: qsTr("No applications are using a microphone.") }
             Repeater {
                 model: recordingsModel
-                delegate: ColumnLayout {
+                delegate: Card {
                     id: app
                     required property var modelData
                     readonly property var record: modelData
                     objectName: "recordingApp:" + record.key
-                    Layout.fillWidth: true; spacing: 4
-                    RowLayout {
-                        Layout.fillWidth: true; spacing: 10
-                        AppIcon { visible: app.record.icon !== ""; icon: app.record.icon; Layout.preferredWidth: 20; Layout.preferredHeight: 20 }
-                        ShellText { text: app.record.label; Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
-                        Note { Layout.fillWidth: false; text: (app.record.node?.audio?.muted ?? false) || (!!app.record.target && root.muted(app.record.target))
-                            ? qsTr("Muted") : app.record.active ? qsTr("Recording") : qsTr("Paused") }
-                    }
-                    ShellChoice {
-                        id: appInput
-                        objectName: "recordingInput:" + app.record.key; Layout.fillWidth: true
-                        enabled: root.canAct && !root.service.busy && root.destinations.length > 0
-                        Accessible.name: qsTr("Microphone for %1").arg(app.record.label)
-                        model: root.destinations; textRole: "label"
-                        currentIndex: root.destinations.findIndex(input => input.name === app.record.target)
-                        displayText: root.destinations.find(input => input.name === app.record.target)?.label ?? qsTr("Input unavailable")
-                        onActivated: index => {
-                            const destination = root.destinations[index];
-                            currentIndex = Qt.binding(() => root.destinations.findIndex(input => input.name === app.record.target));
-                            root.service.move(app.record, destination);
+                    Layout.fillWidth: true; implicitHeight: appContent.implicitHeight + 24
+                    ColumnLayout {
+                        id: appContent
+                        anchors.fill: parent; anchors.margins: 12; spacing: 4
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: 10
+                            AppIcon { visible: app.record.icon !== ""; icon: app.record.icon; Layout.preferredWidth: 20; Layout.preferredHeight: 20 }
+                            ShellText { text: app.record.label; Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
+                            Note { Layout.fillWidth: false; text: (app.record.node?.audio?.muted ?? false) || (!!app.record.target && root.muted(app.record.target))
+                                ? qsTr("Muted") : app.record.active ? qsTr("Recording") : qsTr("Paused") }
+                        }
+                        ShellChoice {
+                            id: appInput
+                            objectName: "recordingInput:" + app.record.key; Layout.fillWidth: true
+                            enabled: root.canAct && !root.service.busy && root.destinations.length > 0
+                            Accessible.name: qsTr("Microphone for %1").arg(app.record.label)
+                            model: root.destinations; textRole: "label"
+                            currentIndex: root.destinations.findIndex(input => input.name === app.record.target)
+                            displayText: root.destinations.find(input => input.name === app.record.target)?.label ?? qsTr("Input unavailable")
+                            onActivated: index => {
+                                const destination = root.destinations[index];
+                                currentIndex = Qt.binding(() => root.destinations.findIndex(input => input.name === app.record.target));
+                                root.service.move(app.record, destination);
+                            }
                         }
                     }
                 }

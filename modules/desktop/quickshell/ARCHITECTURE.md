@@ -45,6 +45,13 @@ applications in their own service units use the user manager's ordinary mask.
 `Theme` defines logical-pixel sizing and the light/dark palettes. Theme mode is a
 user preference in `theme-mode`, defaulting to dark; apply does not seed it.
 `IconButton`, `ShellButton`, `ShellChoice` and `ShellMenuItem` share styling.
+`Card` centralizes static card appearance: the surface fill, one-pixel border
+and control corner radius. Battery/power, disks, displays, keyboard backlights,
+audio devices/applications, Bluetooth, webcams and weather summary/hourly/forecast
+cards use it. Static containers do
+not gain a hover action; their nested controls remain independent. Performance
+and keyboard language choices use `ButtonBackground` with the same surface and
+idle border, retaining their selected-state tint.
 `HoldButton` cancels on release, focus loss, disabling or dismissal.
 `PassiveToolTip` uses passive hover/focus observation without stealing clicks.
 `WheelScroll` and `ScrollListView` handle pointer wheels and touchpad scrolling.
@@ -136,7 +143,8 @@ units. Package maintenance and signing repair belong to the package modules.
 ## Networking
 
 `WifiDrawer` and the bar read `Quickshell.Networking`: radio/hardware block,
-connectivity, Wi-Fi networks, saved-network activation, forgetting and Ethernet.
+connectivity, Wi-Fi networks, saved-network activation and Ethernet. Saved-network
+deletion belongs to NetworkManager's connection editor, not the Wireless rows.
 Scanning belongs to the open drawer. Native QObject identity keeps list delegates
 stable; sorting uses connected, saved, signal-icon level and name.
 
@@ -145,6 +153,14 @@ IP details and new user-scoped Wi-Fi profiles. It refreshes every ten seconds on
 while observed. Mutations finish after dismissal and take priority over reads.
 Passwords use stdin/D-Bus and never argv, status records or diagnostics.
 Enterprise/WEP configurations open the connection editor.
+WARP starts on demand, reuses registration or creates it only when missing, and
+stops on disconnect or setup failure. Its menu selects operating mode; registration
+requires no separate switch. See the [WARP lifecycle](../../internet/cloudflare/ARCHITECTURE.md).
+Wi-Fi, Ethernet and VPN/WARP rows share the keyboard language choices' active
+style: connected rows have an accent-tinted fill and normal text/icons; inactive
+rows are transparent and muted. Hover/focus adds the shared accent border/icon.
+Cloudflare's toggle and settings cog share one background for connected,
+hover/focus, pressed and open-menu states; their click actions remain separate.
 
 The VPN heading's add menu launches `network/backend.py --import-wireguard`
 through `Apps`, in its own application unit. Zenity owns the `.conf` picker,

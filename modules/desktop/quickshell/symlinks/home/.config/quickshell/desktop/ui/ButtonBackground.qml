@@ -6,9 +6,10 @@ Rectangle {
     property bool highlighted: false
     property bool pressed: false
     property color idleColor: "transparent"
+    property color idleBorderColor: "transparent"
 
     radius: Theme.controlRadius
     color: pressed ? Theme.raised : highlighted ? Theme.accentSurface : idleColor
     border.width: 1
-    border.color: highlighted ? Theme.accent : "transparent"
+    border.color: highlighted ? Theme.accent : idleBorderColor
 }

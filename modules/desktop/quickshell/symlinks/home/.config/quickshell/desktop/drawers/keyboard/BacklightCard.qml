@@ -5,7 +5,7 @@ import QtQuick.Layouts
 import Quickshell
 import "../../ui"
 
-Surface {
+Card {
     id: root
     required property var record
     required property var service
@@ -19,7 +19,6 @@ Surface {
     signal optionsClosed(var menu)
     objectName: "keyboardCard:" + record.key
     implicitHeight: content.implicitHeight + 24
-    color: Theme.surface; border.width: 0; radius: Theme.controlRadius
     onHasOptionsChanged: if (!hasOptions) options.close()
     onActiveChanged: if (!active) options.close()
     Component.onDestruction: if (options.visible) optionsClosed(options)

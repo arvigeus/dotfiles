@@ -179,7 +179,7 @@ ColumnLayout {
         HoldButton {
             objectName: "sessionReload"
             Layout.fillWidth: true
-            text: qsTr("Reload"); iconName: "refresh-cw"; idleColor: "transparent"
+            text: qsTr("Reload session"); iconName: "refresh-cw"; idleColor: "transparent"
             hint: qsTr("Close applications and restart the desktop session")
             holdDuration: 2000; armed: root.active && restartMenu.visible
             enabled: root.active && !root.service.busy && !!root.service.state.capabilities.reload

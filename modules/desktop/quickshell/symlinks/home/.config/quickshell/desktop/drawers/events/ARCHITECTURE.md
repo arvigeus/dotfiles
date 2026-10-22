@@ -12,6 +12,13 @@ Task views include open, due today/overdue, upcoming, important,
 completed and all, with collection and text/tag filters. Future repeating tasks
 remain available in Open/Upcoming. Completed recurrence exceptions are history.
 Notification history has its own drawer and never changes calendar data.
+Agenda and task rows use the System Tray card style: shared `ButtonBackground`
+with `Theme.surface` fill, `Theme.border` idle outline and a minimum height of
+64 pixels, expanding for wrapped content. Task rows share one background across
+the checkbox and edit target.
+A passive hover handler and either control's keyboard focus highlight the whole
+row; checking/reopening a task and opening its editor remain independent actions.
+Agenda items use the same shared full-row hover, keyboard-focus and pressed style.
 
 Agenda and Tasks reserve one fixed-height status line immediately below their
 section heading. Loading, refreshing, stale data, configuration, errors and empty

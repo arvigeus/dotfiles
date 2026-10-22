@@ -53,20 +53,44 @@ class WireguardImportTests(unittest.TestCase):
 
 
 class WarpTests(unittest.TestCase):
-    def test_start_waits_for_daemon_and_never_registers_implicitly(self):
-        replies = [Mock(stdout='{"code":"FailedToConnectToDaemon"}', stderr=''),
-                   Mock(stdout='{"code":"MissingRegistration"}', stderr='')]
-        with patch.object(backend, 'checked') as checked, patch.object(backend, 'command', side_effect=replies), patch.object(backend.time, 'sleep'):
-            with self.assertRaisesRegex(ValueError, 'needs registration'):
-                backend.warp_control({'action': 'connect', 'mode': 'doh'})
-        self.assertEqual(checked.call_args_list[0].args[0], ['systemctl', '--no-ask-password', 'start', 'warp-svc.service'])
-        self.assertFalse(any('new' in call.args[0] for call in checked.call_args_list))
+    def test_connected_status_and_mode_reads_accept_terms(self):
+        with patch.object(backend.shutil, 'which', return_value='/usr/bin/warp-cli'), \
+                patch.object(backend, 'command', side_effect=[
+                    Mock(returncode=0, stdout='active\n'),
+                    Mock(returncode=0, stdout='Status update: Connected\nNetwork: healthy\n'),
+                    Mock(returncode=0, stdout='(User) Mode: WarpWithDnsOverHttps\n')]) as command:
+            state = backend.warp_status()
+        self.assertTrue(state['running'])
+        self.assertTrue(state['connected'])
+        self.assertEqual(state['mode'], 'warp+doh')
+        self.assertEqual(command.call_args_list[1].args[0], ['warp-cli', '--accept-tos', '--no-ansi', 'status'])
+        self.assertEqual(command.call_args_list[2].args[0], ['warp-cli', '--accept-tos', '--no-ansi', 'settings'])
 
-    def test_explicit_registration_mode_and_stop(self):
-        with patch.object(backend, 'checked') as checked, patch.object(backend, 'command', return_value=Mock(stdout='{}', stderr='')):
+    def test_stopped_status_does_not_query_cli_or_start_daemon(self):
+        with patch.object(backend.shutil, 'which', return_value='/usr/bin/warp-cli'), \
+                patch.object(backend, 'command', return_value=Mock(stdout='inactive\n')) as command:
+            state = backend.warp_status()
+        self.assertFalse(state['running'])
+        self.assertFalse(state['connected'])
+        self.assertEqual(command.call_count, 1)
+
+    def test_first_connection_waits_for_daemon_and_registers_when_missing(self):
+        replies = [Mock(stdout='{"code":"FailedToConnectToDaemon"}', stderr=''),
+                   Mock(stdout='{"code":"MissingRegistration"}', stderr=''),
+                   Mock(returncode=1, stdout='{"code":"MissingRegistration"}', stderr='')]
+        with patch.object(backend, 'checked') as checked, patch.object(backend, 'command', side_effect=replies), patch.object(backend.time, 'sleep'):
+            backend.warp_control({'action': 'connect', 'mode': 'doh'})
+        self.assertEqual(checked.call_args_list[0].args[0], ['systemctl', '--no-ask-password', 'start', 'warp-svc.service'])
+        self.assertEqual([c.args[0] for c in checked.call_args_list[1:]], [
+            ['warp-cli', '--accept-tos', 'registration', 'new'],
+            ['warp-cli', '--accept-tos', 'mode', 'doh'],
+            ['warp-cli', '--accept-tos', 'connect']])
+
+    def test_existing_registration_is_reused_even_with_stale_register_request(self):
+        with patch.object(backend, 'checked') as checked, patch.object(backend, 'command', return_value=Mock(returncode=0, stdout='{}', stderr='')):
             backend.warp_control({'action': 'connect', 'mode': 'tunnel_only', 'register': True})
             calls = [c.args[0] for c in checked.call_args_list]
-            self.assertIn(['warp-cli', '--accept-tos', 'registration', 'new'], calls)
+            self.assertFalse(any('new' in argv or 'delete' in argv for argv in calls))
             self.assertIn(['warp-cli', '--accept-tos', 'mode', 'tunnel_only'], calls)
             checked.reset_mock()
             backend.warp_control({'action': 'disconnect'})
@@ -78,11 +102,34 @@ class WarpTests(unittest.TestCase):
                 raise ValueError('Connection failed')
             return ''
         with patch.object(backend, 'checked', side_effect=fail_connect) as checked, \
-                patch.object(backend, 'command', return_value=Mock(stdout='{}', stderr='')):
-            with self.assertRaisesRegex(ValueError, 'Connection failed'):
+                patch.object(backend, 'command', return_value=Mock(returncode=0, stdout='{}', stderr='')):
+            with self.assertRaisesRegex(ValueError, 'Could not connect WARP'):
                 backend.warp_control({'action': 'connect', 'mode': 'warp+doh'})
             self.assertEqual(checked.call_args_list[-1].args[0],
                              ['systemctl', '--no-ask-password', 'stop', 'warp-svc.service'])
+
+    def test_unknown_registration_failure_does_not_create_or_connect(self):
+        with patch.object(backend, 'checked') as checked, patch.object(backend, 'command', side_effect=[
+                Mock(returncode=0, stdout='{}', stderr=''),
+                Mock(returncode=1, stdout='{"code":"OtherFailure"}', stderr='private-data')]):
+            with self.assertRaisesRegex(ValueError, 'Could not read WARP registration'):
+                backend.warp_control({'action': 'connect'})
+        self.assertEqual([c.args[0] for c in checked.call_args_list], [
+            ['systemctl', '--no-ask-password', 'start', 'warp-svc.service'],
+            ['systemctl', '--no-ask-password', 'stop', 'warp-svc.service']])
+
+    def test_disconnect_stops_service_even_when_cli_times_out(self):
+        with patch.object(backend, 'checked') as checked, patch.object(backend, 'command', side_effect=ValueError('timeout')):
+            backend.warp_control({'action': 'disconnect'})
+        checked.assert_called_once_with(['systemctl', '--no-ask-password', 'stop', 'warp-svc.service'], 45)
+
+    def test_startup_timeout_stops_service_without_registering(self):
+        with patch.object(backend, 'checked') as checked, patch.object(backend, 'command',
+                return_value=Mock(stdout='{"code":"FailedToConnectToDaemon"}', stderr='')), patch.object(backend.time, 'sleep'):
+            with self.assertRaisesRegex(ValueError, 'did not become ready'):
+                backend.warp_control({'action': 'connect'})
+        self.assertEqual(len(checked.call_args_list), 2)
+        self.assertEqual(checked.call_args_list[-1].args[0], ['systemctl', '--no-ask-password', 'stop', 'warp-svc.service'])
 
     def test_mode_changes_do_not_start_or_register_daemon(self):
         with patch.object(backend, 'checked') as checked:
@@ -227,7 +274,6 @@ FloatingWindow {
   function connect() { window.log = window.log.concat([["connect", name]]); }
   function connectWithPsk(psk) { window.log = window.log.concat([["psk", name, psk]]); }
   function disconnect() { window.log = window.log.concat([["disconnect", name]]); }
-  function forget() { window.log = window.log.concat([["forget", name]]); }
  }
  FakeNetwork { id: newNetwork; name: "<Cafe & guests>"; signalStrength: 0.85 }
  FakeNetwork { id: home; name: "Home"; signalStrength: 0.82; known: true; connected: true }
@@ -254,11 +300,9 @@ FloatingWindow {
   property var state: STATE
   property var calls: []
   property string warpMode: "warp+doh"
-  property bool warpRegisterNext: false
   property int importRequests: 0
   function chooseWireguardConfig() { importRequests++; }
   function selectWarpMode(mode) { warpMode = mode; }
-  function setWarpRegistration(value) { warpRegisterNext = value; }
   function dismissError() { error = ""; }
   signal completed(string operation, bool success)
   function run(op, values = {}, key = "") { pendingKey = key; calls = calls.concat([{op, values, key}]); }
@@ -335,8 +379,10 @@ FloatingWindow {
     check(drawer.networks[0] === home && drawer.networks[1] === office, "connected and saved networks are not first");
     const row = find(drawer, "wifiNetwork:Home");
     check(row.hint.includes("82%") && row.hint.includes("WPA/WPA2 Personal") && !row.hint.includes("192.0.2"), "network tooltip");
-    check(find(drawer, "wifiForget:Home").visible && !find(drawer, "wifiForget:Guest network").visible, "forget offered for unsaved network");
+    check(!find(drawer, "wifiForget:Home") && !find(drawer, "wifiForget:Office"), "Wireless entries should not offer deletion");
     check(row.foreground.toString() === UI.Theme.text.toString(), "connected row should use normal text");
+    check(row.background.color.toString() === UI.Theme.accentSurface.toString(), "connected Wireless row lacks an active tint");
+    check(row.contentItem.children[1].color.toString() === UI.Theme.text.toString(), "connected Wireless name should use normal text");
     input.mouseMove(row, 8, row.height / 2);
     check(row.highlighted && row.foreground.toString() === UI.Theme.accent.toString(), "row hover did not cover icon and name");
     input.mouseMove(drawer, 0, drawer.height - 1);
@@ -400,8 +446,6 @@ FloatingWindow {
     office.connected = false;
     input.mouseClick(find(drawer, "wifiNetwork:Home"), 100, 20);
     check(last()[0] === "disconnect" && last()[1] === "Home", "connected row did not disconnect");
-    find(drawer, "wifiForget:Office").confirmed();
-    check(last()[0] === "forget" && last()[1] === "Office", "hold-to-forget did not forget natively");
     const vpn = find(drawer, "networkProfile:vpn");
     input.mouseClick(vpn, 8, vpn.height / 2);
     check(fake.calls[fake.calls.length - 1].values.uuid === "vpn", "VPN click did not connect");
@@ -412,6 +456,12 @@ FloatingWindow {
     check(toggle.checked, "external power update broke switch binding");
     input.mouseClick(find(drawer, "warpToggle"), 10, 20);
     check(fake.calls[fake.calls.length - 1].op === "warp" && fake.calls[fake.calls.length - 1].values.mode === "tunnel_only", "Cloudflare row click lost mode");
+    const cog = find(drawer, "warpSettings");
+    const warpGroup = find(drawer, "warpRow");
+    input.mouseMove(cog, cog.width / 2, cog.height / 2);
+    check(warpGroup.background.highlighted && find(drawer, "warpToggle").highlighted, "hovering the cog did not highlight the whole Cloudflare row");
+    check(warpGroup.background.width >= cog.mapToItem(warpGroup, cog.width, 0).x, "Cloudflare highlight does not cover the settings cog");
+    input.mouseMove(drawer, 0, drawer.height - 1);
     wired.hasLink = true;
     check(find(drawer, "ethernetSection").visible, "plugged Ethernet hidden");
     fake.busy = true;
@@ -431,7 +481,7 @@ FloatingWindow {
     const menu = find(drawer, "warpSettings").menu;
     const ordered = ["warp+doh", "warp+dot", "warp", "doh", "dot", "tunnel_only", "proxy"];
     for (let i = 0; i < ordered.length; i++) check(menu.itemAt(i).objectName === "warpMode:" + ordered[i], "async incubation changed menu order");
-    check(menu.count === 9 && menu.itemAt(7).objectName === "warpModeSeparator" && menu.itemAt(8).objectName === "warpRegistration", "registration is not separate below the separator");
+    check(menu.count === 7, "registration should be automatic, not a separate menu action");
     check(menu.itemAt(5).checked && menu.visible, "menu did not check the default mode");
     capture(menu.contentItem.parent, "wifi-drawer-menu.png");
    } else if (window.stage === 9) {
@@ -440,8 +490,7 @@ FloatingWindow {
     input.mouseClick(find(drawer, "warpSettings"), 16, 16);
    } else if (window.stage === 10) {
     check(find(drawer, "warpSettings").menu.itemAt(3).checked && !find(drawer, "warpSettings").menu.itemAt(5).checked, "mode checkmarks did not follow selection");
-    input.mouseClick(find(drawer, "warpSettings").menu.itemAt(8), 80, 18);
-    check(fake.warpRegisterNext, "registration menu item did not toggle");
+    find(drawer, "warpSettings").menu.close();
     input.mouseClick(find(drawer, "warpSettings"), 16, 16);
    } else if (window.stage === 11) {
     const current = find(drawer, "warpSettings").menu.itemAt(3);
@@ -449,9 +498,24 @@ FloatingWindow {
     check(current.checked, "clicking the current mode cleared its checkmark");
     input.mouseClick(find(drawer, "warpSettings"), 16, 16);
    } else if (window.stage === 12) {
-    check(find(drawer, "warpSettings").menu.itemAt(8).checked, "registration checkmark did not persist");
+    find(drawer, "warpSettings").menu.close();
+    input.mouseMove(drawer, 0, drawer.height - 1);
     fake.state = Object.assign({}, fake.state, {warp: {available: true, running: true, connected: true, state: "Connected", mode: "warp+dot"}});
+    const warp = find(drawer, "warpToggle");
+    check(warp.connected && warp.foreground.toString() === UI.Theme.text.toString(), "connected WARP icon should use normal text color");
+    check(warp.contentItem.children[1].color.toString() === UI.Theme.text.toString(), "connected WARP name should use normal text color");
+    check(find(drawer, "warpRow").background.color.toString() === UI.Theme.accentSurface.toString(), "connected WARP row lacks an active tint");
+    fake.state = Object.assign({}, fake.state, {profiles: [{uuid: "vpn", name: "Work", kind: "wireguard", active: true, state: "activated"}]});
+    const vpn = find(drawer, "networkProfile:vpn");
+    check(vpn.connected && vpn.foreground.toString() === UI.Theme.text.toString(), "connected VPN should use normal text color");
+    check(vpn.background.color.toString() === UI.Theme.accentSurface.toString(), "connected VPN row lacks an active tint");
+    check(vpn.contentItem.children[1].color.toString() === UI.Theme.text.toString(), "connected VPN name should use normal text color");
     check(find(drawer, "warpSettings").menu.itemAt(1).checked && !find(drawer, "warpSettings").menu.itemAt(3).checked, "menu did not reflect active mode");
+    drawer.warpAction();
+    check(fake.calls[fake.calls.length - 1].values.action === "disconnect", "second Cloudflare click did not request disconnect");
+    fake.state = Object.assign({}, fake.state, {warp: {available: true, running: false, connected: false, state: "Off", mode: ""}});
+    check(!warp.connected && warp.foreground.toString() === UI.Theme.muted.toString(), "disconnected WARP kept its active color");
+    check(find(drawer, "warpRow").background.color.a === 0, "disconnected WARP kept its active tint");
    } else if (window.stage === 13) {
     find(drawer, "warpSettings").menu.close();
     const button = find(drawer, "speedTestButton");
@@ -704,9 +768,8 @@ ShellRoot {
     check(NetworkService.error === "", "successful reconnection left a stale error");
     check(NetworkService.queuedAction === null && NetworkService.request === null, "finished request retained credentials");
     NetworkService.selectWarpMode("proxy");
-    NetworkService.setWarpRegistration(true);
     saved.sync();
-    check(saved.value("warpMode") === "proxy" && String(saved.value("warpRegisterNext")) === "true", "WARP preferences were not saved");
+    check(saved.value("warpMode") === "proxy", "WARP mode preference was not saved");
     NetworkService.error = "Mode change failed";
     NetworkService.failure = {operation: "warp", action: "mode", mode: "doh"};
     NetworkService.applySnapshot({warp: {running: false, mode: ""}});

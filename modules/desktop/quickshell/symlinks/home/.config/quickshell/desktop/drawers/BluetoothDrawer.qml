@@ -152,9 +152,8 @@ DrawerPage {
                         text: [qsTr("Connected"), qsTr("Paired devices"), qsTr("Available devices")][root.group(entry.device)]
                         topPadding: 10; bottomPadding: 2; font.weight: Font.DemiBold
                     }
-                    Rectangle {
+                    Card {
                         Layout.fillWidth: true; implicitHeight: card.implicitHeight + 24
-                        radius: Theme.controlRadius; color: Theme.surface
                         Item {
                             id: battery
                             objectName: "bluetoothBattery:" + entry.key

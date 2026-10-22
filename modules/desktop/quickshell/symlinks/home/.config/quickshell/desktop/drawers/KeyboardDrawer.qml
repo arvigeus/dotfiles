@@ -129,6 +129,7 @@ DrawerPage {
                             }
                             background: ButtonBackground {
                                 idleColor: choice.current ? Theme.accentSurface : Theme.surface
+                                idleBorderColor: Theme.border
                                 highlighted: choice.hovered || choice.visualFocus; pressed: choice.down
                             }
                             onClicked: {

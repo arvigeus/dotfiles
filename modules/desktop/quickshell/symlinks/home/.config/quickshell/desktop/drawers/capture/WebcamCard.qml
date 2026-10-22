@@ -3,7 +3,7 @@ import QtQuick
 import QtQuick.Layouts
 import "../../ui"
 
-Surface {
+Card {
     id: root
     required property var device
     property bool active: false
@@ -18,7 +18,6 @@ Surface {
     function closeSettings(): void { settings.close(); }
     Layout.fillWidth: true
     implicitHeight: content.implicitHeight + 24
-    color: Theme.surface; radius: Theme.controlRadius; border.width: 0
     WebcamService { id: controls; device: String(root.device.id); active: root.active && root.service === controls }
     onActiveChanged: if (!active) { previewing = false; settings.close(); }
     onBlockedChanged: if (blocked) previewing = false

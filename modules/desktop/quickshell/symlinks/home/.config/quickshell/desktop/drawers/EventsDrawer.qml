@@ -271,10 +271,16 @@ DrawerPage {
                     }
                     ItemDelegate {
                         id: eventRow
-                        Layout.fillWidth: true; implicitHeight: eventText.implicitHeight + 24; padding: 12
+                        Layout.fillWidth: true; implicitHeight: Math.max(64, eventText.implicitHeight + 24); padding: 12
+                        hoverEnabled: true
                         enabled: !eventGroup.modelData._pending && !eventGroup.modelData._needsSync
                         onClicked: root.edit("VEVENT", eventGroup.modelData)
-                        background: Rectangle { color: eventRow.hovered || eventRow.visualFocus ? Theme.raised : Theme.surface; radius: Theme.controlRadius }
+                        background: ButtonBackground {
+                            idleColor: Theme.surface
+                            idleBorderColor: Theme.border
+                            highlighted: eventRow.hovered || eventRow.visualFocus
+                            pressed: eventRow.down
+                        }
                         contentItem: ColumnLayout {
                             id: eventText; spacing: 4
                             ShellText { text: eventGroup.modelData.summary; Layout.fillWidth: true; wrapMode: Text.Wrap }
@@ -293,13 +299,24 @@ DrawerPage {
                     required property var record
                     readonly property var modelData: record
                     objectName: "taskRow:" + modelData.uid
-                    Layout.fillWidth: true; implicitHeight: taskContent.implicitHeight + 16; radius: Theme.controlRadius; color: Theme.surface; border.width: 0
+                    Layout.fillWidth: true; implicitHeight: Math.max(64, taskContent.implicitHeight + 16); radius: Theme.controlRadius; color: Theme.surface; border.width: 0
+                    HoverHandler { id: taskHover; enabled: root.active }
+                    ButtonBackground {
+                        objectName: "taskBackground:" + taskRow.modelData.uid
+                        anchors.fill: parent
+                        idleColor: Theme.surface
+                        idleBorderColor: Theme.border
+                        highlighted: root.active && (taskHover.hovered || completion.visualFocus || taskButton.visualFocus)
+                        pressed: completion.down || taskButton.down
+                    }
                     RowLayout {
                         id: taskContent; anchors.fill: parent; anchors.margins: 8; spacing: 4
                         CheckBox {
                             id: completion
                             objectName: "taskComplete:" + taskRow.modelData.uid
                             implicitWidth: 34; implicitHeight: 34
+                            hoverEnabled: true
+                            background: Item {}
                             indicator: Rectangle {
                                 anchors.centerIn: parent; width: 18; height: 18; radius: 4
                                 color: completion.checked ? Theme.accent : "transparent"
@@ -317,9 +334,10 @@ DrawerPage {
                             id: taskButton
                             objectName: "taskEdit:" + taskRow.modelData.uid
                             Layout.fillWidth: true; implicitHeight: taskText.implicitHeight + 12; padding: 6
+                            hoverEnabled: true
                             enabled: !taskRow.modelData._pending && !taskRow.modelData._needsSync
                             onClicked: root.edit("VTODO", taskRow.modelData)
-                            background: Rectangle { radius: Theme.controlRadius; color: taskButton.hovered || taskButton.visualFocus ? Theme.raised : "transparent" }
+                            background: Item {}
                             contentItem: ColumnLayout {
                                 id: taskText; spacing: 3
                                 ShellText {

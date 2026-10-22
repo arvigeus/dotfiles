@@ -112,13 +112,12 @@ DrawerPage {
             }
         }
     }
-    component OutputDevice: Surface {
+    component OutputDevice: Card {
         id: device
         required property var modelData
         readonly property var record: modelData
         objectName: "outputDevice:" + record.key
         Layout.fillWidth: true; implicitHeight: content.implicitHeight + 24
-        color: Theme.surface; border.width: 0; radius: Theme.controlRadius
         KeyedModel {
             id: sinksModel
             values: root.outputs.filter(output => output.deviceKey === device.record.key && output.available)
@@ -204,69 +203,73 @@ DrawerPage {
             Note { objectName: "audioAppsEmpty"; visible: root.service.loaded && !appsModel.values.length; text: qsTr("No applications are using audio.") }
             Repeater {
                 model: appsModel
-                delegate: ColumnLayout {
+                delegate: Card {
                     id: app
                     required property var modelData
                     readonly property var record: modelData
                     readonly property bool muted: record.node?.audio?.muted ?? false
                     objectName: "audioApp:" + record.key
-                    Layout.fillWidth: true; spacing: 4
-                    RowLayout {
-                        Layout.fillWidth: true; spacing: 10
-                        AppIcon { visible: app.record.icon !== ""; icon: app.record.icon; Layout.preferredWidth: 20; Layout.preferredHeight: 20 }
-                        ColumnLayout {
-                            Layout.fillWidth: true; spacing: 1
-                            ShellText { text: app.record.label; Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
-                            Note { visible: app.record.detail !== "" && app.record.detail !== app.record.label && app.record.detail !== "AudioStream"; text: app.record.detail; maximumLineCount: 1; elide: Text.ElideRight }
+                    Layout.fillWidth: true; implicitHeight: appContent.implicitHeight + 24
+                    ColumnLayout {
+                        id: appContent
+                        anchors.fill: parent; anchors.margins: 12; spacing: 4
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: 10
+                            AppIcon { visible: app.record.icon !== ""; icon: app.record.icon; Layout.preferredWidth: 20; Layout.preferredHeight: 20 }
+                            ColumnLayout {
+                                Layout.fillWidth: true; spacing: 1
+                                ShellText { text: app.record.label; Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
+                                Note { visible: app.record.detail !== "" && app.record.detail !== app.record.label && app.record.detail !== "AudioStream"; text: app.record.detail; maximumLineCount: 1; elide: Text.ElideRight }
+                            }
+                            Note { visible: app.muted; text: qsTr("Muted"); Layout.fillWidth: false }
                         }
-                        Note { visible: app.muted; text: qsTr("Muted"); Layout.fillWidth: false }
-                    }
-                    MediaControls {
-                        objectName: "appPlayback:" + app.record.key
-                        Layout.fillWidth: true; active: root.active
-                        players: root.playerAssignments.filter(match => match.key === app.record.key).map(match => match.player)
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true; spacing: 8
-                        VolumeControl {
-                            objectName: "appVolume:" + app.record.key; Layout.fillWidth: true
-                            enabled: root.canAct; label: app.record.label
-                            volume: root.service.level(app.record.node); muted: app.muted; showPercentage: false
-                            canVolume: !!app.record.node?.audio && !app.muted
-                            canMute: !!app.record.node?.audio
-                            maximum: root.boostForSink(app.record.target) ? 150 : 100
-                            onVolumeEdited: value => root.service.setLevel(app.record.node, value)
-                            onMuteClicked: root.service.setMuted(app.record.node, !app.muted)
+                        MediaControls {
+                            objectName: "appPlayback:" + app.record.key
+                            Layout.fillWidth: true; active: root.active
+                            players: root.playerAssignments.filter(match => match.key === app.record.key).map(match => match.player)
                         }
-                        IconButton {
-                            id: appSettings
-                            readonly property alias menu: routeMenu
-                            objectName: "appOptions:" + app.record.key
-                            iconName: "settings"; text: qsTr("Output for %1").arg(app.record.label)
-                            hint: text + "\n" + (root.destinations.find(o => o.name === app.record.target)?.label ?? qsTr("Output unavailable"))
-                            enabled: root.canAct && !root.service.busy && root.destinations.length > 0
-                            onClicked: routeMenu.open()
-                            Menu {
-                                id: routeMenu
-                                popupType: Popup.Item
-                                x: appSettings.width - width; y: appSettings.height
-                                width: Math.min(320, root.width); padding: 6
-                                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-                                background: Surface { color: Theme.background; radius: Theme.controlRadius }
-                                Instantiator {
-                                    model: root.destinations
-                                    delegate: ShellMenuItem {
-                                        required property var modelData
-                                        objectName: "appOutput:" + app.record.key + ":" + modelData.key
-                                        text: modelData.label; marked: modelData.name === app.record.target
-                                        Accessible.checkable: true; Accessible.checked: marked
-                                        enabled: root.canAct && !root.service.busy
-                                        onTriggered: root.service.move(app.record, modelData)
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: 8
+                            VolumeControl {
+                                objectName: "appVolume:" + app.record.key; Layout.fillWidth: true
+                                enabled: root.canAct; label: app.record.label
+                                volume: root.service.level(app.record.node); muted: app.muted; showPercentage: false
+                                canVolume: !!app.record.node?.audio && !app.muted
+                                canMute: !!app.record.node?.audio
+                                maximum: root.boostForSink(app.record.target) ? 150 : 100
+                                onVolumeEdited: value => root.service.setLevel(app.record.node, value)
+                                onMuteClicked: root.service.setMuted(app.record.node, !app.muted)
+                            }
+                            IconButton {
+                                id: appSettings
+                                readonly property alias menu: routeMenu
+                                objectName: "appOptions:" + app.record.key
+                                iconName: "settings"; text: qsTr("Output for %1").arg(app.record.label)
+                                hint: text + "\n" + (root.destinations.find(o => o.name === app.record.target)?.label ?? qsTr("Output unavailable"))
+                                enabled: root.canAct && !root.service.busy && root.destinations.length > 0
+                                onClicked: routeMenu.open()
+                                Menu {
+                                    id: routeMenu
+                                    popupType: Popup.Item
+                                    x: appSettings.width - width; y: appSettings.height
+                                    width: Math.min(320, root.width); padding: 6
+                                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                                    background: Surface { color: Theme.background; radius: Theme.controlRadius }
+                                    Instantiator {
+                                        model: root.destinations
+                                        delegate: ShellMenuItem {
+                                            required property var modelData
+                                            objectName: "appOutput:" + app.record.key + ":" + modelData.key
+                                            text: modelData.label; marked: modelData.name === app.record.target
+                                            Accessible.checkable: true; Accessible.checked: marked
+                                            enabled: root.canAct && !root.service.busy
+                                            onTriggered: root.service.move(app.record, modelData)
+                                        }
+                                        onObjectAdded: (index, item) => routeMenu.insertItem(index, item)
+                                        onObjectRemoved: (index, item) => routeMenu.removeItem(item)
                                     }
-                                    onObjectAdded: (index, item) => routeMenu.insertItem(index, item)
-                                    onObjectRemoved: (index, item) => routeMenu.removeItem(item)
+                                    Connections { target: root; function onActiveChanged(): void { if (!root.active) routeMenu.close(); } }
                                 }
-                                Connections { target: root; function onActiveChanged(): void { if (!root.active) routeMenu.close(); } }
                             }
                         }
                     }

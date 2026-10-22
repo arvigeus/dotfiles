@@ -136,9 +136,10 @@ DrawerPage {
                     objectName: "trayBackground:" + card.modelData.id
                     anchors.fill: parent
                     idleColor: Theme.surface
+                    idleBorderColor: Theme.border
                     highlighted: card.highlighted
                     pressed: select.down || menu.down
-                    border.color: card.attention ? Theme.warning : card.highlighted ? Theme.accent : Theme.border
+                    border.color: card.attention ? Theme.warning : card.highlighted ? Theme.accent : idleBorderColor
                 }
 
                 RowLayout {

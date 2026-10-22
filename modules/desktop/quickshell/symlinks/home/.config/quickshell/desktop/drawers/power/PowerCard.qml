@@ -2,14 +2,12 @@ import QtQuick
 import QtQuick.Layouts
 import "../../ui"
 
-Surface {
+Card {
     id: root
     default property alias content: body.data
     property string title: ""
     Layout.fillWidth: true
     implicitHeight: body.implicitHeight + 24
-    color: Theme.surface
-    radius: Theme.controlRadius
     ColumnLayout {
         id: body
         x: 12; y: 12; width: Math.max(0, root.width - 24)

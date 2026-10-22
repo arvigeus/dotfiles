@@ -81,10 +81,10 @@ def warp_status():
     service = command(["systemctl", "show", "warp-svc.service", "--property=ActiveState", "--value"])
     if service.stdout.strip() not in ("active", "activating", "reloading"):
         return {"available": True, "state": "Off · daemon stopped", "connected": False, "running": False, "mode": ""}
-    result = command(["warp-cli", "--no-ansi", "status"])
+    result = command(["warp-cli", "--accept-tos", "--no-ansi", "status"])
     match = re.search(r"^Status update:\s*(\w+)", result.stdout, re.M)
     status = match.group(1) if match else "Unavailable · check WARP registration"
-    mode = command(["warp-cli", "--no-ansi", "settings"])
+    mode = command(["warp-cli", "--accept-tos", "--no-ansi", "settings"])
     mode_match = re.search(r"(?:WarpMode|WARP mode|Mode):\s*(\S+)", mode.stdout, re.I)
     return {"available": True, "state": status, "running": True, "connected": status.lower() == "connected",
             "mode": warp_mode(mode_match.group(1)) if mode_match else ""}
@@ -94,8 +94,12 @@ def warp_control(request):
     action = request.get("action")
     if action == "disconnect":
         # Even a broken/missing registration must not prevent stopping the daemon.
-        command(["warp-cli", "--accept-tos", "disconnect"])
-        checked(["systemctl", "--no-ask-password", "stop", "warp-svc.service"], 45)
+        try:
+            command(["warp-cli", "--accept-tos", "disconnect"])
+        except ValueError:
+            pass  # Stopping the daemon also tears down its tunnel and DNS proxy.
+        warp_checked(["systemctl", "--no-ask-password", "stop", "warp-svc.service"],
+                     "Could not stop WARP. Check desktop authorization and warp-svc.service.", 45)
         return
     if action not in ("connect", "mode"):
         raise ValueError("Unknown WARP action.")
@@ -103,33 +107,51 @@ def warp_control(request):
     if mode not in WARP_MODES:
         raise ValueError("Choose a supported WARP mode.")
     if action == "mode":
-        checked(["warp-cli", "--accept-tos", "mode", mode])
+        warp_checked(["warp-cli", "--accept-tos", "mode", mode], "Could not change WARP mode.")
         return
     try:
-        checked(["systemctl", "--no-ask-password", "start", "warp-svc.service"], 45)
+        warp_checked(["systemctl", "--no-ask-password", "start", "warp-svc.service"],
+                     "Could not start WARP. Check desktop authorization and warp-svc.service.", 45)
         # systemd's start reply can precede readiness of the daemon's IPC socket.
         for _ in range(30):
             probe = command(["warp-cli", "--accept-tos", "--json", "status"])
-            try:
-                code = json.loads(probe.stdout or probe.stderr).get("code")
-            except (ValueError, AttributeError):
-                code = None
+            code = warp_code(probe)
             if code != "FailedToConnectToDaemon":
                 break
             time.sleep(0.2)
         else:
             raise ValueError("WARP daemon did not become ready. Check warp-svc.service.")
-        # Registration is explicit in the UI, never inferred from an arbitrary failure.
-        if request.get("register"):
-            checked(["warp-cli", "--accept-tos", "registration", "new"])
-        elif code == "MissingRegistration":
-            raise ValueError("WARP needs registration. Enable Register on new connect in settings, then connect again.")
-        checked(["warp-cli", "--accept-tos", "mode", mode])
-        checked(["warp-cli", "--accept-tos", "connect"])
+        # Reuse existing registration. Only the CLI's specific missing-registration
+        # result permits creating one; network/authentication failures never do.
+        registration = command(["warp-cli", "--accept-tos", "--json", "registration", "show"])
+        if warp_code(registration) == "MissingRegistration":
+            warp_checked(["warp-cli", "--accept-tos", "registration", "new"],
+                         "Could not register WARP. Check your internet connection and try again.")
+        elif registration.returncode:
+            raise ValueError("Could not read WARP registration. Check warp-svc.service and try again.")
+        warp_checked(["warp-cli", "--accept-tos", "mode", mode], "Could not change WARP mode.")
+        warp_checked(["warp-cli", "--accept-tos", "connect"], "Could not connect WARP. Check your internet connection and try again.")
     except ValueError:
         # A failed start/registration/connect must not leave an idle daemon behind.
-        checked(["systemctl", "--no-ask-password", "stop", "warp-svc.service"], 45)
+        try:
+            checked(["systemctl", "--no-ask-password", "stop", "warp-svc.service"], 45)
+        except ValueError:
+            raise ValueError("WARP failed and its service could not be stopped. Check warp-svc.service.") from None
         raise
+
+
+def warp_code(result):
+    try:
+        return json.loads(result.stdout or result.stderr).get("code")
+    except (ValueError, AttributeError):
+        return None
+
+
+def warp_checked(argv, message, timeout=20):
+    try:
+        return checked(argv, timeout)
+    except ValueError:
+        raise ValueError(message) from None
 
 
 def ip_details(device):

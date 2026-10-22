@@ -80,7 +80,7 @@ ColumnLayout {
                 GridLayout {
                     Layout.fillWidth: true; columns: 3; columnSpacing: 6; rowSpacing: 6
                     Repeater {
-                        model: [3000, 4200, 5173, 8000, 8080, 9000]
+                        model: [3000, 4321, 5173, 8000, 8080, 9000]
                         delegate: ShellButton {
                             required property int modelData
                             objectName: "portPreset:" + modelData
