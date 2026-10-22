@@ -1,0 +1,11 @@
+// The active local administrator session may change firewalld zones without an
+// authentication dialog competing with the drawer's keyboard focus. firewalld
+// passes no method details: runtime and permanent zone changes share one action.
+// Direct, policy and "all" actions keep firewalld's authentication defaults.
+polkit.addRule(function(action, subject) {
+    if ((action.id === "org.fedoraproject.FirewallD1.config" ||
+         action.id === "org.fedoraproject.FirewallD1.config.info") &&
+        subject.local && subject.active && subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+    }
+});

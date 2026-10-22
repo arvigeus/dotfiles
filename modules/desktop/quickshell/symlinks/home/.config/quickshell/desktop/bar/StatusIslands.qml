@@ -39,7 +39,6 @@ Item {
     AudioStatus { id: audioStatus }
     MicrophoneStatus { id: microphoneStatus }
     BatteryStatus { id: batteryStatus }
-    WeatherStatus { id: weatherStatus; objectName: "islandWeatherStatus" }
     SystemClock { id: clock; precision: SystemClock.Minutes; onDateChanged: root.localDate = date }
     Connections {
         target: LocationSettings
@@ -131,10 +130,10 @@ Item {
                 objectName: "notificationsIsland"
                 entries: [
                     BarEntry {
-                        key: "weather"; title: qsTr("Time and weather"); iconName: weatherStatus.iconName
-                        badge: weatherStatus.temperature; badgeReserveText: "−99°"
+                        key: "weather"; title: qsTr("Time and weather"); iconName: WeatherStatus.iconName
+                        badge: WeatherStatus.temperature; badgeReserveText: "−99°"
                         label: Qt.formatTime(root.localDate, "HH:mm")
-                        description: Qt.formatDateTime(root.localDate, "dddd, d MMMM yyyy · HH:mm t") + "\n" + weatherStatus.description
+                        description: Qt.formatDateTime(root.localDate, "dddd, d MMMM yyyy · HH:mm t") + "\n" + WeatherStatus.description
                     },
                     BarEntry {
                         key: "events"; title: qsTr("Events and tasks"); iconName: "calendar-days"

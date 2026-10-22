@@ -5,8 +5,6 @@ import QtQuick.Layouts
 import QtMultimedia
 import Quickshell
 import "../ui"
-import "audio"
-import "network"
 import "capture"
 
 DrawerPage {
@@ -94,7 +92,7 @@ DrawerPage {
         RowLayout {
             Layout.fillWidth: true; visible: root.service.error !== ""
             Note { objectName: "captureError"; text: root.service.error; color: Theme.danger }
-            AudioIconButton { iconName: "x"; text: qsTr("Dismiss capture error"); onClicked: root.service.dismissError() }
+            IconButton { iconName: "x"; text: qsTr("Dismiss capture error"); onClicked: root.service.dismissError() }
         }
         DrawerColumn {
             id: captureScroll
@@ -157,7 +155,7 @@ DrawerPage {
                                 root.service.setSave(value);
                             }
                         }
-                        NetworkChoice {
+                        ShellChoice {
                             objectName: "captureDisplay"; Layout.fillWidth: true
                             visible: root.outputs.length > 1
                             Accessible.name: qsTr("Display to capture")
@@ -239,7 +237,7 @@ DrawerPage {
                         : (root.service.paused ? qsTr("Paused · %1") : qsTr("Recording · %1")).arg(root.service.recordingTime)
                     color: root.service.paused ? Theme.muted : Theme.danger
                 }
-                AudioIconButton {
+                IconButton {
                     objectName: "capturePause"
                     visible: ["recording", "paused"].includes(root.service.recorder.phase)
                     iconName: root.service.paused ? "play" : "pause"

@@ -1,4 +1,4 @@
-"""Nextcloud account (nextcloud.json), private credential files, and scoped DAV transport."""
+"""Nextcloud account (nextcloud.json), private app password, and scoped DAV transport."""
 
 import base64
 import json
@@ -19,7 +19,13 @@ class CredentialMissing(NextcloudError):
 
 
 def config_root():
-    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "quickshell/desktop/integrations"
+    base = os.environ.get("XDG_CONFIG_HOME") or ""
+    root = Path(base) if os.path.isabs(base) else Path.home() / ".config"
+    return root / "quickshell/desktop/integrations"
+
+
+def password_path(root=None):
+    return (root or config_root()) / "nextcloud-app-password"
 
 
 def read_json(path):
@@ -35,18 +41,20 @@ def read_json(path):
 
 
 def validate_account(data):
+    """Return the canonical {url, username} account; other keys are ignored."""
     url = data.get("url", "")
     username = data.get("username", "")
     if not isinstance(url, str) or not isinstance(username, str):
         raise NextcloudError("Set an HTTPS URL and username in nextcloud.json.")
     try:
         parsed = urlsplit(url)
-        parsed.port
+        port = parsed.port  # Raises ValueError for a malformed or out-of-range port.
     except ValueError as error:
         raise NextcloudError("Set a valid HTTPS instance URL in nextcloud.json.") from error
     if (
         parsed.scheme != "https"
         or not parsed.hostname
+        or port == 0
         or parsed.username
         or parsed.password
         or parsed.query
@@ -57,37 +65,7 @@ def validate_account(data):
         or any(part in (".", "..") for part in unquote(parsed.path).split("/"))
     ):
         raise NextcloudError("Set an HTTPS instance URL and username in nextcloud.json.")
-    credentials = data.get("credentials", {})
-    capabilities = data.get("capabilities", {})
-    if not isinstance(credentials, dict) or not isinstance(capabilities, dict):
-        raise NextcloudError("Nextcloud credentials and capabilities must be named objects.")
-    for reference in credentials.values():
-        if not isinstance(reference, dict) or reference.get("provider") != "file":
-            raise NextcloudError("Nextcloud credentials require the file provider.")
-        file = reference.get("file")
-        if (
-            not isinstance(file, str)
-            or not file
-            or Path(file).is_absolute()
-            or any(part in (".", "..") for part in file.split("/"))
-        ):
-            raise NextcloudError(
-                "Credential file references must stay inside credentials/nextcloud."
-            )
-    for capability in capabilities.values():
-        if (
-            not isinstance(capability, dict)
-            or not isinstance(capability.get("credential"), str)
-            or capability["credential"] not in credentials
-        ):
-            raise NextcloudError("Each Nextcloud capability must reference a named credential.")
-    return {
-        **data,
-        "url": url.rstrip("/") + "/",
-        "username": username.strip(),
-        "credentials": credentials,
-        "capabilities": capabilities,
-    }
+    return {"url": url.rstrip("/") + "/", "username": username.strip()}
 
 
 def load_account(root=None):
@@ -97,20 +75,14 @@ def load_account(root=None):
     return validate_account(read_json(path))
 
 
-def read_credential(reference, root=None):
-    """Read a credential file under credentials/nextcloud: owned by you, mode 0600, no symlink."""
-    directory = (root or config_root()) / "credentials/nextcloud"
-    path = directory / reference["file"]
-    if not path.resolve().is_relative_to(directory.resolve()):
-        raise NextcloudError("The Nextcloud credential path escapes its directory.")
+def app_password(root=None):
+    """Read nextcloud-app-password: a regular file owned by you, mode 0600, not a symlink."""
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        descriptor = os.open(password_path(root), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError as error:
-        raise CredentialMissing(
-            "Save the referenced Nextcloud credential with mode 0600."
-        ) from error
+        raise CredentialMissing("Save the Nextcloud app password with mode 0600.") from error
     except OSError as error:
-        raise NextcloudError("Cannot open the Nextcloud credential file.") from error
+        raise NextcloudError("Cannot open the Nextcloud app password file.") from error
     with os.fdopen(descriptor) as source:
         info = os.fstat(source.fileno())
         if (
@@ -118,21 +90,14 @@ def read_credential(reference, root=None):
             or stat.S_IMODE(info.st_mode) != 0o600
             or info.st_uid != os.getuid()
         ):
-            raise NextcloudError("Nextcloud credential files must be owned by you with mode 0600.")
+            raise NextcloudError("The Nextcloud app password file must be owned by you with mode 0600.")
         try:
             secret = source.read(65537).strip()
         except (OSError, UnicodeError) as error:
-            raise NextcloudError("Cannot read the Nextcloud credential.") from error
+            raise NextcloudError("Cannot read the Nextcloud app password.") from error
     if not secret or len(secret) > 65536 or "\n" in secret or "\r" in secret:
-        raise NextcloudError("The Nextcloud credential is empty or invalid.")
+        raise NextcloudError("The Nextcloud app password is empty or invalid.")
     return secret
-
-
-def credential(account, capability="dav", root=None):
-    config = account.get("capabilities", {}).get(capability)
-    if not config:
-        raise NextcloudError(f"Enable the {capability} capability in nextcloud.json.")
-    return read_credential(account["credentials"][config["credential"]], root)
 
 
 class SameOriginRedirect(HTTPRedirectHandler):
@@ -152,7 +117,7 @@ class DAVClient:
         self.username = self.account["username"]
         self.origin = urlsplit(self.base).netloc
         self.home = self.base + scope.lstrip("/")
-        password = credential(self.account)
+        password = app_password()
         self.auth = "Basic " + base64.b64encode((self.username + ":" + password).encode()).decode()
         self.opener = opener or build_opener(SameOriginRedirect(self.allowed))
 

@@ -7,5 +7,4 @@ Preview the live adapter's execution scope without running commands:
 python3 scripts/apply-config.py user-configuration.json --dry-run
 ```
 
-Changes to module scripts or shared helpers require regeneration before apply.
 See [ARCHITECTURE.md](ARCHITECTURE.md) for executor and adapter details.

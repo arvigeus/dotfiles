@@ -10,9 +10,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-import test_display_drawer as fixtures
+import support
 
-DESKTOP = fixtures.DESKTOP
+DESKTOP = support.DESKTOP
 SPEC = importlib.util.spec_from_file_location('desktop_disks', DESKTOP / 'drawers/disks/backend.py')
 backend = importlib.util.module_from_spec(SPEC)
 _bytecode_disabled = sys.dont_write_bytecode
@@ -162,20 +162,19 @@ class StorageTests(unittest.TestCase):
         with self.assertRaisesRegex(backend.StorageError, 'changed'): self.storage.handle(request)
         self.storage.call.assert_not_called()
 
-    def test_unlock_sends_secret_only_to_dbus_and_clears_request(self):
+    def test_unlock_sends_secret_only_to_dbus(self):
         request = dict(self.request('unlock', B+'test2'), password='secret with spaces')
         result = self.storage.response(request)
         self.assertTrue(result['ok'], result)
-        self.assertNotIn('password', request)
         self.assertNotIn('secret with spaces', json.dumps(result))
         self.storage.call.assert_called_once_with(B+'test2', backend.CRYPT, 'Unlock', password='secret with spaces')
 
-    def test_password_is_cleared_when_unlock_validation_or_service_fails(self):
+    def test_failed_unlock_does_not_echo_password(self):
         for identity in ('stale', self.storage.block_identity(self.data, B+'test2')):
             request = dict(op='unlock', key=B+'test2', identity=identity, password='private')
             self.storage.call.side_effect = RuntimeError('private')
             result = self.storage.response(request)
-            self.assertFalse(result['ok']); self.assertNotIn('password', request)
+            self.assertFalse(result['ok'])
             self.assertNotIn('private', json.dumps(result))
 
     def test_unmount_then_eject_never_forces_and_returns_device_confirmation(self):
@@ -239,9 +238,9 @@ class StorageTests(unittest.TestCase):
         self.storage.call.assert_not_called()
 
 
-@unittest.skipUnless(fixtures.QS, 'Quickshell is required')
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class DisksQmlTests(unittest.TestCase):
-    run_qml = fixtures.DisplayQmlTests.run_qml
+    run_qml = support.run_qml
 
     def test_inventory_actions_unlock_escape_keyed_refresh_and_narrow_layout(self):
         storage = backend.Storage.__new__(backend.Storage)
@@ -384,6 +383,9 @@ ShellRoot {
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             marker = root / 'launched'
+            launcher = root / 'uwsm'
+            launcher.write_text('#!/bin/sh\n[ "$1" = app ] && [ "$2" = -t ] && [ "$3" = service ] && [ "$4" = -- ] || exit 1\nshift 4\nexec "$@"\n')
+            launcher.chmod(0o700)
             executable = root / 'filelight'
             executable.write_text('#!' + sys.executable + '\nimport json,sys\nfrom pathlib import Path\n'
                                   f'Path({str(marker)!r}).write_text(json.dumps(sys.argv[1:]))\n')

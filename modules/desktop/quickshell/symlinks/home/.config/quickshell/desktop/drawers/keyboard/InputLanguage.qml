@@ -4,7 +4,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 
-QtObject {
+Singleton {
     id: root
     property string language: "en"
     property string secondary: "bg"
@@ -46,7 +46,7 @@ QtObject {
         worker.received = false;
         worker.result = null;
         if (action === "select") selectionError = "";
-        worker.command = ["python3", Qt.resolvedUrl("backend.py").toString().replace("file://", ""), action, code];
+        worker.command = ["python3", Quickshell.shellPath("drawers/keyboard/backend.py"), action, code];
         requestActive = true;
         worker.running = true;
     }
@@ -67,7 +67,8 @@ QtObject {
             layoutChanged.restart();
         } else if (name === "configreloaded") layoutChanged.restart();
     }
-    property Process worker: Process {
+    Process {
+        id: worker
         property string action: "status"
         property string code: ""
         property string failure: ""
@@ -80,12 +81,12 @@ QtObject {
                     const state = JSON.parse(text);
                     if (!["en", "bg", "vi"].includes(state.language) || !["bg", "vi"].includes(state.secondary)
                         || typeof state.available !== "boolean") throw new Error("Invalid state");
-                    root.worker.result = state;
-                    root.worker.received = true;
-                } catch (error) { root.worker.failure = qsTr("Could not read the input language."); }
+                    worker.result = state;
+                    worker.received = true;
+                } catch (error) { worker.failure = qsTr("Could not read the input language."); }
             }
         }
-        stderr: StdioCollector { onStreamFinished: if (text.trim()) root.worker.failure = text.trim(); }
+        stderr: StdioCollector { onStreamFinished: if (text.trim()) worker.failure = text.trim(); }
         onExited: (exitCode, exitStatus) => {
             const failureText = failure || (exitCode || !received ? qsTr("Could not change or read the input language.") : "");
             if (!failureText) {
@@ -103,14 +104,16 @@ QtObject {
             Qt.callLater(root.next);
         }
     }
-    property Timer updates: Timer {
+    Timer {
+        id: updates
         // Provider mode changes have no XKB event. No daemon starts on reads.
         interval: 1000; repeat: true
         running: root.loaded && root.secondary === "vi"
         onTriggered: root.refresh()
     }
-    property Timer layoutChanged: Timer { interval: 80; onTriggered: root.refresh() }
-    property Connections events: Connections {
+    Timer { id: layoutChanged; interval: 80; onTriggered: root.refresh() }
+    Connections {
+        id: events
         target: Hyprland
         function onRawEvent(event): void { root.handleLayoutEvent(event.name, event.data); }
     }

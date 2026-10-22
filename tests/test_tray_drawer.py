@@ -1,17 +1,17 @@
 """Production tray input, hot removal and layout; no real application actions."""
 import os
 import unittest
-import test_display_drawer as fixtures
+import support
 
 
-@unittest.skipUnless(fixtures.QS, 'Quickshell is required')
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class TrayDrawerTests(unittest.TestCase):
     def test_blueman_menu_icons_with_native_theme(self):
         if os.environ.get('DISPLAY_PREVIEW_PLATFORM') != 'wayland':
             self.skipTest('System icon search paths require the native Wayland QPA')
-        startup = '\n'.join(line for line in (fixtures.DESKTOP / 'shell.qml').read_text().splitlines()
+        startup = '\n'.join(line for line in (support.DESKTOP / 'shell.qml').read_text().splitlines()
                             if line.startswith('//@ pragma ')) + '\n'
-        fixtures.DisplayQmlTests.run_qml(self, startup + '''import QtQuick
+        support.run_qml(self, startup + '''import QtQuick
 import Quickshell
 ShellRoot {
  property var names:["bluetooth-disabled-symbolic","edit-find-symbolic","document-open-recent-symbolic","bluetooth-symbolic","document-properties-symbolic","application-x-addon-symbolic","help-about-symbolic","application-exit-symbolic"]
@@ -33,7 +33,7 @@ ShellRoot {
 }''')
 
     def test_live_items_keyboard_mouse_scrolling_and_dismissal(self):
-        fixtures.DisplayQmlTests.run_qml(self, '''import QtQuick
+        support.run_qml(self, '''import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -133,7 +133,7 @@ ShellRoot {
             shutil.copyfile(Path(__file__).parent / 'fixtures/tray_service.py', root / 'tray_service.py')
         run = subprocess.run
         def isolated(command, **kwargs):
-            if command[0] == fixtures.QS:
+            if command[0] == support.QS:
                 command = ['dbus-run-session', '--', *command]
                 # QTest's synthetic input has no compositor seat serial for a
                 # native grabbing menu. Test its actions/semantics offscreen;
@@ -143,10 +143,10 @@ ShellRoot {
                 return run(command, **kwargs)
             except subprocess.TimeoutExpired as error:
                 self.fail((error.stdout or b'').decode() + (error.stderr or b'').decode())
-        with patch.object(fixtures.subprocess, 'run', side_effect=isolated):
-            startup = '\n'.join(line for line in (fixtures.DESKTOP / 'shell.qml').read_text().splitlines()
+        with patch.object(support.subprocess, 'run', side_effect=isolated):
+            startup = '\n'.join(line for line in (support.DESKTOP / 'shell.qml').read_text().splitlines()
                                 if line.startswith('//@ pragma ')) + '\n'
-            fixtures.DisplayQmlTests.run_qml(self, startup + '''import QtQuick
+            support.run_qml(self, startup + '''import QtQuick
 import QtTest
 import Quickshell
 import Quickshell.Io
@@ -230,8 +230,8 @@ ShellRoot {
     def test_bar_count_attention_notification_fallback_and_acknowledgement(self):
         import shutil
         def setup(root):
-            shutil.copytree(fixtures.DESKTOP / 'bar', root / 'bar')
-        fixtures.DisplayQmlTests.run_qml(self, '''import QtQuick
+            shutil.copytree(support.DESKTOP / 'bar', root / 'bar')
+        support.run_qml(self, '''import QtQuick
 import Quickshell
 import Quickshell.Services.SystemTray
 import "ui"

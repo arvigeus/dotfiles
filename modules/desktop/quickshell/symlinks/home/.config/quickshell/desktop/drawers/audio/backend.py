@@ -1,14 +1,26 @@
-"""Audio inventory and explicit actions over PipeWire's PulseAudio interface."""
+"""Device inventory and card/route/stream actions over PipeWire's PulseAudio interface.
+
+Volume, mute, defaults and application streams are handled natively by Quickshell.
+"""
+import ctypes
 import json
 import math
 import os
 from pathlib import Path
+import re
+import selectors
+import signal
 import subprocess
 import sys
 import time
 
 
 CONFIG_DIR = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'devices/audio'
+# Port switches can emit only an endpoint change, including changes made by
+# WirePlumber or another mixer. Debounce all device events; publish() suppresses
+# inventory that is unchanged by native volume/mute updates.
+EVENT = re.compile(rb"Event '\w+' on (?:card|sink|source) #")
+DEBOUNCE = 0.15
 
 
 def command(*args):
@@ -113,15 +125,11 @@ def describe(sink, port, config):
     icon = rule.get('icon') or ('headphones' if kind in ('headphones', 'headset') else 'monitor' if kind in ('hdmi', 'displayport')
                                else 'mic' if props.get('media.class') == 'Audio/Source' or kind in ('mic', 'microphone')
                                else 'bluetooth' if sink['name'].startswith('bluez_') else 'speaker')
-    return dict(label=label, icon=icon, maxVolume=rule.get('maxVolume', 150), properties=props)
-
-
-def gain(node):
-    return max((channel.get('value', 0) for channel in node.get('volume', {}).values()), default=0) / 65536 * 100
+    return dict(label=label, icon=icon, maxVolume=rule.get('maxVolume', 150))
 
 
 def volume(node):
-    return round(gain(node))
+    return round(max((channel.get('value', 0) for channel in node.get('volume', {}).values()), default=0) / 65536 * 100)
 
 
 def limit_volume(kind, node, ceiling):
@@ -132,11 +140,6 @@ def limit_volume(kind, node, ceiling):
     if peak > cap:
         command('set-' + kind + '-volume', node['name'] if kind == 'sink' else node['index'],
                 *(value * cap // peak for value in levels))
-
-
-def stream_token(stream):
-    # Pulse indices may be reused after an app exits; include the PipeWire serial.
-    return str(stream.get('properties', {}).get('object.serial', stream['index']))
 
 
 def card_for(node, cards):
@@ -273,7 +276,8 @@ def change_profile(card, target):
                     command('set-default-' + direction, node['name'])
                 live = read(stream_kind)
                 for stream in streams[stream_kind]:
-                    if stream.get(direction) == old['index'] and any(s['index'] == stream['index'] and stream_token(s) == stream_token(stream) for s in live):
+                    # PipeWire's Pulse indices are object serials and are never reused.
+                    if stream.get(direction) == old['index'] and any(s['index'] == stream['index'] for s in live):
                         command('move-' + stream_kind[:-1], stream['index'], node['name'])
             if kind == 'sources':
                 for node in after[kind]:
@@ -303,22 +307,6 @@ def change_profile(card, target):
         raise ValueError('The audio mode change failed; the previous mode was restored.') from error
 
 
-def stream_records(streams, direction):
-    result = []
-    for stream in streams:
-        props = stream.get('properties', {})
-        if props.get('application.id') == 'dotfiles.audio-test':
-            continue
-        result.append(dict(key=str(stream['index']) + ':' + stream_token(stream), index=stream['index'], token=stream_token(stream),
-                           label=props.get('application.name') or props.get('media.name') or stream.get('name') or 'Audio application',
-                           detail=props.get('media.name', ''), icon=props.get('application.icon_name', ''),
-                           applicationId=props.get('application.id', ''), applicationBinary=props.get('application.process.binary', ''),
-                           **{direction: stream.get(direction)}, volume=volume(stream), muted=bool(stream.get('mute')),
-                           recording=not stream.get('corked', False),
-                           hasVolume=stream.get('has_volume', True), canVolume=stream.get('volume_writable', True)))
-    return sorted(result, key=lambda app: (app['label'].lower(), app['key']))
-
-
 def capture_ports(card):
     """Card ports are connections, not independent capture endpoints."""
     return [p for p in entries(card.get('ports')) if p.get('direction') in ('input', 2)
@@ -326,7 +314,7 @@ def capture_ports(card):
             or p['name'].startswith(('analog-input-', 'input:', 'headset-input', 'handsfree-input'))]
 
 
-def input_inventory(sources, cards, config, default):
+def input_inventory(sources, cards, config):
     inputs, devices = [], []
     for source in sources:
         card = card_for(source, cards)
@@ -335,13 +323,11 @@ def input_inventory(sources, cards, config, default):
         routes = [dict(name=p['name'], label=describe(source, p, config)['label'],
                        selected=p['name'] == source.get('active_port'))
                   for p in ports if available(p.get('availability'))]
-        inputs.append(dict(key=source['name'], name=source['name'], index=source['index'],
+        inputs.append(dict(key=source['name'], name=source['name'],
                            deviceKey=card['name'] if card else source['name'],
                            port=source.get('active_port', ''), routes=routes,
                            portLabel=active_port.get('description', ''),
-                           available=not ports or bool(routes), selected=source['name'] == default,
-                           muted=bool(source.get('mute')), volume=volume(source),
-                           **describe(source, active_port, config)))
+                           available=not ports or bool(routes), **describe(source, active_port, config)))
     for card in cards:
         owned = [n for n in inputs if n['deviceKey'] == card['name']]
         if not owned and not any(p.get('sources', 0) for p in entries(card.get('profiles'))):
@@ -387,7 +373,7 @@ def input_inventory(sources, cards, config, default):
     return inputs, devices
 
 
-def output_inventory(sinks, cards, config, default):
+def output_inventory(sinks, cards, config):
     outputs, devices = [], []
     for sink in sinks:
         card = card_for(sink, cards)
@@ -396,11 +382,10 @@ def output_inventory(sinks, cards, config, default):
         routes = [dict(name=p['name'], label=describe(sink, p, config)['label'],
                        selected=p['name'] == sink.get('active_port'))
                   for p in ports if available(p.get('availability'))]
-        outputs.append(dict(key=sink['name'], name=sink['name'], index=sink['index'],
+        outputs.append(dict(key=sink['name'], name=sink['name'],
                             deviceKey=card['name'] if card else sink['name'],
                             port=sink.get('active_port', ''), portLabel=active.get('description', ''), routes=routes,
-                            available=not ports or bool(routes), selected=sink['name'] == default,
-                            muted=bool(sink.get('mute')), volume=volume(sink), **describe(sink, active, config)))
+                            available=not ports or bool(routes), **describe(sink, active, config)))
     for output in outputs:
         if any(d['key'] == output['deviceKey'] for d in devices):
             continue
@@ -423,38 +408,16 @@ def output_inventory(sinks, cards, config, default):
 
 def snapshot(config_dir=CONFIG_DIR):
     config, warning = load_config(config_dir)
-    info = json.loads(command('-f', 'json', 'info'))
-    sinks, cards, streams = read('sinks'), read('cards'), read('sink-inputs')
+    sinks, cards = read('sinks'), read('cards')
     sources = [n for n in read('sources') if capture_source(n)]
-    outputs, output_devices = output_inventory(sinks, cards, config, info.get('default_sink_name'))
-    inputs, input_devices = input_inventory(sources, cards, config, info.get('default_source_name'))
-    return dict(available=True, outputs=outputs, outputDevices=output_devices, streams=stream_records(streams, 'sink'),
-                inputs=inputs, inputDevices=input_devices, recordings=stream_records(read('source-outputs'), 'source'), warning=warning)
+    outputs, output_devices = output_inventory(sinks, cards, config)
+    inputs, input_devices = input_inventory(sources, cards, config)
+    return dict(available=True, outputs=outputs, outputDevices=output_devices,
+                inputs=inputs, inputDevices=input_devices, warning=warning)
 
 
 def control(request, config_dir=CONFIG_DIR):
-    op = request.get('op', 'status')
-    if op == 'status':
-        return
-    if op not in ('output-default', 'output-port', 'output-boost', 'volume', 'mute', 'move', 'profile', 'input-default', 'input-port', 'input-enabled'):
-        raise ValueError('Unknown audio action.')
-    config, _ = load_config(config_dir)
-    if op == 'output-boost':
-        if not isinstance(request.get('enabled'), bool):
-            raise ValueError('Expected a boost enabled state.')
-        cards = read('cards')
-        owned = [sink for sink in read('sinks') if (card_for(sink, cards) or sink)['name'] == request.get('device')]
-        if not owned:
-            raise ValueError('This audio device was disconnected.')
-        if not request['enabled']:
-            for sink in owned:
-                port = next((p for p in entries(sink.get('ports')) if p['name'] == sink.get('active_port')), {})
-                limit_volume('sink', sink, min(100, describe(sink, port, config)['maxVolume']))
-            indices = {sink['index'] for sink in owned}
-            for stream in read('sink-inputs'):
-                if stream.get('sink') in indices:
-                    limit_volume('sink-input', stream, 100)
-        return
+    op = request.get('op')
     if op == 'profile':
         card = next((c for c in read('cards') if c['name'] == request.get('card')), None)
         if not card or card.get('active_profile') != request.get('previous'):
@@ -467,30 +430,32 @@ def control(request, config_dir=CONFIG_DIR):
         if not profile or not profile.get('sinks'):
             raise ValueError('This playback profile is unavailable.')
         change_profile(card, profile)
-        return
-    if op in ('output-default', 'output-port'):
+    elif op == 'output-port':
         sink = next((node for node in read('sinks') if node['name'] == request.get('name')), None)
         if not sink:
             raise ValueError('This output was disconnected. Choose another device.')
-        ports = entries(sink.get('ports'))
-        if op == 'output-port':
-            port = next((p for p in ports if p['name'] == request.get('port')), None)
-            if not port or not available(port.get('availability')):
-                raise ValueError('This output connection is disconnected.')
-            cap = min(describe(sink, port, config)['maxVolume'], 150 if request.get('boost') is True else 100)
-            muted = bool(sink.get('mute'))
-            limit_volume('sink', sink, cap)
-            updated = select_port('sink', sink, port['name'])
-            limit_volume('sink', updated, cap)
-            command('set-sink-mute', sink['name'], '1' if muted else '0')
-        else:
-            active = next((p for p in ports if p['name'] == sink.get('active_port')), {})
-            if not available(active.get('availability')):
-                raise ValueError('Choose a connected output connection first.')
-            command('set-default-sink', sink['name'])
-        # Defaults follow session-manager policy; no forced stream migration.
-        return
-    if op == 'input-enabled':
+        port = next((p for p in entries(sink.get('ports')) if p['name'] == request.get('port')), None)
+        if not port or not available(port.get('availability')):
+            raise ValueError('This output connection is disconnected.')
+        config, _ = load_config(config_dir)
+        # The new route may restore a louder remembered level than it allows.
+        cap = min(describe(sink, port, config)['maxVolume'], 150 if request.get('boost') is True else 100)
+        muted = bool(sink.get('mute'))
+        limit_volume('sink', sink, cap)
+        updated = select_port('sink', sink, port['name'])
+        limit_volume('sink', updated, cap)
+        command('set-sink-mute', sink['name'], '1' if muted else '0')
+    elif op == 'input-port':
+        source = next((n for n in read('sources') if n['name'] == request.get('name') and capture_source(n)), None)
+        if not source:
+            raise ValueError('This microphone is disconnected.')
+        port = next((p for p in entries(source.get('ports')) if p['name'] == request.get('port')), None)
+        if not port or not available(port.get('availability')):
+            raise ValueError('This microphone connection is disconnected.')
+        muted = bool(source.get('mute'))
+        select_port('source', source, port['name'])
+        command('set-source-mute', source['name'], '1' if muted else '0')
+    elif op == 'input-enabled':
         enabled = request.get('enabled')
         if not isinstance(enabled, bool):
             raise ValueError('Expected a microphone input enabled state.')
@@ -514,87 +479,89 @@ def control(request, config_dir=CONFIG_DIR):
             select_port('source', source, port_name)
             command('set-source-mute', source['name'], '1')
         # Enabling availability neither unmutes nor selects a new default.
-        return
-    if op in ('input-default', 'input-port'):
-        source = next((n for n in read('sources') if n['name'] == request.get('name') and capture_source(n)), None)
-        if not source:
-            raise ValueError('This microphone is disconnected.')
-        ports = entries(source.get('ports'))
-        if op == 'input-port':
-            port = next((p for p in ports if p['name'] == request.get('port')), None)
-            if not port or not available(port.get('availability')):
-                raise ValueError('This microphone connection is disconnected.')
-            muted = bool(source.get('mute'))
-            select_port('source', source, port['name'])
-            command('set-source-mute', source['name'], '1' if muted else '0')
-        else:
-            active = next((p for p in ports if p['name'] == source.get('active_port')), {})
-            if not available(active.get('availability')):
-                raise ValueError('Choose a connected microphone connection first.')
-            command('set-default-source', source['name'])
-            # WirePlumber decides which default-following streams move. Explicit
-            # app routes are changed only by the per-application move action.
-        return
-    sink = None
-    if request.get('kind') in ('stream', 'recording'):
-        stream_kind = 'source-outputs' if request['kind'] == 'recording' else 'sink-inputs'
-        node = next((s for s in read(stream_kind) if str(s['index']) == str(request.get('index'))
-                     and stream_token(s) == request.get('token')), None)
-        if not node:
-            raise ValueError('This application stream has ended. Refresh and try again.')
-        target, kind = str(node['index']), stream_kind[:-1]
-    elif request.get('kind') == 'source':
-        node = next((n for n in read('sources') if n['name'] == request.get('name') and capture_source(n)), None)
-        if not node:
-            raise ValueError('This microphone is disconnected.')
-        target, kind = node['name'], 'source'
-    else:
-        sink = next((s for s in read('sinks') if s['name'] == request.get('name')), None)
-        if not sink:
-            raise ValueError('This output was disconnected. Choose another device.')
-        node, target, kind = sink, sink['name'], 'sink'
-    if op == 'volume':
-        value = request.get('value')
-        port = next((p for p in entries(node.get('ports')) if p['name'] == node.get('active_port')), {})
-        limit = describe(node, port, config)['maxVolume'] if sink else 150
-        allowed = 100 if kind in ('source', 'source-output') else min(limit, 150 if request.get('boost') is True else 100)
-        # An externally boosted level may always be reduced without permitting
-        # any further increase above the configured limit.
-        ceiling = max(allowed, gain(node))
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= ceiling:
-            raise ValueError(f'Volume must be between 0 and {ceiling}%.')
-        if kind in ('sink-input', 'source-output') and (not node.get('has_volume', True) or not node.get('volume_writable', True)):
-            raise ValueError('This application does not expose volume controls.')
-        command('set-' + kind + '-volume', target, f'{value:g}%')
-        # Volume and mute are independent: dragging never unexpectedly unmutes.
-    elif op == 'mute':
-        if not isinstance(request.get('muted'), bool):
-            raise ValueError('Expected a mute state.')
-        command('set-' + kind + '-mute', target, '1' if request['muted'] else '0')
     elif op == 'move':
-        if kind not in ('sink-input', 'source-output'):
-            raise ValueError('Choose an application stream.')
-        recording = kind == 'source-output'
-        destination = next((n for n in read('sources' if recording else 'sinks')
-                            if n['name'] == request.get('destination') and (not recording or capture_source(n))), None)
-        if not destination:
-            raise ValueError('The destination was disconnected.')
-        port = next((p for p in entries(destination.get('ports')) if p['name'] == destination.get('active_port')), {})
-        if not available(port.get('availability')):
-            raise ValueError('The destination connection is disconnected.')
-        if not recording and request.get('boost') is not True:
-            limit_volume('sink-input', node, 100)
-        command('move-' + kind, target, destination['name'])
+        # Quickshell exposes links read-only; PipeWire's Pulse index is the stream's object serial.
+        kind = {'stream': 'sink-input', 'recording': 'source-output'}.get(request.get('kind'))
+        serial, destination = request.get('serial'), request.get('destination')
+        if not kind or isinstance(serial, bool) or not isinstance(serial, int) or not isinstance(destination, str):
+            raise ValueError('Choose an application stream and destination.')
+        try:
+            command('move-' + kind, serial, destination)
+        except ValueError:
+            raise ValueError('The application stream or its destination is gone. Refresh and try again.') from None
+    else:
+        raise ValueError('Unknown audio action.')
+
+
+def failure(error):
+    return str(error) if isinstance(error, ValueError) else 'Could not contact the audio service. Refresh to retry.'
+
+
+def inventory(config_dir=CONFIG_DIR):
+    try:
+        return dict(ok=True, data=snapshot(config_dir))
+    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as error:
+        return dict(ok=False, error=failure(error))
+
+
+def exit_with_parent():
+    # Quickshell may SIGKILL the watcher; never leave its subscription behind.
+    ctypes.CDLL(None, use_errno=True).prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
+
+
+def watch(config_dir=CONFIG_DIR, retry=2):
+    """Print the inventory as JSON lines: once now, then whenever device events change it."""
+    last = None
+
+    def publish():
+        nonlocal last
+        line = json.dumps(inventory(config_dir), sort_keys=True)
+        if line != last:
+            print(line, flush=True)
+            last = line
+
+    while True:
+        events = subprocess.Popen(['pactl', 'subscribe'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                  preexec_fn=exit_with_parent)
+        try:
+            publish()
+            pending, due = b'', None
+            with selectors.DefaultSelector() as selector:
+                selector.register(events.stdout, selectors.EVENT_READ)
+                while True:
+                    timeout = None if due is None else max(0, due - time.monotonic())
+                    if not selector.select(timeout):
+                        due = None
+                        publish()
+                        continue
+                    chunk = os.read(events.stdout.fileno(), 4096)
+                    if not chunk:
+                        break
+                    *lines, pending = (pending + chunk).split(b'\n')
+                    if any(EVENT.search(line) for line in lines):
+                        due = time.monotonic() + DEBOUNCE
+        finally:
+            events.terminate()
+            events.wait()
+        # The server restarted or is unavailable; report that and reconnect.
+        publish()
+        time.sleep(retry)
 
 
 def main():
+    if sys.argv[1:] == ['watch']:
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+        try:
+            watch()
+        except BrokenPipeError:
+            pass
+        return
     try:
-        request = json.loads(sys.stdin.readline())
-        control(request)
-        result = dict(ok=True, data=snapshot())
-    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as error:
-        result = dict(ok=False, error=str(error) if isinstance(error, ValueError) else 'Could not contact the audio service. Refresh to retry.')
-    print(json.dumps(result))
+        control(json.loads(sys.stdin.readline()))
+        result = dict(ok=True)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, subprocess.SubprocessError) as error:
+        result = dict(ok=False, error=failure(error))
+    print(json.dumps(result), flush=True)
 
 
 if __name__ == '__main__':

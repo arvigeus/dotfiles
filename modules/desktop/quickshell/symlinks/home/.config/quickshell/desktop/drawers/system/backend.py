@@ -92,12 +92,11 @@ def system_info():
         uptime = float(Path('/proc/uptime').read_text().split()[0])
     except (OSError, ValueError, IndexError):
         uptime = None
-    # A missing modules directory is a hint, not a guaranteed reboot requirement.
-    reboot = any(Path(path).exists() for path in ('/run/reboot-required', '/var/run/reboot-required'))
+    # After a kernel upgrade, the running kernel's modules directory is gone.
     modules = Path('/usr/lib/modules')
     kernel_changed = modules.is_dir() and not (modules / platform.release()).is_dir()
     return dict(os=release.get('PRETTY_NAME', platform.system()), kernel=platform.release(),
-                uptime=uptime, reboot=reboot, kernelChanged=kernel_changed)
+                uptime=uptime, kernelChanged=kernel_changed)
 
 
 def action_command(action, scope='system', unit=''):

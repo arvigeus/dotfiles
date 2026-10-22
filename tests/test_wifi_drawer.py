@@ -10,8 +10,8 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-DESKTOP = (Path(__file__).resolve().parents[1] / 'modules/desktop/quickshell'
-           / 'symlinks/home/.config/quickshell/desktop')
+REPO = Path(__file__).resolve().parents[1]
+DESKTOP = REPO / 'modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop'
 SPEC = importlib.util.spec_from_file_location('desktop_network', DESKTOP / 'drawers/network/backend.py')
 backend = importlib.util.module_from_spec(SPEC)
 _bytecode_disabled = sys.dont_write_bytecode
@@ -71,20 +71,21 @@ class WarpTests(unittest.TestCase):
         self.assertEqual(backend.warp_mode('WarpWithDnsOverTls'), 'warp+dot')
 
     @unittest.skipUnless(shutil.which('node'), 'Node is required to evaluate the polkit rule')
-    def test_warp_policy_only_allows_local_active_start_stop(self):
-        policy = DESKTOP.parents[4] / 'files/etc/polkit-1/rules.d/50-desktop-warp.rules'
+    def test_warp_policy_only_allows_local_active_wheel_start_stop(self):
+        policy = REPO / 'modules/internet/cloudflare/files/etc/polkit-1/rules.d/50-desktop-warp.rules'
         script = '''const fs = require('fs'), vm = require('vm');
 let rule;
 vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
  polkit: {addRule: callback => rule = callback, Result: {YES: 'yes'}}
 });
-function allowed(unit, verb, local = true, active = true, id = 'org.freedesktop.systemd1.manage-units') {
- return rule({id, lookup: key => ({unit, verb})[key]}, {local, active}) === 'yes';
+function allowed(unit, verb, local = true, active = true, id = 'org.freedesktop.systemd1.manage-units', wheel = true) {
+ return rule({id, lookup: key => ({unit, verb})[key]}, {local, active, isInGroup: group => wheel && group === 'wheel'}) === 'yes';
 }
 if (!allowed('warp-svc.service', 'start') || !allowed('warp-svc.service', 'stop')
  || allowed('sshd.service', 'start') || allowed('warp-svc.service', 'restart')
  || allowed('warp-svc.service', 'start', false) || allowed('warp-svc.service', 'start', true, false)
- || allowed('warp-svc.service', 'start', true, true, 'org.freedesktop.systemd1.manage-unit-files')) process.exit(1);
+ || allowed('warp-svc.service', 'start', true, true, 'org.freedesktop.systemd1.manage-unit-files')
+ || allowed('warp-svc.service', 'start', true, true, 'org.freedesktop.systemd1.manage-units', false)) process.exit(1);
 '''
         result = subprocess.run(['node', '-e', script, str(policy)], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -102,23 +103,22 @@ class NetworkTests(unittest.TestCase):
         n = backend.Network.__new__(backend.Network)
         from gi.repository import GLib, Gio
         n.NM, n.GLib, n.Gio = NM, GLib, Gio
-        n.client = Mock(get_active_connections=lambda: [])
-        n.device = Mock(return_value=Mock(get_device_type=lambda: NM.DeviceType.WIFI))
+        device = Mock(get_device_type=lambda: NM.DeviceType.WIFI)
+        n.client = Mock(get_active_connections=lambda: [], get_device_by_iface=Mock(return_value=device))
         n.call = Mock(return_value=Mock())
         n.wait_active = Mock()
         return n
 
-    def test_hidden_password_uses_dbus_and_preserves_ssid(self):
+    def test_new_network_profile_is_user_scoped_and_uses_dbus(self):
         n = self.network()
         secret = 'test-private-password'
         ssid = '  cafe:back\\slash  '
         with patch.object(backend, 'command') as command:
-            n.connect({'ssid': ssid, 'security': 'wpa-psk', 'password': secret,
-                       'interface': 'wlan0', 'hidden': True, 'autoconnect': False})
+            n.join({'ssid': ssid, 'security': 'wpa-psk', 'password': secret, 'interface': 'wlan0'})
+        self.assertEqual(n.call.call_args.args[1], 'add_and_activate_connection_async')
         connection = n.call.call_args.args[2]
-        self.assertEqual(backend.ssid_text(connection.get_setting_wireless().get_ssid()), ssid)
-        self.assertTrue(connection.get_setting_wireless().get_hidden())
-        self.assertFalse(connection.get_setting_connection().get_autoconnect())
+        self.assertEqual(bytes(connection.get_setting_wireless().get_ssid().get_data()).decode(), ssid)
+        self.assertTrue(connection.get_setting_connection().get_autoconnect())
         self.assertEqual(connection.get_setting_connection().get_num_permissions(), 1)
         self.assertEqual(connection.get_setting_wireless_security().get_psk(), secret)
         command.assert_not_called()
@@ -128,92 +128,102 @@ class NetworkTests(unittest.TestCase):
                         {'ssid': 'cafe', 'security': 'enterprise'}]:
             n = self.network()
             with self.assertRaises(ValueError):
-                n.connect(request)
+                n.join(dict(request, interface='wlan0'))
             n.call.assert_not_called()
 
-    def test_wired_activation_uses_device_without_wifi_settings(self):
+    def test_profile_activation_is_limited_to_vpn_profiles(self):
         n = self.network()
-        device = Mock(get_device_type=lambda: NM.DeviceType.ETHERNET)
-        n.device.return_value = device
-        n.connect({'interface': 'eth0'})
-        self.assertEqual(n.call.call_args.args, (n.client, 'activate_connection_async', None, device, None))
-
-    def test_import_rejects_hooks_without_touching_networkmanager(self):
-        n = self.network()
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / 'test.conf'
-            path.write_text('[Interface]\nPostUp=echo secret\n[Peer]\n')
-            with self.assertRaisesRegex(ValueError, 'wg-quick'):
-                n.control({'op': 'import', 'path': str(path)})
+        n.client.get_connection_by_uuid = lambda _: Mock(get_connection_type=lambda: '802-11-wireless')
+        with self.assertRaisesRegex(ValueError, 'no longer available'):
+            n.activate('saved')
         n.call.assert_not_called()
+        vpn = Mock(get_connection_type=lambda: 'wireguard')
+        n.client.get_connection_by_uuid = lambda _: vpn
+        n.activate('vpn')
+        self.assertEqual(n.call.call_args.args, (n.client, 'activate_connection_async', vpn, None, None))
+        n.wait_active.assert_called_once()
 
-    def test_scans_skip_radio_transitions(self):
+    def test_snapshot_lists_vpn_profiles_active_ids_and_details(self):
         n = self.network()
-        n.device.return_value.get_state.return_value = NM.DeviceState.CONFIG
-        n.control({'op': 'scan', 'interface': 'wlan0'})
-        n.call.assert_not_called()
-
-    def test_scan_not_allowed_is_not_authentication_failure(self):
-        n = self.network()
-        owner = Mock()
-        def finish(_response):
-            raise n.GLib.Error.new_literal(NM.DeviceError.quark(), 'Scanning not allowed', NM.DeviceError.NOTALLOWED)
-        owner.request_scan_finish = finish
-        def start(cancel, callback, data):
-            n.GLib.idle_add(lambda: callback(owner, None))
-        owner.request_scan_async = start
-        self.assertFalse(backend.Network.call(n, owner, 'request_scan_async'))
-
-    def test_connect_reuses_an_already_active_profile(self):
-        n = self.network()
-        active = Mock(get_uuid=lambda: 'saved', get_state=lambda: NM.ActiveConnectionState.ACTIVATED)
+        active = Mock(get_uuid=lambda: 'vpn', get_state=lambda: NM.ActiveConnectionState.ACTIVATED)
         n.client.get_active_connections = lambda: [active]
-        n.profile = Mock()
-        n.connect({'uuid': 'saved'})
-        n.wait_active.assert_called_once_with(active)
-        n.call.assert_not_called()
+        n.client.get_connections = lambda: [
+            Mock(get_connection_type=lambda: 'wireguard', get_uuid=lambda: 'vpn', get_id=lambda: 'Work'),
+            Mock(get_connection_type=lambda: '802-11-wireless', get_uuid=lambda: 'home', get_id=lambda: 'Home')]
+        address = Mock(get_address=lambda: '192.0.2.2', get_prefix=lambda: 24)
+        config = Mock(get_addresses=lambda: [address], get_gateway=lambda: '192.0.2.1', get_nameservers=lambda: ['192.0.2.1'])
+        n.client.get_devices = lambda: [Mock(get_device_type=lambda: NM.DeviceType.WIFI, get_iface=lambda: 'wlan0',
+                                             get_active_connection=lambda: Mock(get_id=lambda: 'Home'),
+                                             get_ip4_config=lambda: config, get_ip6_config=lambda: None)]
+        snapshot = n.snapshot()
+        self.assertEqual(snapshot['active'], ['vpn'])
+        self.assertEqual([p['uuid'] for p in snapshot['profiles']], ['vpn'])
+        self.assertEqual(snapshot['profiles'][0]['state'], 'activated')
+        self.assertEqual(snapshot['details']['wlan0'], {'connection': 'Home', 'ipv4': ['192.0.2.2/24'],
+                         'ipv4Gateway': '192.0.2.1', 'ipv4Dns': ['192.0.2.1'], 'ipv6': [], 'ipv6Gateway': '', 'ipv6Dns': []})
 
-    def test_security_keeps_open_and_protected_networks_separate(self):
-        flags = getattr(NM, '80211ApSecurityFlags')
-        ap = Mock(get_flags=lambda: 0, get_wpa_flags=lambda: 0, get_rsn_flags=lambda: 0)
-        self.assertEqual(backend.security(ap, NM), 'open')
-        ap.get_rsn_flags = lambda: flags.KEY_MGMT_SAE | flags.KEY_MGMT_PSK
-        self.assertEqual(backend.security(ap, NM), 'sae')
-        ap.get_rsn_flags = lambda: flags.KEY_MGMT_802_1X
-        self.assertEqual(backend.security(ap, NM), 'enterprise')
+    def test_unknown_operations_are_rejected_before_networkmanager(self):
+        with patch.object(backend, 'Network') as network:
+            for op in ('forget', 'autoconnect', 'check', 'import', 'radio', 'scan'):
+                with self.assertRaisesRegex(ValueError, 'Unknown'):
+                    backend.handle({'op': op})
+        network.assert_not_called()
 
 
 @unittest.skipUnless(QS, 'Quickshell is required')
 class WifiDrawerTests(unittest.TestCase):
     def test_controls_errors_and_lifecycle(self):
-        state = dict(available=True, wifiEnabled=True, hardwareEnabled=True, connectivity='portal',
-                     adapters=[dict(interface='wlan0', state='activated', connected=True, connection='Home', details='IPv4: 192.0.2.2/24\nIPv4 gateway: 192.0.2.1\nIPv4 DNS: 192.0.2.1', mac='00:11:22:33:44:55', uuid='saved', speed=433)],
-                     networks=[dict(key='new', ssid='<Cafe & guests>', interface='wlan0', security='wpa-psk', strength=85, frequency=5180, bssid='00:11:22:33:44:66', connected=False, uuid=''),
-                               dict(key='home', ssid='Home', interface='wlan0', security='wpa-psk', strength=82, frequency=2412, bssid='00:11:22:33:44:77', connected=True, uuid='saved'),
-                               dict(key='guest', ssid='Guest network', interface='wlan0', security='open', strength=42, frequency=2412, bssid='00:11:22:33:44:88', connected=False, uuid='')],
-                     profiles=[dict(uuid='saved', name='Home', ssid='Home', kind='802-11-wireless', active=True, state='activated', autoconnect=True),
-                               dict(uuid='vpn', name='Work', kind='wireguard', active=False, state='disconnected', autoconnect=False)],
-                     wired=[dict(interface='eth0', state='unavailable', connected=False, carrier=False, speed=0, uuid='', connection='', details='')],
+        state = dict(profiles=[dict(uuid='vpn', name='Work', kind='wireguard', active=False, state='disconnected')],
+                     active=['home'], details=dict(wlan0=dict(connection='Home', ipv4=['192.0.2.2/24'], ipv4Gateway='192.0.2.1',
+                                                             ipv4Dns=['192.0.2.1'], ipv6=[], ipv6Gateway='', ipv6Dns=[])),
                      warp=dict(available=True, connected=False, running=False, state='Off · daemon stopped', mode=''))
         qml = '''import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtTest
 import Quickshell
+import Quickshell.Networking
 import "drawers"
 import "ui" as UI
 FloatingWindow {
  id: window
  implicitWidth: 480; implicitHeight: 900; color: UI.Theme.background
  Rectangle { anchors.fill: parent; color: UI.Theme.background }
+ property var log: []
+ component FakeNetwork: QtObject {
+  property string name
+  property real signalStrength: 0.5
+  property int security: WifiSecurityType.Wpa2Psk
+  property bool known: false
+  property bool connected: false
+  property int state: connected ? ConnectionState.Connected : ConnectionState.Disconnected
+  property var device: wifi
+  signal connectionFailed(int reason)
+  function connect() { window.log = window.log.concat([["connect", name]]); }
+  function connectWithPsk(psk) { window.log = window.log.concat([["psk", name, psk]]); }
+  function disconnect() { window.log = window.log.concat([["disconnect", name]]); }
+  function forget() { window.log = window.log.concat([["forget", name]]); }
+ }
+ FakeNetwork { id: newNetwork; name: "<Cafe & guests>"; signalStrength: 0.85 }
+ FakeNetwork { id: home; name: "Home"; signalStrength: 0.82; known: true; connected: true }
+ FakeNetwork { id: office; name: "Office"; signalStrength: 0.45; known: true }
+ FakeNetwork { id: guest; name: "Guest network"; signalStrength: 0.42; security: WifiSecurityType.Open }
+ FakeNetwork { id: away; name: "Away"; signalStrength: 0; known: true }
+ QtObject { id: wifiNetworks; property var values: [newNetwork, home, office, guest, away] }
+ QtObject { id: wifi; property int type: DeviceType.Wifi; property string name: "wlan0"; property string address: "00:11:22:33:44:55"
+  property bool connected: true; property bool scannerEnabled: false; property var networks: wifiNetworks }
+ QtObject { id: wired; property int type: DeviceType.Wired; property string name: "eth0"; property bool hasLink: false
+  property bool connected: false; property int linkSpeed: 0; property var network: null; property int state: ConnectionState.Disconnected }
+ QtObject { id: devicesModel; property var values: [wifi, wired] }
+ QtObject { id: fakeNetworking; property int backend: NetworkBackendType.NetworkManager; property bool wifiEnabled: true
+  property bool wifiHardwareEnabled: true; property int connectivity: NetworkConnectivity.Portal; property var devices: devicesModel }
  QtObject {
   id: fake
   property bool observing: false
   property bool loaded: true
   property bool busy: false
-  property string interfaceName: "wlan0"
+  property string interfaceName: ""
   property string error: ""
-  property var traffic: ({wlan0: {down: 2048, up: 1024}})
   property string pending: ""
   property string pendingKey: ""
   property var state: STATE
@@ -222,10 +232,9 @@ FloatingWindow {
   property bool warpRegisterNext: false
   function selectWarpMode(mode) { warpMode = mode; }
   function setWarpRegistration(value) { warpRegisterNext = value; }
+  function dismissError() { error = ""; }
   signal completed(string operation, bool success)
   function run(op, values = {}, key = "") { pendingKey = key; calls = calls.concat([{op, values, key}]); }
-  function refresh() { run("status"); }
-  function scan() { run("scan"); }
  }
  QtObject {
   id: speed
@@ -255,7 +264,7 @@ FloatingWindow {
   width: 448; height: 900 - y - 16; x: 16; y: header.y + header.height + 33
   asynchronous: true
   sourceComponent: Component {
-   WifiDrawer { service: fake; speedTest: speed; active: true
+   WifiDrawer { service: fake; networking: fakeNetworking; speedTest: speed; active: true; trafficRoot: Quickshell.env("WIFI_TRAFFIC_ROOT")
     Rectangle { anchors.fill: parent; color: UI.Theme.background; z: -1 }
    }
   }
@@ -268,14 +277,13 @@ FloatingWindow {
   return null;
  }
  function check(value, message) { if (!value) throw new Error(message); }
+ function last() { return window.log[window.log.length - 1] ?? []; }
  function capture(item, name) {
-  const output = Quickshell.env("WIFI_PREVIEW_DIR") || "/tmp";
-  const requested = item.grabToImage(result => console.log("PREVIEW_SAVED", name, result.saveToFile(output + "/" + name)));
-  check(requested, "capture request failed: " + name);
+  const output = Quickshell.env("WIFI_PREVIEW_DIR");
+  if (output) item.grabToImage(result => console.log("PREVIEW_SAVED", name, result.saveToFile(output + "/" + name)));
  }
- property var savedNetworkRow: null
+ property var savedRow: null
  property var savedVpnRow: null
- property real savedOffset: 0
  property int stage: 0
  Timer { interval: 150; running: drawerLoader.status === Loader.Ready; repeat: true; onTriggered: {
   try {
@@ -283,98 +291,103 @@ FloatingWindow {
    const scroll = find(drawer, "networkScroll");
    if (window.stage === 0) {
     check(find(drawer, "wirelessSection").flat && find(drawer, "vpnSection").flat, "unexpected section background");
-    check(!find(drawer, "savedNetworksSection") && !find(drawer, "hiddenNetworkSection"), "old management forms remain");
     check(!find(drawer, "ethernetSection").visible, "unplugged Ethernet is visible");
-    check(drawer.headerActions !== null && !find(drawer, "networkEdit") && !find(drawer, "vpnEdit") && !find(drawer, "addVpn"), "management action is not confined to the header");
-    check(!find(drawer, "connectionDetails") && !find(drawer, "connectionInfo"), "info controls remain");
-    const row = find(drawer, "wifiNetwork:home");
-    check(row.leftPadding >= 0 && !row.hint.includes("192.0.2.1") && row.hint.includes("82%"), "network tooltip lost signal or duplicated connection information");
+    check(!find(window.contentItem, "wifiScan") && find(window.contentItem, "networkEdit") && !find(drawer, "networkEdit"), "header actions");
     check(find(preview, "wifiInfo").iconName === "info", "connection information is not discoverable in header");
-    check(find(drawer,"wirelessSection").hint === "", "Wireless heading retains hidden information");
-    for (const name of ["wirelessSection", "ethernetSection", "vpnSection"])
-     check(find(drawer, name).iconName === "" && find(drawer, name).leading === null, "section still has an icon");
-    check(find(window.contentItem, "wifiScan") && !find(drawer, "wifiScan") && !find(drawer, "wifiToggle"), "power/scan did not move to header");
+    check(find(window.contentItem, "wifiToggle") && !find(drawer, "wifiToggle"), "power did not move to header");
+    check(wifi.scannerEnabled && fake.observing, "open drawer did not scan/observe");
+    check(drawer.networks.length === 4 && !find(drawer, "wifiNetwork:Away"), "out-of-range saved network listed");
+    check(drawer.networks[0] === home && drawer.networks[1] === office, "connected and saved networks are not first");
+    const row = find(drawer, "wifiNetwork:Home");
+    check(row.hint.includes("82%") && row.hint.includes("WPA/WPA2 Personal") && !row.hint.includes("192.0.2"), "network tooltip");
+    check(find(drawer, "wifiForget:Home").visible && !find(drawer, "wifiForget:Guest network").visible, "forget offered for unsaved network");
     check(row.foreground.toString() === UI.Theme.text.toString(), "connected row should use normal text");
     input.mouseMove(row, 8, row.height / 2);
     check(row.highlighted && row.foreground.toString() === UI.Theme.accent.toString(), "row hover did not cover icon and name");
     input.mouseMove(drawer, 0, drawer.height - 1);
-    check(find(window.contentItem, "wifiToggle").checked && fake.calls.length === 0, "initial power read issued a mutation");
-    const scan = find(window.contentItem, "wifiScan");
-    input.mouseClick(scan, scan.width / 2, scan.height / 2);
-    check(fake.calls.length === 1 && fake.calls[0].op === "scan", "header refresh did not request a scan");
-    fake.calls = [];
-    check(find(drawer, "downloadRate").text === "2.0 KiB/s", "compact transfer statistics missing");
-    check(find(drawer, "networkActivity").foreground.toString() === UI.Theme.text.toString(), "spinner does not follow theme");
+    check(find(window.contentItem, "wifiToggle").checked && fake.calls.length === 0 && window.log.length === 0, "initial read issued a mutation");
+    drawer.trafficSample = {received: 0, sent: 0, time: Date.now() - 1000};
+    drawer.sampleTraffic();
+    check(Math.abs(drawer.rates.down - 2048) < 300 && find(drawer, "downloadRate").text.endsWith("KiB/s"), "transfer statistics");
     capture(preview, "wifi-drawer-compact.png");
    } else if (window.stage === 1) {
-    check(fake.observing && drawer.networks.length === 3, "activation/network list");
-    const newNetwork = find(drawer, "wifiNetwork:new");
-    input.mouseClick(newNetwork, 80, 20);
+    input.mouseClick(find(drawer, "wifiNetwork:<Cafe & guests>"), 80, 20);
     password = drawer.passwordField;
     password.forceActiveFocus(); input.keyClick(Qt.Key_A);
     check(drawer.passwordText === "a", "password edit did not reach the model");
     drawer.passwordText = "retry-password";
     input.mouseClick(find(drawer, "wifiSubmit"), 16, 16);
-    check(fake.calls[0].op === "connect" && fake.calls[0].values.password === "retry-password", "password dispatch");
-    fake.error = "Incorrect password"; fake.completed("connect", false);
-    check(password.text === "retry-password", "failure discarded password");
+    const call = fake.calls[0];
+    check(call.op === "join" && call.values.password === "retry-password" && call.values.security === "wpa-psk"
+        && call.values.interface === "wlan0" && call.values.ssid === "<Cafe & guests>", "new network did not use helper");
+    fake.error = "Incorrect password"; fake.completed("join", false);
+    check(password.text === "retry-password" && find(drawer, "networkError").text === "Incorrect password", "failure discarded password");
     fake.busy = true;
-    check(!find(window.contentItem, "wifiToggle").enabled, "duplicate action allowed");
-    drawer.active = false; check(!fake.observing, "observation survived dismissal");
-    fake.completed("connect", true); check(password.text === "", "success retained password");
+    check(!find(drawer, "wifiSubmit").enabled, "duplicate action allowed");
+    drawer.active = false; check(!fake.observing && !wifi.scannerEnabled, "observation survived dismissal");
+    fake.completed("join", true); check(password.text === "", "success retained password");
     drawer.active = true; fake.busy = false; fake.error = "";
-    drawer.choose(fake.state.networks[0]);
+    check(wifi.scannerEnabled, "scanner did not resume");
+    drawer.choose(newNetwork); drawer.passwordRequired = true;
     fake.selectWarpMode("tunnel_only");
-    password = drawer.passwordField; drawer.passwordText = "keep-this-password"; password.forceActiveFocus();
+    window.savedVpnRow = find(drawer, "networkProfile:vpn");
    } else if (window.stage === 2) {
-    const networkRow = find(drawer, "wifiNetwork:new");
+    password = drawer.passwordField; drawer.passwordText = "keep-this-password"; password.forceActiveFocus();
+    const networkRow = find(drawer, "wifiNetwork:<Cafe & guests>");
     const body = scroll.contentChildren[0];
     const auth = find(drawer, "wifiAuthentication");
-    const next = find(drawer, "wifiNetwork:guest");
-    check(auth.visible && auth.mapToItem(body, 0, 0).y >= networkRow.mapToItem(body, 0, networkRow.height).y
-        && auth.mapToItem(body, 0, auth.height).y < next.mapToItem(body, 0, 0).y, "password form is not under the selected network");
+    check(auth.visible && auth.mapToItem(body, 0, 0).y >= networkRow.mapToItem(body, 0, networkRow.height).y, "password form is not under the selected network");
     check(auth.mapToItem(body, 0, 0).x > networkRow.mapToItem(body, 0, 0).x, "password form lacks extra indentation");
-    const vpnRow = find(drawer, "networkProfile:vpn");
     const offset = scroll.contentItem.contentY;
-    fake.pending = "status";
-    check(find(window.contentItem, "wifiToggle").enabled, "background read disabled controls");
-    fake.state = Object.assign({}, fake.state, {networks: fake.state.networks.map(n => Object.assign({}, n, {strength: 25})).reverse()});
-    check(find(drawer, "wifiNetwork:new") === networkRow && find(drawer, "networkProfile:vpn") === vpnRow, "refresh recreated delegates");
+    newNetwork.signalStrength = 0.9; office.signalStrength = 0.5;
+    fake.state = Object.assign({}, fake.state, {profiles: fake.state.profiles.map(p => Object.assign({}, p))});
+    check(find(drawer, "wifiNetwork:<Cafe & guests>") === networkRow && find(drawer, "networkProfile:vpn") === window.savedVpnRow, "updates recreated delegates");
     check(fake.warpMode === "tunnel_only", "refresh reset WARP preference");
+    check(password.activeFocus && password.text === "keep-this-password", "update lost form focus/text");
+    check(scroll.contentItem.contentY === offset, "update moved scroll position");
     capture(preview, "wifi-drawer-password.png");
-    check(password.activeFocus && password.text === "keep-this-password", "refresh lost form focus/text");
-    check(scroll.contentItem.contentY === offset, "refresh moved scroll position");
-    fake.pending = "";
-    fake.state = Object.assign({}, fake.state, {hardwareEnabled: false});
-    check(!find(window.contentItem, "wifiToggle").enabled, "hardware block ignored");
-    fake.state = Object.assign({}, fake.state, {hardwareEnabled: true});
+    fakeNetworking.wifiHardwareEnabled = false;
+    check(!find(window.contentItem, "wifiToggle").enabled && drawer.networks.length === 0, "hardware block ignored");
+    fakeNetworking.wifiHardwareEnabled = true;
+    drawer.clearSelection();
    } else if (window.stage === 3) {
-    const row = find(drawer, "wifiNetwork:guest");
-    input.mouseClick(row, row.width / 2, row.height / 2);
-    check(fake.calls[fake.calls.length - 1].key === "guest", "row click did not connect");
+    input.mouseClick(find(drawer, "wifiNetwork:Guest network"), 100, 20);
+    check(fake.calls[fake.calls.length - 1].op === "join" && fake.calls[fake.calls.length - 1].values.security === "open", "open network did not connect");
+    input.mouseClick(find(drawer, "wifiNetwork:Office"), 100, 20);
+    check(last()[0] === "connect" && last()[1] === "Office", "saved network did not connect natively");
+    office.connectionFailed(ConnectionFailReason.NoSecrets);
+    check(find(drawer, "wifiAuthentication")?.visible && drawer.selected === office, "missing secrets did not ask for a password");
+    drawer.passwordText = "office-password";
+    input.mouseClick(find(drawer, "wifiSubmit"), 16, 16);
+    check(last()[0] === "psk" && last()[2] === "office-password", "saved network password did not use native PSK");
+    office.connected = true;
+    check(drawer.selected === null && drawer.passwordText === "", "connection retained password");
+    office.connected = false;
+    input.mouseClick(find(drawer, "wifiNetwork:Home"), 100, 20);
+    check(last()[0] === "disconnect" && last()[1] === "Home", "connected row did not disconnect");
+    find(drawer, "wifiForget:Office").confirmed();
+    check(last()[0] === "forget" && last()[1] === "Office", "hold-to-forget did not forget natively");
     const vpn = find(drawer, "networkProfile:vpn");
     input.mouseClick(vpn, 8, vpn.height / 2);
-    check(fake.calls[fake.calls.length - 1].values.uuid === "vpn", "VPN icon click did not connect");
+    check(fake.calls[fake.calls.length - 1].values.uuid === "vpn", "VPN click did not connect");
     const toggle = find(window.contentItem, "wifiToggle");
     input.mouseClick(toggle, toggle.width / 2, toggle.height / 2);
-    check(fake.calls[fake.calls.length - 1].op === "radio", "header switch did not toggle Wi-Fi");
-    fake.state = Object.assign({}, fake.state, {wifiEnabled: false});
-    check(!toggle.checked && !find(window.contentItem, "wifiScan").enabled, "power/scan state ignored readback");
-    check(fake.calls.filter(c => c.op === "radio").length === 1 && fake.calls[fake.calls.length - 1].values.enabled === false, "readback issued extra radio requests");
-    fake.state = Object.assign({}, fake.state, {wifiEnabled: true});
+    check(!fakeNetworking.wifiEnabled && !toggle.checked, "header switch did not toggle Wi-Fi");
+    fakeNetworking.wifiEnabled = true;
     check(toggle.checked, "external power update broke switch binding");
     input.mouseClick(find(drawer, "warpToggle"), 10, 20);
     check(fake.calls[fake.calls.length - 1].op === "warp" && fake.calls[fake.calls.length - 1].values.mode === "tunnel_only", "Cloudflare row click lost mode");
+    wired.hasLink = true;
+    check(find(drawer, "ethernetSection").visible, "plugged Ethernet hidden");
     fake.busy = true;
     capture(scroll.contentChildren[0], "wifi-drawer-full.png");
    } else if (window.stage === 4) {
+    check(find(drawer, "networkActivity").visible, "busy helper not shown");
     capture(preview, "wifi-drawer-loading.png");
    } else if (window.stage === 5) {
     fake.busy = false;
-    drawer.selected = null;
     scroll.contentItem.contentY = 0; UI.Theme.setMode("light");
    } else if (window.stage === 6) {
-    check(find(drawer, "networkActivity").foreground.toString() === UI.Theme.text.toString(), "spinner missed theme change");
     capture(preview, "wifi-drawer-light.png");
    } else if (window.stage === 7) {
     UI.Theme.setMode("dark");
@@ -384,9 +397,8 @@ FloatingWindow {
     const ordered = ["warp+doh", "warp+dot", "warp", "doh", "dot", "tunnel_only", "proxy"];
     for (let i = 0; i < ordered.length; i++) check(menu.itemAt(i).objectName === "warpMode:" + ordered[i], "async incubation changed menu order");
     check(menu.count === 9 && menu.itemAt(7).objectName === "warpModeSeparator" && menu.itemAt(8).objectName === "warpRegistration", "registration is not separate below the separator");
-    const mode = menu.itemAt(5);
-    check(mode && mode.checked && find(drawer, "warpSettings").menu.visible, "menu did not check the default mode");
-    capture(find(drawer, "warpSettings").menu.contentItem.parent, "wifi-drawer-menu.png");
+    check(menu.itemAt(5).checked && menu.visible, "menu did not check the default mode");
+    capture(menu.contentItem.parent, "wifi-drawer-menu.png");
    } else if (window.stage === 9) {
     input.mouseClick(find(drawer, "warpSettings").menu.itemAt(3), 80, 18);
     check(fake.warpMode === "doh", "menu did not change the default mode");
@@ -439,10 +451,12 @@ FloatingWindow {
     const button = find(drawer, "speedTestButton");
     check(button.width === 448 && button.height === 64, "resize or result left stale button geometry");
    } else {
+    drawerLoader.active = false;
+    check(!wifi.scannerEnabled, "destroyed drawer left scanning on");
     console.log("WIFI_DRAWER_PASS"); Qt.quit();
    }
    window.stage++;
-  } catch (e) { console.error("WIFI_DRAWER_FAIL", e.message); Qt.quit(); }
+  } catch (e) { console.error("WIFI_DRAWER_FAIL", window.stage, e.message); Qt.quit(); }
  } }
 }
 '''.replace('STATE', json.dumps(state))
@@ -454,10 +468,15 @@ FloatingWindow {
             config = root / 'config/quickshell/desktop'
             config.mkdir(parents=True)
             (config / 'theme-mode').write_text('dark\n')
+            statistics = root / 'net/wlan0/statistics'
+            statistics.mkdir(parents=True)
+            (statistics / 'rx_bytes').write_text('2048\n')
+            (statistics / 'tx_bytes').write_text('1024\n')
             runtime = root / 'runtime'
             runtime.mkdir(mode=0o700)
             platform = os.environ.get('WIFI_PREVIEW_PLATFORM', 'offscreen')
             env = {**os.environ, 'QT_QPA_PLATFORM': platform, 'XDG_CONFIG_HOME': str(root / 'config'),
+                   'WIFI_TRAFFIC_ROOT': str(root / 'net'),
                    'XDG_RUNTIME_DIR': str(runtime) if platform == 'offscreen' else os.environ['XDG_RUNTIME_DIR']}
             for key in (('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE') if platform == 'offscreen' else ('HYPRLAND_INSTANCE_SIGNATURE',)):
                 env.pop(key, None)
@@ -546,7 +565,7 @@ ShellRoot {
  id: root
  QtObject { id: network; property bool connected: true; property real signalStrength: 0.85; property string name: "Home" }
  QtObject { id: networksModel; property var values: [network] }
- QtObject { id: device; property int type: DeviceType.Wifi; property bool scannerEnabled: true; property var networks: networksModel }
+ QtObject { id: device; property int type: DeviceType.Wifi; property bool scannerEnabled: false; property var networks: networksModel }
  QtObject { id: devicesModel; property var values: [device] }
  QtObject { id: fake; property bool wifiEnabled: true; property bool wifiHardwareEnabled: true; property var devices: devicesModel }
  NetworkStatus { id: status; provider: fake }
@@ -589,18 +608,20 @@ ShellRoot {
         # Process/stdin protocol. No NetworkManager or WARP calls leave this test.
         with tempfile.TemporaryDirectory(prefix='wifi service ') as directory:
             root = Path(directory)
-            shutil.copytree(DESKTOP / 'drawers/network', root / 'network')
-            (root / 'network/backend.py').write_text("""import json,sys,time
+            shutil.copytree(DESKTOP / 'drawers/network', root / 'drawers/network')
+            (root / 'drawers/network/backend.py').write_text("""import json,sys,time
 from pathlib import Path
 r=json.loads(sys.stdin.readline())
 with (Path(__file__).parent/'operations').open('a') as f: f.write(r['op']+'\\n')
 time.sleep(0.5 if r['op']=='connect' else 0.3)
-print(json.dumps({'ok':True,'data':{'available':True,'wifiEnabled':False,'adapters':[],'networks':[]}}))
+print(json.dumps({'ok':True,'data':{'profiles':[{'uuid':'vpn','name':'Work','kind':'wireguard','active':False,'state':'disconnected'}],'active':[],'details':{}}}))
 """)
             (root / 'shell.qml').write_text('''import QtQuick
+import QtCore
 import Quickshell
-import "network"
+import "drawers/network"
 ShellRoot {
+ Settings { id: saved; location: StandardPaths.writableLocation(StandardPaths.ConfigLocation) + "/quickshell/desktop/network.ini"; category: "Network" }
  property int stage: 0
  property int stateChanges: 0
  Connections { target: NetworkService; function onStateChanged() { stateChanges++; } }
@@ -612,7 +633,7 @@ ShellRoot {
     check(NetworkService.error === "", "status protocol failed: " + NetworkService.error);
     NetworkService.refresh();
     check(NetworkService.working && !NetworkService.busy, "background read appeared as a user action");
-    NetworkService.run("connect", {password: "private-test-password"}, "profile");
+    NetworkService.run("connect", {uuid: "vpn", password: "private-test-password"}, "vpn");
     check(NetworkService.queuedAction !== null && NetworkService.busy, "action was lost behind a background read");
     NetworkService.observing = false;
     stage++;
@@ -624,21 +645,17 @@ ShellRoot {
     check(NetworkService.error === "", "connect protocol failed: " + NetworkService.error);
     check(!NetworkService.observing, "operation restarted observation");
     check(stateChanges === 1, "identical snapshots notified the UI again");
-    NetworkService.error = "Old reconnect failure";
-    NetworkService.failure = {operation: "connect", uuid: "saved", key: "home"};
-    NetworkService.applySnapshot({profiles: [{uuid: "saved", active: true, state: "activated"}], networks: []});
+    NetworkService.error = "Old VPN failure";
+    NetworkService.failure = {operation: "connect", uuid: "vpn"};
+    NetworkService.applySnapshot({profiles: [{uuid: "other", active: true, state: "activated"}]});
+    check(NetworkService.error === "Old VPN failure", "unrelated profile cleared a VPN failure");
+    NetworkService.applySnapshot({profiles: [{uuid: "vpn", active: true, state: "activated"}]});
     check(NetworkService.error === "", "successful reconnection left a stale error");
-    NetworkService.error = "Unrelated VPN failure";
-    NetworkService.failure = {operation: "connect", uuid: "vpn", key: "vpn"};
-    NetworkService.applySnapshot({profiles: [{uuid: "saved", active: true, state: "activated"}], networks: []});
-    check(NetworkService.error === "Unrelated VPN failure", "unrelated Wi-Fi success cleared a VPN failure");
-    NetworkService.sampleTraffic({sampleTime: 1, adapters: [{interface: "wlan0", connected: true, traffic: {received: 100, sent: 40}}]});
-    NetworkService.sampleTraffic({sampleTime: 2, adapters: [{interface: "wlan0", connected: true, traffic: {received: 1124, sent: 552}}]});
-    check(NetworkService.traffic.wlan0.down === 1024 && NetworkService.traffic.wlan0.up === 512, "interface rate calculation");
     check(NetworkService.queuedAction === null && NetworkService.request === null, "finished request retained credentials");
     NetworkService.selectWarpMode("proxy");
     NetworkService.setWarpRegistration(true);
-    check(NetworkService.preferences.value("warpMode") === "proxy" && NetworkService.preferences.value("warpRegisterNext") === true, "WARP preferences were not saved");
+    saved.sync();
+    check(saved.value("warpMode") === "proxy" && String(saved.value("warpRegisterNext")) === "true", "WARP preferences were not saved");
     NetworkService.error = "Mode change failed";
     NetworkService.failure = {operation: "warp", action: "mode", mode: "doh"};
     NetworkService.applySnapshot({warp: {running: false, mode: ""}});
@@ -657,7 +674,7 @@ ShellRoot {
             env.pop('WAYLAND_DISPLAY', None)
             result = subprocess.run([QS, '--no-color', '-p', str(root / 'shell.qml')],
                                     env=env, text=True, capture_output=True, timeout=10)
-            operations = (root / 'network/operations').read_text().splitlines()
+            operations = (root / 'drawers/network/operations').read_text().splitlines()
         log = result.stdout + result.stderr
         self.assertIn('NETWORK_SERVICE_PASS', log)
         self.assertNotIn('NETWORK_SERVICE_FAIL', log)

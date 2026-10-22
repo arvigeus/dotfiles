@@ -1,10 +1,12 @@
 pragma Singleton
 import QtQuick
+import Quickshell
 import Quickshell.Io
 
 // Separate from NetworkService: measuring bandwidth never blocks network controls.
-QtObject {
+Singleton {
     id: root
+    readonly property alias deadline: deadline
     readonly property bool running: process.running
     property var result: null
     property string error: ""
@@ -37,7 +39,8 @@ QtObject {
         result = {download: report.download, upload: report.upload, ping: report.ping,
             jitter: report.jitter, server: report.server?.name ?? "", timestamp: report.timestamp ?? ""};
     }
-    readonly property Process process: Process {
+    Process {
+        id: process
         command: root.command
         onStarted: deadline.restart()
         stdout: SplitParser { onRead: data => root.response += data }
@@ -57,11 +60,13 @@ QtObject {
             root.response = "";
         }
     }
-    readonly property Timer deadline: Timer {
+    Timer {
+        id: deadline
         interval: 120000
         onTriggered: { root.timedOut = true; process.signal(9); }
     }
-    readonly property Timer killDelay: Timer {
+    Timer {
+        id: killDelay
         interval: 1000
         onTriggered: if (process.running) process.signal(9)
     }

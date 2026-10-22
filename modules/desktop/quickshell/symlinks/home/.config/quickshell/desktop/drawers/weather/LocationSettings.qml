@@ -1,8 +1,9 @@
 pragma Singleton
 import QtQuick
+import Quickshell
 import Quickshell.Io
 
-QtObject {
+Singleton {
     id: root
     property string selectedId: ""
     property string error: ""
@@ -12,8 +13,9 @@ QtObject {
         if (busy || !id) return;
         selectedId = id; error = ""; worker.stdinEnabled = true; worker.running = true;
     }
-    readonly property Process worker: Process {
-        command: ["python3", "-B", decodeURIComponent(Qt.resolvedUrl("backend.py").toString().replace(/^file:\/\//, ""))]
+    Process {
+        id: worker
+        command: ["python3", Quickshell.shellPath("drawers/weather/backend.py")]
         onStarted: { write(JSON.stringify({op: "current", id: root.selectedId}) + "\n"); stdinEnabled = false; }
         stdout: StdioCollector {
             onStreamFinished: {

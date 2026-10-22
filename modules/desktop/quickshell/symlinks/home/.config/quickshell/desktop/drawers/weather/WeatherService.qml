@@ -1,8 +1,12 @@
 import QtQuick
+import Quickshell
 import Quickshell.Io
 
-QtObject {
+Scope {
     id: root
+    readonly property alias clockTimer: clockTimer
+    readonly property alias fetcher: fetcher
+    readonly property alias reader: reader
     property bool active: false
     property string selectedId: ""
     property int revision: 0
@@ -14,7 +18,7 @@ QtObject {
     property string error: ""
     property var state: ({locations: [], location: null, clock: "", date: "", zone: "", weather: null, due: false, stale: false, updated: ""})
     readonly property bool loading: fetcher.running
-    readonly property string backend: decodeURIComponent(Qt.resolvedUrl("backend.py").toString().replace(/^file:\/\//, ""))
+    readonly property string backend: Quickshell.shellPath("drawers/weather/backend.py")
 
     function select(id: string): void {
         if (id === selectedId) return;
@@ -66,26 +70,29 @@ QtObject {
         if (active) refresh();
         else { revision++; pending = false; reader.running = false; fetcher.running = false; }
     }
-    readonly property Timer clockTimer: Timer {
+    Timer {
+        id: clockTimer
         interval: 1000; repeat: true; running: root.active
         onTriggered: {
             const minute = Math.floor(Date.now() / 60000);
             if (minute !== root.clockMinute) { root.clockMinute = minute; root.refresh(); }
         }
     }
-    readonly property Process reader: Process {
+    Process {
+        id: reader
         property var request: ({})
         property int revision: 0
-        command: ["python3", "-B", root.backend]
+        command: ["python3", root.backend]
         onStarted: { write(JSON.stringify(request) + "\n"); stdinEnabled = false; }
         stdout: StdioCollector { onStreamFinished: root.receive(text, reader.revision, false) }
         stderr: StdioCollector {}
         onExited: Qt.callLater(root.pump)
     }
-    readonly property Process fetcher: Process {
+    Process {
+        id: fetcher
         property var request: ({})
         property int revision: 0
-        command: ["python3", "-B", root.backend]
+        command: ["python3", root.backend]
         onStarted: { write(JSON.stringify(request) + "\n"); stdinEnabled = false; }
         stdout: StdioCollector { onStreamFinished: root.receive(text, fetcher.revision, true) }
         stderr: StdioCollector {}

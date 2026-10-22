@@ -72,8 +72,8 @@ means none. Account ownership belongs to
 [`integrations`](../../integrations/ARCHITECTURE.md).
 
 Private snapshots live in `$XDG_CACHE_HOME/quickshell/desktop/calendar/`, keyed by
-account, credential file identity/revision, selections and requested month. At
-most 12 months are retained. Existing snapshots upgrade without a network request.
+account, app password file identity/revision, selections and requested month. At
+most 12 months are retained; files lacking the current envelope fields are ignored.
 A short process-shared publication lock protects local reads and atomic writes;
 network I/O never holds it. A separate writer lock serializes DAV mutations. An
 odd/even revision fences full refreshes started before or during a mutation. An
@@ -89,9 +89,11 @@ remain distinct. There is no persistent offline mutation queue.
 
 `caldav.py` discovers collections and privileges through PROPFIND and reads
 VEVENT/VTODO resources through REPORT. Event ranges include the selected month
-and current upcoming window. Events support DATE, UTC, floating and TZID times,
-RRULE, RDATE, EXDATE and overridden instances. Recurrence expansion and displayed
-event counts are bounded (2,000 occurrences per resource, 300 displayed events).
+and current upcoming window. Resources are parsed and serialized with `icalendar`;
+events expand with `recurring_ical_events` (RRULE, RDATE including periods,
+EXDATE, overridden instances, Windows/Outlook TZID names). Expansion runs in
+doubling windows so sub-daily rules stay bounded (2,000 occurrences per resource,
+300 displayed events). Unparseable resources are skipped.
 Recurring events are read-only; single events support creation, editing and
 deletion, with inclusive all-day end dates in the form and exclusive DTEND on DAV.
 
@@ -108,6 +110,7 @@ creation, sharing, task moves and drag ordering remain in the web client.
 
 Task recurrence rules accept daily, weekly, monthly and yearly frequencies with
 intervals, BYDAY/BYMONTHDAY and other dateutil-supported selectors, COUNT or UNTIL.
+Advancing a task uses dateutil on the parsed master component.
 Subdaily selectors are refused. Completing a repeating master writes one completed
 RECURRENCE-ID exception and advances the master's start/due dates in the same
 ETag-guarded PUT, preserving local time across DST. COUNT decrements as the master
@@ -127,10 +130,10 @@ Native notifications have their own [architecture](../notifications/ARCHITECTURE
 Verification from the repository root:
 
 ```sh
-python3 -B -m unittest discover -s tests -p test_calendar_drawer.py -v
-python3 -B -m unittest discover -s tests -p test_notification_history.py -v
-python3 -B -m unittest discover -s tests -p test_desktop_interactions.py -v
-python3 -B -m unittest discover -s tests -p test_generation.py -v
+python3 -m unittest discover -s tests -p test_calendar_drawer.py -v
+python3 -m unittest discover -s tests -p test_notification_history.py -v
+python3 -m unittest discover -s tests -p test_desktop_interactions.py -v
+python3 -m unittest discover -s tests -p test_generation.py -v
 ```
 
 Tests use isolated account/cache roots and fake DAV responses. QML fixtures load

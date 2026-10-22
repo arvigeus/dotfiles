@@ -2,8 +2,9 @@ pragma Singleton
 import QtQuick
 import Quickshell
 
-QtObject {
+Singleton {
     id: root
+    readonly property alias scheduler: scheduler
     property var entries: []
     property int nextId: 1
     property var clock: () => Date.now()
@@ -77,7 +78,8 @@ QtObject {
         }
         if (JSON.stringify(next) !== JSON.stringify(entries)) entries = next;
     }
-    readonly property Timer scheduler: Timer {
+    Timer {
+        id: scheduler
         interval: 1000; repeat: true; running: root.entries.length > 0
         onTriggered: root.tick()
     }

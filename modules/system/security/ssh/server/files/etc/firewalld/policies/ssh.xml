@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<policy target="CONTINUE">
+  <short>SSH</short>
+  <description>Incoming SSH on every zone.</description>
+  <ingress-zone name="ANY"/>
+  <egress-zone name="HOST"/>
+  <service name="ssh"/>
+</policy>

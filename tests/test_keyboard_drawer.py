@@ -7,9 +7,9 @@ import shutil
 import unittest
 from unittest.mock import patch
 
-import test_display_drawer as fixtures
+import support
 
-SOURCE = fixtures.DESKTOP / 'drawers/keyboard/backend.py'
+SOURCE = support.DESKTOP / 'drawers/keyboard/backend.py'
 SPEC = importlib.util.spec_from_file_location('keyboard_backend', SOURCE)
 backend = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(backend)
@@ -48,13 +48,13 @@ class KeyboardBackendTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'not configured'): backend.request('select', 'bg')
 
 
-@unittest.skipUnless(fixtures.QS, 'Quickshell is required')
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class KeyboardQmlTests(unittest.TestCase):
     def run_qml(self, body, setup=None):
         def prepare(root):
-            shutil.copytree(fixtures.DESKTOP / 'bar', root / 'bar')
+            shutil.copytree(support.DESKTOP / 'bar', root / 'bar')
             if setup: setup(root)
-        return fixtures.DisplayQmlTests.run_qml(self, body, prepare)
+        return support.run_qml(self, body, prepare)
 
     def test_languages_secondary_checkmarks_reference_typing_and_bar(self):
         self.run_qml('''import QtQuick

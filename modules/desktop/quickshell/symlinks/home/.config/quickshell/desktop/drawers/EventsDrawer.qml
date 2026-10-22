@@ -3,7 +3,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../ui"
-import "audio"
 import "events"
 
 DrawerPage {
@@ -45,7 +44,7 @@ DrawerPage {
     readonly property string contentStatus: {
         if (service.error) return [service.error, snapshot.stale ? syncStatus : ""].filter(Boolean).join(" · ");
         if (snapshot.state === "unconfigured") return qsTr("Configure Nextcloud in ~/.config/quickshell/desktop/integrations/nextcloud.json; select collections in calendar.json. See the shell README for setup.");
-        if (snapshot.state === "needs_password") return qsTr("Save the referenced Nextcloud app password with permissions 0600.");
+        if (snapshot.state === "needs_password") return qsTr("Save the Nextcloud app password in ~/.config/quickshell/desktop/integrations/nextcloud-app-password with mode 0600.");
         if (!sectionReady && (snapshot.error || snapshot.state === "unavailable")) return snapshot.error || (tab === "tasks" ? qsTr("Tasks unavailable.") : qsTr("Agenda unavailable."));
         if (!sectionReady) return tab === "tasks" ? qsTr("Loading tasks…") : qsTr("Loading agenda…");
         if (snapshot.stale) return [qsTr("Showing saved data"), syncStatus].filter(Boolean).join(" · ");
@@ -115,7 +114,7 @@ DrawerPage {
         return Qt.formatDate(new Date(first.getFullYear(), first.getMonth(), index - (first.getDay() + 6) % 7 + 1), "yyyy-MM-dd");
     }
     headerActions: RowLayout {
-        AudioIconButton {
+        IconButton {
             iconName: "refresh-cw"; text: qsTr("Refresh calendar and tasks")
             enabled: root.active && !(root.service.refreshing ?? root.service.busy)
             onClicked: root.service.refresh(true)
@@ -141,7 +140,7 @@ DrawerPage {
         PassiveToolTip { target: line; text: line.text; maximumLineCount: 12 }
     }
 
-    component CalendarButton: AudioIconButton {
+    component CalendarButton: IconButton {
         implicitWidth: root.width < 340 ? 24 : 28
         padding: 6
     }
@@ -230,7 +229,7 @@ DrawerPage {
                 objectName: "agendaHeading"
                 Layout.fillWidth: true
                 Heading { text: root.tab === "tasks" ? qsTr("Tasks") : qsTr("Agenda") }
-                AudioIconButton {
+                IconButton {
                     objectName: "sectionAddItem"; iconName: "plus"; text: root.tab === "tasks" ? qsTr("New task") : qsTr("New event on selected day")
                     enabled: root.snapshot.calendars.some(row => row.writable && row.components.includes(root.tab === "tasks" ? "VTODO" : "VEVENT") && (root.tab === "tasks" ? row.tasks_enabled : row.events_enabled))
                     onClicked: root.edit(root.tab === "tasks" ? "VTODO" : "VEVENT", {})

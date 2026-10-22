@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+case ${1-} in
+"" | --check) ;;
+*) printf 'Usage: gaming-session [--check]\n' >&2; exit 2 ;;
+esac
+(( $# <= 1 )) || { printf 'Usage: gaming-session [--check]\n' >&2; exit 2; }
+check_only=${1-}
+drm_root=${SYSTEM_GAMING_DRM_ROOT:-/sys/class/drm}
+
 trim() {
 	local value=$1
 	value=${value#"${value%%[![:space:]]*}"}
@@ -35,7 +43,7 @@ read_config() {
 connected_outputs() {
 	local status path connector
 	local external=() internal=()
-	for status in /sys/class/drm/card*-*/status; do
+	for status in "$drm_root"/card*-*/status; do
 		[[ -r $status && $(<"$status") == connected ]] || continue
 		path=${status%/status}
 		connector=${path##*/}
@@ -51,22 +59,12 @@ connected_outputs() {
 	printf '%s' "${ordered[*]}"
 }
 
-gpu_present() {
-	local vendor=${1%:*} device=${1#*:}
-	local vendor_file device_file actual_vendor actual_device
-	for vendor_file in /sys/bus/pci/devices/*/vendor; do
-		[[ -r $vendor_file ]] || continue
-		device_file=${vendor_file%/vendor}/device
-		[[ -r $device_file ]] || continue
-		actual_vendor=$(<"$vendor_file")
-		actual_device=$(<"$device_file")
-		actual_vendor=${actual_vendor#0x}
-		actual_device=${actual_device#0x}
-		if [[ ${vendor,,} == "${actual_vendor,,}" && ${device,,} == "${actual_device,,}" ]]; then
-			return 0
-		fi
-	done
-	return 1
+gpu_for_card() {
+	local card=$1 vendor device
+	[[ -r $card/device/vendor && -r $card/device/device ]] || return 1
+	vendor=$(<"$card/device/vendor")
+	device=$(<"$card/device/device")
+	printf '%s:%s' "${vendor#0x}" "${device#0x}"
 }
 
 env_gpu_set=${SYSTEM_GAMING_GPU+x}
@@ -79,8 +77,8 @@ env_output=${SYSTEM_GAMING_OUTPUT-}
 SYSTEM_GAMING_GPU=auto
 SYSTEM_GAMING_HDR=0
 SYSTEM_GAMING_OUTPUT=auto
-read_config "${SYSTEM_GAMING_SYSTEM_CONFIG:-/etc/system/gaming-session.conf}"
-read_config "${SYSTEM_GAMING_USER_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/system/gaming-session.conf}"
+read_config "${SYSTEM_GAMING_SYSTEM_CONFIG:-/etc/gaming-session.conf}"
+read_config "${SYSTEM_GAMING_USER_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/gaming-session.conf}"
 [[ -z $env_gpu_set ]] || SYSTEM_GAMING_GPU=$env_gpu
 [[ -z $env_hdr_set ]] || SYSTEM_GAMING_HDR=$env_hdr
 [[ -z $env_output_set ]] || SYSTEM_GAMING_OUTPUT=$env_output
@@ -100,43 +98,85 @@ fi
 
 gamescope_bin=${SYSTEM_GAMING_GAMESCOPE:-gamescope}
 steam_bin=${SYSTEM_GAMING_STEAM:-steam}
+
+# Gamescope uses its selected Vulkan GPU for KMS as well as composition. Select
+# a GPU that owns a connected preferred output, never a disconnected offload GPU.
+output=$SYSTEM_GAMING_OUTPUT
+[[ $output != auto ]] || output=$(connected_outputs)
+IFS=, read -r -a candidates <<< "$output"
+gpu=
+outputs=()
+for connector in "${candidates[@]}"; do
+	for status in "$drm_root"/card*-"$connector"/status; do
+		[[ -r $status && $(<"$status") == connected ]] || continue
+		card=${status%/status}
+		card=${card##*/}
+		card=${card%%-*}
+		candidate=$(gpu_for_card "$drm_root/$card") || continue
+		[[ $SYSTEM_GAMING_GPU == auto || ${SYSTEM_GAMING_GPU,,} == "${candidate,,}" ]] || continue
+		[[ -n $gpu ]] || gpu=$candidate
+		[[ $gpu == "$candidate" ]] || continue
+		outputs+=("$connector")
+		break
+	done
+done
+if [[ -z $gpu ]]; then
+	printf 'No connected display matches Gamescope GPU %s and output %s. Use GPU auto or select a GPU wired to the display.\n' \
+		"$SYSTEM_GAMING_GPU" "$SYSTEM_GAMING_OUTPUT" >&2
+	exit 1
+fi
+output=$(IFS=,; printf '%s' "${outputs[*]}")
+
+for executable in "$gamescope_bin" "$steam_bin" switcherooctl; do
+	command -v "$executable" >/dev/null || {
+		printf 'Gaming executable not found: %s\n' "$executable" >&2
+		exit 127
+	}
+done
+if [[ $check_only == --check ]]; then
+	printf 'Gamescope GPU %s; connected outputs %s\n' "$gpu" "$output"
+	exit 0
+fi
+
 args=(--backend drm --steam --xwayland-count 2 --adaptive-sync --mangoapp)
 if [[ -n ${SESSION_MODE_READY_FD:-} ]]; then
     [[ $SESSION_MODE_READY_FD =~ ^[0-9]+$ ]] || { printf 'Invalid readiness descriptor.\n' >&2; exit 2; }
-    args+=(--ready-fd "$SESSION_MODE_READY_FD")
+    # Despite its name, Gamescope opens this argument as a path, not an FD number.
+    args+=(--ready-fd "/proc/self/fd/$SESSION_MODE_READY_FD")
 fi
 
-output=$SYSTEM_GAMING_OUTPUT
-[[ $output != auto ]] || output=$(connected_outputs)
-[[ -z $output ]] || args+=(--prefer-output "$output")
-
-if [[ $SYSTEM_GAMING_GPU != auto ]]; then
-	if [[ ${SYSTEM_GAMING_DRY_RUN:-0} == 1 ]] || gpu_present "$SYSTEM_GAMING_GPU"; then
-		args+=(--prefer-vk-device "$SYSTEM_GAMING_GPU")
-	else
-		printf 'Preferred GPU %s is unavailable; letting Gamescope choose.\n' \
-			"$SYSTEM_GAMING_GPU" >&2
-	fi
+args+=(--prefer-output "$output" --prefer-vk-device "$gpu")
+# Steam enables the matching features only when told the session supports them.
+# See ChimeraOS's sessions.d/steam for the SteamOS equivalents.
+runtime=${XDG_RUNTIME_DIR:?No user runtime directory}/gaming-session
+session_env=(
+    XDG_CURRENT_DESKTOP=gamescope XDG_SESSION_DESKTOP=gamescope XDG_SESSION_TYPE=wayland
+    STEAM_MULTIPLE_XWAYLANDS=1 # --xwayland-count 2
+    STEAM_GAMESCOPE_VRR_SUPPORTED=1 # --adaptive-sync
+    STEAM_GAMESCOPE_TEARING_SUPPORTED=1 STEAM_GAMESCOPE_HAS_TEARING_SUPPORT=1
+    # --mangoapp: Steam writes the selected performance overlay level here.
+    STEAM_USE_MANGOAPP=1 STEAM_MANGOAPP_PRESETS_SUPPORTED=1 "MANGOHUD_CONFIGFILE=$runtime/mangohud.conf"
+    STEAM_USE_DYNAMIC_VRS=1 "RADV_FORCE_VRS_CONFIG_FILE=$runtime/radv-vrs.conf"
+    STEAM_ENABLE_VOLUME_HANDLER=1 SRT_URLOPEN_PREFER_STEAM=1
+)
+if [[ $SYSTEM_GAMING_HDR == 1 ]]; then
+    args+=(--hdr-enabled)
+    session_env+=(STEAM_GAMESCOPE_HDR_SUPPORTED=1)
 fi
-[[ $SYSTEM_GAMING_HDR == 0 ]] || args+=(--hdr-enabled)
 
-command=("$gamescope_bin" "${args[@]}" -- "$steam_bin" -gamepadui -steamos3)
+# Honor Steam's PrefersNonDefaultGPU policy for Steam and its games, independently
+# of the GPU that must scan out Gamescope's display.
+command=(env "${session_env[@]}" "$gamescope_bin" "${args[@]}" -- switcherooctl launch "$steam_bin" -gamepadui -steamos3)
 if [[ ${SYSTEM_GAMING_DRY_RUN:-0} == 1 ]]; then
 	printf '%q ' "${command[@]}"
 	printf '\n'
 	exit 0
 fi
 
-command -v "$gamescope_bin" >/dev/null || {
-	printf 'Gamescope executable not found: %s\n' "$gamescope_bin" >&2
-	exit 127
-}
-command -v "$steam_bin" >/dev/null || {
-	printf 'Steam executable not found: %s\n' "$steam_bin" >&2
-	exit 127
-}
-
-export XDG_CURRENT_DESKTOP=gamescope
-export XDG_SESSION_DESKTOP=gamescope
-export XDG_SESSION_TYPE=wayland
-exec "${command[@]}"
+# Fresh files per session: the overlay stays hidden until Steam selects a level.
+mkdir -p -- "$runtime"
+printf 'no_display\n' >"$runtime/mangohud.conf"
+printf '1x1\n' >"$runtime/radv-vrs.conf"
+# Keep startup and DRM failures available after returning to the desktop or rebooting.
+# systemd-cat execs the command and preserves the supervisor's readiness descriptor.
+exec systemd-cat --identifier=gaming-session -- "${command[@]}"

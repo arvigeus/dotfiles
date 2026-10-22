@@ -6,6 +6,8 @@
         "adwaita-icon-theme",
         "qt6-multimedia",
         "python-dateutil",
+        "python-icalendar",
+        "python-recurring-ical-events",
         "gpu-screen-recorder",
         "slurp",
         "v4l-utils",

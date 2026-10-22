@@ -18,8 +18,8 @@ Linux startup and disk unlock.
 
 With systemd in the initramfs, `systemd-analyze time` reports initrd separately
 from kernel time; password-entry time remains part of initrd time. Use the raw
-kernel timestamps from `dmesg` when comparing hardware initialization with
-pre-migration boots, since journal import can timestamp buffered messages later.
+kernel timestamps from `dmesg` when comparing hardware initialization between
+boots, since journal import can timestamp buffered messages later.
 The graphical target's critical chain is not necessarily the autologin path:
 inspect `getty@tty1.service` and user session units too.
 
@@ -30,6 +30,3 @@ disk unlock require a subsequent boot to verify.
 
 References: [mkinitcpio configuration](https://man.archlinux.org/man/mkinitcpio.conf.5),
 [cryptsetup generator](https://www.freedesktop.org/software/systemd/man/latest/systemd-cryptsetup-generator.html).
-
-`tests/test_boot_and_session.py` covers preservation of both encryption parameter
-formats, idempotence and rejection of incompatible presets before writes.

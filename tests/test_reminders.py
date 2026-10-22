@@ -4,14 +4,14 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-import test_display_drawer as fixtures
+import support
 
 
-@unittest.skipUnless(fixtures.QS, 'Quickshell is required')
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class ReminderTests(unittest.TestCase):
     def run_qml(self, body, setup=None, timezone='UTC'):
         with patch.dict(os.environ, TZ=timezone):
-            return fixtures.DisplayQmlTests.run_qml(self, body, setup)
+            return support.run_qml(self, body, setup)
 
     def test_alarm_delivery_cancellation_and_pomodoro_transitions_after_sleep(self):
         self.run_qml('''import QtQuick

@@ -2,21 +2,17 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Quickshell
 import "../../ui"
-import "../network"
-import "../network/Models.js" as Models
 
 ColumnLayout {
     id: root
     required property var service
     Layout.fillWidth: true
     spacing: 12
-    ListModel { id: controls; dynamicRoles: true }
-    function sync(): void { Models.sync(controls, service.state.controls.filter(control => control.key !== "privacy"), "key", false); }
-    Component.onCompleted: sync()
-    Connections { target: root.service; function onStateChanged(): void { root.sync(); } }
+    KeyedModel { id: controls; values: root.service.state.controls.filter(control => control.key !== "privacy"); keyField: "key" }
     ShellText {
-        visible: !controls.count
+        visible: !controls.values.length
         Layout.fillWidth: true; wrapMode: Text.Wrap
         color: Theme.muted; font.pixelSize: Theme.smallFontSize
         text: root.service.loaded ? qsTr("No adjustable camera controls reported.") : qsTr("Reading camera controls…")
@@ -25,7 +21,8 @@ ColumnLayout {
         model: controls
         delegate: ColumnLayout {
             id: control
-            required property var record
+            required property var modelData
+            readonly property var record: modelData
             Layout.fillWidth: true; spacing: 4
             RowLayout {
                 Layout.fillWidth: true
@@ -43,7 +40,7 @@ ColumnLayout {
                     }
                 }
             }
-            NetworkChoice {
+            ShellChoice {
                 objectName: "webcamControl:" + control.record.key
                 Layout.fillWidth: true
                 visible: ["menu", "intmenu"].includes(control.record.kind)

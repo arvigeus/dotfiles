@@ -1,8 +1,8 @@
 import QtQuick
 import "../ui"
 
-// Add a DrawerPage file and one catalogue entry. Bar callers use its stable key.
-// Only Spaces has a drawer shortcut; all drawers share Theme.drawerWidth.
+// Add a DrawerPage file and one catalogue entry. Bar callers use its stable key;
+// shortcut registers a Hyprland global shortcut (desktop:<shortcut>).
 DrawerHost {
     definitions: [
         DrawerDefinition {

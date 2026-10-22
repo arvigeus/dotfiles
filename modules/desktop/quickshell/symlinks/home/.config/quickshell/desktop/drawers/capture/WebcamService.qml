@@ -1,7 +1,8 @@
 import QtQuick
+import Quickshell
 import Quickshell.Io
 
-QtObject {
+Scope {
     id: root
     property string device: ""
     property bool active: false
@@ -32,10 +33,10 @@ QtObject {
     }
     onActiveChanged: { if (active) refresh(); else queue = []; }
     onDeviceChanged: { state = {token: "", controls: []}; loaded = false; refresh(); }
-    readonly property Timer poll: Timer { interval: 5000; repeat: true; running: root.active; onTriggered: root.refresh() }
-    readonly property Process worker: Process {
+    Timer { id: poll; interval: 5000; repeat: true; running: root.active; onTriggered: root.refresh() }
+    Process {
         id: worker
-        command: ["python3", "-B", decodeURIComponent(Qt.resolvedUrl("webcam.py").toString().replace(/^file:\/\//, ""))]
+        command: ["python3", Quickshell.shellPath("drawers/capture/webcam.py")]
         onStarted: { write(JSON.stringify(root.pending) + "\n"); stdinEnabled = false; }
         stdout: StdioCollector {
             onStreamFinished: {

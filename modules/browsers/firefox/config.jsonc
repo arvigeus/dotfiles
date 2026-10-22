@@ -14,6 +14,10 @@
                     "browser.sessionstore.enabled": true,
                     "browser.sessionstore.privacy_level": 0,
 
+                    // Keep website logins and site data across restarts.
+                    // Leave arkenfox's cache and form-data cleanup enabled.
+                    "privacy.clearOnShutdown_v2.cookiesAndStorage": false,
+
                     // Use the native XDG file picker.
                     "widget.use-xdg-desktop-portal.file-picker": 1,
 

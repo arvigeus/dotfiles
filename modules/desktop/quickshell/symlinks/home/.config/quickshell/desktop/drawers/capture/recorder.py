@@ -1,9 +1,11 @@
-"""User-service recording owner and newline-JSON client for the shell.
+"""Socket-activated recording owner for the shell (desktop-capture.socket).
 
 The service outlives QML reloads. Only it owns the recorder and its IPC socket;
 no process-name matching or signals to recordings started by another program.
+Clients send newline-JSON commands; every connected client receives the state
+after each command and whenever it changes. Without a recording or client the
+service exits after a short idle period and systemd starts it on demand again.
 """
-import argparse
 import datetime
 import json
 import os
@@ -14,17 +16,35 @@ import shutil
 import signal
 import socket
 import subprocess
+import tempfile
 import time
 
 DEFAULTS = {"systemAudio": True, "microphone": False, "pointer": True}
+IDLE_EXIT = 30
 
 
 def config_dir():
-    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "quickshell/desktop"
+    base = os.environ.get("XDG_CONFIG_HOME", "")
+    return (Path(base) if os.path.isabs(base) else Path.home() / ".config") / "quickshell/desktop"
 
 
 def runtime_dir():
-    return Path(os.environ["XDG_RUNTIME_DIR"]) / "desktop-capture"
+    return Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}") / "desktop-capture"
+
+
+def atomic_write(path, text):
+    """Replace a file atomically (through symlinks), leaving no partial file behind."""
+    path = Path(os.path.realpath(path))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w") as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
 
 
 def location(kind):
@@ -145,14 +165,11 @@ class Recorder:
             if key not in DEFAULTS or type(value) is not bool:
                 raise ValueError("Unknown recording option.")
             options = dict(self.options, **{key: value})
-            self.preference.parent.mkdir(parents=True, exist_ok=True)
-            temporary = self.preference.with_suffix(".tmp")
-            temporary.write_text(json.dumps(options) + "\n")
-            temporary.replace(self.preference)
+            atomic_write(self.preference, json.dumps(options) + "\n")
             self.options = options
         elif operation == "clear-error":
             self.error = ""
-        else:
+        elif operation != "status":
             raise ValueError("Unknown recording command.")
 
     def tick(self):
@@ -194,17 +211,27 @@ class Recorder:
             self.tick()
 
 
-def serve():
-    directory = runtime_dir()
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    endpoint = directory / "control.sock"
+def listener(endpoint):
+    """The socket systemd passed in (LISTEN_FDS), or a private one for manual runs."""
+    if os.environ.get("LISTEN_PID") == str(os.getpid()) and os.environ.get("LISTEN_FDS") == "1":
+        for key in ("LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES"):
+            os.environ.pop(key, None)
+        return socket.socket(fileno=3), False
+    endpoint.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     endpoint.unlink(missing_ok=True)
-    recorder = Recorder()
-    selector = selectors.DefaultSelector()
     server = socket.socket(socket.AF_UNIX)
     server.bind(str(endpoint))
     os.chmod(endpoint, 0o600)
     server.listen()
+    return server, True
+
+
+def serve():
+    endpoint = runtime_dir() / "control.sock"
+    server, owned = listener(endpoint)
+    server.setblocking(False)
+    recorder = Recorder()
+    selector = selectors.DefaultSelector()
     selector.register(server, selectors.EVENT_READ)
     wake, writer = socket.socketpair()
     writer.setblocking(False)
@@ -219,75 +246,79 @@ def serve():
     signal.signal(signal.SIGTERM, terminate)
     signal.signal(signal.SIGINT, terminate)
     clients = {}
-    watchers = set()
 
     def disconnect(connection):
         selector.unregister(connection)
         clients.pop(connection)
-        watchers.discard(connection)
         connection.close()
 
+    def send(connection, state):
+        try:
+            connection.sendall(state.encode())
+        except OSError:
+            disconnect(connection)
+
+    def receive(connection):
+        try:
+            data = connection.recv(8192)
+        except BlockingIOError:
+            return
+        except OSError:
+            data = b""
+        buffer = clients[connection]
+        buffer.extend(data)
+        while b"\n" in buffer:
+            line, _, rest = buffer.partition(b"\n")
+            buffer[:] = rest
+            try:
+                request = json.loads(line)
+                if not isinstance(request, dict):
+                    raise ValueError("Expected a recording command object.")
+                recorder.request(request)
+            except (ValueError, OSError, TypeError, subprocess.SubprocessError) as error:
+                recorder.error = str(error)
+            send(connection, json.dumps(recorder.snapshot()) + "\n")
+            if connection not in clients:
+                return
+        if not data or len(buffer) > 8192:
+            disconnect(connection)
+
     previous = None
+    idle_since = time.monotonic()
     try:
         while not stopping:
-            for key, _ in selector.select(0.25 if recorder.process else None):
+            if recorder.process or clients:
+                idle_since = time.monotonic()
+            elif not owned and time.monotonic() - idle_since >= IDLE_EXIT:
+                # Queued connections stay in systemd's socket and restart the service.
+                break
+            timeout = 0.25 if recorder.process else None if owned or clients else IDLE_EXIT
+            for key, _ in selector.select(timeout):
                 connection = key.fileobj
                 if connection is wake:
                     wake.recv(1024)
                 elif connection is server:
-                    client, _ = server.accept()
+                    try:
+                        client, _ = server.accept()
+                    except BlockingIOError:
+                        continue
                     client.setblocking(False)
                     clients[client] = bytearray()
                     selector.register(client, selectors.EVENT_READ)
-                else:
-                    try:
-                        data = connection.recv(8192)
-                    except OSError:
-                        disconnect(connection)
-                        continue
-                    if not data:
-                        disconnect(connection)
-                        continue
-                    clients[connection].extend(data)
-                    if len(clients[connection]) > 8192:
-                        disconnect(connection)
-                        continue
-                    if b"\n" in clients[connection]:
-                        line, _, _ = clients[connection].partition(b"\n")
-                        clients[connection].clear()
-                        watching = False
-                        try:
-                            request = json.loads(line)
-                            if not isinstance(request, dict):
-                                raise ValueError("Expected a recording command object.")
-                            watching = request.get("op") == "watch"
-                            if not watching:
-                                recorder.request(request)
-                        except (ValueError, OSError, TypeError, subprocess.SubprocessError) as error:
-                            recorder.error = str(error)
-                        try:
-                            connection.sendall((json.dumps(recorder.snapshot()) + "\n").encode())
-                        except OSError:
-                            disconnect(connection)
-                            continue
-                        if watching:
-                            watchers.add(connection)
-                        else:
-                            disconnect(connection)
+                elif connection in clients:
+                    receive(connection)
             recorder.tick()
             state = json.dumps(recorder.snapshot()) + "\n"
             if state != previous:
                 previous = state
-                for connection in list(watchers):
-                    try:
-                        connection.sendall(state.encode())
-                    except OSError:
-                        disconnect(connection)
+                for connection in list(clients):
+                    send(connection, state)
     finally:
         recorder.close()
         for connection in list(clients):
             disconnect(connection)
-        endpoint.unlink(missing_ok=True)
+        if owned:
+            endpoint.unlink(missing_ok=True)
         signal.set_wakeup_fd(-1)
         selector.close()
         server.close()
@@ -295,41 +326,5 @@ def serve():
         writer.close()
 
 
-def client(request, watch=False):
-    subprocess.run(["systemctl", "--user", "start", "desktop-capture.service"], check=True, capture_output=True, text=True)
-    endpoint = runtime_dir() / "control.sock"
-    deadline = time.monotonic() + 5
-    with socket.socket(socket.AF_UNIX) as connection:
-        while True:
-            try:
-                connection.connect(str(endpoint))
-                break
-            except (FileNotFoundError, ConnectionRefusedError):
-                if time.monotonic() >= deadline:
-                    raise ValueError("Recording service did not start. Check desktop-capture.service.")
-                time.sleep(0.05)
-        connection.sendall((json.dumps(request) + "\n").encode())
-        for line in connection.makefile("r"):
-            print(line.rstrip(), flush=True)
-            if not watch:
-                return
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--serve", action="store_true")
-    parser.add_argument("--watch", action="store_true")
-    parser.add_argument("--command")
-    args = parser.parse_args()
-    try:
-        if args.serve:
-            serve()
-        else:
-            client({"op": "watch"} if args.watch else json.loads(args.command), args.watch)
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
-        print(json.dumps(dict(error=str(error))), flush=True)
-        raise SystemExit(1)
-
-
 if __name__ == "__main__":
-    main()
+    serve()

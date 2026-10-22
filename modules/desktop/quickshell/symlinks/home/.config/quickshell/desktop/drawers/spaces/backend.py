@@ -37,7 +37,7 @@ def snapshot():
     scheduled = run(['systemctl', 'poweroff', '--when=show'], check=False)
     message = (scheduled.stdout or scheduled.stderr).strip()
     session = session_status()
-    return dict(capabilities=dict(logout=bool(session.get('gaming')), reload=bool(session.get('available')), suspend=can('CanSuspend'),
+    return dict(capabilities=dict(gaming=bool(session.get('gaming')), reload=bool(session.get('available')), suspend=can('CanSuspend'),
                                   reboot=can('CanReboot'), poweroff=can('CanPowerOff')),
                 scheduledShutdown=message if scheduled.returncode == 0 and 'No scheduled shutdown' not in message else '')
 
@@ -46,8 +46,8 @@ def handle(request):
     action = request.get('action', 'status')
     if action == 'status':
         return snapshot()
-    if action in ('logout', 'reload'):
-        argv = ['session-mode', 'gaming' if action == 'logout' else 'desktop']
+    if action in ('gaming', 'reload'):
+        argv = ['session-mode', 'gaming' if action == 'gaming' else 'desktop']
     elif action in ('suspend', 'reboot', 'poweroff'):
         argv = ['systemctl', action]
     elif action == 'schedule-poweroff':

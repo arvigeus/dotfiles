@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<zone>
+  <short>Public</short>
+  <description>Default zone. Unsolicited incoming connections are rejected except DHCPv6 replies; feature modules allow their services through policies.</description>
+  <service name="dhcpv6-client"/>
+  <forward/>
+</zone>

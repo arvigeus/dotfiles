@@ -33,20 +33,20 @@ ColumnLayout {
                     Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
                 }
             }
-            AudioIconButton {
+            IconButton {
                 objectName: player.objectName + ":previous"
                 iconName: "skip-back"; text: qsTr("Previous track")
                 enabled: root.active && player.modelData.canControl && player.modelData.canGoPrevious
                 onClicked: player.modelData.previous()
             }
-            AudioIconButton {
+            IconButton {
                 objectName: player.objectName + ":playPause"
                 iconName: player.modelData.isPlaying ? "pause" : "play"
                 text: player.modelData.isPlaying ? qsTr("Pause") : qsTr("Play")
                 enabled: root.active && player.modelData.canControl && player.modelData.canTogglePlaying
                 onClicked: player.modelData.togglePlaying()
             }
-            AudioIconButton {
+            IconButton {
                 objectName: player.objectName + ":next"
                 iconName: "skip-forward"; text: qsTr("Next track")
                 enabled: root.active && player.modelData.canControl && player.modelData.canGoNext

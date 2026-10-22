@@ -1,7 +1,13 @@
 # Zephyrus hardware integration
 
-`config.json` owns the asusctl and ROG Control Center dependencies. The module's
+`config.json` owns the asusctl dependency. The module's
 host check installs its assets only for the Zephyrus host.
+
+`gaming-session.conf` leaves the compositor GPU on `auto`: in hybrid mode the
+connected laptop/external outputs belong to the integrated 680M, while MUX
+changes can route them elsewhere. Gamescope selects the output's GPU; Steam and
+games use the discrete GPU through switcheroo-control. See the
+[gaming launcher](../../../gaming/gamescope-session/ARCHITECTURE.md).
 
 ## Keyboard lighting
 

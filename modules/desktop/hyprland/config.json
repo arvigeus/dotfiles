@@ -16,12 +16,14 @@
     "hypridle",
     "hyprsunset",
     "hyprlock",
-    "hyprshot",
     "satty",
     "ksnip",
     "xdg-desktop-portal-gtk",
     "playerctl",
     "wl-clipboard"
   ],
-  "services": ["getty@tty1.service"]
+  "services": ["getty@tty1.service"],
+  "extra": {
+    "packages": ["hyprland", "uwsm", "grim", "slurp"]
+  }
 }

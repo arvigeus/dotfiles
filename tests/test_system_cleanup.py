@@ -8,9 +8,9 @@ import unittest
 import subprocess
 from unittest.mock import patch
 
-import test_display_drawer as fixtures
+import support
 
-SPEC = importlib.util.spec_from_file_location('desktop_cleanup', fixtures.DESKTOP / 'drawers/disks/cleanup.py')
+SPEC = importlib.util.spec_from_file_location('desktop_cleanup', support.DESKTOP / 'drawers/disks/cleanup.py')
 cleanup = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(cleanup)
 
@@ -22,9 +22,10 @@ class CleanupTests(unittest.TestCase):
                                      'npm_config_cache': '/tmp/npm', 'PIP_CACHE_DIR': '/tmp/pip'}, clear=True):
             rows = {row['id']: row for row in cleanup.catalog()}
         self.assertEqual(rows['cargo']['paths'], [Path('/tmp/cargo/registry/cache')])
-        self.assertEqual(rows['npm']['paths'][0], Path('/tmp/npm/_cacache'))
-        self.assertIn(Path('/tmp/mise/downloads'), rows['mise-cache']['paths'])
-        self.assertEqual(rows['pip']['paths'], [Path('/tmp/pip')])
+        # Tools with their own cache commands resolve their configured locations themselves.
+        self.assertEqual(rows['npm']['command'], ['npm', 'cache', 'clean', '--force'])
+        self.assertEqual(rows['pip']['command'], ['pip', 'cache', 'purge'])
+        self.assertEqual(rows['mise-cache']['command'], ['mise', 'cache', 'clear'])
         for row in rows.values():
             for path in row.get('paths', []):
                 self.assertNotEqual(path, Path('/tmp/cleanup-home/.local/cache'))
@@ -110,8 +111,7 @@ class CleanupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
             configured = ['.local/cache/thumbnails', '.local/cache/mesa_shader_cache',
-                          '.local/cache/npm/_cacache', '.local/cache/pip', '.local/cache/mise',
-                          '.local/share/mise/downloads', '.local/share/cargo/registry/cache']
+                          '.local/share/cargo/registry/cache']
             preserved = ['.cache/thumbnails', '.cargo/registry/cache', '.npm/_cacache',
                          '.local/share/cargo/git/checkouts', '.local/share/cargo/registry/src',
                          '.local/share/cargo/bin']
@@ -120,30 +120,30 @@ class CleanupTests(unittest.TestCase):
                 (path / 'fixture').write_text('keep or download')
             with patch.dict(os.environ, {'HOME': str(home)}, clear=True):
                 available = {row['id']: row['available'] for row in cleanup.inventory()}
-                selected = ['thumbnails', 'npm', 'pip', 'mise-cache', 'cargo']
+                selected = ['thumbnails', 'cargo']
                 self.assertTrue(all(available[key] for key in selected))
                 result = cleanup.clean(selected, lambda _: None)
             self.assertTrue(result['ok'], result)
             self.assertTrue(all((home / name).is_dir() and not list((home / name).iterdir()) for name in configured))
             self.assertTrue(all((home / name / 'fixture').exists() for name in preserved))
 
-    def test_podman_preserves_local_builds_and_stopped_container_images(self):
+    def test_podman_removes_only_pulled_images_and_tolerates_in_use_refusals(self):
         local, used, unused = 'a'*64, 'b'*64, 'c'*64
-        def run(*args):
-            if args[1] == 'images': return json.dumps([{'Id': key} for key in [local, used, unused]])
-            if args[1:3] == ('image', 'inspect'):
-                return json.dumps([{'RepoDigests': [] if args[-1] == local else ['registry.test/repo@sha256:digest']}])
-            if args[1] == 'ps': return 'stopped-container' if args[-1].endswith(used) else ''
-            return ''
-        with patch.object(cleanup, 'run', side_effect=run) as command:
+        images = [{'Id': local, 'RepoDigests': []}, {'Id': used, 'RepoDigests': ['registry.test/repo@sha256:1']},
+                  {'Id': unused, 'RepoDigests': ['registry.test/repo@sha256:2']}, {'Id': '--all', 'RepoDigests': ['x']}]
+        def fake(args, **kwargs):
+            if args[1] == 'images': return subprocess.CompletedProcess(args, 0, json.dumps(images), '')
+            return subprocess.CompletedProcess(args, 2 if args[-1] == used else 0, '', 'image is in use by a container')
+        with patch.object(cleanup.subprocess, 'run', side_effect=fake) as command:
             cleanup.podman_images()
-        removals = [call.args for call in command.call_args_list if call.args[1] == 'rmi']
-        self.assertEqual(removals, [('podman', 'rmi', unused)])
-        self.assertTrue(all('--all' in call.args for call in command.call_args_list if call.args[1] == 'ps'))
+        removals = [call.args[0] for call in command.call_args_list if call.args[0][1] == 'rmi']
+        self.assertEqual(removals, [('podman', 'rmi', used), ('podman', 'rmi', unused)])
+        with patch.object(cleanup.subprocess, 'run', return_value=subprocess.CompletedProcess([], 125, '', 'storage broken')):
+            with self.assertRaises(RuntimeError): cleanup.run('podman', 'rmi', unused, accept=(0, 1, 2))
 
 
 class CleanupQmlTests(unittest.TestCase):
-    run_qml = fixtures.DisplayQmlTests.run_qml
+    run_qml = support.run_qml
 
     def test_select_all_partial_selection_clear_and_admin_hint(self):
         self.run_qml('''import QtQuick
@@ -206,7 +206,7 @@ ShellRoot {
   ColumnLayout {x:16;y:16;width:448
    CleanupControl {id:cleanup;Layout.fillWidth:true;active:true}
    HoldButton {id:hold;objectName:"hold";Layout.fillWidth:true;text:"Hold to clean"}
-   NetworkButton {id:network;objectName:"network";Layout.fillWidth:true;text:"Connect"}
+   ShellButton {id:network;objectName:"network";Layout.fillWidth:true;text:"Connect"}
   }
  }
  function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}

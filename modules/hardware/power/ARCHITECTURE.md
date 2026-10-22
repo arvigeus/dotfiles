@@ -7,13 +7,12 @@ TuneD owns mode selection, platform policy, CPU governor, EPP and CPU boost.
 holds, persistence and AC/battery mapping. asusd retains charging, lighting and
 firmware fan management; automatic profile selection and linked EPP are disabled.
 Its delegated PPT operations may reassert the already-selected platform.
-The retired independent desktop boost helper and its polkit action are removed
-by the power module's migration hook. No additional privileged UI helper exists.
 
 Provisioning installs an ASUS configuration seed only when none exists. On
-reapply it edits only the three profile/EPP ownership flags, preserving the
-existing charge limit and other ASUS preferences. An unrecognized RON layout
-fails without overwriting the file.
+live reapply it sets the three profile/EPP ownership properties through asusd's
+D-Bus API so the daemon persists them. Offline provisioning edits those fields
+in RON, preserving charge limits and other ASUS preferences; an unrecognized
+layout fails without overwriting the file.
 
 The shared profile deliberately does not inherit an upstream profile's changing
 collection of settings. It uses `amd-pstate-epp`'s dynamic `powersave` governor,
@@ -66,13 +65,10 @@ Each mode maps to a distinct battery profile to force a native transition on
 AC/DC changes;
 firmware-reported lower maxima clamp the requested budgets (45/60 W on the
 investigated battery setup). Balanced on AC requests 30/45 W; Balanced on battery
-and Powersave request 25/40 W. Stock Balanced allowed greater GPU power than
-the bounded Performance policy, so all modes require explicit thermal budgets.
-Their nominal CPU ceiling avoids the substantially higher component power of
-boosted all-core work; Performance measured about 20% more matrixprod throughput
-at roughly 45 W versus 30 W on the 680M SMU socket-power readout with the dGPU
-asleep. These are synthetic firmware-sensor comparisons, not pure CPU rail or
-whole-laptop energy-per-task measurements.
+and Powersave request 25/40 W. Stock Balanced allowed more GPU power than the
+bounded Performance policy, so every mode declares explicit thermal budgets. The
+daily modes keep the nominal CPU ceiling to avoid the much higher power of
+boosted all-core work.
 
 ASUS couples custom fan mode and PPT writes. A root-owned TuneD script at
 priority 50 in the common profile delegates these operations through asusd's typed public D-Bus API,
@@ -83,8 +79,8 @@ of TuneD. The CPU curve reaches full command at 70 C to assist shared cooling;
 the GPU curve reaches full command at 85 C. The daily-mode curves leave fans off
 below 60 C at the EC input and ramp to full command at 85 C. ASUS requires enabled
 manual fan curves to honor PPT controls. Exact points are declared in the
-script and recorded in the study. EC temperature input can differ from CPU Tctl; the
-experimental recorder measures both identified temperatures and fan RPM.
+script. EC temperature input can differ from CPU Tctl; `power-study` records both
+identified temperatures and fan RPM.
 
 On unload, the script asks asusd to restore firmware PPT defaults and disable
 the outgoing platform's manual curves before TuneD restores the prior platform. asusd
@@ -123,10 +119,6 @@ and rollback. Blank panels are not awakened for policy updates.
 When leaving Powersave with a blank panel, its restoration remains pending.
 Hypridle's existing wake hook turns displays on and notifies the display service,
 which applies or restores the refresh rate then. No wake poller is added.
-The final 60/120/60 Hz battery comparison supports a modest refresh saving;
-session drift limits its precision. The smaller repeat difference was about
-0.5 W, corroborated in direction by battery energy loss. See the study record
-for all phases and the separate energy-counter estimates.
 
 mpv provisioning on GA402RK selects OpenGL and `hwdec=auto-safe`, retaining
 automatic codec/device discovery. The user-selected `generic-high` shader
@@ -157,45 +149,20 @@ rendering-profile API.
 
 ## Measurement and recovery
 
-`power-study` is an explicit measurement tool, not part of normal policy. It
-records power source, battery energy and flow, display state, CPU policy,
-identified hwmon sensors, fan RPM and runtime-safe DRM telemetry. Records are
-stored under `$XDG_STATE_HOME/dotfiles-power-study`. An optional child process
-is terminated as a process group when the bounded run ends or a guard trips.
-Invalid/guarded runs stop that group immediately; normal completion allows five
-seconds of graceful cleanup before escalation. This prevents a GPU benchmark
-that ignores SIGTERM from continuing to heat during a thermal abort.
-Default experimental guards are CPU 82 C, GPU edge 80 C and GPU hotspot/memory
-90 C when `--gpu-telemetry` is requested; they are conservative experiment limits,
-not hardware shutdown limits. GPU stress workloads must use this option. Battery
-trials observe runtime state without reading GPU sensors, even if the GPU is
-already active: sensor reads can repeatedly reset its autosuspend delay.
-Hardware protections are never changed.
-
-Options precede the label; an optional workload follows it. `--until-stopped`
-keeps sampling until SIGINT/SIGTERM instead of ending at `--duration`:
+`power-study` records power source, battery energy and flow, display state, CPU
+policy, identified hwmon sensors and fan RPM until stopped or for `--duration`;
+the Performance drawer's recording runs it with `--until-stopped`. Records are
+stored under `$XDG_STATE_HOME/dotfiles-power-study`. It reads only the GPUs'
+runtime PM state: sensor reads reset the autosuspend delay and would keep an idle
+dGPU awake. Changing AC state, mode, brightness or display configuration marks
+the run as not comparable, and a sampling gap (suspend counts, through
+`CLOCK_BOOTTIME`) marks it interrupted. Summaries separate battery `power_now`
+statistics from energy-delta power; runtime projections are estimates.
 
 ```sh
 power-study --warmup 30 --duration 600 idle
-power-study --until-stopped --warmup 0 desktop
-power-study --gpu-telemetry --interval .5 --warmup 30 --duration 900 game -- GAME ARGUMENTS
 power-mode powersave
 tuned-adm active
 tuned-adm verify
 systemctl --user status power-session.path power-session.service
 ```
-
-Changing AC state, mode or brightness invalidates the current comparison.
-Thermal guards, interrupted sampling and changed display configuration are
-reported explicitly. Sampling uses `CLOCK_BOOTTIME` so suspend time counts toward
-gap detection. Summaries separate battery `power_now` statistics from
-energy-delta power; neither APU PPT nor component estimates stand in for battery
-discharge. Runtime projections are estimates, not measured full discharges.
-Short synthetic runs cannot establish gaming stability.
-
-Automated checks live in `tests/test_power_policy.py`, `test_power_drawers.py`,
-`test_display_drawer.py`, `test_mpv_power.py` and generation tests. Source-policy
-tests simulate UPower edges and daemon readback without hardware writes; the
-native mpv test verifies Powersave restoration and preservation of manual edits.
-Physical measurements and their
-limits belong in [the study record](evidence/2026-10-18.md).

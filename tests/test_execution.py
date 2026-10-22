@@ -13,7 +13,7 @@ from unittest.mock import patch
 REPO = Path(__file__).resolve().parents[1]
 
 
-class GeneratedExecutionTests(unittest.TestCase):
+class ExecutionTests(unittest.TestCase):
     def test_xdg_folders_are_published_without_staging_paths(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -36,7 +36,7 @@ class GeneratedExecutionTests(unittest.TestCase):
             self.assertIn('XDG_DOWNLOAD_DIR="$HOME/Downloads"', user_dirs)
             self.assertNotIn(str(staging), user_dirs)
 
-    def test_executor_uses_snapshot_and_is_repeatable_without_state(self):
+    def test_configure_runs_hooks_from_checkout_and_is_repeatable(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             home = root / 'home'
@@ -57,71 +57,61 @@ class GeneratedExecutionTests(unittest.TestCase):
             links.mkdir(parents=True)
             (links / 'linked.conf').write_text('linked\n')
             system_link = root / 'system/linked.conf'
-            (module / 'links.config.json').write_text(json.dumps({'extra': {'symlinks': [
+            (module / 'config.json').write_text(json.dumps({'packages': ['git'], 'extra': {'symlinks': [
                 {'source': 'modules/linked/symlinks/home/.config/linked.conf', 'target': str(system_link)}
             ]}}))
-            (module / 'config.json').write_text('{"packages": ["git"]}')
-            (module / 'scripts').mkdir()
-            (module / 'scripts/50_example.sh').write_text(
+            hook = module / 'scripts/50_example.sh'
+            hook.parent.mkdir()
+            hook.write_text(
                 'repo_dir=${DOTFILES_REPO:?}\n'
                 'source "$repo_dir/scripts/config-helpers.sh"\n'
-                'file_write "$HOME/.config/generated.conf" <<\'EOF\'\ngenerated\nEOF\n')
+                'printf "%s\\n" "$1" | file_write "$HOME/.config/generated.conf"\n')
             subprocess.run(['python3', str(repo / 'generate-config.py')], check=True, capture_output=True)
-            # Remove every executable module input after generation.
-            (module / 'scripts/50_example.sh').unlink()
-            (repo / 'scripts/config-helpers.sh').unlink()
-            executor = repo / 'user-configuration.sh'
-            # The test executes only staged home operations as the test user.
-            executor.write_text(executor.read_text().replace(
-                "[[ $EUID == 0 ]] || { echo 'Run through ./apply.sh or archinstall.' >&2; exit 1; }", ':').replace('/run/system-configuration-context', str(root / 'context')).replace('/run/system-configuration.json', str(root / 'configuration.json')).replace('/var/tmp/system-configuration.', str(root / 'persistent-staging.')))
+            config = json.loads((repo / 'user-configuration.json').read_text())
+            self.assertEqual(config['extra']['scripts'], ['modules/example/scripts/50_example.sh'])
+            self.assertEqual(len(config['custom_commands']), 1)
+            # The test runs the real executor unprivileged, without touching /run.
+            configure = repo / 'scripts/configure.sh'
+            configure.write_text(configure.read_text().replace(
+                "[[ $EUID == 0 ]] || { echo 'Run through ./apply.sh or archinstall.' >&2; exit 1; }", ':')
+                .replace('/run/system-configuration.json', str(root / 'configuration.json')))
             commands = root / 'bin'
             commands.mkdir()
             record = f'tester:x:{os.getuid()}:{os.getgid()}::{home}:/bin/bash'
             (commands / 'getent').write_text(f'#!/bin/sh\nprintf \'%s\\n\' \'{record}\'\n')
-            (commands / 'systemctl').write_text('#!/bin/sh\nexit 0\n')
             (commands / 'chown').write_text('#!/bin/sh\nexit 0\n')
             for command in commands.iterdir():
                 command.chmod(0o755)
             env = dict(os.environ, PATH=str(commands) + ':' + os.environ['PATH'],
                        SUDO_USER='tester', CONFIG_MODE='live')
-            temporary_mount = root / 'temporary-mount'
-            temporary_mount.mkdir()
-            env['TMPDIR'] = str(temporary_mount)
-            config = json.loads((repo / 'user-configuration.json').read_text())
             def execute():
                 (root / 'configuration.json').unlink(missing_ok=True)
                 (root / 'configuration.json').symlink_to(repo / 'user-configuration.json')
-                for command in config['custom_commands']:
-                    command = command.replace('/run/system-configuration.json', str(root / 'configuration.json'))
-                    result = subprocess.run(['bash', '-c', command], env=env, text=True, capture_output=True)
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    # arch-chroot -S discards /tmp after each custom command.
-                    # Preserve no temporary files there between invocations.
-                    shutil.rmtree(temporary_mount)
-                    temporary_mount.mkdir()
+                command = config['custom_commands'][0].replace('/run/system-configuration.json', str(root / 'configuration.json'))
+                result = subprocess.run(['bash', '-c', command], env=env, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
             for _ in range(2):
                 execute()
-                self.assertFalse((root / 'context').exists())
-                self.assertEqual((home / '.config/generated.conf').read_text(), 'generated\n')
+                self.assertEqual((home / '.config/generated.conf').read_text(), 'tester\n')
                 self.assertFalse((home / '.config/plain.conf').is_symlink())
                 self.assertEqual((home / '.config/plain.conf').read_text(), 'plain\n')
                 self.assertEqual((home / '.config/linked.conf').resolve(), links / 'linked.conf')
                 self.assertEqual(system_link.resolve(), links / 'linked.conf')
                 (home / '.config/plain.conf').write_text('user changes\n')
                 self.assertEqual((assets / 'plain.conf').read_text(), 'plain\n')
-            self.assertFalse((home / '.local/state/system-config').exists())
-            # Installation publishes the same generated configuration into the
-            # user's checkout before resolving home links and executing hooks.
+            # Hook edits apply without regenerating the configuration.
+            hook.write_text(hook.read_text().replace('"$1"', '"edited $1"'))
+            execute()
+            self.assertEqual((home / '.config/generated.conf').read_text(), 'edited tester\n')
+            # Installation continues from the user's own checkout before linking assets.
             env['CONFIG_MODE'] = 'install'
             execute()
             checkout = home / 'Projects/dotfiles'
-            self.assertFalse((home / '.config/plain.conf').is_symlink())
-            self.assertEqual((home / '.config/plain.conf').read_text(), 'plain\n')
+            self.assertEqual((checkout / 'host').read_text(), 'vm\n')
             self.assertEqual((home / '.config/linked.conf').resolve(),
                              checkout / 'modules/linked/symlinks/home/.config/linked.conf')
             self.assertEqual(system_link.resolve(),
                              checkout / 'modules/linked/symlinks/home/.config/linked.conf')
-            self.assertEqual((home / '.config/generated.conf').read_text(), 'generated\n')
 
     def test_validation_invokes_only_archinstall_dry_run(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -151,7 +141,7 @@ class GeneratedExecutionTests(unittest.TestCase):
             source = root / 'repo'
             (source / 'scripts').mkdir(parents=True)
             (source / 'user-configuration.json').write_text('{}')
-            (source / 'live-migrate.sh').write_text('do not copy')
+            (source / '__pycache__').mkdir()
             (source / 'modules').mkdir()
             (source / 'modules/asset').write_text('asset')
             target = root / 'target'
@@ -160,7 +150,7 @@ class GeneratedExecutionTests(unittest.TestCase):
                 plugin.Plugin().on_install(SimpleNamespace(target=target))
             staged = target / 'root/system-configuration'
             self.assertTrue((staged / 'modules/asset').is_file())
-            self.assertFalse((staged / 'live-migrate.sh').exists())
+            self.assertFalse((staged / '__pycache__').exists())
             self.assertEqual(os.readlink(target / 'run/system-configuration.json'),
                              '/root/system-configuration/user-configuration.json')
 

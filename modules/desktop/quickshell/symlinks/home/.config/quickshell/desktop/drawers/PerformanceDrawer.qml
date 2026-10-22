@@ -3,9 +3,8 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Services.UPower
 import "../ui"
-import "network"
-import "network/Models.js" as Models
 import "power"
 import "power/Format.js" as Format
 
@@ -13,31 +12,24 @@ DrawerPage {
     id: root
     property var service: PowerService
     property var session: PowerSession
-    readonly property var profiles: service.state.profiles
+    property var profiles: PowerProfiles
     readonly property var metrics: service.state.metrics
-    readonly property bool canAct: active && service.loaded && !service.changing && !service.closing
-    ListModel { id: profilesModel; dynamicRoles: true }
-    ListModel { id: gpusModel; dynamicRoles: true }
-    ListModel { id: fansModel; dynamicRoles: true }
-    function sync(): void {
-        Models.sync(profilesModel, profiles.choices.map(value => ({key: value})), "key", false);
-        Models.sync(gpusModel, metrics?.gpus ?? [], "key", false);
-        Models.sync(fansModel, metrics?.fans ?? [], "key", false);
-    }
-    Connections { target: root.service; function onStateChanged(): void { root.sync(); } }
-    Component.onCompleted: { sync(); service.observe(root, active, true); }
+    readonly property var choices: [{key: "power-saver", value: PowerProfile.PowerSaver}, {key: "balanced", value: PowerProfile.Balanced}]
+        .concat(profiles.hasPerformanceProfile ? [{key: "performance", value: PowerProfile.Performance}] : [])
+    function profileKey(value): string { return choices.find(choice => choice.value === value)?.key ?? ""; }
+    Component.onCompleted: service.observe(root, active, true)
     Component.onDestruction: service.observe(root, false, true)
     onActiveChanged: service.observe(root, active, true)
     headerActions: RowLayout {
         spacing: 4
-        NetworkIconButton {
+        IconButton {
             objectName: "performanceMonitor"; iconName: "list"; text: qsTr("Open system monitor")
             hint: qsTr("Open btop for processes and resource usage")
-            onClicked: { Quickshell.execDetached(["xdg-terminal-exec", "btop"]); root.closeRequested(); }
+            onClicked: { Apps.launch(["xdg-terminal-exec", "btop"]); root.closeRequested(); }
         }
-        NetworkIconButton {
+        IconButton {
             objectName: "performanceRefresh"; iconName: "refresh-cw"; text: qsTr("Refresh performance")
-            enabled: !root.service.busy && !root.service.closing
+            enabled: !root.service.reading
             onClicked: root.service.refresh()
         }
     }
@@ -50,8 +42,7 @@ DrawerPage {
         DrawerColumn {
             objectName: "performanceScroll"; Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 0
             Note { visible: !root.service.loaded; text: qsTr("Reading system performance…") }
-            Note { visible: root.service.statusError !== ""; text: root.service.statusError; color: Theme.danger }
-            Note { objectName: "performanceActionError"; visible: root.service.actionError !== ""; text: root.service.actionError; color: Theme.danger }
+            Note { visible: root.service.error !== ""; text: root.service.error; color: Theme.danger }
             Note { visible: root.session.error !== ""; text: root.session.error; color: Theme.danger }
             ShellText { objectName: "performanceHeading"; text: qsTr("Mode"); Layout.fillWidth: true; font.weight: Font.DemiBold }
             ColumnLayout {
@@ -59,19 +50,19 @@ DrawerPage {
                 RowLayout {
                     Layout.fillWidth: true; spacing: 6
                     Repeater {
-                        model: profilesModel
+                        model: root.choices
                         delegate: Button {
                             id: profile
-                            required property var record
-                            readonly property string profileName: record.key
-                            readonly property bool current: root.profiles.active === profileName
+                            required property var modelData
+                            readonly property string profileName: modelData.key
+                            readonly property bool current: root.profiles.profile === modelData.value
                             readonly property string description: ({"power-saver": qsTr("Conserve battery with efficient playback and quieter operation."), balanced: qsTr("Responsive everyday work with adaptive power use."), performance: qsTr("Sustained performance with active cooling.")})[profileName] || ""
                             objectName: "powerProfile:" + profileName
                             Layout.fillWidth: true; Layout.preferredWidth: 1
                             implicitHeight: root.width < 340 ? 38 : 60; padding: 6; hoverEnabled: true
-                            enabled: root.canAct && !(profileName === "performance" && root.profiles.inhibited !== "")
+                            enabled: root.active
                             Accessible.name: Format.profile(profileName); Accessible.role: Accessible.RadioButton; Accessible.checked: current
-                            onClicked: if (!current) root.service.changeProfile(profileName)
+                            onClicked: if (!current) root.profiles.profile = modelData.value
                             background: ButtonBackground { idleColor: profile.current ? Theme.accentSurface : Theme.raised; highlighted: profile.hovered || profile.visualFocus || profile.current; pressed: profile.down }
                             contentItem: ColumnLayout {
                                 spacing: 4
@@ -82,10 +73,15 @@ DrawerPage {
                         }
                     }
                 }
-                Note { visible: !root.profiles.available; text: root.profiles.error }
-                Note { visible: root.profiles.degraded !== ""; text: qsTr("Power policy warning: %1").arg(root.profiles.degraded); color: Theme.warning }
-                Note { visible: root.profiles.inhibited !== ""; text: qsTr("Performance unavailable: %1").arg(root.profiles.inhibited); color: Theme.warning }
-                Repeater { model: root.profiles.holds; delegate: Note { required property var modelData; text: qsTr("%1 requests %2: %3").arg(modelData.application || qsTr("An application")).arg(Format.profile(modelData.profile)).arg(modelData.reason) } }
+                Note {
+                    objectName: "performanceDegraded"
+                    visible: root.profiles.degradationReason !== PerformanceDegradationReason.None
+                    text: root.profiles.degradationReason === PerformanceDegradationReason.LapDetected
+                        ? qsTr("Performance is limited while the laptop is on a lap.") : qsTr("Performance is limited by high temperature.")
+                    color: Theme.warning
+                }
+                Note { objectName: "performancePolicy"; visible: root.service.state.policy !== ""; text: qsTr("Power policy warning: %1").arg(root.service.state.policy); color: Theme.warning }
+                Repeater { model: root.profiles.holds; delegate: Note { required property var modelData; text: qsTr("%1 requests %2: %3").arg(modelData.applicationId || qsTr("An application")).arg(Format.profile(root.profileKey(modelData.profile))).arg(modelData.reason) } }
             }
             ShellText { objectName: "performanceDevicesHeading"; text: qsTr("Devices"); Layout.fillWidth: true; Layout.topMargin: 8; font.weight: Font.DemiBold }
             PowerCard {
@@ -107,10 +103,11 @@ DrawerPage {
                 }
             }
             Repeater {
-                model: gpusModel
+                model: KeyedModel { values: root.metrics?.gpus ?? []; keyField: "key" }
                 delegate: PowerCard {
                     id: gpu
-                    required property var record
+                    required property var modelData
+                    readonly property var record: modelData
                     readonly property string sampleHint: record.sampleAge > 1 ? qsTr("Last sampled %1 s ago").arg(Math.round(record.sampleAge)) : ""
                     title: record.label
                     Note { visible: gpu.record.sleeping; text: qsTr("Sleeping") }
@@ -129,7 +126,7 @@ DrawerPage {
                 visible: (root.metrics?.fans.length ?? 0) > 0; title: qsTr("Fans")
                 GridLayout {
                     Layout.fillWidth: true; columns: 2; rowSpacing: 0; columnSpacing: 6
-                    Repeater { model: fansModel; delegate: MetricChip { required property var record; iconName: "fan"; label: record.label; value: Format.compact(record.rpm, " RPM") } }
+                    Repeater { model: KeyedModel { values: root.metrics?.fans ?? []; keyField: "key" } delegate: MetricChip { required property var modelData; iconName: "fan"; label: modelData.label; value: Format.compact(modelData.rpm, " RPM") } }
                 }
             }
         }

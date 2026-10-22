@@ -296,7 +296,7 @@ class Storage:
             return dict(health=self.health(objects, path))
         row = self.volume_record(objects, path)
         if op == 'unlock':
-            password = request.pop('password', '')
+            password = request.get('password', '')
             if not row['locked'] or not isinstance(password, str) or not password or '\0' in password:
                 raise StorageError('Enter a passphrase for a locked volume.')
             self.call(path, CRYPT, 'Unlock', password=password)
@@ -318,8 +318,6 @@ class Storage:
             result.update(ok=False, error=str(error))
         except Exception:
             result.update(ok=False, error='Could not contact the storage service. Check that UDisks is installed and running.')
-        finally:
-            request.pop('password', None)
         try:
             result['data'] = self.snapshot()
         except Exception:
@@ -330,20 +328,14 @@ class Storage:
 def main():
     storage = None
     for line in sys.stdin:
-        request = None
         try:
             request = json.loads(line)
-            line = ''
             if not isinstance(request, dict):
                 raise ValueError()
             storage = storage or Storage()
             result = storage.response(request)
         except Exception:
             result = dict(ok=False, error='Could not contact the storage service. Check that UDisks is installed and running.')
-        finally:
-            line = ''
-            if isinstance(request, dict):
-                request.pop('password', None)
         print(json.dumps(result, ensure_ascii=True), flush=True)
 
 

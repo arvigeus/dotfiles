@@ -1,0 +1,15 @@
+{
+    "app_config": {
+        "firewall_config": {
+            "firewall": "firewalld"
+        }
+    },
+    "extra": {
+        "packages": [
+            "firewalld"
+        ],
+        "services": [
+            "firewalld.service"
+        ]
+    }
+}

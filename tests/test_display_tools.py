@@ -2,12 +2,12 @@
 import os
 import unittest
 
-import test_display_drawer as fixtures
+import support
 
 
-@unittest.skipUnless(fixtures.QS, 'Quickshell is required')
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class DisplayToolTests(unittest.TestCase):
-    run_qml = fixtures.DisplayQmlTests.run_qml
+    run_qml = support.run_qml
 
     def test_controller_selection_hotplug_and_identification_timeout(self):
         def setup(root):

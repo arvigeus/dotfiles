@@ -11,15 +11,8 @@ file_write /etc/systemd/system/getty@tty1.service.d/autologin.conf <<EOF_CONFIG
 ExecStart=
 ExecStart=-/usr/bin/agetty --autologin $USERNAME --noreset --noclear --noissue --skip-login - \${TERM}
 EOF_CONFIG
-file_write /etc/tmpfiles.d/desktop-session.conf <<EOF_CONFIG
-d /run/desktop-session-$USERNAME 0700 $USERNAME - -
-EOF_CONFIG
-systemd-tmpfiles --create /etc/tmpfiles.d/desktop-session.conf
-# An empty /etc/hushlogins makes console login quiet system-wide.
-awk '$1 != "HUSHLOGIN_FILE" { print } END { print "HUSHLOGIN_FILE /etc/hushlogins" }' \
-    /etc/login.defs | file_write /etc/login.defs
 # UWSM's may-start check requires the graphical target even without a greeter.
 systemctl set-default graphical.target
-# The packaged user unit is tied to graphical-session.target, reached by UWSM.
+# The packaged user units are tied to graphical-session.target, reached by UWSM.
 systemctl --global enable hyprpolkitagent.service
 systemctl --global enable hypridle.service

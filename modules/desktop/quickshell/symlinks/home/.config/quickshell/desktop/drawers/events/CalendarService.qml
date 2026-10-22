@@ -1,9 +1,12 @@
 pragma Singleton
 import QtQuick
+import Quickshell
 import Quickshell.Io
 
-QtObject {
+Singleton {
     id: root
+    readonly property alias fetcher: fetcher
+    readonly property alias timer: timer
     property bool active: false
     property bool started: false
     property string month: Qt.formatDate(new Date(), "yyyy-MM")
@@ -25,7 +28,7 @@ QtObject {
     property bool writing: false
     readonly property bool refreshing: reading || fetching
     readonly property bool busy: refreshing || writing || transactions.length > 0
-    readonly property string backend: decodeURIComponent(Qt.resolvedUrl("backend.py").toString().replace(/^file:\/\//, ""))
+    readonly property string backend: Quickshell.shellPath("drawers/events/backend.py")
     signal submitted(var request)
     signal saved()
     signal writeFailed(var request)
@@ -176,12 +179,12 @@ QtObject {
             return;
         }
         const patch = result.data;
-        if (patch.account_id && patch.account_id !== (base.account_id || "")) {
+        if (patch.account_id !== (base.account_id || "")) {
             transactions = remaining; render(); statusPending = true; return;
         }
-        // Older workers may only acknowledge the write; keep its optimistic row
-        // until a quiet reconciliation can establish the current resource/ETag.
-        const reconcile = patch.reconcile || !Array.isArray(patch.tasks) || !Array.isArray(patch.events);
+        // An unconfirmed readback keeps the optimistic row until a quiet
+        // reconciliation establishes the current resource and ETag.
+        const reconcile = patch.reconcile;
         const rows = reconcile ? request.optimistic.map(row => Object.assign({}, row, {
             href: patch.href || row.href, _pending: false, _needsSync: true, editable: false, actionable: false
         })) : patch[request.kind === "VTODO" ? "tasks" : "events"];
@@ -225,27 +228,30 @@ QtObject {
         }) : Object.assign({}, previous, {eventsReady: false});
         render(); refresh();
     }
-    readonly property Timer timer: Timer {
+    Timer {
+        id: timer
         interval: root.active ? 60000 : 900000; repeat: true; running: root.active || root.started
         onTriggered: root.refresh()
     }
-    readonly property Process reader: Process {
+    Process {
+        id: reader
         property var request: ({})
         property string month: ""
         property int generation: 0
         property bool received: false
-        command: ["python3", "-B", root.backend]
+        command: ["python3", root.backend]
         onStarted: { write(JSON.stringify(request) + "\n"); stdinEnabled = false; }
         stdout: StdioCollector { onStreamFinished: root.receiveRead(text, reader) }
         stderr: StdioCollector {}
         onExited: { root.readExited(reader); root.reading = false; Qt.callLater(root.pump); }
     }
-    readonly property Process fetcher: Process {
+    Process {
+        id: fetcher
         property var request: ({})
         property string month: ""
         property int generation: 0
         property bool received: false
-        command: ["python3", "-B", root.backend]
+        command: ["python3", root.backend]
         onStarted: { write(JSON.stringify(request) + "\n"); stdinEnabled = false; }
         stdout: StdioCollector { onStreamFinished: root.receiveRead(text, fetcher) }
         stderr: StdioCollector {}
@@ -255,10 +261,11 @@ QtObject {
             Qt.callLater(root.pump);
         }
     }
-    readonly property Process writer: Process {
+    Process {
+        id: writer
         property var request: ({})
         property bool received: false
-        command: ["python3", "-B", root.backend]
+        command: ["python3", root.backend]
         onStarted: { write(JSON.stringify(request) + "\n"); stdinEnabled = false; }
         stdout: StdioCollector {
             onStreamFinished: {

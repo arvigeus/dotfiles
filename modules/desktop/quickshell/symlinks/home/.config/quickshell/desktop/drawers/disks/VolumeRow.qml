@@ -3,7 +3,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../../ui"
-import "../network"
 
 ColumnLayout {
     id: root
@@ -25,7 +24,7 @@ ColumnLayout {
         record.mounts.join("\n")].filter(Boolean).join("\n")
     RowLayout {
         visible: root.showSummary; Layout.fillWidth: true; spacing: 6
-        NetworkButton {
+        ShellButton {
             id: title
             objectName: "volumeTitle:" + root.record.key
             Layout.fillWidth: true; Layout.preferredWidth: 1; implicitWidth: 0
@@ -46,7 +45,7 @@ ColumnLayout {
             color: Theme.muted; font.pixelSize: Theme.smallFontSize
         }
         BusySpinner { visible: root.pending; running: visible; implicitWidth: 16; implicitHeight: 16 }
-        NetworkIconButton {
+        IconButton {
             objectName: "volumeAction:" + root.record.key
             visible: root.action !== ""
             implicitWidth: 28; implicitHeight: 28; padding: 5
@@ -68,7 +67,7 @@ ColumnLayout {
         Layout.fillWidth: true; spacing: 4
         Repeater {
             model: root.record.mounts
-            delegate: NetworkButton {
+            delegate: ShellButton {
                 id: location
                 required property string modelData
                 objectName: "volumeLocation:" + modelData

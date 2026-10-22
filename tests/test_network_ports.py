@@ -1,22 +1,24 @@
-"""Temporary port boundaries, UI and lazy public-IP lookups; no host mutations."""
+"""Temporary firewalld ports, UI and lazy public-IP lookups; no host mutations."""
 import copy
 import importlib.machinery
 import importlib.util
+import io
 import json
 import os
-import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 REPO = Path(__file__).resolve().parents[1]
 DESKTOP = REPO / 'modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop'
-HELPER = REPO / 'modules/system/security/ufw/files/usr/local/libexec/desktop-ports'
-loader = importlib.machinery.SourceFileLoader('desktop_ports', str(HELPER))
+FIREWALL = REPO / 'modules/system/security/firewall'
+HELPER = FIREWALL / 'files/usr/local/libexec/firewall-ports'
+loader = importlib.machinery.SourceFileLoader('firewall_ports', str(HELPER))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 ports = importlib.util.module_from_spec(spec)
 # This executable must not generate bytecode in the installed helper directory.
@@ -25,179 +27,165 @@ sys.dont_write_bytecode = True
 loader.exec_module(ports)
 sys.dont_write_bytecode = _bytecode_disabled
 QS = shutil.which('qs')
-NETWORK = {'interface': 'wlan0', 'connection': '/active/1', 'address': '192.168.1.10', 'subnet': '192.168.1.0/24'}
+OPENED = ('rule family="ipv4" source address="192.168.1.0/24" destination address="192.168.1.10" '
+          'port port="5173" protocol="tcp" accept')
+OTHER_RULE = 'rule family="ipv4" source address="10.0.0.0/8" service name="ssh" accept'
 
 
-class Kernel:
+class Host:
+    """Fake firewall-cmd and ip; records every argv."""
+
     def __init__(self):
-        self.rules = [['-A', ports.CHAIN, '-p', 'tcp', '--dport', '22', '-j', 'ACCEPT']]
+        self.zones = {'public': {'interfaces': ['wlan0', 'eth0'], 'rules': [OTHER_RULE]},
+                      'libvirt': {'interfaces': ['virbr0'], 'rules': []},
+                      'home': {'interfaces': [], 'rules': []}}
+        self.links = [{'ifname': 'lo', 'addr_info': [{'local': '127.0.0.1', 'prefixlen': 8}]},
+                      {'ifname': 'wlan0', 'addr_info': [{'local': '192.168.1.10', 'prefixlen': 24}]},
+                      {'ifname': 'eth0', 'addr_info': []},
+                      {'ifname': 'virbr0', 'addr_info': [{'local': '192.168.122.1', 'prefixlen': 24}]}]
         self.calls = []
-        self.fail_delete = False
+        self.status = {}
 
-    def __call__(self, *args):
-        self.calls.append(args)
-        if args[:1] == ('-S',):
-            return Mock(returncode=0, stdout='\n'.join(shlex.join(rule) for rule in self.rules))
-        if args[:1] == ('-I',):
-            values = list(args[3:])
-            # Match iptables -S canonicalization, which differs from the input.
-            destination = values.index('-d') + 1
-            values[destination] += '/32'
-            values[0:4] = values[2:4] + values[0:2]
-            self.rules.insert(0, ['-A', ports.CHAIN, *values])
-            return Mock(returncode=0)
-        if args[:1] == ('-D',):
-            rule = ['-A', *args[1:]]
-            if self.fail_delete:
-                return Mock(returncode=1)
-            self.rules.remove(rule)
-            return Mock(returncode=0)
-        raise AssertionError(args)
+    def __call__(self, argv, **_):
+        self.calls.append(argv)
+        if argv[0] == ports.IP:
+            return Mock(returncode=0, stdout=json.dumps(self.links))
+        option = argv[-1].split('=', 1)[0]
+        if option in self.status:
+            return Mock(returncode=self.status[option], stdout='')
+        if argv[1:] == ['--get-active-zones']:
+            lines = []
+            for name, zone in self.zones.items():
+                if zone['interfaces']:
+                    lines += [name + (' (default)' if name == 'public' else ''),
+                              '  interfaces: ' + ' '.join(zone['interfaces'])]
+            return Mock(returncode=0, stdout='\n'.join(lines) + '\n')
+        zone = self.zones[argv[1].removeprefix('--zone=')]
+        if argv[2] == '--list-rich-rules':
+            return Mock(returncode=0, stdout='\n'.join(zone['rules']) + '\n')
+        value = argv[2].split('=', 1)[1]
+        if option == '--add-rich-rule':
+            zone['rules'].append(value)
+        elif option == '--remove-rich-rule':
+            zone['rules'].remove(value)
+        else:
+            raise AssertionError(argv)
+        return Mock(returncode=0, stdout='success\n')
+
+    def writes(self):
+        return [call for call in self.calls if any(arg.startswith(('--add', '--remove')) for arg in call)]
 
 
-class PortBoundaryTests(unittest.TestCase):
+class FirewallPortTests(unittest.TestCase):
     def setUp(self):
-        self.kernel = Kernel()
-        self.network = Mock(return_value=copy.deepcopy(NETWORK))
-        self.service = ports.Ports(self.network)
-        self.patcher = patch.object(ports, 'command', side_effect=self.kernel)
-        self.patcher.start()
-        config = patch.object(ports.Path, 'read_text', return_value='ENABLED=yes\n')
-        config.start()
-        self.addCleanup(config.stop)
-        self.addCleanup(self.patcher.stop)
+        self.host = Host()
+        patcher = patch.object(ports.subprocess, 'run', side_effect=self.host)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
-    def request(self, op='open', uid=1000, **values):
-        return self.service.handle(dict(op=op, interface='wlan0', port=5173, **values), uid, lambda: True)
+    def request(self, op='open', **values):
+        return ports.handle({'op': op, 'interface': 'wlan0', 'port': 5173, **values})
 
-    def test_open_is_interface_source_and_destination_scoped_and_close_preserves_baseline(self):
-        baseline = copy.deepcopy(self.kernel.rules)
-        result = self.request()
-        self.assertEqual(result, [{'interface': 'wlan0', 'port': 5173, 'address': NETWORK['address']}])
-        rule = self.kernel.rules[0]
-        for value in ('wlan0', '192.168.1.0/24', '192.168.1.10/32', 'tcp', '5173'):
-            self.assertIn(value, rule)
-        self.assertTrue(ports.own_rule(rule))
+    def test_open_adds_one_runtime_rule_in_the_interface_zone_and_close_restores_baseline(self):
+        baseline = copy.deepcopy(self.host.zones)
+        row = {'interface': 'wlan0', 'port': 5173, 'address': '192.168.1.10', 'zone': 'public'}
+        self.assertEqual(self.request(), [row])
+        self.assertEqual(self.host.writes(), [[ports.FIREWALL_CMD, '--zone=public', '--add-rich-rule=' + OPENED]])
+        self.assertEqual(self.request('status'), [row])
         self.assertEqual(self.request('close'), [])
-        self.assertEqual(self.kernel.rules, baseline)
+        self.assertEqual(self.host.zones, baseline)
+        self.assertFalse(any('--permanent' in call for call in self.host.calls))
 
-    def test_status_has_no_writes_and_other_users_cannot_close_or_see_rules(self):
-        self.request()
-        self.kernel.calls.clear()
-        self.assertEqual(self.request('status', uid=1001), [])
-        self.assertTrue(all(call[0] == '-S' for call in self.kernel.calls))
-        self.assertEqual(self.request('close', uid=1001), [])
-        self.assertEqual(len(self.service.entries), 1)
-
-    def test_duplicate_rejected_without_another_insert(self):
-        self.request()
-        with self.assertRaisesRegex(ValueError, 'already open'):
-            self.request()
-        self.assertEqual(sum(c[0] == '-I' for c in self.kernel.calls), 1)
-
-    def test_invalid_ports_interfaces_payloads_and_denied_actions_never_write(self):
-        requests = [{'op': 'open', 'interface': 'wlan0', 'port': value} for value in (0, 65536, True, '5173', 1.5, None)]
-        requests += [{'op': 'open', 'interface': value, 'port': 5173} for value in ('../x', 'wlan0;evil', '', None)]
-        requests += [{'op': 'open', 'interface': 'wlan0', 'port': 5173, 'source': '0.0.0.0/0'}, [], {'op': 'disable'}]
-        for request in requests:
-            with self.subTest(request=request), self.assertRaises(ValueError):
-                self.service.handle(request, 1000, lambda: True)
-        with self.assertRaisesRegex(ValueError, 'administrator'):
-            self.service.handle({'op': 'open', 'interface': 'wlan0', 'port': 5173}, 1000, lambda: False)
-        self.assertFalse(any(c[0] in ('-I', '-D') for c in self.kernel.calls))
-
-    def test_disconnect_reconnect_and_address_changes_revoke_without_reopening(self):
-        for change in ({'connection': '/active/2'}, {'address': '192.168.1.11'}, {'subnet': '10.0.0.0/24'}):
-            self.network.return_value = copy.deepcopy(NETWORK)
-            self.request()
-            self.network.return_value.update(change)
-            self.service.reconcile()
-            self.assertEqual(self.service.entries, [])
-            self.assertEqual(len(self.kernel.rules), 1)
-        self.network.return_value = copy.deepcopy(NETWORK)
-        self.request()
-        self.network.side_effect = ValueError('Disconnected')
-        self.service.reconcile()
-        self.assertEqual(len(self.kernel.rules), 1)
-
-    def test_external_reload_clears_records_without_readding_and_restart_removes_orphans(self):
-        self.request()
-        self.kernel.rules.pop(0)
-        self.service.reconcile()
-        self.assertEqual(self.service.entries, [])
-        self.request()
-        restarted = ports.Ports(self.network)
-        restarted.close_all()
-        self.assertEqual(len(self.kernel.rules), 1)
-        self.assertIn('22', self.kernel.rules[0])
-
-    def test_failed_close_retains_ownership_for_retry(self):
-        self.request()
-        self.kernel.fail_delete = True
-        with self.assertRaisesRegex(ValueError, 'Could not close'):
-            self.request('close')
-        self.assertEqual(len(self.service.entries), 1)
-        self.kernel.fail_delete = False
+    def test_status_is_read_only_and_only_reports_rules_for_current_addresses(self):
+        stale = OPENED.replace('192.168.1.10', '192.168.1.99')
+        self.host.zones['public']['rules'] += [OPENED, stale, OPENED.replace('5173', '8080/tcp')]
+        self.assertEqual([row['port'] for row in self.request('status')], [5173])
+        self.assertEqual(self.host.writes(), [])
+        listed = [call[1] for call in self.host.calls if '--list-rich-rules' in call]
+        self.assertEqual(listed, ['--zone=public', '--zone=libvirt'])
         self.request('close')
-        self.assertEqual(self.service.entries, [])
+        self.assertEqual(self.host.zones['public']['rules'], [OTHER_RULE, stale, OPENED.replace('5173', '8080/tcp')])
 
-    def test_network_change_during_open_is_rolled_back(self):
-        self.network.side_effect = [copy.deepcopy(NETWORK), {**NETWORK, 'connection':'/active/2'}]
-        with self.assertRaisesRegex(ValueError, 'network changed'):
+    def test_duplicate_is_rejected_without_another_write(self):
+        self.request()
+        with self.assertRaisesRegex(ports.PortError, 'already open'):
             self.request()
-        self.assertEqual(self.service.entries, [])
-        self.assertEqual(len(self.kernel.rules), 1)
+        self.assertEqual(len(self.host.writes()), 1)
 
-    def test_disabled_firewall_never_claims_a_port_is_open(self):
-        with patch.object(ports.Path, 'read_text', return_value='ENABLED=no\n'), \
-                self.assertRaisesRegex(ValueError, 'UFW is not active'):
-            self.request()
-        self.assertFalse(any(c[0] == '-I' for c in self.kernel.calls))
+    def test_invalid_requests_never_reach_the_host(self):
+        requests = [{'op': 'open', 'interface': 'wlan0', 'port': value} for value in (0, 65536, True, '5173', 1.5, None)]
+        requests += [{'op': 'close', 'interface': value, 'port': 5173}
+                     for value in ('-x', '--permanent', '../x', 'wlan0;evil', 'wlan 0', '', 'a' * 16, None)]
+        requests += [{'op': 'open', 'interface': 'wlan0', 'port': 5173, 'zone': 'trusted'}, [], None, {'op': 'reload'}]
+        for request in requests:
+            with self.subTest(request=request), self.assertRaises(ports.PortError):
+                ports.handle(request)
+        self.assertEqual(self.host.calls, [])
 
-    def test_failed_or_timed_out_open_rolls_back_even_if_kernel_already_added_it(self):
-        original = self.kernel.__call__
-        def uncertain(*args):
-            result = original(*args)
-            if args[0] == '-I':
-                raise ValueError('Timed out')
-            return result
-        with patch.object(ports, 'command', side_effect=uncertain), \
-                self.assertRaisesRegex(ValueError, 'Timed out'):
-            self.request()
-        self.assertEqual(self.service.entries, [])
-        self.assertEqual(len(self.kernel.rules), 1)
+    def test_network_without_usable_address_or_zone_is_rejected(self):
+        with self.assertRaisesRegex(ports.PortError, 'no usable'):
+            self.request(interface='eth0')
+        self.host.links.append({'ifname': 'enp1s0', 'addr_info': [{'local': '10.0.0.5', 'prefixlen': 24}]})
+        with self.assertRaisesRegex(ports.PortError, 'no firewall zone'):
+            self.request(interface='enp1s0')
+        self.host.links[1]['addr_info'] = [{'local': '192.168.1.10', 'prefixlen': 32},
+                                           {'local': '169.254.3.4', 'prefixlen': 16}]
+        self.assertEqual(self.request()[0]['address'], '169.254.3.4')
+        self.assertIn('source address="169.254.0.0/16"', self.host.writes()[0][2])
 
-    def test_network_scope_only_comes_from_connected_physical_device(self):
-        NM = Mock()
-        NM.DeviceType.WIFI, NM.DeviceType.ETHERNET = 1, 2
-        NM.DeviceState.ACTIVATED = 100
-        client = Mock()
-        device = client.get_device_by_iface.return_value
-        device.get_device_type.return_value = 1
-        device.get_state.return_value = 100
-        device.get_active_connection.return_value.get_path.return_value = '/active/1'
-        address = Mock(get_address=lambda: '192.168.1.10', get_prefix=lambda: 24)
-        device.get_ip4_config.return_value.get_addresses.return_value = [address]
-        self.assertEqual(ports.network_for(client, 'wlan0', NM), NETWORK)
-        device.get_device_type.return_value = 99
-        with self.assertRaises(ValueError): ports.network_for(client, 'wg0', NM)
-        device.get_device_type.return_value = 1
-        device.get_state.return_value = 30
-        with self.assertRaises(ValueError): ports.network_for(client, 'wlan0', NM)
-        device.get_state.return_value = 100
-        address.get_prefix = lambda: 0
-        with self.assertRaises(ValueError): ports.network_for(client, 'wlan0', NM)
+    def test_firewall_failures_become_drawer_messages(self):
+        for code, message in ((252, 'not running'), (253, 'administrator session'), (1, 'Could not open')):
+            self.host.status = {'--add-rich-rule': code}
+            with self.subTest(code=code), self.assertRaisesRegex(ports.PortError, message):
+                self.request()
+        self.host.status = {'--get-active-zones': 252}
+        with self.assertRaisesRegex(ports.PortError, 'not running'):
+            self.request('status')
+        for error, message in ((FileNotFoundError(), 'not installed'),
+                               (subprocess.TimeoutExpired('firewall-cmd', 15), 'did not respond')):
+            with self.subTest(error=error), patch.object(ports.subprocess, 'run', side_effect=error), \
+                    self.assertRaisesRegex(ports.PortError, message):
+                ports.firewall('--get-active-zones', failure='unused')
 
+    def test_main_speaks_one_json_line(self):
+        for line, expected in (('{"op":"status"}\n', {'ok': True, 'ports': [], 'error': ''}),
+                               ('not json\n', {'ok': False, 'error': 'Invalid port request.'})):
+            output = io.StringIO()
+            with self.subTest(line=line), patch.object(sys, 'stdin', io.StringIO(line)), patch.object(sys, 'stdout', output):
+                ports.main()
+            self.assertEqual(json.loads(output.getvalue()), expected)
+
+
+class FirewallAssetTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('node'), 'Node is required')
-    def test_policy_only_allows_active_local_wheel_and_the_exact_action(self):
-        policy = REPO / 'modules/system/security/ufw/files/etc/polkit-1/rules.d/50-desktop-ports.rules'
+    def test_policy_only_allows_zone_configuration_for_active_local_wheel(self):
+        policy = FIREWALL / 'files/etc/polkit-1/rules.d/50-firewall.rules'
         script = '''const fs=require('fs'),vm=require('vm');let rule;
 vm.runInNewContext(fs.readFileSync(process.argv[1],'utf8'),{polkit:{addRule:f=>rule=f,Result:{YES:'yes'}}});
-function allow(local=true,active=true,wheel=true,id='org.dotfiles.ports.manage'){
+function allow(id,local=true,active=true,wheel=true){
  return rule({id},{local,active,isInGroup:group=>group==='wheel'&&wheel})==='yes';}
-if(!allow()||allow(false)||allow(true,false)||allow(true,true,false)||allow(true,true,true,'org.freedesktop.policykit.exec'))process.exit(1);
+const base='org.fedoraproject.FirewallD1';
+if(!allow(base+'.config')||!allow(base+'.config.info'))process.exit(1);
+if(allow(base+'.config',false)||allow(base+'.config',true,false)||allow(base+'.config',true,true,false))process.exit(2);
+for(const id of [base+'.all',base+'.direct',base+'.policies','org.freedesktop.policykit.exec'])if(allow(id))process.exit(3);
 '''
         subprocess.run(['node', '-e', script, str(policy)], check=True)
+
+    def test_default_zone_denies_ssh_and_modules_own_their_policies(self):
+        public = ET.parse(FIREWALL / 'files/etc/firewalld/zones/public.xml').getroot()
+        self.assertEqual([service.get('name') for service in public.iter('service')], ['dhcpv6-client'])
+        self.assertIsNone(public.get('target'))
+        policies = {'ssh': REPO / 'modules/system/security/ssh/server/files/etc/firewalld/policies/ssh.xml',
+                    'kdeconnect': REPO / 'modules/communication/kdeconnect/files/etc/firewalld/policies/kdeconnect.xml'}
+        for name, path in policies.items():
+            root = ET.parse(path).getroot()
+            self.assertEqual((root.find('ingress-zone').get('name'), root.find('egress-zone').get('name')), ('ANY', 'HOST'))
+            self.assertEqual(root.get('target'), 'CONTINUE')
+            self.assertEqual({service.get('name') for service in root.iter('service')}, {name})
+        sources = [source.get('address') for source in ET.parse(policies['kdeconnect']).getroot().iter('source')]
+        self.assertEqual(sources, ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '169.254.0.0/16', 'fc00::/7', 'fe80::/10'])
+        self.assertEqual(json.loads((FIREWALL / 'config.json').read_text())['app_config'],
+                         {'firewall_config': {'firewall': 'firewalld'}})
 
 
 @unittest.skipUnless(QS, 'Quickshell is required')
@@ -274,7 +262,7 @@ FloatingWindow {
                 'print(json.dumps(dict(ok=True,ports=rows,error="")),flush=True)\n')
             path = root / 'drawers/network/PortsService.qml'
             source = path.read_text()
-            source = source.replace('command: ["/usr/local/libexec/desktop-ports"]',
+            source = source.replace('command: ["/usr/local/libexec/firewall-ports"]',
                                     'command: ["python3", ' + json.dumps(str(root / 'port-worker.py')) + ']')
             path.write_text(source)
         self.run_qml('''import QtQuick
@@ -313,7 +301,7 @@ ShellRoot {
 import Quickshell
 import "drawers/network"
 ShellRoot {
- Component.onCompleted:{PortsService.process.command=["/tmp/nonexistent-desktop-port-helper"];PortsService.observing=true;}
+ Component.onCompleted:{PortsService.process.command=["/tmp/nonexistent-firewall-port-helper"];PortsService.observing=true;}
  property int stage:0
  Timer{interval:250;running:true;repeat:true;onTriggered:{try{
   if(stage===0){

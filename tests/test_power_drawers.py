@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import test_display_drawer as fixtures
+import support
 
 
 def load(name, path):
@@ -17,78 +17,24 @@ def load(name, path):
     return module
 
 
-backend = load('desktop_power', fixtures.DESKTOP / 'drawers/power/backend.py')
+backend = load('desktop_power', support.DESKTOP / 'drawers/power/backend.py')
 asus = load('asus_power', Path(__file__).resolve().parents[1] / 'modules/hardware/devices/zephyrus/symlinks/home/.config/devices/power/backends/asus.py')
 
 
-def pack(**values):
-    return dict(dict(Type=2, PowerSupply=True, IsPresent=True, Model='Laptop battery', State=2,
-                     Percentage=76., Energy=38., EnergyFull=50., EnergyFullDesign=60.,
-                     ChargeCycles=180, EnergyRate=8., TimeToEmpty=17100, TimeToFull=0), **values)
-
-
 def snapshot():
-    battery = backend.battery_record('BAT0', pack())
-    return dict(battery=dict(available=True, error='', onBattery=True, summary=battery, batteries=[battery]),
-                profiles=dict(available=True, service='test', identity=':1.2', active='balanced',
-                              choices=['power-saver', 'balanced', 'performance'], degraded='', inhibited='', holds=[], error=''),
-                hardware=[dict(key='asus', label='ASUS battery care', identity=':1.3', limit=80, minimum=20, maximum=100, step=1, editor=['rog-control-center'], editorLabel='ROG hardware controls', editorHint='Fan curves and ASUS hardware settings.')],
-                hardwareErrors=[],
+    return dict(hardware=[dict(key='asus', label='ASUS battery care', identity=':1.3', limit=80, minimum=20, maximum=100, step=1)],
+                hardwareErrors=[], policy='',
                 metrics=dict(cpu=dict(label='Test CPU', usage=23, frequency=2.4, temperature=53, load=['0.5', '0.4', '0.3']),
                              memory=dict(total=16 * 1024**3, used=6 * 1024**3, swapTotal=0, swapUsed=0, pressure=0),
                              gpus=[dict(key='gpu', label='Test GPU', driver='amdgpu', sleeping=True, usage=None, used=None, total=None, temperature=None)],
                              fans=[dict(key='cpu', label='CPU fan', rpm=0)]))
 
 
-class BatteryTests(unittest.TestCase):
-    def test_missing_values_and_zero_have_distinct_meanings(self):
-        row = backend.battery_record('test', pack(Percentage=0., ChargeCycles=0, EnergyRate=0., TimeToEmpty=0))
-        self.assertEqual((row['percentage'], row['cycles'], row['rate']), (0., 0, 0.))
-        self.assertIsNone(row['seconds'])
-        row = backend.battery_record('test', pack(Percentage=float('nan'), ChargeCycles=-1, EnergyFull=0, EnergyFullDesign=0))
-        self.assertIsNone(row['percentage'])
-        self.assertIsNone(row['cycles'])
-        self.assertIsNone(row['health'])
-        self.assertIsNone(backend.battery_record('test', {})['rate'])
-
-    def test_combined_summary_uses_upower_and_excludes_peripherals(self):
-        bus = Mock()
-        def properties(service, path, interface):
-            if path == backend.POWER_PATH: return dict(OnBattery=True)
-            if path.endswith('DisplayDevice'): return pack(Percentage=63., TimeToEmpty=7200)
-            return {'one': pack(Percentage=90.), 'two': pack(Percentage=30.),
-                    'mouse': pack(PowerSupply=False), 'absent': pack(IsPresent=False)}[path]
-        bus.properties.side_effect = properties
-        bus.call.return_value = ['one', 'two', 'mouse', 'absent']
-        state = backend.battery_snapshot(bus)
-        self.assertEqual(len(state['batteries']), 2)
-        self.assertEqual(state['summary']['percentage'], 63.)
-        self.assertEqual(state['summary']['seconds'], 7200)
-        self.assertAlmostEqual(state['batteries'][0]['health'], 100 * 50 / 60)
-
-    def test_no_battery_and_service_failure_do_not_invent_charge(self):
-        bus = Mock(); bus.call.return_value = []; bus.properties.return_value = dict(OnBattery=False)
-        state = backend.battery_snapshot(bus)
-        self.assertTrue(state['available']); self.assertIsNone(state['summary']); self.assertFalse(state['onBattery'])
-        bus.properties.side_effect = RuntimeError('offline')
-        self.assertFalse(backend.battery_snapshot(bus)['available'])
-
-
-class ProfileTests(unittest.TestCase):
+class PolicyTests(unittest.TestCase):
     def setUp(self):
         with patch.object(backend, 'PROVIDERS', Path('/nonexistent')):
             self.controller = backend.Controller()
         self.controller.bus = Mock()
-        self.current = dict(snapshot()['profiles'], path='/test')
-        self.request = dict(op='profile', value='power-saver', service='test', identity=':1.2', active='balanced')
-
-    def test_rejects_stale_or_unsupported_profiles_before_writing(self):
-        for fields in (dict(identity='stale'), dict(active='power-saver'), dict(service='other'), dict(value='turbo')):
-            with self.subTest(fields=fields), patch.object(backend, 'profile_snapshot', return_value=self.current):
-                with self.assertRaises(ValueError): self.controller.handle(dict(self.request, **fields))
-        with patch.object(backend, 'profile_snapshot', return_value=dict(self.current, inhibited='lap-detected')):
-            with self.assertRaises(ValueError): self.controller.handle(dict(self.request, value='performance'))
-        self.controller.bus.set.assert_not_called()
 
     def test_effective_mode_detects_a_stale_frequency_cap_with_boost_enabled(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -119,14 +65,17 @@ class ProfileTests(unittest.TestCase):
 
     def test_closed_drawer_avoids_thermal_hardware_probing(self):
         with patch.object(self.controller, 'hardware', return_value=([], [])), \
-                patch.object(self.controller.sampler, 'snapshot', return_value={}), \
-                patch.object(backend, 'battery_snapshot', return_value={}), \
-                patch.object(backend, 'profile_snapshot', return_value={'degraded': ''}), \
+                patch.object(self.controller.sampler, 'snapshot', return_value={}) as sampler, \
+                patch.object(backend, 'policy_warning', return_value='') as policy, \
                 patch.object(backend, 'thermal_warning', return_value='fan policy is not active') as thermal:
-            self.controller.snapshot(details=False)
-            thermal.assert_not_called()
-            result = self.controller.snapshot(details=True)
-            self.assertIn('fan policy', result['profiles']['degraded'])
+            self.assertEqual(self.controller.handle(dict(op='status'))['policy'], '')
+            thermal.assert_not_called(); policy.assert_not_called(); sampler.assert_not_called()
+            result = self.controller.handle(dict(op='status', details=True))
+            self.assertIn('fan policy', result['policy'])
+            sampler.assert_called_once()
+        with self.assertRaises(ValueError): self.controller.handle(dict(op='profile', value='performance'))
+        with self.assertRaises(ValueError): self.controller.handle(dict(op='charge-limit', key='missing'))
+        self.controller.bus.set.assert_not_called()
 
     def test_detailed_thermal_readback_uses_dc_limits_and_actual_fan_mode(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -148,38 +97,6 @@ class ProfileTests(unittest.TestCase):
                 self.assertEqual(backend.thermal_warning(), '')
                 (chip / 'pwm2_enable').write_text('2')
                 self.assertIn('fan policy', backend.thermal_warning())
-
-    def test_readback_controls_success_and_mutation_uses_typed_api(self):
-        with patch.object(backend, 'profile_snapshot', side_effect=[self.current, dict(self.current, active='power-saver')]), \
-                patch.object(self.controller, 'snapshot', return_value={'confirmed': True}):
-            self.assertEqual(self.controller.handle(self.request), {'confirmed': True})
-        self.controller.bus.set.assert_called_once_with('test', '/test', 'test', 'ActiveProfile', 's', 'power-saver')
-        with patch.object(backend, 'profile_snapshot', return_value=self.current):
-            with self.assertRaisesRegex(ValueError, 'confirm'): self.controller.handle(self.request)
-
-    def test_both_power_profile_interfaces_and_application_holds(self):
-        bus = Mock()
-        bus.properties.side_effect = [RuntimeError('absent'), dict(ActiveProfile='balanced',
-            Profiles=[{'Profile': 'balanced'}, {'Profile': 'performance'}, {'Profile': 'custom'}],
-            PerformanceDegraded='high-operating-temperature', ActiveProfileHolds=[dict(Profile='performance', ApplicationId='game', Reason='Playing')])]
-        bus.owner.return_value = ':1.4'
-        with patch.object(backend, 'policy_warning', return_value=''):
-            result = backend.profile_snapshot(bus)
-        self.assertEqual(result['service'], 'net.hadess.PowerProfiles')
-        self.assertEqual(result['choices'], ['balanced', 'performance'])
-        self.assertEqual(result['holds'][0]['reason'], 'Playing')
-        self.assertEqual(result['degraded'], 'high-operating-temperature')
-
-    def test_reads_do_not_sample_detailed_metrics_and_unknown_operations_do_not_write(self):
-        self.controller.sampler = Mock()
-        with patch.object(backend, 'battery_snapshot'), patch.object(backend, 'profile_snapshot'), \
-                patch.object(backend, 'thermal_warning', return_value=''):
-            self.controller.handle(dict(op='status'))
-            self.controller.sampler.snapshot.assert_not_called()
-            self.controller.handle(dict(op='status', details=True))
-            self.controller.sampler.snapshot.assert_called_once()
-        with self.assertRaises(ValueError): self.controller.handle(dict(op='turbo'))
-        self.controller.bus.set.assert_not_called()
 
 
 class AsusTests(unittest.TestCase):
@@ -285,17 +202,25 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(backend.Sampler().snapshot()['gpus'][0]['usage'], 65)
 
 
-@unittest.skipUnless(fixtures.QS, 'Quickshell is required')
+# Native UPower stand-ins: plain objects (UPowerDevice percentages are 0-1).
+UPOWER = """
+ function device(values){return Object.assign({type:UPowerDeviceType.Battery,powerSupply:true,isPresent:true,isLaptopBattery:true,ready:true,model:"Laptop battery",nativePath:"BAT0",
+  state:UPowerDeviceState.Discharging,percentage:.76,energy:38,energyCapacity:50,changeRate:8,timeToEmpty:17100,timeToFull:0,healthPercentage:83.3,healthSupported:true},values);}
+ property var up: ({onBattery:true,displayDevice:device({}),devices:{values:[device({})]}})
+ function setPower(fn){const u=Object.assign({},up);fn(u);up=u;}
+"""
+
+
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class PowerQmlTests(unittest.TestCase):
     def run_qml(self, body, setup=None):
         def prepare(root):
-            shutil.copytree(fixtures.DESKTOP / 'bar', root / 'bar')
+            shutil.copytree(support.DESKTOP / 'bar', root / 'bar')
             if setup: setup(root)
-        return fixtures.DisplayQmlTests.run_qml(self, body, prepare)
+        return support.run_qml(self, body, prepare)
 
-    def test_drawers_actual_values_actions_missing_data_narrow_and_bar(self):
-        data = json.dumps(snapshot())
-        self.run_qml('''import QtQuick
+    def test_drawers_native_values_actions_missing_data_narrow_and_bar(self):
+        self.run_qml("""import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -309,26 +234,24 @@ ShellRoot {
   id:mock
   property var state: DATA
   property bool loaded:true
-  property bool busy:false
+  property bool reading:false
   property bool changing:false
-  property bool closing:false
-  property string actionError:""
-  property string statusError:""
+  property string error:""
   property var owners:[]
-  property string selected:""
   property int limit:0
   function observe(owner,active,details){owners=owners.filter(x=>x!==owner).concat(active?[owner]:[]);}
   function refresh(){}
-  function changeProfile(value){selected=value;}
   function chargeLimit(row,value){limit=value;}
  }
+ QtObject {id:utilities;property bool ready:true;property bool busy:false;property string error:"";property var state:({once:null,recording:null,recordAvailable:false})}
+ QtObject {id:profiles;property int profile:PowerProfile.Balanced;property bool hasPerformanceProfile:true;property int degradationReason:PerformanceDegradationReason.None;property var holds:[]}
+UPOWER
  BatteryStatus {id:barBattery; device:({isPresent:true,type:UPowerDeviceType.Battery,percentage:.76,state:UPowerDeviceState.Discharging})}
  FloatingWindow {
   id:window;implicitWidth:480;implicitHeight:1080;visible:true;color:Theme.background
-  BatteryDrawer {id:battery;x:16;y:16;width:window.width-32;height:window.height-32;active:true;service:mock;onDrawerRequested:key=>route=key}
-  PerformanceDrawer {id:performance;x:16;y:16;width:window.width-32;height:window.height-32;visible:false;active:false;service:mock;onDrawerRequested:key=>route=key}
+  BatteryDrawer {id:battery;x:16;y:16;width:window.width-32;height:window.height-32;active:true;service:mock;session:utilities;upower:up}
+  PerformanceDrawer {id:performance;x:16;y:16;width:window.width-32;height:window.height-32;visible:false;active:false;service:mock;session:utilities;profiles:profiles}
  }
- property string route:""
  property var focusedControl:null
  function check(value,message){if(!value)throw new Error(message);}
  function find(item,name){if(item.objectName===name)return item;for(let child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
@@ -341,6 +264,7 @@ ShellRoot {
    check(modes[0].x < modes[1].x && modes[1].x < modes[2].x,"power modes are not ordered from savings to performance");
    check(find(battery,"batteryPercentage").text==="76%","battery percentage");
    check(find(battery,"batteryEstimate").detail.indexOf("remaining")>=0,"estimate missing");
+   check(find(battery,"batteryHealth").value==="83.3%","health");
    check(barBattery.label==="76%"&&!barBattery.charging,"bar percentage normalization");
    const gauge=find(battery,"batteryGauge"), slider=gauge.slider;
    check(slider.from===20&&slider.to===100&&slider.stepSize===1,"charge limit range");
@@ -350,54 +274,40 @@ ShellRoot {
    const track=find(gauge,"batteryLevelTrack"), fill=find(gauge,"batteryLevelFill"), marker=find(gauge,"chargeLimitMarker");
    check(Math.abs(fill.width/track.width-.76)<.005,"battery percentage rescaled to limit");
    check(Math.abs((marker.x+marker.width/2)/track.width-.8)<.005,"charge marker not at 80 percent");
-   input.mousePress(slider,slider.width*.8,slider.height/2);
-   input.mouseMove(slider,slider.width*.65,slider.height/2);
-   check(gauge.draft===65,"drag preview position");
-   input.mouseRelease(slider,slider.width*.65,slider.height/2);
-   check(mock.limit===65,"drag release did not apply charge limit");
-   check(find(battery,"chargeLimitApplied").text.indexOf("80%")>=0,"drag claimed success before readback");
    capture("battery",battery);
   }else if(stage===1){
-   update(s=>{s.battery.onBattery=false;});
+   setPower(u=>u.onBattery=false);
    check(!find(battery,"batteryEstimate").visible,"AC residual discharge displayed as battery runtime");
-   update(s=>{s.hardware[0].limit=75;s.battery.summary.state=1;s.battery.summary.seconds=null;s.battery.summary.percentage=0;});
+   update(s=>{s.hardware[0].limit=75;});
+   setPower(u=>u.displayDevice=device({state:UPowerDeviceState.Charging,timeToFull:0,percentage:0}));
    check(find(battery,"chargeLimitApplied").text.indexOf("75%")>=0,"actual custom limit hidden");
    check(find(battery,"batteryGauge").slider===focusedControl&&focusedControl.activeFocus,"refresh replaced charge control or focus");
-   const gauge=find(battery,"batteryGauge"), marker=find(gauge,"chargeLimitMarker"), track=find(gauge,"batteryLevelTrack");
-   check(Math.abs((marker.x+marker.width/2)/track.width-.75)<.005,"external limit marker position");
    check(find(battery,"batteryEstimate").value==="…","zero time not estimating");
    check(find(battery,"batteryPercentage").text==="0%","empty battery unavailable");
    barBattery.device=({isPresent:true,type:UPowerDeviceType.Battery,percentage:.1,state:UPowerDeviceState.Charging});
    check(barBattery.charging&&barBattery.iconName==="battery-charging","charging indicator missing");
-   check(!find(battery,"batteryPerformance"),"drawers still link each other");
    battery.active=false;battery.visible=false;performance.active=true;performance.visible=true;
   }else if(stage===2){
    check(find(performance,"cpuUsage").value==="23%","CPU missing");
    const profileButton=find(performance,"powerProfile:power-saver");
-   profileButton.forceActiveFocus();input.keyClick(Qt.Key_Space);check(mock.selected==="power-saver","profile action");
-   focusedControl=profileButton;
-   check(!find(performance,"powerProfile:power-saver").current,"optimistic profile");
-   check(find(performance,"powerProfile:balanced").current,"active checkmark missing");
+   profileButton.forceActiveFocus();input.keyClick(Qt.Key_Space);
+   check(profiles.profile===PowerProfile.PowerSaver&&profileButton.current,"profile action");
+   check(!find(performance,"performanceDegraded").visible&&!find(performance,"performancePolicy").visible,"spurious warnings");
    capture("performance",performance);
   }else if(stage===3){
-   update(s=>{s.profiles.active="power-saver";s.profiles.inhibited="lap-detected";s.metrics.cpu.usage=null;});
-   check(find(performance,"powerProfile:power-saver").current,"external profile missing");
-   check(find(performance,"powerProfile:power-saver")===focusedControl&&focusedControl.activeFocus,"refresh replaced profile control or focus");
-   mock.busy=true;check(focusedControl.enabled,"status read disabled profile controls");mock.busy=false;
-   check(!find(performance,"powerProfile:performance").enabled,"inhibited profile enabled");
-   check(!find(performance,"performanceBattery"),"performance still links battery");
-   check(!find(performance,"cpuBoost"),"independent boost control remains");
+   profiles.hasPerformanceProfile=false;profiles.degradationReason=PerformanceDegradationReason.HighTemperature;
+   update(s=>{s.policy="Policy not fully applied: CPU boost";s.metrics.cpu.usage=null;});
+   check(!find(performance,"powerProfile:performance"),"unavailable performance profile offered");
+   check(find(performance,"performanceDegraded").visible&&find(performance,"performancePolicy").visible,"warnings hidden");
    battery.width=268;performance.width=268;
-  }else if(stage===4){check(performance.width===268,"narrow width");capture("performance-narrow",performance);
-  }else if(stage===5){Theme.setMode("light");
-  }else if(stage===6){capture("performance-light",performance);
-  }else if(stage===7){performance.active=false;performance.visible=false;battery.visible=true;battery.active=true;
-  }else if(stage===8){capture("battery-narrow-light",battery);
-  }else if(stage===9){
-   update(s=>{s.battery.summary=null;s.battery.batteries=[];s.battery.onBattery=false;s.hardware=[];});
+  }else if(stage===4){capture("performance-narrow",performance);Theme.setMode("light");
+  }else if(stage===5){performance.active=false;performance.visible=false;battery.visible=true;battery.active=true;
+  }else if(stage===6){
+   capture("battery-narrow-light",battery);
+   update(s=>{s.hardware=[];});setPower(u=>{u.devices={values:[]};});
    barBattery.device=({isPresent:false,type:UPowerDeviceType.Battery,percentage:0,state:0});
    check(barBattery.label===""&&!barBattery.available,"absent bar fabricated charge");
-  }else if(stage===10){
+  }else if(stage===7){
    check(find(battery,"batteryPercentage").text==="No system battery","desktop battery handling");
    check(!find(battery,"chargeLimitMarker").visible,"unsupported charge limit exposed");
    battery.active=false;check(mock.owners.length===0,"observer survived dismissal");
@@ -407,20 +317,18 @@ ShellRoot {
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer {interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }
-'''.replace('DATA', data))
+""".replace('UPOWER', UPOWER).replace('DATA', json.dumps(snapshot())))
 
-    def test_worker_actions_survive_dismissal_and_observation_stops(self):
-        data = snapshot()
+    def test_polling_follows_observers_and_stops_on_dismissal(self):
         def setup(root):
-            (root / 'drawers/power/backend.py').write_text('''import json,sys,time
+            (root / 'drawers/power/backend.py').write_text("""import json,sys
 state=DATA
 for line in sys.stdin:
  request=json.loads(line)
- time.sleep(.1)
- if request['op']=='profile':state['profiles']['active']=request['value']
- print(json.dumps(dict(ok=True,data=state,error='')),flush=True)
-'''.replace('DATA', repr(data)))
-        self.run_qml('''import QtQuick
+ print(json.dumps(dict(ok=True,data=dict(state,metrics=state['metrics'] if request['details'] else None),error='')),flush=True)
+""".replace('DATA', repr(snapshot())))
+            (root / 'drawers/power/session.py').write_text('import sys\nsys.stdin.read()\n')
+        self.run_qml("""import QtQuick
 import Quickshell
 import "drawers/power"
 ShellRoot {
@@ -430,21 +338,24 @@ ShellRoot {
  function check(value,message){if(!value)throw new Error(message);}
  Timer {interval:60;repeat:true;running:true;onTriggered:{try{
   if(stage===0){PowerService.observe(batteryOwner,true,false);stage++;}
-  else if(stage===1&&PowerService.loaded&&!PowerService.busy){
-   check(!PowerService.detailed&&PowerService.updates.interval===10000,"battery polling");
+  else if(stage===1&&PowerService.loaded&&!PowerService.reading){
+   check(PowerService.interval===10000&&PowerService.state.metrics===null,"battery polling sampled telemetry");
    PowerService.observe(performanceOwner,true,true);PowerService.observe(batteryOwner,false,false);stage++;
-  }else if(stage===2&&!PowerService.busy){
-   check(PowerService.detailed&&PowerService.updates.interval===2000,"performance polling");
-   PowerService.changeProfile("power-saver");PowerService.observe(performanceOwner,false,true);stage++;
-  }else if(stage===3&&!PowerService.busy&&!PowerService.closing&&!PowerService.worker.running){
-   check(PowerService.state.profiles.active==="power-saver","dismissal killed profile action");
-   check(!PowerService.updates.running&&PowerService.owners.length===0,"polling survived dismissal");
+  }else if(stage===2&&!PowerService.reading){
+   check(PowerService.interval===2000&&PowerService.state.metrics!==null,"performance polling");
+   PowerService.observe(performanceOwner,false,true);stage++;
+  }else if(stage===3&&!PowerService.running){
+   PowerService.observe(batteryOwner,true,false);stage++;
+  }else if(stage===4&&PowerService.loaded&&!PowerService.reading&&PowerService.running){
+   PowerService.observe(batteryOwner,false,false);stage++;
+  }else if(stage===5&&!PowerService.running){
+   check(PowerService.error==="","restart reported an error");
    console.log("DISPLAY_PASS");Qt.quit();
   }
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer {interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }
-''', setup)
+""", setup)
 
 
 if __name__ == '__main__':

@@ -22,7 +22,7 @@
             ]
         },
         "firewall_config": {
-            "firewall": "ufw"
+            "firewall": "firewalld"
         }
     },
     "archinstall_language": "English",
@@ -33,36 +33,7 @@
         "uki": true
     },
     "custom_commands": [
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --prepare",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/system/performance/gravity-mark '#!/usr/bin/env bash\nset -Eeuo pipefail\nversion=1.89\nchecksum=de090c7b9e40f10f225d9393f2cf73a660ad4edc21f6b333eea3190a8722e005\ntarget=/opt/gravity-mark/GravityMark.run\n# Compare the installed payload itself; no version/state manifest is needed.\nif [[ -f $target ]] && printf '\"'\"'%s  %s\\n'\"'\"' \"$checksum\" \"$target\" | sha256sum --check --status; then\n    exit 0\nfi\ntemporary=$(mktemp -d)\ntrap '\"'\"'rm -rf -- \"$temporary\"'\"'\"' EXIT\ncurl --fail --location --silent --show-error --retry 3 \\\n    --connect-timeout 20 --max-time 600 \\\n    \"https://tellusim.com/download/GravityMark_$version.run\" \\\n    --output \"$temporary/GravityMark.run\"\nprintf '\"'\"'%s  %s\\n'\"'\"' \"$checksum\" \"$temporary/GravityMark.run\" | sha256sum --check --status\ninstall -Dm0755 \"$temporary/GravityMark.run\" \"$target\"\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/media/video/mpv '#!/usr/bin/env bash\nset -Eeuo pipefail\ncommit=5491dbdd9286d3a6da4bb6976d914a7f82dc0727\nchecksum=986857997e1739960b35a6c8161b6ce2b6f221ee341e95e1948c39a32821533e\ntemporary=$(mktemp -d)\ntrap '\"'\"'rm -rf -- \"$temporary\"'\"'\"' EXIT\ncurl --fail --location --silent --show-error --retry 3 \\\n    --connect-timeout 20 --max-time 120 \\\n    \"https://github.com/christoph-heinrich/sosc/archive/$commit.tar.gz\" \\\n    --output \"$temporary/sosc.tar.gz\"\nprintf '\"'\"'%s  %s\\n'\"'\"' \"$checksum\" \"$temporary/sosc.tar.gz\" | sha256sum --check --status\ntar -xzf \"$temporary/sosc.tar.gz\" -C \"$temporary\"\ninstall -Dm0644 \"$temporary/sosc-$commit/osc.lua\" /etc/mpv/scripts/osc.lua\ninstall -Dm0644 \"$temporary/sosc-$commit/LICENSE\" /usr/share/licenses/mpv-sosc/LICENSE\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/base/xdg '#!/usr/bin/env bash\nset -Eeuo pipefail\n\n# HOME points at the staging home; publication creates these as the regular user.\n# Declaring user-dirs.dirs alone does not create folders before Dolphin starts.\nsource \"${XDG_CONFIG_HOME:?}/user-dirs.dirs\"\nfor variable in ${!XDG_@}; do\n    [[ $variable == XDG_*_DIR ]] || continue\n    mkdir -p -- \"${!variable}\"\ndone\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/base/bash '#!/usr/bin/env bash\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\nconfigure() {\n\t# Keep history out of $HOME root, in the XDG state location.\n\tinstall -d -m 0755 \"$HOME/.local/state/bash\"\n}\n\nconfigure\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/hardware/bluetooth '#!/usr/bin/env bash\nset -Eeuo pipefail\n\n# Keep Blueman'\"'\"'s manager available without starting its tray applet at login.\nsystemctl --global mask app-blueman@autostart.service\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/office/btrust '#!/usr/bin/env bash\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\n# sac-core supplies the signing libraries; sac-gui/SACMonitor are unnecessary.\n\nconfigure() {\n\t[[ -x /opt/btrustbiss/bin/BISS && -r /usr/lib/pkcs11/libIDPrimePKCS11.so ]]\n\t# Undo the AUR install hook, also enforced after mutable package upgrades.\n\t/usr/local/libexec/btrust-maintain\n\t# Allow this installation'\"'\"'s one desktop user to manage only the QES target.\n\t# Cleanup must still work after the user'\"'\"'s session becomes inactive on logout.\n\tcat <<EOF | file_write /etc/polkit-1/rules.d/50-btrust.rules\npolkit.addRule(function(action, subject) {\n    if (action.id == \"org.freedesktop.systemd1.manage-units\" &&\n        action.lookup(\"unit\") == \"btrust.target\" &&\n        subject.user == \"$USERNAME\") {\n        var verb = action.lookup(\"verb\");\n        if (verb == \"stop\" || verb == \"start\")\n            return polkit.Result.YES;\n    }\n});\nEOF\n\n\t# NSS lives in the real user'\"'\"'s persistent home and is initialized on launch.\n\t# Shipping database files in skel would overwrite browser state on rebuilds.\n\n}\n\nconfigure\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/browsers/chromium '#!/usr/bin/env bash\n## Chromium and Chrome-compatible browser setup\n## https://www.chromium.org/Home/\n## https://www.google.com/chrome/\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\nchromium_install_extensions() {\n\tlocal browsers_config=$1 url extension_id\n\tlocal entries=()\n\n\twhile IFS= read -r url; do\n\t\t[[ -n $url ]] || continue\n\t\tif [[ $url =~ /detail/[^/]+/([a-zA-Z]+)/?$ ]]; then\n\t\t\textension_id=${BASH_REMATCH[1]}\n\t\telse\n\t\t\tprintf '\"'\"'Could not extract Chromium extension ID from %s\\n'\"'\"' \"$url\" >&2\n\t\t\treturn 1\n\t\tfi\n\t\tentries+=(\"$extension_id;https://clients2.google.com/service/update2/crx\")\n\tdone < <(jq -r '\"'\"'.extensions[]'\"'\"' <<<\"$browsers_config\")\n\n\tprintf '\"'\"'%s\\n'\"'\"' \"${entries[@]}\" |\n\t\tjq -R -s '\"'\"'{ExtensionInstallForcelist: (split(\"\\n\") | map(select(length > 0)))}'\"'\"' |\n\t\tfile_write /etc/chromium/policies/managed/ported-extensions.json\n}\n\n\n\nconfigure() {\n\tBROWSERS_CONFIG=$(jq -c '\"'\"'.extra.browsers.chromium'\"'\"' /run/system-configuration.json)\n\n\tchromium_install_extensions \"$BROWSERS_CONFIG\"\n    jq '\"'\"'{WebAppInstallForceList: (.web_apps // [])}'\"'\"' <<<\"$BROWSERS_CONFIG\" |\n        file_write /etc/chromium/policies/managed/web-apps.json\n\t# Keep Chrome clean (no extensions)\n}\n\nconfigure\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/internet/cloudflare '#!/usr/bin/env bash\n## Cloudflare WARP prerequisite; registration and runtime control belong to consumers.\nset -Eeuo pipefail\n\nsystemctl disable warp-svc.service\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/ai/codex '#!/usr/bin/env bash\nset -Eeuo pipefail\n# CODEX_HOME must exist before starting Codex.\nentry=$(getent passwd \"${1:?User required}\")\nIFS=: read -r _ _ uid gid _ home _ <<< \"$entry\"\ninstall -d -o \"$uid\" -g \"$gid\" -m 0700 \"$home/.local/share/codex\"\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/browsers/firefox '#!/usr/bin/env bash\n## Firefox\n## https://www.firefox.com\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\nfirefox_user_prefs() {\n    jq -r '\"'\"'\n        .user_prefs | to_entries | sort_by(.key)[]\n        | \"user_pref(\\(.key | tojson), \\(.value | tojson));\"\n    '\"'\"' <<<\"${1:?Firefox configuration required}\"\n}\n\nfirefox_merge_feature_policies() {\n\tlocal directory=${FIREFOX_FEATURE_POLICIES_DIR:-/etc/system/firefox-policies.d}\n\tlocal fragments=() path\n\tfor path in \"$directory\"/*.json; do\n\t\t[[ ! -f $path ]] || fragments+=(\"$path\")\n\tdone\n\tjq -s '\"'\"'reduce .[] as $policy ({}; . * $policy)'\"'\"' /dev/stdin \"${fragments[@]}\"\n}\n\n\n\narkenfox_require_template() {\n\tlocal template=${ARKENFOX_TEMPLATE:-/usr/share/arkenfox-user.js/user.js}\n\t[[ -r $template && -s $template ]] || {\n\t\tprintf '\"'\"'Arkenfox template missing or empty: %s. Install arkenfox-user.js before applying browsers/firefox.\\n'\"'\"' \"$template\" >&2\n\t\treturn 1\n\t}\n}\n\nfirefox_policies() {\n\tjq '\"'\"'\n\t\t{policies: {\n\t\t\tExtensions: {Install: .extensions},\n\t\t\tSearchEngines: {Add: [\n\t\t\t\t.search_engines[]\n\t\t\t\t| {Name: .name, URLTemplate: .template, IconURL: .icon, Alias: .alias}\n\t\t\t]}\n\t\t}}\n\t'\"'\"' <<<\"${1:?browser configuration required}\" | firefox_merge_feature_policies\n}\n\nconfigure() {\n\tarkenfox_require_template\n\tBROWSERS_CONFIG=$(jq -c '\"'\"'.extra.browsers.firefox'\"'\"' /run/system-configuration.json)\n\n\t# AutoConfig applies Arkenfox to the profile Firefox actually selects.\n\t# pref() has the same startup-reset behavior as user.js, without locking prefs.\n\n\tlocal firefox_dir\n\tfirefox_dir=/usr/lib/firefox\n\t[[ -x $firefox_dir/firefox ]] || {\n\t\tprintf '\"'\"'Firefox installation missing: %s\\n'\"'\"' \"$firefox_dir\" >&2\n\t\treturn 1\n\t}\n\t{\n\t\t# Firefox skips the first line of an AutoConfig file.\n\t\tprintf '\"'\"'// Arkenfox plus local preferences, generated by browsers/firefox.\\n'\"'\"'\n\t\tprintf '\"'\"'var user_pref = pref;\\n'\"'\"'\n\t\tcat \"${ARKENFOX_TEMPLATE:-/usr/share/arkenfox-user.js/user.js}\"\n\t\tprintf '\"'\"'\\n'\"'\"'\n\t\tfirefox_user_prefs \"$BROWSERS_CONFIG\"\n\t} | file_write \"$firefox_dir/arkenfox.cfg\"\n\n\t# Firefox owns extension installation/updates and its search database.\n\tfirefox_policies \"$BROWSERS_CONFIG\" |\n\t\tfile_write \"$firefox_dir/distribution/policies.json\"\n}\n\nconfigure\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/system/security/gnupg '#!/usr/bin/env bash\nset -Eeuo pipefail\n# Key storage belongs in the real user'\"'\"'s home, with private directory permissions.\nentry=$(getent passwd \"${1:?User required}\")\nIFS=: read -r _ _ uid gid _ home _ <<< \"$entry\"\ninstall -d -o \"$uid\" -g \"$gid\" -m 0700 \"$home/.local/share/gnupg\"\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/dev/tools/meld '#!/usr/bin/env bash\nset -Eeuo pipefail\n# Compile files/etc/dconf/db/local.d into the binary database read by Meld.\n# Needed to compile changed keyfiles.\ndconf update\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/dev/tools/mise '#!/usr/bin/env bash\n## mise \u2014 per-project runtime version manager\n## https://mise.jdx.dev/\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n\nconfigure() {\n\t# Pin mise state to XDG locations so it never lands in $HOME root.\n\tinstall -d -m 0755 \"$HOME/.local/share/mise\" \"${XDG_CACHE_HOME:-$HOME/.local/cache}/mise\" \"$HOME/.config/mise\"\n}\n\nconfigure\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/media/video/mpv '#!/usr/bin/env bash\n## mpv media player with shaders and plugins\n## https://mpv.io/\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\n#!/usr/bin/env bash\n\ncpu_vendor_is() {\n\tlocal wanted=${1:?CPU vendor required}\n\tawk -F: -v wanted=\"$wanted\" '\"'\"'\n\t\t/vendor_id/ {\n\t\t\tgsub(/[[:space:]]/, \"\", $2)\n\t\t\texit($2 == wanted ? 0 : 1)\n\t\t}\n\t\tEND { if (NR == 0) exit 1 }\n\t'\"'\"' /proc/cpuinfo\n}\n\npci_vendor_present() {\n\tlocal wanted=${1:?PCI vendor ID required} vendor\n\tfor vendor in /sys/bus/pci/devices/*/vendor; do\n\t\t[[ -r $vendor ]] || continue\n\t\t[[ $(<\"$vendor\") == \"$wanted\" ]] && return 0\n\tdone\n\treturn 1\n}\n\ndmi_matches() {\n\tlocal pattern=${1:?DMI pattern required} value file\n\tfor file in /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name; do\n\t\t[[ -r $file ]] || continue\n\t\tvalue=$(<\"$file\")\n\t\t[[ ${value,,} == *${pattern,,}* ]] && return 0\n\tdone\n\treturn 1\n}\n\nusb_vendor_present() {\n\tlocal wanted=${1:?USB vendor ID required} vendor\n\tfor vendor in /sys/bus/usb/devices/*/idVendor; do\n\t\t[[ -r $vendor ]] || continue\n\t\t[[ ${wanted,,} == $(tr '\"'\"'[:upper:]'\"'\"' '\"'\"'[:lower:]'\"'\"' <\"$vendor\") ]] && return 0\n\tdone\n\treturn 1\n}\n\n# Configuration\nSHADERS_DIR=\"${MPV_SHADERS_DIR:-/usr/share/mpv-shim-default-shaders/shaders}\"\nPACK_JSON=\"${MPV_SHADER_PACK:-/usr/share/mpv-shim-default-shaders/pack-next.json}\"\nMPV_CONF_DIR=\"${MPV_CONF_DIR:-$HOME/.config/mpv}\"\n\nconfigure() {\n\t# Physical GA402RK comparisons found VA-API/OpenGL substantially cheaper\n\t# than the original Vulkan/software-decoding path for tested H.264 playback.\n\t# Keep driver and codec discovery automatic.\n\tif dmi_matches ga402rk; then\n\t\tfile_append \"${MPV_CONF_DIR}/mpv.conf\" <<'\"'\"'EOF'\"'\"'\n# GA402RK playback renderer preference\ngpu-api=opengl\nhwdec=auto-safe\ninclude=/etc/mpv/power-profiles.conf\n\nEOF\n\tfi\n\t# Package-owned shader and plugin payloads provide pack-next.json before this\n\t# configuration phase begins.\n\t[[ -f $PACK_JSON ]] || {\n\t\tprintf '\"'\"'MPV extras package did not install %s\\n'\"'\"' \"$PACK_JSON\" >&2\n\t\treturn 1\n\t}\n\n\t# Generate mpv profile sections from upstream pack-next.json\n\tfile_append \"${MPV_CONF_DIR}/mpv.conf\" <<'\"'\"'HEADER'\"'\"'\n# Auto-generated from https://github.com/iwalton3/default-shader-pack/blob/master/pack-next.json\nHEADER\n\tjq -r --arg sd \"${SHADERS_DIR}\" '\"'\"'\n    .[\"setting-groups\"] as $g |\n    .profiles | to_entries[] |\n    select((.value.platforms // [\"linux\"]) | index(\"linux\")) |\n    .key as $n | .value as $p |\n    ($p[\"setting-groups\"] // []) as $sgs |\n    ([($sgs[] | $g[.].shaders // [] | .[])] + ($p.shaders // [])) as $shaders |\n    [($sgs[] | $g[.].settings // [] | .[])] as $settings |\n    # The shared pack contains Windows-only D3D11 profiles; mpv validates\n    # even inactive profiles and reports unsupported options at every launch.\n    \"[\\($n)]\",\n    ($settings[] |\n        \"\\(.[0] | gsub(\"_\"; \"-\"))=\\(\n            if .[1] == true then \"yes\"\n            elif .[1] == false then \"no\"\n            else .[1] | tostring\n            end\n        )\"\n    ),\n    ($shaders | to_entries[] |\n        if .key == 0 then \"glsl-shaders=\\($sd)/\\(.value)\"\n        else \"glsl-shaders-append=\\($sd)/\\(.value)\"\n        end\n    ),\n    \"\"\n'\"'\"' \"${PACK_JSON}\" | file_append \"${MPV_CONF_DIR}/mpv.conf\"\n\n\t# Convenience aliases for long profile names\n\tfile_append \"${MPV_CONF_DIR}/mpv.conf\" <<'\"'\"'EOF'\"'\"'\n[fsr]\nprofile=AMD FidelityFX Super Resolution\n\n[cas]\nprofile=AMD FidelityFX Contrast Adaptive Sharpening\n\nEOF\n\n\t# Custom combo profile (not in upstream shader pack)\n\tfile_append \"${MPV_CONF_DIR}/mpv.conf\" <<EOF\n[fsr-cas]\nglsl-shaders=${SHADERS_DIR}/FSR.glsl\nglsl-shaders-append=${SHADERS_DIR}/CAS-scaled.glsl\nEOF\n\n\t# The owner selected generic-high as the default; preserve all other profiles.\n\tjq -e '\"'\"'.profiles | has(\"generic-high\")'\"'\"' \"$PACK_JSON\" >/dev/null || {\n\t\tprintf '\"'\"'Shader pack is missing the requested generic-high profile.\\n'\"'\"' >&2\n\t\treturn 1\n\t}\n\tfile_append \"${MPV_CONF_DIR}/mpv.conf\" <<'\"'\"'EOF'\"'\"'\n\n[default]\nprofile=generic-high\n\nEOF\n\n\t# Generate input.conf menu entries for profiles without manual keybindings\n\tBOUND_PROFILES=\"fsr-cas generic-high nnedi-very-high anime4k-high-a anime4k-high-b anime4k-high-c anime4k-high-aa anime4k-high-bb anime4k-high-ca\"\n\tjq -r --arg skip \"$BOUND_PROFILES\" '\"'\"'\n    ($skip | split(\" \")) as $skip_list |\n    .profiles | to_entries[] |\n    select((.value.platforms // [\"linux\"]) | index(\"linux\")) |\n    select(.key as $k | $skip_list | index($k) | not) |\n    \"# apply-profile \\\"\\(.key)\\\"; show-text \\\"Profile: \\(.value.displayname // .key)\\\" #! Profiles > \\(.value.displayname // .key)\"\n'\"'\"' \"${PACK_JSON}\" | file_append \"${MPV_CONF_DIR}/input.conf\"\n}\n\nconfigure\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/hardware/network '#!/usr/bin/env bash\nset -Eeuo pipefail\n\n# Keep the connection editor available without starting its tray applet at login.\nsystemctl --global mask '\"'\"'app-nm\\x2dapplet@autostart.service'\"'\"'\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/hardware/power '#!/usr/bin/env bash\nset -Eeuo pipefail\n\n# Install a seed only once. Keep charge limits, lighting and user preferences.\nif [[ ! -f /etc/asusd/asusd.ron ]]; then\n    install -Dm0644 /usr/share/dotfiles/power/asusd.ron /etc/asusd/asusd.ron\nelse\n    python3 -I - <<'\"'\"'PY'\"'\"'\nfrom pathlib import Path\nimport os\nimport re\nimport tempfile\n\npath = Path('\"'\"'/etc/asusd/asusd.ron'\"'\"')\noriginal = path.read_text()\nupdated = original\nfor name in ('\"'\"'platform_profile_linked_epp'\"'\"', '\"'\"'change_platform_profile_on_battery'\"'\"', '\"'\"'change_platform_profile_on_ac'\"'\"'):\n    updated, count = re.subn(r'\"'\"'(?m)^(\\s*'\"'\"' + name + r'\"'\"':\\s*)(?:true|false)(\\s*,)'\"'\"', r'\"'\"'\\g<1>false\\2'\"'\"', updated)\n    if count != 1:\n        raise SystemExit(f'\"'\"'Cannot safely configure ASUS ownership: expected one {name} field'\"'\"')\nif updated != original:\n    fd, temporary = tempfile.mkstemp(prefix='\"'\"'.power-'\"'\"', dir=path.parent)\n    try:\n        with os.fdopen(fd, '\"'\"'w'\"'\"') as stream:\n            stream.write(updated)\n            stream.flush()\n            os.fsync(stream.fileno())\n        os.chmod(temporary, path.stat().st_mode & 0o777)\n        os.replace(temporary, path)\n    finally:\n        if os.path.exists(temporary):\n            os.unlink(temporary)\nPY\nfi\n\n# Session integration uses inotify through systemd; no timer or daemon.\ninstall -d /etc/systemd/user/graphical-session.target.wants\nln -sfn ../power-session.path /etc/systemd/user/graphical-session.target.wants/power-session.path\n\n# Migrate the retired, independently writable boost control.\nrm -f /usr/local/libexec/desktop-cpu-boost \\\n    /usr/share/polkit-1/actions/org.dotfiles.desktop.cpu-boost.policy\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/dev/languages/python '#!/usr/bin/env bash\n## Python development with uv, Ruff and ty; pip for compatibility\n## https://www.python.org/ https://docs.astral.sh/uv/\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\nconfigure() {\n\t# Keep the REPL history out of $HOME root, in the XDG state location\n\t# (honored by Python 3.13+; ignored by older versions).\n\t# Pin the pip cache to its XDG-default location so an unset XDG_*\n\t# var cannot push it elsewhere. Values stay unexpanded until login.\n\tinstall -d -m 0755 \"$HOME/.local/state/python\" \"${XDG_CACHE_HOME:-$HOME/.local/cache}/pip\"\n}\n\nconfigure\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/desktop/quickshell '#!/usr/bin/env bash\nset -Eeuo pipefail\n\nsystemctl --global enable desktop-shell.service\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/gaming/games/roblox '#!/usr/bin/env bash\n## Roblox through Sober\n## https://www.roblox.com/\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\n#!/usr/bin/env bash\nflatpak_override() { flatpak override --system \"$@\"; }\n\nconfigure() {\n\tflatpak_override --device=input org.vinegarhq.Sober\n}\n\nconfigure\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/desktop/hyprland '#!/usr/bin/env bash\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\n[[ ${USERNAME:?} =~ ^[a-zA-Z_][a-zA-Z0-9_.-]*\\$?$ ]] || {\n    echo '\"'\"'Invalid autologin username.'\"'\"' >&2; exit 1;\n}\nfile_write /etc/systemd/system/getty@tty1.service.d/autologin.conf <<EOF_CONFIG\n[Service]\nExecStart=\nExecStart=-/usr/bin/agetty --autologin $USERNAME --noreset --noclear --noissue --skip-login - \\${TERM}\nEOF_CONFIG\nfile_write /etc/tmpfiles.d/desktop-session.conf <<EOF_CONFIG\nd /run/desktop-session-$USERNAME 0700 $USERNAME - -\nEOF_CONFIG\nsystemd-tmpfiles --create /etc/tmpfiles.d/desktop-session.conf\n# An empty /etc/hushlogins makes console login quiet system-wide.\nawk '\"'\"'$1 != \"HUSHLOGIN_FILE\" { print } END { print \"HUSHLOGIN_FILE /etc/hushlogins\" }'\"'\"' \\\n    /etc/login.defs | file_write /etc/login.defs\n# UWSM'\"'\"'s may-start check requires the graphical target even without a greeter.\nsystemctl set-default graphical.target\n# The packaged user unit is tied to graphical-session.target, reached by UWSM.\nsystemctl --global enable hyprpolkitagent.service\nsystemctl --global enable hypridle.service\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/base/shell '#!/usr/bin/env bash\n## Interactive shell defaults shared across shell environments\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\nconfigure() {\n\t# List completions on first Tab when ambiguous, instead of beeping and requiring a second Tab.\n\tsed -i '\"'\"'/^set show-all-if-ambiguous on$/d'\"'\"' /etc/inputrc\n\tfile_append /etc/inputrc <<'\"'\"'EOF'\"'\"'\nset show-all-if-ambiguous on\nEOF\n}\n\nconfigure\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/system/security/sudo '#!/usr/bin/env bash\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\nconfigure() {\n\tinstall -d -m 0750 /etc/sudoers.d\n\t# The encrypted boot and lock screen remain the authentication boundaries;\n\t# interactive sudo is deliberately passwordless for this personal workstation.\n\tprintf '\"'\"'%s ALL=(ALL:ALL) NOPASSWD: ALL\\n'\"'\"' \"$USERNAME\" >\"/etc/sudoers.d/10-$USERNAME\"\n\tchmod 0440 \"/etc/sudoers.d/10-$USERNAME\"\n\tvisudo --check --file \"/etc/sudoers.d/10-$USERNAME\"\n\n\t# \"please\" \u2014 polite alias for sudo\n}\n\nconfigure\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/system/security/ufw '#!/usr/bin/env bash\n## Uncomplicated firewall \u2014 persistent default-deny baseline\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\n# Do not invoke ufw against the build host'\"'\"'s kernel. The packaged defaults are\n# edited offline; feature-owned rules are applied serially during boot.\nconfigure() {\n\tsed -i '\"'\"'s/^DEFAULT_INPUT_POLICY=.*/DEFAULT_INPUT_POLICY=\"DROP\"/'\"'\"' /etc/default/ufw\n\tsed -i '\"'\"'s/^DEFAULT_OUTPUT_POLICY=.*/DEFAULT_OUTPUT_POLICY=\"ACCEPT\"/'\"'\"' /etc/default/ufw\n\n}\n\nconfigure\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/base/utils '#!/usr/bin/env bash\n## Small baseline command-line utilities\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\nconfigure() {\n\t# Keep less history out of $HOME root, in the XDG state location.\n\tinstall -d -m 0755 \"$HOME/.local/state/less\"\n}\n\nconfigure\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/dev/editors/vscode '#!/usr/bin/env bash\nset -Eeuo pipefail\nrepo_dir=${DOTFILES_REPO:?}\n#!/usr/bin/env bash\n# Atomic config writes; HOME is a staging directory during system setup.\nfile_write() {\n    local mode=0644 destination temporary\n    if [[ ${1:-} == -m ]]; then mode=$2; shift 2; fi\n    destination=${1:?Destination required}\n    mkdir -p -- \"$(dirname -- \"$destination\")\"\n    temporary=$(mktemp \"${destination}.tmp.XXXXXX\")\n    cat > \"$temporary\"\n    chmod \"$mode\" \"$temporary\"\n    mv -Tf -- \"$temporary\" \"$destination\"\n\n}\nfile_append() {\n    local destination=${1:?Destination required}\n    { [[ ! -f $destination ]] || cat -- \"$destination\"; cat; } | file_write \"$destination\"\n}\nhome_link() {\n    mkdir -p -- \"$(dirname -- \"$2\")\"\n    ln -sfnT -- \"$1\" \"$2\"\n}\n\n# Extension declarations contribute settings to the user'\"'\"'s Code - OSS profile.\njq '\"'\"'\n    .extra.vscode\n    | reduce .extensions[] as $settings (.settings; . * $settings)\n'\"'\"' /run/system-configuration.json |\n    file_write \"$HOME/.config/Code - OSS/User/settings.json\"\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/system/boot '#!/usr/bin/env bash\nset -Eeuo pipefail\n# Archinstall generates the device-specific command line and UKI presets.\n# Preserve its initramfs hooks and disk-unlock parameters.\njq -e '\"'\"'.bootloader_config | .bootloader == \"Efistub\" and .uki == true'\"'\"' \\\n    /run/system-configuration.json >/dev/null || {\n    echo '\"'\"'Boot configuration requires EFI stub boot with UKIs.'\"'\"' >&2; exit 1;\n}\npython3 - /etc/kernel/cmdline /etc/mkinitcpio.d <<'\"'\"'PY_BOOT'\"'\"'\nfrom pathlib import Path\nimport os\nimport re\nimport sys\nimport tempfile\n\ncmdline, presets = map(Path, sys.argv[1:])\nactive_presets = list(presets.glob('\"'\"'*.preset'\"'\"'))\nif not active_presets or not any(re.search(r'\"'\"'^\\w+_uki='\"'\"', p.read_text(), re.M) for p in active_presets):\n    sys.exit('\"'\"'No UKI preset found; configure UKIs before applying boot settings.'\"'\"')\nparameters = cmdline.read_text().split()\nif not any(p.startswith('\"'\"'root='\"'\"') for p in parameters):\n    sys.exit('\"'\"'Kernel command line has no root device.'\"'\"')\n# Archinstall enables mkinitcpio'\"'\"'s stock Arch splash. Leave firmware graphics\n# visible instead; preserve custom splash paths and other preset options.\nfor preset in active_presets:\n    original = preset.read_text()\n    updated = re.sub(\n        r'\"'\"'(?m)^(\\w+_options=)([\"\\'\"'\"'])--splash /usr/share/systemd/bootctl/splash-arch\\.bmp\\2$'\"'\"',\n        r'\"'\"'\\1\\2\\2'\"'\"', original)\n    if updated != original:\n        preset.write_text(updated)\nquiet = {\n    '\"'\"'quiet'\"'\"': '\"'\"'quiet'\"'\"',\n    '\"'\"'loglevel'\"'\"': '\"'\"'loglevel=3'\"'\"',\n    '\"'\"'systemd.show_status'\"'\"': '\"'\"'systemd.show_status=auto'\"'\"',\n    '\"'\"'rd.systemd.show_status'\"'\"': '\"'\"'rd.systemd.show_status=auto'\"'\"',\n    '\"'\"'udev.log_level'\"'\"': '\"'\"'udev.log_level=3'\"'\"',\n    '\"'\"'rd.udev.log_level'\"'\"': '\"'\"'rd.udev.log_level=3'\"'\"',\n    '\"'\"'vt.global_cursor_default'\"'\"': '\"'\"'vt.global_cursor_default=0'\"'\"',\n}\nresult = []\nfor parameter in parameters:\n    if parameter.split('\"'\"'='\"'\"', 1)[0] not in quiet:\n        result.append(parameter)\nresult.extend(quiet.values())\n# Do not replace the active command line until all checks have passed.\nwith tempfile.NamedTemporaryFile(mode='\"'\"'w'\"'\"', dir=cmdline.parent, delete=False) as temporary:\n    target = Path(temporary.name)\n    try:\n        temporary.write('\"'\"' '\"'\"'.join(result) + '\"'\"'\\n'\"'\"')\n        temporary.close()\n        os.chmod(target, 0o644)\n        target.replace(cmdline)\n    finally:\n        target.unlink(missing_ok=True)\nPY_BOOT\n# Rebuild the UKIs with the updated console settings and existing hooks.\nmkinitcpio -P\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/desktop/hyprland '#!/usr/bin/env bash\nset -Eeuo pipefail\n\n# The console supervisor replaces the old manual desktop launcher.\nrm -f /usr/local/bin/desktop-session\n\n# Archinstall'\"'\"'s Hyprland profile installs Wofi; Quickshell owns app search here.\n# Remove Wofi and unused dependencies, retaining shared dependencies and checks.\nif pacman -Q wofi >/dev/null 2>&1; then\n    pacman -Rns --noconfirm wofi\nfi\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --run modules/desktop/notifications '#!/usr/bin/env bash\nset -Eeuo pipefail\n\n# Archinstall installs Dunst; the desktop shell owns org.freedesktop.Notifications.\nif pacman -Q dunst >/dev/null 2>&1; then\n    pacman -Rns --noconfirm dunst\nfi\n'",
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/user-configuration.sh\" --finish"
+        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/scripts/configure.sh\""
     ],
     "disk_config": {
         "btrfs_options": {
@@ -229,6 +200,10 @@
         ],
         "packages": [
             "kitty",
+            "hyprland",
+            "uwsm",
+            "grim",
+            "slurp",
             "pipewire",
             "pipewire-alsa",
             "pipewire-jack",
@@ -241,7 +216,7 @@
             "iwd",
             "tuned",
             "tuned-ppd",
-            "ufw"
+            "firewalld"
         ],
         "flatpak": {
             "packages": [
@@ -390,7 +365,8 @@
                     "browser.urlbar.update2.engineAliasRefresh": true,
                     "dom.webgpu.enabled": true,
                     "signon.rememberSignons": false,
-                    "dom.event.contextmenu.shift_suppresses_event": true
+                    "dom.event.contextmenu.shift_suppresses_event": true,
+                    "privacy.clearOnShutdown_v2.cookiesAndStorage": false
                 },
                 "extensions": [
                     "https://addons.mozilla.org/firefox/downloads/latest/bitwarden-password-manager/latest.xpi",
@@ -456,7 +432,34 @@
                         "template": "https://pkgs.org/search/?q={searchTerms}",
                         "alias": "@pkgs"
                     }
-                ]
+                ],
+                "policies": {
+                    "LocalNetworkAccess": {
+                        "SkipDomains": [
+                            "wsp.b-trust.bg",
+                            "test.b-trust.bg"
+                        ]
+                    },
+                    "SecurityDevices": {
+                        "Add": {
+                            "B-Trust IDPrime": "/usr/lib/pkcs11/libIDPrimePKCS11.so"
+                        }
+                    },
+                    "Certificates": {
+                        "Install": [
+                            "/opt/btrustbiss/lib/app/BTrustCA/root/B-TrustRootQCA.cer",
+                            "/opt/btrustbiss/lib/app/BTrustCA/root/B-TrustRootACA.cer",
+                            "/opt/btrustbiss/lib/app/BTrustCA/root/RootCA5_PEM.cer",
+                            "/opt/btrustbiss/lib/app/BTrustCA/root/biss-localhost-linux.cer"
+                        ]
+                    },
+                    "Preferences": {
+                        "security.osclientcerts.autoload": {
+                            "Value": false,
+                            "Status": "locked"
+                        }
+                    }
+                }
             }
         },
         "vscode": {
@@ -645,7 +648,7 @@
             "bluetooth.service",
             "NetworkManager.service",
             "tuned.service",
-            "ufw.service"
+            "firewalld.service"
         ],
         "disabled_services": [
             "warp-svc.service"
@@ -665,18 +668,28 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/ai/codex/files/etc/profile.d/codex.sh",
-                "target": "/etc/profile.d/codex.sh",
-                "mode": "0644"
-            },
-            {
                 "source": "modules/base/bash/files/etc/bash.bashrc",
                 "target": "/etc/bash.bashrc",
                 "mode": "0644"
             },
             {
-                "source": "modules/base/bash/files/etc/profile.d/bash.sh",
-                "target": "/etc/profile.d/bash.sh",
+                "source": "modules/base/bash/files/etc/bash.bashrc.d/bash.sh",
+                "target": "/etc/bash.bashrc.d/bash.sh",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/base/bash/files/etc/bash.bashrc.d/coreutils.sh",
+                "target": "/etc/bash.bashrc.d/coreutils.sh",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/base/bash/files/etc/bash.bashrc.d/util-linux.sh",
+                "target": "/etc/bash.bashrc.d/util-linux.sh",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/base/bash/files/home/.bashrc",
+                "target": "home/.bashrc",
                 "mode": "0644"
             },
             {
@@ -685,13 +698,8 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/base/shell/files/etc/profile.d/coreutils.sh",
-                "target": "/etc/profile.d/coreutils.sh",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/base/shell/files/etc/profile.d/util-linux.sh",
-                "target": "/etc/profile.d/util-linux.sh",
+                "source": "modules/base/shell/files/etc/profile.d/environment.sh",
+                "target": "/etc/profile.d/environment.sh",
                 "mode": "0644"
             },
             {
@@ -700,18 +708,8 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/base/utils/files/etc/profile.d/less.sh",
-                "target": "/etc/profile.d/less.sh",
-                "mode": "0644"
-            },
-            {
                 "source": "modules/base/xdg/files/etc/environment.d/xdg.conf",
                 "target": "/etc/environment.d/xdg.conf",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/base/xdg/files/etc/profile.d/xdg.sh",
-                "target": "/etc/profile.d/xdg.sh",
                 "mode": "0644"
             },
             {
@@ -730,8 +728,8 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/browsers/chromium/files/etc/profile.d/chrome.sh",
-                "target": "/etc/profile.d/chrome.sh",
+                "source": "modules/browsers/chromium/files/etc/bash.bashrc.d/chrome.sh",
+                "target": "/etc/bash.bashrc.d/chrome.sh",
                 "mode": "0644"
             },
             {
@@ -740,13 +738,13 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/browsers/tor-browser/files/etc/profile.d/tor-browser.sh",
-                "target": "/etc/profile.d/tor-browser.sh",
+                "source": "modules/browsers/tor-browser/files/etc/bash.bashrc.d/tor-browser.sh",
+                "target": "/etc/bash.bashrc.d/tor-browser.sh",
                 "mode": "0644"
             },
             {
-                "source": "modules/communication/discord/files/etc/profile.d/discord.sh",
-                "target": "/etc/profile.d/discord.sh",
+                "source": "modules/communication/discord/files/etc/bash.bashrc.d/discord.sh",
+                "target": "/etc/bash.bashrc.d/discord.sh",
                 "mode": "0644"
             },
             {
@@ -755,43 +753,28 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/communication/kdeconnect/files/usr/local/libexec/ufw-rules.d/20-kdeconnect",
-                "target": "/usr/local/libexec/ufw-rules.d/20-kdeconnect",
-                "mode": "0755"
-            },
-            {
-                "source": "modules/communication/telegram/files/etc/profile.d/telegram.sh",
-                "target": "/etc/profile.d/telegram.sh",
+                "source": "modules/communication/kdeconnect/files/etc/firewalld/policies/kdeconnect.xml",
+                "target": "/etc/firewalld/policies/kdeconnect.xml",
                 "mode": "0644"
             },
             {
-                "source": "modules/communication/whatsapp/files/etc/profile.d/zapzap.sh",
-                "target": "/etc/profile.d/zapzap.sh",
+                "source": "modules/communication/telegram/files/etc/bash.bashrc.d/telegram.sh",
+                "target": "/etc/bash.bashrc.d/telegram.sh",
                 "mode": "0644"
             },
             {
-                "source": "modules/desktop/hyprland/files/etc/bash.bashrc.d/hyprland.sh",
-                "target": "/etc/bash.bashrc.d/hyprland.sh",
+                "source": "modules/communication/whatsapp/files/etc/bash.bashrc.d/zapzap.sh",
+                "target": "/etc/bash.bashrc.d/zapzap.sh",
                 "mode": "0644"
             },
             {
-                "source": "modules/desktop/hyprland/files/etc/hushlogins",
-                "target": "/etc/hushlogins",
+                "source": "modules/desktop/hyprland/files/etc/environment.d/cursor.conf",
+                "target": "/etc/environment.d/cursor.conf",
                 "mode": "0644"
             },
             {
-                "source": "modules/desktop/hyprland/files/etc/systemd/user/hypridle.service.d/hyprland.conf",
-                "target": "/etc/systemd/user/hypridle.service.d/hyprland.conf",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/desktop/hyprland/files/etc/systemd/user/hyprpolkitagent.service.d/hyprland.conf",
-                "target": "/etc/systemd/user/hyprpolkitagent.service.d/hyprland.conf",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/desktop/hyprland/files/etc/systemd/user/hyprsunset.service.d/hyprland.conf",
-                "target": "/etc/systemd/user/hyprsunset.service.d/hyprland.conf",
+                "source": "modules/desktop/hyprland/files/etc/profile.d/zz-session-mode.sh",
+                "target": "/etc/profile.d/zz-session-mode.sh",
                 "mode": "0644"
             },
             {
@@ -815,6 +798,11 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/desktop/hyprland/files/home/.hushlogin",
+                "target": "home/.hushlogin",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/desktop/hyprland/files/usr/local/bin/desktop-idle",
                 "target": "/usr/local/bin/desktop-idle",
                 "mode": "0755"
@@ -835,8 +823,8 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/desktop/quickshell/files/etc/polkit-1/rules.d/50-desktop-warp.rules",
-                "target": "/etc/polkit-1/rules.d/50-desktop-warp.rules",
+                "source": "modules/desktop/quickshell/files/etc/systemd/user/cliphist@.service",
+                "target": "/etc/systemd/user/cliphist@.service",
                 "mode": "0644"
             },
             {
@@ -845,13 +833,18 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/desktop/quickshell/files/etc/systemd/user/desktop-capture.socket",
+                "target": "/etc/systemd/user/desktop-capture.socket",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/desktop/quickshell/files/etc/systemd/user/desktop-shell.service",
                 "target": "/etc/systemd/user/desktop-shell.service",
                 "mode": "0644"
             },
             {
-                "source": "modules/desktop/quickshell/files/home/.config/quickshell/desktop/theme-mode",
-                "target": "home/.config/quickshell/desktop/theme-mode",
+                "source": "modules/desktop/quickshell/files/home/.config/cliphist/config",
+                "target": "home/.config/cliphist/config",
                 "mode": "0644"
             },
             {
@@ -870,13 +863,8 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/dev/languages/nodejs/files/etc/profile.d/npm.sh",
-                "target": "/etc/profile.d/npm.sh",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/dev/languages/python/files/etc/profile.d/python.sh",
-                "target": "/etc/profile.d/python.sh",
+                "source": "modules/dev/languages/python/files/etc/environment.d/python.conf",
+                "target": "/etc/environment.d/python.conf",
                 "mode": "0644"
             },
             {
@@ -885,28 +873,23 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/dev/languages/rust/files/etc/profile.d/cargo.sh",
-                "target": "/etc/profile.d/cargo.sh",
+                "source": "modules/dev/tools/api-client/files/etc/bash.bashrc.d/yaak.sh",
+                "target": "/etc/bash.bashrc.d/yaak.sh",
                 "mode": "0644"
             },
             {
-                "source": "modules/dev/tools/api-client/files/etc/profile.d/yaak.sh",
-                "target": "/etc/profile.d/yaak.sh",
+                "source": "modules/dev/tools/bat/files/etc/bash.bashrc.d/bat.sh",
+                "target": "/etc/bash.bashrc.d/bat.sh",
                 "mode": "0644"
             },
             {
-                "source": "modules/dev/tools/bat/files/etc/profile.d/bat.sh",
-                "target": "/etc/profile.d/bat.sh",
+                "source": "modules/dev/tools/devtoolbox/files/etc/bash.bashrc.d/devtoolbox.sh",
+                "target": "/etc/bash.bashrc.d/devtoolbox.sh",
                 "mode": "0644"
             },
             {
-                "source": "modules/dev/tools/devtoolbox/files/etc/profile.d/devtoolbox.sh",
-                "target": "/etc/profile.d/devtoolbox.sh",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/dev/tools/distrobox/files/etc/profile.d/boxbuddy.sh",
-                "target": "/etc/profile.d/boxbuddy.sh",
+                "source": "modules/dev/tools/distrobox/files/etc/bash.bashrc.d/boxbuddy.sh",
+                "target": "/etc/bash.bashrc.d/boxbuddy.sh",
                 "mode": "0644"
             },
             {
@@ -915,8 +898,8 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/dev/tools/lsd/files/etc/profile.d/lsd.sh",
-                "target": "/etc/profile.d/lsd.sh",
+                "source": "modules/dev/tools/lsd/files/etc/bash.bashrc.d/lsd.sh",
+                "target": "/etc/bash.bashrc.d/lsd.sh",
                 "mode": "0644"
             },
             {
@@ -935,8 +918,8 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/dev/tools/meld/files/etc/profile.d/meld.sh",
-                "target": "/etc/profile.d/meld.sh",
+                "source": "modules/dev/tools/meld/files/etc/environment.d/meld.conf",
+                "target": "/etc/environment.d/meld.conf",
                 "mode": "0644"
             },
             {
@@ -945,33 +928,28 @@
                 "mode": "0755"
             },
             {
-                "source": "modules/dev/tools/mise/files/etc/fish/conf.d/mise.fish",
-                "target": "/etc/fish/conf.d/mise.fish",
+                "source": "modules/dev/tools/mise/files/etc/bash.bashrc.d/mise.sh",
+                "target": "/etc/bash.bashrc.d/mise.sh",
                 "mode": "0644"
             },
             {
-                "source": "modules/dev/tools/mise/files/etc/profile.d/mise.sh",
-                "target": "/etc/profile.d/mise.sh",
+                "source": "modules/dev/tools/podman/files/etc/bash.bashrc.d/pods.sh",
+                "target": "/etc/bash.bashrc.d/pods.sh",
                 "mode": "0644"
             },
             {
-                "source": "modules/dev/tools/podman/files/etc/profile.d/pods.sh",
-                "target": "/etc/profile.d/pods.sh",
+                "source": "modules/gaming/compat/proton/files/etc/bash.bashrc.d/proton.sh",
+                "target": "/etc/bash.bashrc.d/proton.sh",
                 "mode": "0644"
             },
             {
-                "source": "modules/gaming/compat/proton/files/etc/profile.d/proton.sh",
-                "target": "/etc/profile.d/proton.sh",
+                "source": "modules/gaming/games/diablo-1/files/etc/bash.bashrc.d/diablo.sh",
+                "target": "/etc/bash.bashrc.d/diablo.sh",
                 "mode": "0644"
             },
             {
-                "source": "modules/gaming/games/diablo-1/files/etc/profile.d/diablo.sh",
-                "target": "/etc/profile.d/diablo.sh",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/gaming/games/roblox/files/etc/profile.d/roblox.sh",
-                "target": "/etc/profile.d/roblox.sh",
+                "source": "modules/gaming/games/roblox/files/etc/bash.bashrc.d/roblox.sh",
+                "target": "/etc/bash.bashrc.d/roblox.sh",
                 "mode": "0644"
             },
             {
@@ -985,18 +963,13 @@
                 "mode": "0755"
             },
             {
-                "source": "modules/gaming/gamescope-session/files/usr/share/wayland-sessions/gaming.desktop",
-                "target": "/usr/share/wayland-sessions/gaming.desktop",
+                "source": "modules/gaming/launchers/heroic/files/etc/bash.bashrc.d/heroic.sh",
+                "target": "/etc/bash.bashrc.d/heroic.sh",
                 "mode": "0644"
             },
             {
-                "source": "modules/gaming/launchers/heroic/files/etc/profile.d/heroic.sh",
-                "target": "/etc/profile.d/heroic.sh",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/gaming/launchers/lutris/files/etc/profile.d/lutris.sh",
-                "target": "/etc/profile.d/lutris.sh",
+                "source": "modules/gaming/launchers/lutris/files/etc/bash.bashrc.d/lutris.sh",
+                "target": "/etc/bash.bashrc.d/lutris.sh",
                 "mode": "0644"
             },
             {
@@ -1005,8 +978,8 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/hardware/devices/zephyrus/files/etc/system/gaming-session.conf",
-                "target": "/etc/system/gaming-session.conf",
+                "source": "modules/hardware/devices/zephyrus/files/etc/gaming-session.conf",
+                "target": "/etc/gaming-session.conf",
                 "mode": "0644"
             },
             {
@@ -1017,6 +990,11 @@
             {
                 "source": "modules/hardware/keyboard/input-method/files/etc/environment.d/fcitx.conf",
                 "target": "/etc/environment.d/fcitx.conf",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/hardware/keyboard/input-method/files/etc/systemd/user/vietnamese.service",
+                "target": "/etc/systemd/user/vietnamese.service",
                 "mode": "0644"
             },
             {
@@ -1052,11 +1030,6 @@
             {
                 "source": "modules/hardware/keyboard/input-method/files/home/.local/share/dbus-1/services/org.fcitx.Fcitx5.service",
                 "target": "home/.local/share/dbus-1/services/org.fcitx.Fcitx5.service",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/hardware/keyboard/input-method/files/usr/lib/systemd/user/vietnamese.service",
-                "target": "/usr/lib/systemd/user/vietnamese.service",
                 "mode": "0644"
             },
             {
@@ -1180,8 +1153,8 @@
                 "mode": "0755"
             },
             {
-                "source": "modules/hardware/power/files/usr/share/dotfiles/power/asusd.ron",
-                "target": "/usr/share/dotfiles/power/asusd.ron",
+                "source": "modules/hardware/power/files/usr/local/share/dotfiles/power/asusd.ron",
+                "target": "/usr/local/share/dotfiles/power/asusd.ron",
                 "mode": "0644"
             },
             {
@@ -1190,13 +1163,18 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/media/graphics/gimp/files/etc/profile.d/gimp.sh",
-                "target": "/etc/profile.d/gimp.sh",
+                "source": "modules/internet/cloudflare/files/etc/polkit-1/rules.d/50-desktop-warp.rules",
+                "target": "/etc/polkit-1/rules.d/50-desktop-warp.rules",
                 "mode": "0644"
             },
             {
-                "source": "modules/media/graphics/upscayl/files/etc/profile.d/upscayl.sh",
-                "target": "/etc/profile.d/upscayl.sh",
+                "source": "modules/media/graphics/gimp/files/etc/bash.bashrc.d/gimp.sh",
+                "target": "/etc/bash.bashrc.d/gimp.sh",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/media/graphics/upscayl/files/etc/bash.bashrc.d/upscayl.sh",
+                "target": "/etc/bash.bashrc.d/upscayl.sh",
                 "mode": "0644"
             },
             {
@@ -1210,8 +1188,8 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/media/tools/subtitles/files/etc/profile.d/subtitlecomposer.sh",
-                "target": "/etc/profile.d/subtitlecomposer.sh",
+                "source": "modules/media/tools/subtitles/files/etc/bash.bashrc.d/subtitlecomposer.sh",
+                "target": "/etc/bash.bashrc.d/subtitlecomposer.sh",
                 "mode": "0644"
             },
             {
@@ -1230,18 +1208,13 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/media/video/youtube/files/etc/profile.d/parabolic.sh",
-                "target": "/etc/profile.d/parabolic.sh",
+                "source": "modules/media/video/youtube/files/etc/bash.bashrc.d/parabolic.sh",
+                "target": "/etc/bash.bashrc.d/parabolic.sh",
                 "mode": "0644"
             },
             {
                 "source": "modules/office/btrust/files/etc/pacman.d/hooks/95-btrust.hook",
                 "target": "/etc/pacman.d/hooks/95-btrust.hook",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/office/btrust/files/etc/system/firefox-policies.d/btrust.json",
-                "target": "/etc/system/firefox-policies.d/btrust.json",
                 "mode": "0644"
             },
             {
@@ -1270,16 +1243,6 @@
                 "mode": "0644"
             },
             {
-                "source": "modules/office/btrust/files/etc/udev/rules.d/71-btrust.rules",
-                "target": "/etc/udev/rules.d/71-btrust.rules",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/office/btrust/files/home/.config/autostart/SACMonitor.desktop",
-                "target": "home/.config/autostart/SACMonitor.desktop",
-                "mode": "0644"
-            },
-            {
                 "source": "modules/office/btrust/files/home/.config/autostart/btrustbiss-BISS.desktop",
                 "target": "home/.config/autostart/btrustbiss-BISS.desktop",
                 "mode": "0644"
@@ -1293,6 +1256,11 @@
                 "source": "modules/office/btrust/files/usr/local/bin/btrust-usb",
                 "target": "/usr/local/bin/btrust-usb",
                 "mode": "0755"
+            },
+            {
+                "source": "modules/office/btrust/files/usr/local/lib/udev/rules.d/71-btrust.rules",
+                "target": "/usr/local/lib/udev/rules.d/71-btrust.rules",
+                "mode": "0644"
             },
             {
                 "source": "modules/office/btrust/files/usr/local/libexec/btrust-bind-usb",
@@ -1315,23 +1283,23 @@
                 "mode": "0755"
             },
             {
-                "source": "modules/office/btrust/files/usr/share/btrust/btrustbiss-BISS.desktop",
-                "target": "/usr/share/btrust/btrustbiss-BISS.desktop",
+                "source": "modules/office/btrust/files/usr/local/share/applications/btrustbiss-BISS.desktop",
+                "target": "/usr/local/share/applications/btrustbiss-BISS.desktop",
                 "mode": "0644"
             },
             {
-                "source": "modules/office/docs/files/etc/profile.d/libreoffice.sh",
-                "target": "/etc/profile.d/libreoffice.sh",
+                "source": "modules/office/docs/files/etc/bash.bashrc.d/libreoffice.sh",
+                "target": "/etc/bash.bashrc.d/libreoffice.sh",
                 "mode": "0644"
             },
             {
-                "source": "modules/office/ebook-reader/files/etc/profile.d/foliate.sh",
-                "target": "/etc/profile.d/foliate.sh",
+                "source": "modules/office/ebook-reader/files/etc/bash.bashrc.d/foliate.sh",
+                "target": "/etc/bash.bashrc.d/foliate.sh",
                 "mode": "0644"
             },
             {
-                "source": "modules/office/productivity/files/etc/profile.d/thunderbird.sh",
-                "target": "/etc/profile.d/thunderbird.sh",
+                "source": "modules/office/productivity/files/etc/bash.bashrc.d/thunderbird.sh",
+                "target": "/etc/bash.bashrc.d/thunderbird.sh",
                 "mode": "0644"
             },
             {
@@ -1375,74 +1343,29 @@
                 "mode": "0755"
             },
             {
+                "source": "modules/system/security/firewall/files/etc/firewalld/zones/public.xml",
+                "target": "/etc/firewalld/zones/public.xml",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/system/security/firewall/files/etc/polkit-1/rules.d/50-firewall.rules",
+                "target": "/etc/polkit-1/rules.d/50-firewall.rules",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/system/security/firewall/files/usr/local/libexec/firewall-ports",
+                "target": "/usr/local/libexec/firewall-ports",
+                "mode": "0755"
+            },
+            {
                 "source": "modules/system/security/gnupg/files/etc/environment.d/gnupg.conf",
                 "target": "/etc/environment.d/gnupg.conf",
                 "mode": "0644"
             },
             {
-                "source": "modules/system/security/gnupg/files/etc/profile.d/gnupg.sh",
-                "target": "/etc/profile.d/gnupg.sh",
+                "source": "modules/system/security/sudo/files/etc/bash.bashrc.d/sudo.sh",
+                "target": "/etc/bash.bashrc.d/sudo.sh",
                 "mode": "0644"
-            },
-            {
-                "source": "modules/system/security/sudo/files/etc/profile.d/sudo.sh",
-                "target": "/etc/profile.d/sudo.sh",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/system/security/ufw/files/etc/polkit-1/rules.d/50-desktop-ports.rules",
-                "target": "/etc/polkit-1/rules.d/50-desktop-ports.rules",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/system/security/ufw/files/etc/systemd/system/desktop-ports.service",
-                "target": "/etc/systemd/system/desktop-ports.service",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/system/security/ufw/files/etc/systemd/system/ufw-rules.service",
-                "target": "/etc/systemd/system/ufw-rules.service",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/system/security/ufw/files/usr/local/libexec/apply-ufw-rules",
-                "target": "/usr/local/libexec/apply-ufw-rules",
-                "mode": "0755"
-            },
-            {
-                "source": "modules/system/security/ufw/files/usr/local/libexec/desktop-ports",
-                "target": "/usr/local/libexec/desktop-ports",
-                "mode": "0755"
-            },
-            {
-                "source": "modules/system/security/ufw/files/usr/share/dbus-1/system-services/org.dotfiles.Ports1.service",
-                "target": "/usr/share/dbus-1/system-services/org.dotfiles.Ports1.service",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/system/security/ufw/files/usr/share/dbus-1/system.d/org.dotfiles.Ports1.conf",
-                "target": "/usr/share/dbus-1/system.d/org.dotfiles.Ports1.conf",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/system/security/ufw/files/usr/share/polkit-1/actions/org.dotfiles.ports.policy",
-                "target": "/usr/share/polkit-1/actions/org.dotfiles.ports.policy",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/system/virtualization/virt-manager/files/etc/sysctl.d/99-libvirt.conf",
-                "target": "/etc/sysctl.d/99-libvirt.conf",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/system/virtualization/virt-manager/files/etc/systemd/system/libvirtd.service.d/ufw.conf",
-                "target": "/etc/systemd/system/libvirtd.service.d/ufw.conf",
-                "mode": "0644"
-            },
-            {
-                "source": "modules/system/virtualization/virt-manager/files/usr/local/libexec/ufw-rules.d/30-libvirt",
-                "target": "/usr/local/libexec/ufw-rules.d/30-libvirt",
-                "mode": "0755"
             }
         ],
         "symlinks": [
@@ -1477,10 +1400,6 @@
             {
                 "source": "modules/desktop/hyprland/symlinks/home/.config/hypr/monitors.lua",
                 "target": "home/.config/hypr/monitors.lua"
-            },
-            {
-                "source": "modules/desktop/hyprland/symlinks/home/.config/hypr/session.lua",
-                "target": "home/.config/hypr/session.lua"
             },
             {
                 "source": "modules/desktop/hyprland/symlinks/home/.config/hypr/windows.lua",
@@ -1537,10 +1456,6 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/StatusIslands.qml",
                 "target": "home/.config/quickshell/desktop/bar/StatusIslands.qml"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/WeatherStatus.qml",
-                "target": "home/.config/quickshell/desktop/bar/WeatherStatus.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/bar/WindowList.qml",
@@ -1621,10 +1536,6 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/WifiDrawer.qml",
                 "target": "home/.config/quickshell/desktop/drawers/WifiDrawer.qml"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/audio/AudioIconButton.qml",
-                "target": "home/.config/quickshell/desktop/drawers/audio/AudioIconButton.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/audio/AudioService.qml",
@@ -1855,26 +1766,6 @@
                 "target": "home/.config/quickshell/desktop/drawers/keyboard/qmldir"
             },
             {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/Models.js",
-                "target": "home/.config/quickshell/desktop/drawers/network/Models.js"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkButton.qml",
-                "target": "home/.config/quickshell/desktop/drawers/network/NetworkButton.qml"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkChoice.qml",
-                "target": "home/.config/quickshell/desktop/drawers/network/NetworkChoice.qml"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkIconButton.qml",
-                "target": "home/.config/quickshell/desktop/drawers/network/NetworkIconButton.qml"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkMenuItem.qml",
-                "target": "home/.config/quickshell/desktop/drawers/network/NetworkMenuItem.qml"
-            },
-            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkRow.qml",
                 "target": "home/.config/quickshell/desktop/drawers/network/NetworkRow.qml"
             },
@@ -1929,10 +1820,6 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/notifications/NotificationPopups.qml",
                 "target": "home/.config/quickshell/desktop/drawers/notifications/NotificationPopups.qml"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/notifications/backend.py",
-                "target": "home/.config/quickshell/desktop/drawers/notifications/backend.py"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/notifications/qmldir",
@@ -2037,6 +1924,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/weather/WeatherService.qml",
                 "target": "home/.config/quickshell/desktop/drawers/weather/WeatherService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/weather/WeatherStatus.qml",
+                "target": "home/.config/quickshell/desktop/drawers/weather/WeatherStatus.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/weather/backend.py",
@@ -2491,10 +2382,6 @@
                 "target": "home/.config/quickshell/desktop/integrations/ARCHITECTURE.md"
             },
             {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/integrations/import_account.py",
-                "target": "home/.config/quickshell/desktop/integrations/import_account.py"
-            },
-            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/integrations/nextcloud.example.json",
                 "target": "home/.config/quickshell/desktop/integrations/nextcloud.example.json"
             },
@@ -2527,6 +2414,10 @@
                 "target": "home/.config/quickshell/desktop/ui/AppIcon.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/Apps.qml",
+                "target": "home/.config/quickshell/desktop/ui/Apps.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/AudioIcons.js",
                 "target": "home/.config/quickshell/desktop/ui/AudioIcons.js"
             },
@@ -2541,10 +2432,6 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/DrawerActionButton.qml",
                 "target": "home/.config/quickshell/desktop/ui/DrawerActionButton.qml"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/DrawerBrief.qml",
-                "target": "home/.config/quickshell/desktop/ui/DrawerBrief.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/DrawerColumn.qml",
@@ -2563,16 +2450,16 @@
                 "target": "home/.config/quickshell/desktop/ui/DrawerPage.qml"
             },
             {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/DrawerWindow.qml",
-                "target": "home/.config/quickshell/desktop/ui/DrawerWindow.qml"
-            },
-            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/HoldButton.qml",
                 "target": "home/.config/quickshell/desktop/ui/HoldButton.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/Icon.qml",
                 "target": "home/.config/quickshell/desktop/ui/Icon.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/IconButton.qml",
+                "target": "home/.config/quickshell/desktop/ui/IconButton.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/InfoPopover.qml",
@@ -2593,6 +2480,14 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/InteractionWindow.qml",
                 "target": "home/.config/quickshell/desktop/ui/InteractionWindow.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/KeyedModel.qml",
+                "target": "home/.config/quickshell/desktop/ui/KeyedModel.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/Models.js",
+                "target": "home/.config/quickshell/desktop/ui/Models.js"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/NetworkIcons.js",
@@ -2625,6 +2520,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ShellChoice.qml",
                 "target": "home/.config/quickshell/desktop/ui/ShellChoice.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ShellMenuItem.qml",
+                "target": "home/.config/quickshell/desktop/ui/ShellMenuItem.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ShellSwitch.qml",
@@ -2692,20 +2591,37 @@
             }
         ],
         "checks": [
-            {
-                "module": "modules/hosts/zephyrus",
-                "script": "#!/usr/bin/env bash\nset -euo pipefail\n\ngrep -Fqi 'ASUS' /sys/class/dmi/id/sys_vendor && \\\ngrep -Fq 'GA402RK' /sys/class/dmi/id/product_name || {\n    echo 'The zephyrus host configuration requires an ASUS GA402RK.' >&2\n    exit 1\n}\n"
-            }
+            "modules/hosts/zephyrus/prerequisite.sh"
         ],
         "pre": [
-            {
-                "module": "modules/system/mirrorlist",
-                "script": "#!/usr/bin/env bash\nset -Eeuo pipefail\n# Select mirrors on the ISO; the target inherits this list through pacstrap.\n# The installed system refreshes its list through reflector.timer.\n[[ ${CONFIG_MODE:-install} == install && -d /run/archiso ]] || exit 0\nreflector @\"${MODULE_DIR:?}/files/etc/xdg/reflector/reflector.conf\"\n"
-            },
-            {
-                "module": "modules/system/package/repositories",
-                "script": "#!/usr/bin/env bash\nset -Eeuo pipefail\n# Prepare trust before native repository transactions, on both ISO and target.\npacman-key --init\nfor key in \\\n    F79100EF8C802DAB81C323BB8EEA5962FE510E19 \\\n    8F654886F17D497FEFE3DB448B15A6B0E9A3FA35 \\\n    3056513887B78AEB; do\n    if ! pacman-key --list-keys \"$key\" >/dev/null 2>&1; then\n        pacman-key --recv-keys \"$key\" --keyserver keyserver.ubuntu.com\n    fi\n    pacman-key --lsign-key \"$key\"\ndone\nif ! pacman -Q chaotic-keyring chaotic-mirrorlist >/dev/null 2>&1; then\n    pacman -U --needed --noconfirm -- \\\n        https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst \\\n        https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst\nfi\npacman-key --populate chaotic\n"
-            }
+            "modules/system/mirrorlist/pre.sh",
+            "modules/system/package/repositories/pre.sh"
+        ],
+        "scripts": [
+            "modules/system/performance/gravity-mark/scripts/40_gravity-mark.sh",
+            "modules/media/video/mpv/scripts/40_sosc.sh",
+            "modules/base/xdg/scripts/45_user-directories.sh",
+            "modules/base/bash/scripts/50_bash.sh",
+            "modules/hardware/bluetooth/scripts/50_bluetooth.sh",
+            "modules/office/btrust/scripts/50_btrust.sh",
+            "modules/browsers/chromium/scripts/50_chromium.sh",
+            "modules/internet/cloudflare/scripts/50_cloudflare.sh",
+            "modules/ai/codex/scripts/50_codex.sh",
+            "modules/browsers/firefox/scripts/50_firefox.sh",
+            "modules/system/security/gnupg/scripts/50_gnupg.sh",
+            "modules/dev/tools/meld/scripts/50_meld.sh",
+            "modules/media/video/mpv/scripts/50_mpv.sh",
+            "modules/hardware/network/scripts/50_network.sh",
+            "modules/hardware/power/scripts/50_power.sh",
+            "modules/dev/languages/python/scripts/50_python.sh",
+            "modules/desktop/quickshell/scripts/50_quickshell.sh",
+            "modules/gaming/games/roblox/scripts/50_roblox.sh",
+            "modules/desktop/hyprland/scripts/50_session.sh",
+            "modules/system/security/sudo/scripts/50_sudo.sh",
+            "modules/dev/editors/vscode/scripts/50_vscode.sh",
+            "modules/system/boot/scripts/90_boot.sh",
+            "modules/desktop/hyprland/scripts/90_cleanup.sh",
+            "modules/desktop/notifications/scripts/90_cleanup.sh"
         ]
     },
     "hostname": "zephyrus",
@@ -2771,7 +2687,6 @@
         "hypridle",
         "hyprsunset",
         "hyprlock",
-        "hyprshot",
         "satty",
         "ksnip",
         "xdg-desktop-portal-gtk",
@@ -2784,6 +2699,8 @@
         "adwaita-icon-theme",
         "qt6-multimedia",
         "python-dateutil",
+        "python-icalendar",
+        "python-recurring-ical-events",
         "gpu-screen-recorder",
         "slurp",
         "v4l-utils",
@@ -2814,6 +2731,7 @@
         "distrobox",
         "fastfetch",
         "git",
+        "ripgrep",
         "just",
         "just-lsp",
         "lsd",
@@ -2830,9 +2748,9 @@
         "kio-admin",
         "dosbox",
         "gamescope",
+        "switcheroo-control",
         "mangohud",
         "lib32-mangohud",
-        "ibus",
         "noto-fonts",
         "ttf-dejavu",
         "steam",
@@ -2845,9 +2763,7 @@
         "blueman",
         "amd-ucode",
         "cpupower",
-        "switcheroo-control",
         "ogc/asusctl",
-        "ogc/rog-control-center",
         "brightnessctl",
         "ddcutil",
         "wdisplays",
@@ -2954,14 +2870,13 @@
     "script": null,
     "services": [
         "getty@tty1.service",
-        "upower.service",
         "switcheroo-control.service",
+        "upower.service",
         "fwupd-refresh.timer",
         "logid.service",
         "tuned-ppd.service",
         "power-source.service",
         "reflector.timer",
-        "ufw-rules.service",
         "libvirtd.service"
     ],
     "swap": {

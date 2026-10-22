@@ -1,8 +1,11 @@
 pragma Singleton
 import QtQuick
+import Quickshell
 import Quickshell.Io
+import Quickshell.Services.UPower
 
-QtObject {
+// session.py owns charge-once and recording lifetimes; started once from shell.qml.
+Singleton {
     id: root
     property bool started: false
     property bool ready: false
@@ -11,6 +14,8 @@ QtObject {
     property var state: ({once: null, recording: null, recordAvailable: false, error: ""})
     property string transportError: ""
     readonly property string error: transportError || state.error
+    // UPower's OnBattery, or null without a ready laptop battery; restores charge-once on unplug.
+    readonly property var batteryPower: UPower.displayDevice?.ready && UPower.displayDevice.isLaptopBattery ? UPower.onBattery : null
     signal completed()
     function start(): void { started = true; worker.running = true; }
     function send(request): void {
@@ -18,8 +23,12 @@ QtObject {
         pending++;
         worker.write(JSON.stringify(request) + "\n");
     }
-    readonly property Process worker: Process {
-        command: ["python3", "-B", "-u", decodeURIComponent(Qt.resolvedUrl("session.py").toString().replace(/^file:\/\//, "")), "--supervise"]
+    function report(): void { if (ready) worker.write(JSON.stringify({op: "power", onBattery: batteryPower}) + "\n"); }
+    onBatteryPowerChanged: report()
+    onReadyChanged: report()
+    Process {
+        id: worker
+        command: ["python3", Quickshell.shellPath("drawers/power/session.py"), "--supervise"]
         stdinEnabled: true
         stdout: SplitParser {
             onRead: line => {
@@ -31,15 +40,15 @@ QtObject {
                 } catch (_) { root.transportError = qsTr("Could not read power utility status."); }
             }
         }
-        stderr: StdioCollector {}
         onExited: {
             root.ready = false; root.pending = 0;
             root.transportError = qsTr("Power utilities stopped; reconnecting…");
             if (root.started) retry.restart();
         }
     }
-    readonly property Timer retry: Timer {
+    Timer {
+        id: retry
         interval: 5000
-        onTriggered: if (root.started) root.worker.running = true
+        onTriggered: if (root.started) worker.running = true
     }
 }

@@ -4,7 +4,6 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import "../../ui"
-import "../audio"
 
 ColumnLayout {
     id: root
@@ -60,7 +59,7 @@ ColumnLayout {
     RowLayout {
         objectName: "itemToolbar"
         Layout.fillWidth: true; spacing: 4
-        AudioIconButton {
+        IconButton {
             objectName: "itemBack"; iconName: "chevron-left"; text: qsTr("Back")
             enabled: !root.pending; onClicked: root.cancelled()
         }
@@ -82,7 +81,7 @@ ColumnLayout {
             enabled: !root.pending; armed: root.active
             onConfirmed: root.service.mutate("delete", root.kind, Object.assign({}, root.entry, {collection: root.task ? root.entry.list_slug : root.entry.calendar_slug}))
         }
-        AudioIconButton {
+        IconButton {
             objectName: "itemSave"; iconName: "check"; text: root.pending ? qsTr("Saving…") : qsTr("Save")
             visible: root.writable
             enabled: !!title.text.trim() && collection.currentIndex >= 0 && !root.pending

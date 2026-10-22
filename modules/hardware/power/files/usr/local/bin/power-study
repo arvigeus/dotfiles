@@ -1,5 +1,5 @@
 #!/usr/bin/python3 -I
-"""Explicit, bounded measurements; never a resident power-management service."""
+"""Record power, thermal and policy samples until stopped or for a fixed duration."""
 import argparse
 import hashlib
 import json
@@ -35,7 +35,7 @@ def command(args):
         return None
 
 
-def sample(gpu_telemetry=False):
+def sample():
     batteries, ac, temperatures, fans, gpus = {}, {}, {}, {}, {}
     for supply in (SYS / 'class/power_supply').glob('*'):
         kind = read(supply / 'type')
@@ -65,20 +65,8 @@ def sample(gpu_telemetry=False):
             continue
         device = card / 'device'
         state = read(device / 'power/runtime_status')
-        gpu = dict(state=state, id=read(device / 'device'), control=read(device / 'power/control'))
-        # Even an already-active GPU can be held awake by hwmon reads resetting
-        # its autosuspend timer. Battery measurements observe PM state only.
-        if state == 'active' and gpu_telemetry:
-            gpu['busy'] = value(device / 'gpu_busy_percent')
-            gpu['vram'] = value(device / 'mem_info_vram_used')
-            for hw in (device / 'hwmon').glob('*'):
-                gpu['watts'] = value(hw / 'power1_average', 1e6) or value(hw / 'power1_input', 1e6)
-                gpu['clock_mhz'] = value(hw / 'freq1_input', 1e6)
-                gpu['memory_clock_mhz'] = value(hw / 'freq2_input', 1e6)
-                for path in hw.glob('temp*_input'):
-                    label = read(path.with_name(path.name.replace('_input', '_label'))) or path.stem
-                    gpu[label] = value(path, 1000)
-        gpus[device.resolve().name] = gpu
+        # Only PM state: GPU sensor reads reset its autosuspend timer and keep it awake.
+        gpus[device.resolve().name] = dict(state=state, id=read(device / 'device'), control=read(device / 'power/control'))
     cpu = SYS / 'devices/system/cpu/cpufreq'
     memory = {}
     for line in (read('/proc/meminfo') or '').splitlines():
@@ -94,42 +82,18 @@ def sample(gpu_telemetry=False):
                     ('scaling_min_freq', 'scaling_max_freq', 'cpuinfo_max_freq', 'boost')}
                     for p in cpu.glob('policy*')},
                 frequency_mhz=value(cpu / 'policy0/scaling_cur_freq', 1000),
-                ppt={p.name: read(p / 'current_value') for p in
-                    (SYS / 'class/firmware-attributes/asus-armoury/attributes').glob('ppt_*')}
-                    if gpu_telemetry else None,
                 load=read('/proc/loadavg'), cpu_stat=read('/proc/stat').splitlines()[0],
                 memory_used=max(0, memory['MemTotal'] - memory['MemAvailable']) if len(memory) == 2 else None,
                 backlights={p.name: read(p / 'brightness') for p in (SYS / 'class/backlight').glob('*')})
 
 
-def metadata(gpu_telemetry=False):
+def metadata():
     return dict(recorder_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                 kernel=os.uname().release, bios=read(SYS / 'devices/virtual/dmi/id/bios_version'),
                 hardware=read(SYS / 'devices/virtual/dmi/id/product_name'),
                 versions=command(['pacman', '-Q', 'tuned', 'tuned-ppd', 'asusctl', 'mesa', 'mpv', 'linux-firmware']),
                 monitors=command(['hyprctl', 'monitors', 'all', '-j']),
-                wifi=command(['iw', 'dev', 'wlan0', 'get', 'power_save']), sample=sample(gpu_telemetry))
-
-
-def guard(row, cpu=82, edge=80, hotspot=90):
-    for label, temp in row['temperatures'].items():
-        if label.startswith(('k10temp:', 'coretemp:')) and temp is not None and temp >= cpu:
-            return f'{label} reached {temp} C (guard {cpu} C)'
-    for key, gpu in row['gpus'].items():
-        for label, limit in [('edge', edge), ('junction', hotspot), ('mem', hotspot)]:
-            if isinstance(gpu.get(label), (int, float)) and gpu[label] >= limit:
-                return f'{key} {label} reached {gpu[label]} C (guard {limit} C)'
-    return ''
-
-
-def sensor_failure(row, gpu_telemetry=True):
-    if not any(label.startswith(('k10temp:', 'coretemp:')) and temp is not None
-               for label, temp in row['temperatures'].items()):
-        return 'CPU temperature is unavailable; guarded workload refused'
-    for key, gpu in row['gpus'].items():
-        if gpu_telemetry and gpu.get('id') == '0x73ef' and gpu['state'] == 'active' and any(gpu.get(label) is None for label in ('edge', 'junction')):
-            return f'{key} thermal telemetry is unavailable; guarded workload stopped'
-    return ''
+                wifi=command(['iw', 'dev', 'wlan0', 'get', 'power_save']), sample=sample())
 
 
 def summarize(rows):
@@ -175,30 +139,6 @@ def summarize(rows):
     return result
 
 
-def stop_workload(child, abort=False):
-    if child is None:
-        return
-    # A thermal/telemetry guard must not leave GPU load running through a
-    # graceful-shutdown timeout. Only normal completion gets that grace period.
-    try:
-        os.killpg(child.pid, signal.SIGKILL if abort else signal.SIGTERM)
-    except ProcessLookupError:
-        child.wait()
-        return
-    try:
-        child.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        pass
-    finally:
-        # The launcher can exit before its descendants, including descendants
-        # that ignore SIGTERM. Always clean up the remaining process group.
-        try:
-            os.killpg(child.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        child.wait()
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('label')
@@ -207,67 +147,44 @@ def main():
                         help='Record until interrupted instead of stopping at --duration')
     parser.add_argument('--warmup', type=float, default=20)
     parser.add_argument('--interval', type=float, default=2)
-    parser.add_argument('--cpu-limit', type=float, default=82)
-    parser.add_argument('--gpu-telemetry', action='store_true',
-                        help='Collect active GPU sensors for guarded thermal loads; may delay runtime suspension')
     parser.add_argument('--output', type=Path)
-    parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    # Options precede the label, command follows it (optionally with --).
     if (not args.until_stopped and not 1 <= args.duration <= 3600) or not 0 <= args.warmup <= 300 or not .25 <= args.interval <= 10:
         parser.error('duration 1..3600 s, warmup 0..300 s, interval .25..10 s')
-    if not 60 <= args.cpu_limit <= 85:
-        parser.error('CPU guard must be 60..85 C; hardware protections are never changed')
-    directory = args.output or Path(os.environ.get('XDG_STATE_HOME', str(Path.home() / '.local/state'))) / 'dotfiles-power-study' / (time.strftime('%Y%m%d-%H%M%S-') + ''.join(c if c.isalnum() or c in '-_' else '_' for c in args.label))
+    directory = args.output or Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local/state') / 'dotfiles-power-study' / (time.strftime('%Y%m%d-%H%M%S-') + ''.join(c if c.isalnum() or c in '-_' else '_' for c in args.label))
     directory.mkdir(parents=True, exist_ok=False)
-    before = metadata(args.gpu_telemetry)
+    before = metadata()
     (directory / 'before.json').write_text(json.dumps(before, indent=2) + '\n')
     print(directory, flush=True)
     initial = before['sample']
-    reason = guard(initial, args.cpu_limit)
-    child, rows, observations = None, [], []
+    reason, rows, observations = '', [], []
     stopped = False
     def stop(_signal, _frame):
         nonlocal stopped
         stopped = True
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    argv = args.command[1:] if args.command[:1] == ['--'] else args.command
-    if argv:
-        reason = reason or sensor_failure(initial, args.gpu_telemetry)
     started = time.clock_gettime(time.CLOCK_BOOTTIME)
-    with (directory / 'workload.log').open('w') as log, (directory / 'samples.jsonl').open('w') as stream:
-        try:
-            if argv and not reason:
-                child = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-            previous_time = started
-            while not reason and not stopped:
-                row = sample(args.gpu_telemetry)
-                now = row['monotonic']
-                if now - previous_time > max(10, args.interval * 3):
-                    reason = 'Measurement interrupted (suspend or scheduling gap)'
-                previous_time = now
-                reason = reason or guard(row, args.cpu_limit)
-                if child:
-                    reason = reason or sensor_failure(row, args.gpu_telemetry)
-                if any(row[key] != initial[key] for key in ('ac', 'profile', 'platform', 'boost', 'epp', 'cpu_limits', 'ppt', 'backlights')):
-                    reason = reason or 'Power policy, AC state or brightness changed; run is not comparable'
-                row['warmup'] = now - started < args.warmup
-                observations.append(row)
-                stream.write(json.dumps(row) + '\n')
-                stream.flush()
-                if not row['warmup']:
-                    rows.append(row)
-                if child and child.poll() is not None:
-                    if child.returncode:
-                        reason = reason or f'Workload exited with status {child.returncode}'
-                    break
-                if not args.until_stopped and now - started >= args.warmup + args.duration:
-                    break
-                time.sleep(args.interval)
-        finally:
-            stop_workload(child, abort=bool(reason))
-    after = metadata(args.gpu_telemetry)
+    with (directory / 'samples.jsonl').open('w') as stream:
+        previous_time = started
+        while not reason and not stopped:
+            row = sample()
+            now = row['monotonic']
+            if now - previous_time > max(10, args.interval * 3):
+                reason = 'Measurement interrupted (suspend or scheduling gap)'
+            previous_time = now
+            if any(row[key] != initial[key] for key in ('ac', 'profile', 'platform', 'boost', 'epp', 'cpu_limits', 'backlights')):
+                reason = reason or 'Power policy, AC state or brightness changed; run is not comparable'
+            row['warmup'] = now - started < args.warmup
+            observations.append(row)
+            stream.write(json.dumps(row) + '\n')
+            stream.flush()
+            if not row['warmup']:
+                rows.append(row)
+            if not args.until_stopped and now - started >= args.warmup + args.duration:
+                break
+            time.sleep(args.interval)
+    after = metadata()
     if after['monitors'] != before['monitors']:
         # Focus/workspace fields vary normally; compare physical configuration.
         def displays(raw):
@@ -277,19 +194,12 @@ def main():
                 return raw
         if displays(after['monitors']) != displays(before['monitors']):
             reason = reason or 'Display configuration changed; run is not comparable'
-    summary = dict(summarize(rows), label=args.label, abort_reason=reason, interrupted=stopped,
-                   command=argv, gpu_telemetry=args.gpu_telemetry, child_returncode=child.returncode if child else None)
-    # Early bursts can trip a guard before the measured interval even starts.
-    # Keep their thermal extrema rather than hiding them with warm-up exclusion.
+    summary = dict(summarize(rows), label=args.label, abort_reason=reason, interrupted=stopped)
+    # Keep warm-up thermal extrema rather than hiding them with warm-up exclusion.
     summary['observed_samples'] = len(observations)
     summary['observed_peak_temperatures_c'] = {
         key: max(values) for key in {k for row in observations for k in row['temperatures']}
         if (values := [row['temperatures'][key] for row in observations if row['temperatures'].get(key) is not None])}
-    summary['observed_gpu_peaks_c'] = {
-        key: {sensor: max(values) for sensor in ('edge', 'junction', 'mem')
-              if (values := [row['gpus'].get(key, {}).get(sensor) for row in observations
-                             if isinstance(row['gpus'].get(key, {}).get(sensor), (int, float))])}
-        for key in {k for row in observations for k in row['gpus']}}
     (directory / 'after.json').write_text(json.dumps(after, indent=2) + '\n')
     (directory / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
     print(json.dumps(summary, indent=2), flush=True)

@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -54,57 +55,103 @@ class AudioBackendTests(unittest.TestCase):
             path.write_text('{')
             self.assertIn('audio.json', backend.load_config(path.parent)[1])
 
-    def test_snapshot_ports_profiles_stream_identity_and_default(self):
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), patch.object(backend, 'read', side_effect=fake_read), \
-                patch.object(backend, 'command', return_value=json.dumps({'default_sink_name': 'laptop'})):
+    def test_snapshot_is_inventory_without_native_state(self):
+        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), patch.object(backend, 'read', side_effect=fake_read) as read, \
+                patch.object(backend, 'command') as command:
             state = backend.snapshot()
-        self.assertTrue(state['outputs'][0]['selected'])
-        self.assertEqual(state['outputs'][0]['volume'], 50)
-        self.assertEqual(len(state['outputs']), 1)
-        self.assertEqual([r['name'] for r in state['outputs'][0]['routes']], ['speaker'])
+        command.assert_not_called()
+        self.assertNotIn('sink-inputs', [c.args[0] for c in read.call_args_list])
+        output = state['outputs'][0]
+        self.assertEqual((output['name'], output['deviceKey'], output['label'], output['maxVolume']), ('laptop', 'card', 'Laptop speakers', 150))
+        self.assertFalse({'volume', 'muted', 'selected', 'index', 'properties'} & output.keys())
+        self.assertEqual([r['name'] for r in output['routes']], ['speaker'])
         self.assertEqual(len(state['outputDevices'][0]['profiles']), 2)
-        self.assertEqual(state['streams'][0]['key'], '23:100')
-        self.assertEqual(state['streams'][0]['label'], '<Music & sound>')
-        self.assertEqual(state['streams'][0]['applicationBinary'], 'test-player')
+        self.assertNotIn('streams', state)
 
     def test_disconnected_port_and_stale_stream_never_mutate(self):
         with patch.object(backend, 'load_config', return_value=(CONFIG, '')), patch.object(backend, 'read', side_effect=fake_read), \
                 patch.object(backend, 'command') as command:
             for request, message in [(dict(op='output-port', name='laptop', port='jack'), 'disconnected'),
-                                     (dict(op='mute', kind='stream', index=23, token='99', muted=True), 'stream has ended'),
-                                     (dict(op='output-default', name='gone'), 'disconnected'),
+                                     (dict(op='output-port', name='gone', port='speaker'), 'disconnected'),
+                                     (dict(op='move', kind='stream', serial='100', destination='laptop'), 'Choose'),
+                                     (dict(op='move', kind='stream', serial=True, destination='laptop'), 'Choose'),
+                                     (dict(op='move', kind='sink', serial=100, destination='laptop'), 'Choose'),
                                      (dict(op='profile', name='laptop', card='other', previous='duplex', profile='surround'), 'changed')]:
                 with self.assertRaisesRegex(ValueError, message):
                     backend.control(request)
             command.assert_not_called()
 
-    def test_volume_cap_boost_and_mute_independence(self):
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), patch.object(backend, 'read', side_effect=fake_read), \
-                patch.object(backend, 'command') as command:
-            backend.control(dict(op='volume', name='laptop', value=75))
-            command.assert_called_once_with('set-sink-volume', 'laptop', '75%')
-            backend.control(dict(op='volume', name='laptop', value=140, boost=True))
-            for value in [101, -1, float('nan'), True]:
-                with self.assertRaises(ValueError):
-                    backend.control(dict(op='volume', name='laptop', value=value))
-            with patch.object(backend, 'read', return_value=[dict(SINK, active_port='jack')]):
-                with self.assertRaisesRegex(ValueError, '85'):
-                    backend.control(dict(op='volume', name='laptop', value=90, boost=True))
-            backend.control(dict(op='mute', name='laptop', muted=True))
-            command.assert_called_with('set-sink-mute', 'laptop', '1')
+    def test_native_operations_are_not_helper_actions(self):
+        with patch.object(backend, 'read', side_effect=fake_read), patch.object(backend, 'command') as command:
+            for op in ('status', 'volume', 'mute', 'output-default', 'input-default', 'output-boost', None):
+                with self.assertRaisesRegex(ValueError, 'Unknown'):
+                    backend.control(dict(op=op, name='laptop', value=50))
+            command.assert_not_called()
 
-    def test_default_connection_and_explicit_app_routing_are_separate(self):
+    def test_connection_and_explicit_app_routing(self):
         with patch.object(backend, 'load_config', return_value=(CONFIG, '')), patch.object(backend, 'read', side_effect=fake_read), \
                 patch.object(backend, 'command') as command:
-            backend.control(dict(op='output-default', name='laptop'))
-            command.assert_called_once_with('set-default-sink', 'laptop')
-            command.reset_mock()
             backend.control(dict(op='output-port', name='laptop', port='speaker'))
             self.assertEqual([c.args for c in command.call_args_list], [
                 ('set-sink-port', 'laptop', 'speaker'), ('set-sink-mute', 'laptop', '0')])
             command.reset_mock()
-            backend.control(dict(op='move', kind='stream', index=23, token='100', destination='laptop'))
-            command.assert_called_once_with('move-sink-input', '23', 'laptop')
+            backend.control(dict(op='move', kind='stream', serial=100, destination='laptop'))
+            command.assert_called_once_with('move-sink-input', 100, 'laptop')
+            command.reset_mock()
+            backend.control(dict(op='move', kind='recording', serial=101, destination='usb'))
+            command.assert_called_once_with('move-source-output', 101, 'usb')
+        with patch.object(backend, 'command', side_effect=ValueError('failed')):
+            with self.assertRaisesRegex(ValueError, 'gone'):
+                backend.control(dict(op='move', kind='stream', serial=100, destination='laptop'))
+
+    def test_watch_publishes_inventory_only_after_device_changes(self):
+        fake = r'''#!/usr/bin/env python3
+import json,os,sys,time
+from pathlib import Path
+root=Path(os.environ['FAKE_AUDIO'])
+def log(entry):
+ with (root/'log').open('a') as output: output.write(entry+'\n')
+if sys.argv[1:]==['subscribe']:
+ (root/'subscriber').write_text(str(os.getpid()))
+ for name,mutate in (('sink',False),('card',True),('card',False)):
+  time.sleep(0.4)
+  if mutate:
+   state=json.loads((root/'state').read_text()); state['sinks'][0]['ports'][1]['availability']='available'
+   (root/'state').write_text(json.dumps(state))
+  log('event '+name); print("Event 'change' on "+name+" #4",flush=True)
+ time.sleep(30)
+elif sys.argv[-2]=='list':
+ log('list'); print(json.dumps(json.loads((root/'state').read_text())[sys.argv[-1]]))
+else: raise SystemExit('Unexpected mutation: '+str(sys.argv))
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'pactl').write_text(fake)
+            (root / 'pactl').chmod(0o755)
+            (root / 'state').write_text(json.dumps({'sinks': [SINK], 'cards': [CARD], 'sources': []}))
+            env = {**os.environ, 'PATH': str(root) + os.pathsep + os.environ['PATH'], 'FAKE_AUDIO': str(root),
+                   'XDG_CONFIG_HOME': str(root / 'config')}
+            worker = subprocess.Popen([sys.executable, '-B', str(DESKTOP / 'drawers/audio/backend.py'), 'watch'],
+                                      env=env, stdout=subprocess.PIPE, text=True)
+            try:
+                first, second = json.loads(worker.stdout.readline()), json.loads(worker.stdout.readline())
+                time.sleep(0.8)
+            finally:
+                worker.terminate()
+                output = worker.communicate(timeout=5)[0]
+            self.assertTrue(first['ok'] and second['ok'])
+            self.assertEqual([r['name'] for r in first['data']['outputs'][0]['routes']], ['speaker'])
+            self.assertEqual([r['name'] for r in second['data']['outputs'][0]['routes']], ['speaker', 'jack'])
+            self.assertEqual(output, '', 'unchanged inventory was published again')
+            log = (root / 'log').read_text().split()
+            sink, card = log.index('sink'), log.index('card')
+            self.assertEqual(log[:sink - 1], ['list'] * 3)
+            self.assertEqual(log[sink + 1:card - 1], ['list'] * 3, 'endpoint changes must re-read ports')
+            self.assertEqual(log.count('list'), 12)
+            subscriber = int((root / 'subscriber').read_text())
+            time.sleep(0.2)
+            with self.assertRaises(ProcessLookupError):
+                os.kill(subscriber, 0)
 
     def test_output_inventory_groups_shared_ports_and_independent_sinks(self):
         jack = dict(SINK['ports'][1], availability='available')
@@ -112,35 +159,12 @@ class AudioBackendTests(unittest.TestCase):
         second = dict(SINK, name='second', index=8)
         virtual = dict(SINK, name='virtual', index=10, properties={}, ports=[])
         config = dict(rules=CONFIG['rules'] + [dict(match={'device.name': 'card'}, label='Laptop audio', deviceLabel='Laptop audio device')])
-        outputs, devices = backend.output_inventory([first, second, virtual], [CARD], config, 'second')
+        outputs, devices = backend.output_inventory([first, second, virtual], [CARD], config)
         self.assertEqual(len(outputs), 3)
         self.assertEqual(len(devices), 2)
         self.assertEqual({r['name'] for r in next(o for o in outputs if o['name']=='laptop')['routes']}, {'speaker', 'jack'})
-        self.assertEqual(sum(o['selected'] for o in outputs), 1)
-        self.assertTrue(next(o for o in outputs if o['name']=='second')['selected'])
         self.assertEqual(next(d for d in devices if d['key']=='card')['label'], 'Laptop audio device')
         self.assertEqual(next(d for d in devices if d['key']=='virtual')['profiles'], [])
-
-    def test_disabling_boost_caps_only_that_device_and_its_streams_without_unmuting(self):
-        boosted = dict(SINK, mute=True, volume={'left': {'value': 98304}, 'right': {'value': 49152}})
-        other = dict(boosted, name='display', index=8, properties={'device.name': 'other'})
-        owned_second = dict(boosted, name='second', index=11)
-        app = dict(STREAM, volume={'left': {'value': 81920}, 'right': {'value': 40960}})
-        other_app = dict(app, index=24, sink=8)
-        second_app = dict(app, index=25, sink=11)
-        data = {'cards': [CARD], 'sinks': [boosted, other, owned_second], 'sink-inputs': [app, other_app, second_app]}
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), \
-                patch.object(backend, 'read', side_effect=lambda kind: data[kind]), patch.object(backend, 'command') as command:
-            backend.control(dict(op='output-boost', device='card', enabled=False))
-            self.assertEqual([c.args for c in command.call_args_list], [
-                ('set-sink-volume', 'laptop', 65536, 32768), ('set-sink-volume', 'second', 65536, 32768),
-                ('set-sink-input-volume', 23, 65536, 32768), ('set-sink-input-volume', 25, 65536, 32768)])
-            command.reset_mock()
-            backend.control(dict(op='output-boost', device='card', enabled=True))
-            command.assert_not_called()
-            for request in (dict(op='output-boost', device='gone', enabled=False), dict(op='output-boost', device='card', enabled='no')):
-                with self.assertRaises(ValueError): backend.control(request)
-            command.assert_not_called()
 
     def test_changing_connection_applies_route_cap_and_keeps_default_and_mute(self):
         sink = dict(SINK, mute=True, volume={'left': {'value': 65536}},
@@ -160,7 +184,7 @@ class AudioBackendTests(unittest.TestCase):
             self.assertEqual([c.args for c in command.call_args_list], [
                 ('set-sink-volume', 'laptop', int(85 * 65536 / 100)), ('set-sink-port', 'laptop', 'jack'),
                 ('set-sink-volume', 'laptop', int(85 * 65536 / 100)), ('set-sink-mute', 'laptop', '1')])
-            self.assertLessEqual(backend.gain(sink), 85)
+            self.assertLessEqual(backend.volume(sink), 85)
             self.assertTrue(sink['mute'])
 
     def test_route_waits_for_delayed_policy_restoration(self):
@@ -186,27 +210,6 @@ class AudioBackendTests(unittest.TestCase):
                 patch.object(backend.time, 'monotonic', side_effect=[0, 3]):
             with self.assertRaisesRegex(ValueError, 'did not finish'):
                 backend.select_port('sink', SINK, 'jack')
-
-    def test_external_boosted_gain_can_be_lowered_without_allowing_further_increase(self):
-        sink = dict(SINK, volume={'left': {'value': 81920}})
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), \
-                patch.object(backend, 'read', return_value=[sink]), patch.object(backend, 'command') as command:
-            backend.control(dict(op='volume', name='laptop', value=120, boost=False))
-            command.assert_called_once_with('set-sink-volume', 'laptop', '120%')
-            command.reset_mock()
-            with self.assertRaises(ValueError): backend.control(dict(op='volume', name='laptop', value=126, boost=False))
-            command.assert_not_called()
-
-    def test_moving_boosted_app_to_normal_device_caps_only_the_moved_stream(self):
-        app = dict(STREAM, volume={'left': {'value': 81920}})
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), \
-                patch.object(backend, 'read', side_effect=lambda kind: [app] if kind=='sink-inputs' else [SINK]), patch.object(backend, 'command') as command:
-            backend.control(dict(op='move', kind='stream', index=23, token='100', destination='laptop', boost=False))
-            self.assertEqual([c.args for c in command.call_args_list], [
-                ('set-sink-input-volume', 23, 65536), ('move-sink-input', '23', 'laptop')])
-            command.reset_mock()
-            backend.control(dict(op='move', kind='stream', index=23, token='100', destination='laptop', boost=True))
-            command.assert_called_once_with('move-sink-input', '23', 'laptop')
 
     def test_profile_reduction_does_not_overlay_two_outputs_or_their_apps(self):
         card = dict(CARD, active_profile='pro-audio', profiles={
@@ -301,7 +304,6 @@ class MicrophoneBackendTests(unittest.TestCase):
             state = backend.snapshot()
             self.assertEqual(len(state['inputs']), 1)
             self.assertEqual(state['inputs'][0]['icon'], 'mic')
-            self.assertTrue(state['inputs'][0]['muted'])
             self.assertTrue(state['inputDevices'][0]['canToggle'])
             self.card['active_profile'] = 'pro-audio'
             state = backend.snapshot()
@@ -315,15 +317,13 @@ class MicrophoneBackendTests(unittest.TestCase):
         disconnected = dict(headset, name='missing', availability='not available')
         source = dict(self.source, ports=self.source['ports'] + [headset, disconnected])
         usb = dict(self.source, name='usb', index=10, properties={'media.class': 'Audio/Source'}, description='USB microphone', ports=[])
-        inputs, devices = backend.input_inventory([source, usb], [self.card], CONFIG, 'usb')
+        inputs, devices = backend.input_inventory([source, usb], [self.card], CONFIG)
         self.assertEqual(len(inputs), 2)
         shared = next(n for n in inputs if n['name'] == 'microphone')
         self.assertEqual({r['name'] for r in shared['routes']}, {'mic', 'headset-mic'})
-        self.assertEqual(sum(n['selected'] for n in inputs), 1)
-        self.assertTrue(next(n for n in inputs if n['name'] == 'usb')['selected'])
         self.assertEqual(len(devices), 2)
         second = dict(source, name='second-channel', index=11)
-        inputs, devices = backend.input_inventory([source, second], [self.card], CONFIG, 'microphone')
+        inputs, devices = backend.input_inventory([source, second], [self.card], CONFIG)
         self.assertEqual(len(inputs), 2)
         self.assertEqual(len(devices), 1)
         self.assertEqual({n['deviceKey'] for n in inputs}, {'card'})
@@ -333,19 +333,19 @@ class MicrophoneBackendTests(unittest.TestCase):
             'a2dp-sink': dict(sinks=1, sources=0),
             'headset-head-unit': dict(sinks=1, sources=1),
             'off': dict(sinks=0, sources=0)})
-        inputs, devices = backend.input_inventory([], [card], CONFIG, '')
+        inputs, devices = backend.input_inventory([], [card], CONFIG)
         self.assertEqual(inputs, [])
         self.assertTrue(devices[0]['available'])
         self.assertFalse(devices[0]['enabled'] or devices[0]['canToggle'])
         self.assertIn('playback mode', devices[0]['toggleReason'])
         card['active_profile'] = 'headset-head-unit'
         source = dict(self.source, name='bluetooth-input', properties={'device.name': 'bluetooth'}, ports=[])
-        inputs, devices = backend.input_inventory([source], [card], CONFIG, 'bluetooth-input')
+        inputs, devices = backend.input_inventory([source], [card], CONFIG)
         self.assertTrue(devices[0]['enabled'])
         self.assertFalse(devices[0]['canToggle'])
-        self.assertTrue(inputs[0]['selected'])
+        self.assertEqual(inputs[0]['deviceKey'], 'bluetooth')
 
-    def test_default_and_connection_actions_do_not_reroute_other_recordings(self):
+    def test_connection_action_keeps_mute_and_does_not_reroute_recordings(self):
         port = dict(name='headset-mic', availability='available')
         source = dict(self.source, ports=self.source['ports'] + [port])
         def mutate(*args):
@@ -355,48 +355,14 @@ class MicrophoneBackendTests(unittest.TestCase):
                 source['mute'] = args[2] == '1'
         with patch.object(backend, 'load_config', return_value=(CONFIG, '')), \
                 patch.object(backend, 'read', return_value=[source]), patch.object(backend, 'command', side_effect=mutate) as command:
-            backend.control(dict(op='input-default', name='microphone'))
-            command.assert_called_once_with('set-default-source', 'microphone')
-            command.reset_mock()
             backend.control(dict(op='input-port', name='microphone', port='headset-mic'))
             self.assertEqual([c.args for c in command.call_args_list], [
                 ('set-source-port', 'microphone', 'headset-mic'), ('set-source-mute', 'microphone', '1')])
             self.assertTrue(source['mute'])
             command.reset_mock()
-            for request in (dict(op='input-default', name='gone'), dict(op='input-port', name='microphone', port='missing')):
+            for request in (dict(op='input-port', name='gone', port='mic'), dict(op='input-port', name='microphone', port='missing')):
                 with self.assertRaises(ValueError): backend.control(request)
             command.assert_not_called()
-
-    def test_app_recording_route_validates_serial_and_moves_only_that_stream(self):
-        recording = dict(STREAM, source=9)
-        second = dict(recording, index=24, properties={'object.serial': '101'})
-        usb = dict(self.source, name='usb', index=10)
-        monitor = dict(usb, name='display.monitor')
-        data = {'source-outputs': [recording, second], 'sources': [self.source, usb, monitor]}
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), \
-                patch.object(backend, 'read', side_effect=lambda kind: data[kind]), patch.object(backend, 'command') as command:
-            backend.control(dict(op='move', kind='recording', index=23, token='100', destination='usb'))
-            command.assert_called_once_with('move-source-output', '23', 'usb')
-            command.reset_mock()
-            for token, destination in [('99', 'usb'), ('100', 'gone'), ('100', 'display.monitor')]:
-                with self.assertRaises(ValueError):
-                    backend.control(dict(op='move', kind='recording', index=23, token=token, destination=destination))
-            command.assert_not_called()
-
-    def test_microphone_power_is_only_mute_and_gain_never_unmutes(self):
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), \
-                patch.object(backend, 'read', return_value=[self.source]), patch.object(backend, 'command') as command:
-            backend.control(dict(op='mute', kind='source', name='microphone', muted=False))
-            command.assert_called_once_with('set-source-mute', 'microphone', '0')
-            command.reset_mock()
-            backend.control(dict(op='mute', kind='source', name='microphone', muted=True))
-            command.assert_called_once_with('set-source-mute', 'microphone', '1')
-            command.reset_mock()
-            backend.control(dict(op='volume', kind='source', name='microphone', value=65))
-            command.assert_called_once_with('set-source-volume', 'microphone', '65%')
-            for value in (101, -1, True):
-                with self.assertRaises(ValueError):
-                    backend.control(dict(op='volume', kind='source', name='microphone', value=value, boost=True))
 
     def test_enabling_input_selects_matching_profile_without_silently_changing_layout(self):
         reads = {'cards': [self.card], 'source-outputs': []}
@@ -597,8 +563,8 @@ class AudioConfigurationTests(unittest.TestCase):
             self.assertIn('pro-audio', audio['profiles'])
             self.assertFalse(any(e['target'] == 'home/.config/quickshell/desktop/audio.json'
                                  for kind in ('files', 'symlinks') for e in config['extra'][kind]))
-            command = next(c for c in config['custom_commands'] if '--run modules/desktop/quickshell ' in c)
-            self.assertNotIn('audio.json', command)
+            hooks = [repo / s for s in config['extra']['scripts'] if s.startswith('modules/desktop/quickshell/')]
+            self.assertFalse(any('audio.json' in hook.read_text() for hook in hooks))
 
             # Exercise real merged aliases against profile-dependent node names.
             laptop = {'properties': {'device.name': 'alsa_card.pci-0000_07_00.6'}}
@@ -683,6 +649,59 @@ class AudioConfigurationTests(unittest.TestCase):
             self.assertIn('20-broken.json', warning)
 
 
+def stream(key, **values):
+    """A native stream record as AudioService publishes it, minus its PwNode."""
+    return dict(dict(key=key, serial=int(key), label='<Music & sound>', detail='Track', icon='', applicationId='',
+                     applicationBinary='test-player', target='laptop', active=True), **values)
+
+
+# Stand-in for AudioService: native nodes are QtObjects with the PwNode/PwNodeAudio
+# properties the drawers read, and every mutation is recorded.
+FAKE_SERVICE = r'''
+ QtObject {
+  id: fake
+  property bool observing: false
+  property bool loaded: true
+  property bool busy: false
+  property string error: ""
+  property var state: STATE
+  property var calls: []
+  property var boosts: ({})
+  property string defaultSink: ""
+  property string defaultSource: ""
+  property var nodes: ({})
+  property var streams: []
+  property var recordings: []
+  property Component nodeType: Component {
+   QtObject {
+    property string name
+    property bool isSink: true
+    property QtObject audio: QtObject { property real volume: 0.5; property bool muted: false }
+   }
+  }
+  function node(name, values) {
+   if (nodes[name]) return nodes[name];
+   const result = nodeType.createObject(fake, {name, isSink: values?.isSink ?? true});
+   result.audio.volume = values?.volume ?? 0.5; result.audio.muted = values?.muted ?? false;
+   nodes = Object.assign({}, nodes, {[name]: result});
+   return result;
+  }
+  function attach(records, isSink) { return records.map(record => Object.assign({}, record, {node: node("app:" + record.key, {isSink})})); }
+  function record(op, values) { calls = calls.concat([{op, values}]); }
+  function observe(owner, active) { observing = active; }
+  function run(op, values) { record(op, values); }
+  function refresh() {}
+  function level(node) { return Math.round((node?.audio?.volume ?? 0) * 100); }
+  function setLevel(node, value) { node.audio.volume = value / 100; record("level", {name: node.name, value}); }
+  function setMuted(node, muted) { node.audio.muted = muted; record("mute", {name: node.name, muted}); }
+  function setDefault(node) { if (node.isSink) defaultSink = node.name; else defaultSource = node.name; record("default", {name: node.name}); }
+  function boostFor(device) { return !!boosts[device]; }
+  function setBoost(device, enabled) { boosts = Object.assign({}, boosts, {[device]: enabled}); record("boost", {device, enabled}); }
+  function move(stream, destination) { record("move", {key: stream.key, destination: destination.name}); }
+ }
+'''
+
+
 @unittest.skipUnless(QS, 'Quickshell is required')
 class AudioDrawerTests(unittest.TestCase):
     def run_qml(self, qml, setup=None):
@@ -703,6 +722,8 @@ class AudioDrawerTests(unittest.TestCase):
                    'XDG_RUNTIME_DIR': str(runtime) if platform == 'offscreen' else os.environ['XDG_RUNTIME_DIR']}
             for key in (('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE') if platform == 'offscreen' else ('HYPRLAND_INSTANCE_SIGNATURE',)):
                 env.pop(key, None)
+            # Native PipeWire objects are stand-ins; never connect to the host server.
+            env.update(PIPEWIRE_REMOTE='audio-tests-offline', PIPEWIRE_RUNTIME_DIR=str(runtime))
             result = subprocess.run([QS, '--no-color', '-p', str(root / 'shell.qml')], env=env, text=True, capture_output=True, timeout=20)
         log = result.stdout + result.stderr
         if os.environ.get('AUDIO_PREVIEW_PLATFORM'):
@@ -712,66 +733,77 @@ class AudioDrawerTests(unittest.TestCase):
         for error in ('AUDIO_FAIL', 'TypeError', 'ReferenceError', 'Binding loop', 'Unable to assign', 'polish() loop', 'Polish loop', 'Failed to load'):
             self.assertNotIn(error, log)
 
-    def test_service_serializes_slider_changes_and_finishes_after_dismissal(self):
+    def test_service_watches_inventory_runs_helper_actions_and_scales_native_levels(self):
         def setup(root):
-            service = root / 'drawers/audio/AudioService.qml'
-            source = service.read_text().replace('Qt.resolvedUrl("backend.py")', 'Qt.resolvedUrl("fake.py")')
-            source = source.replace('command: ["pactl", "subscribe"]', 'command: ["python3", "-c", "import time; time.sleep(10)"]')
-            service.write_text(source)
-            (root / 'drawers/audio/fake.py').write_text('''import json,sys,time
+            (root / 'drawers/audio/backend.py').write_text(r'''import json,signal,sys,time
 from pathlib import Path
-request=json.loads(sys.stdin.readline())
-with (Path(__file__).parent / 'requests.jsonl').open('a') as log:
- log.write(json.dumps(request)+'\\n')
-time.sleep(0.15)
-if request['op'] == 'fail' or (request['op'] == 'output-boost' and not request['enabled']): print(json.dumps({'ok': False, 'error': 'Device disconnected'}))
-else: print(json.dumps({'ok': True, 'data': {'available': True, 'outputs': [], 'streams': [], 'warning': '', 'last': request}}))
+root=Path(__file__).parent
+if sys.argv[1:]==['watch']:
+ signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+ starts=root/'starts'; count=len(starts.read_text()) + 1 if starts.exists() else 1
+ starts.write_text('x'*count)
+ print(json.dumps({'ok':True,'data':{'available':True,'outputs':[{'name':'laptop','deviceKey':'card','maxVolume':85}],'outputDevices':[],'inputs':[],'inputDevices':[],'warning':'','starts':count}}),flush=True)
+ if count == 2: time.sleep(0.2); print(json.dumps({'ok':False,'error':'Audio service unavailable'}),flush=True)
+ time.sleep(30)
+else:
+ request=json.loads(sys.stdin.readline())
+ time.sleep(0.15)
+ print(json.dumps({'ok': request['op'] != 'fail', 'error': 'Device disconnected', 'echo': request}),flush=True)
 ''')
 
         self.run_qml(r'''import QtQuick
 import Quickshell
 import "drawers/audio"
 ShellRoot {
+ component Node: QtObject {
+  property string name: "node"
+  property bool isSink: true
+  property QtObject audio: QtObject { property var volumes: [0.4, 0.8]; property real volume: 0.6; property bool muted: false }
+ }
+ Node { id: sink }
+ Node { id: app; name: "app" }
  property int stage: 0
  function check(value, message) { if (!value) throw new Error(message); }
+ function near(values, expected) { return values.length === expected.length && values.every((value, i) => Math.abs(value - expected[i]) < 1e-6); }
  Timer { interval: 60; repeat: true; running: true; onTriggered: {
   try {
    if (stage === 0) {
-    check(!AudioService.loaded && !AudioService.request, "audio started before observation");
+    check(!AudioService.loaded && !AudioService.watcher.running, "inventory started before observation");
     const first = {}, second = {};
-    AudioService.observe(first, true); AudioService.observe(second, true);
-    AudioService.observe(first, false);
-    check(AudioService.observing, "closing old drawer stopped the new drawer observer");
-    AudioService.observe(second, false);
-    check(!AudioService.observing, "last observer did not stop observation");
-    AudioService.observing = true;
-    AudioService.run("volume", {name: "laptop", value: 10});
-    AudioService.run("volume", {name: "laptop", value: 20});
-    AudioService.run("volume", {name: "laptop", value: 30});
-    check(AudioService.queue.length === 1 && AudioService.queue[0].value === 30, "slider queue not coalesced");
-    AudioService.run("mute", {name: "laptop", muted: true});
-    check(AudioService.queue.length === 2, "mute ordering lost");
-    AudioService.subscription.running = false;
-    AudioService.recovery.triggered();
-    check(AudioService.subscription.running, "subscription did not recover");
-    AudioService.observing = false;
+    AudioService.observe(first, true); AudioService.observe(second, true); AudioService.observe(first, false);
+    check(AudioService.observing && AudioService.watcher.running, "closing an old drawer stopped the new observer");
     stage++;
-   } else if (stage === 1 && !AudioService.request && !AudioService.queue.length) {
-    check(AudioService.state.last.op === "mute", "dismissal cancelled accepted action");
-    check(!AudioService.observing, "observation restarted");
-    check(!AudioService.subscription.running, "recovered subscription survived dismissal");
+   } else if (stage === 1 && AudioService.state.starts === 1) {
+    check(AudioService.level(sink) === 80, "level is not the loudest channel");
+    AudioService.setLevel(sink, 40);
+    check(near(sink.audio.volumes, [0.2, 0.4]), "level change lost channel balance");
+    AudioService.cap(sink, 50); check(near(sink.audio.volumes, [0.2, 0.4]), "cap raised a quieter level");
+    AudioService.cap(sink, 30); check(near(sink.audio.volumes, [0.15, 0.3]), "cap did not lower the level");
+    AudioService.setMuted(sink, true); check(sink.audio.muted && AudioService.level(sink) === 30, "mute changed level");
+    app.audio.volumes = [1.2];
+    AudioService.move({key: "100", serial: 100, node: app}, {name: "laptop", deviceKey: "card"});
+    check(near(app.audio.volumes, [1]), "moving a boosted app did not cap it for the destination");
+    check(AudioService.busy && AudioService.worker.running, "move did not start the helper");
+    AudioService.run("fail");
+    check(AudioService.queue.length === 1 && AudioService.queue[0].op === "fail", "actions are not serialized");
     AudioService.setBoost("card", true);
-    check(!AudioService.boostFor("card") && AudioService.boostPending("card") && !AudioService.boostPending("other"), "boost changed before backend confirmation or pending scope lost");
+    check(AudioService.boostFor("card") && !AudioService.boostFor("other"), "boost scope");
+    app.audio.volumes = [1.2];
+    AudioService.move({key: "100", serial: 100, node: app}, {name: "laptop", deviceKey: "card"});
+    check(near(app.audio.volumes, [1.2]), "boosted destination capped the app");
+    AudioService.setBoost("card", false);
+    check(!AudioService.boostFor("card"), "boost not cleared");
     stage++;
-   } else if (stage === 2 && !AudioService.request && !AudioService.queue.length) {
-    check(AudioService.boostFor("card") && !AudioService.boostFor("other") && !AudioService.boostPending("card"), "boost preference scope/pending state lost");
-    check(JSON.parse(AudioService.preferences.value("boostDevices", "{}")).card, "boost preference not persisted");
-    AudioService.observing = true;
-    AudioService.setBoost("card", false); stage++;
-   } else if (stage === 3 && AudioService.error && !AudioService.request && !AudioService.queue.length) {
-    check(AudioService.boostFor("card"), "failed boost disable changed confirmed preference");
-    check(AudioService.error === "Device disconnected", "refresh erased action error");
-    check(AudioService.state.last.op === "status", "failed action did not refresh inventory");
+   } else if (stage === 2 && !AudioService.busy && !AudioService.queue.length) {
+    check(AudioService.error === "Device disconnected", "action error lost: " + AudioService.error);
+    AudioService.refresh();
+    check(AudioService.error === "", "refresh kept the stale error");
+    stage++;
+   } else if (stage === 3 && AudioService.readFailed) {
+    check(AudioService.error === "Audio service unavailable" && !AudioService.state.available, "inventory failure not reported");
+    AudioService.observers = [];
+    stage++;
+   } else if (stage === 4 && !AudioService.watcher.running) {
     console.log("AUDIO_PASS"); Qt.quit();
    }
   } catch (error) { console.error("AUDIO_FAIL", error.message); Qt.quit(); }
@@ -779,39 +811,34 @@ ShellRoot {
 }
 ''', setup)
 
-    def test_boost_preferences_migrate_to_device_overrides(self):
-        for legacy in ('true', 'false'):
-            def setup(root):
-                (root / 'config/quickshell/desktop/audio.ini').write_text('[Playback]\nboost=' + legacy + '\n')
-            self.run_qml(r'''import QtQuick
+    def test_boost_preferences_are_per_device_without_global_fallback(self):
+        def setup(root):
+            (root / 'config/quickshell/desktop/audio.ini').write_text(
+                '[Playback]\nboost=true\nboostDevices="{\\"*\\": true, \\"card\\": true, \\"other\\": \\"true\\"}"\n')
+        self.run_qml(r'''import QtQuick
 import Quickshell
 import "drawers/audio"
 ShellRoot {
  Timer { interval: 100; running: true; onTriggered: {
   try {
-   const inherited = LEGACY;
-   if (AudioService.boostFor("card") !== inherited || AudioService.boostFor("other") !== inherited) throw new Error("legacy boost preference not inherited");
-   AudioService.rememberBoost("card", !inherited);
-   const saved = JSON.parse(AudioService.preferences.value("boostDevices", "{}"));
-   if (AudioService.boostFor("card") !== !inherited || AudioService.boostFor("other") !== inherited || saved.card !== !inherited || saved["*"] !== inherited) throw new Error("device override discarded legacy defaults");
+   if (!AudioService.boostFor("card") || AudioService.boostFor("other") || AudioService.boostFor("display")) throw new Error("boost preferences not per device");
    console.log("AUDIO_PASS"); Qt.quit();
   } catch (error) { console.error("AUDIO_FAIL", error.message); Qt.quit(); }
  } }
 }
-'''.replace('LEGACY', legacy), setup)
+''', setup)
 
     def test_microphone_independent_controls_routes_default_and_lifetime(self):
         device = dict(key='card', card='card', profile='output:analog-stereo', label='Laptop microphones', port='mic',
                       enabled=False, available=True, canToggle=True, toggleReason='')
         usb_device = dict(device, key='usb-card', card='usb-card', label='USB audio', enabled=True, port='')
-        usb = dict(key='usb', name='usb', index=10, deviceKey='usb-card', port='', portLabel='',
-                   available=True, selected=True, volume=70, muted=False, label='USB microphone', icon='mic', routes=[])
-        builtin = dict(usb, key='microphone', name='microphone', index=9, deviceKey='card', port='mic',
-                       selected=False, volume=55, muted=True, label='Built-in microphone',
+        usb = dict(key='usb', name='usb', deviceKey='usb-card', port='', portLabel='', maxVolume=150,
+                   available=True, label='USB microphone', icon='mic', routes=[])
+        builtin = dict(usb, key='microphone', name='microphone', deviceKey='card', port='mic', label='Built-in microphone',
                        routes=[dict(name='mic', label='Built-in microphone', selected=True),
                                dict(name='headset', label='Headset microphone', selected=False)])
         device['inputSlots'] = [dict(key='card/input/0', label=builtin['label'], routes=builtin['routes'])]
-        state = dict(available=True, inputDevices=[device, usb_device], inputs=[usb], outputs=[], streams=[], recordings=[], warning='')
+        state = dict(available=True, inputDevices=[device, usb_device], inputs=[usb], outputs=[], outputDevices=[], warning='')
         self.run_qml(r'''import QtQuick
 import QtTest
 import Quickshell
@@ -820,19 +847,7 @@ import "ui" as UI
 FloatingWindow {
  id: window
  implicitWidth: 480; implicitHeight: 720; color: UI.Theme.background
- QtObject {
-  id: fake
-  property bool observing: false
-  property bool loaded: true
-  property bool busy: false
-  property string error: ""
-  property var state: STATE
-  property var calls: []
-  function observe(owner, active) { observing = active; }
-  function run(op, values) { calls = calls.concat([{op, values}]); }
-  function refresh() {}
- }
- MicrophoneDrawer { id: drawer; width: 448; height: 688; x: 16; y: 16; service: fake; active: true
+FAKE_SERVICE MicrophoneDrawer { id: drawer; width: 448; height: 688; x: 16; y: 16; service: fake; active: true
   Rectangle { anchors.fill: parent; color: UI.Theme.background; z: -1 }
  }
  TestCase { id: input; when: false; parent: window.contentItem }
@@ -857,7 +872,9 @@ FloatingWindow {
    const mute = find(drawer, "inputVolume:microphone:mute");
    const usbSlider = find(drawer, "inputVolume:usb:slider");
    if (stage === 0) {
+    fake.node("usb", {isSink: false, volume: 0.7}); fake.defaultSource = "usb";
     check(fake.observing && enabled.enabled && !enabled.checked && usbSlider.enabled, "disabled card blocked an independent microphone");
+    check(!find(drawer, "microphoneInputsEmpty").visible && find(drawer, "recordingAppsEmpty").visible, "empty notes do not follow rows");
     check(!find(drawer, "inputState:card/input/0").visible && !find(drawer, "inputState:usb").visible, "routine microphone status remains");
     const marker = find(drawer, "inputDefault:usb");
     check(marker.checked && marker.iconColor.toString() === UI.Theme.accent.toString() && marker.background.color.a === 0 && marker.background.border.color.a === 0, "default microphone marker is not plain at rest");
@@ -877,23 +894,24 @@ FloatingWindow {
     check(!enabled.checked, "hardware enabled before confirmation");
     capture("microphone-off.png");
     fake.state = Object.assign({}, fake.state, {inputDevices: fake.state.inputDevices.map(n => n.key === "card" ? Object.assign({}, n, {enabled: true, profile: "output:analog-stereo+input:analog-stereo"}) : n),
-      inputs: fake.state.inputs.concat([BUILTIN]),
-      recordings: [{key: "24:101", index: 24, token: "101", label: "Voice call", icon: "", source: 9, muted: false, recording: true}]});
+      inputs: fake.state.inputs.concat([BUILTIN])});
+    fake.node("microphone", {isSink: false, volume: 0.55, muted: true});
+    fake.recordings = fake.attach([{key: "101", serial: 101, label: "Voice call", icon: "", target: "microphone", active: true}], false);
    } else if (stage === 1) {
     check(Math.abs(find(drawer, "inputDevice:card").height - singleHeight) < 1, "single-input card jumped when enabled");
     check(enabled.mapToItem(drawer, 0, 0).y < slider.mapToItem(drawer, 0, 0).y, "single-input switch is not in device header");
     check(enabled.checked && !slider.enabled && slider.visible && mute.enabled && usbSlider.enabled && mute.iconName === "mic-off", "independent microphone controls missing");
     check(find(drawer, "inputDefault:usb").checked && !find(drawer, "inputDefault:microphone").checked, "enabling stole default");
     click(mute);
-    check(last().op === "mute" && last().values.kind === "source" && last().values.name === "microphone" && !last().values.muted, "unmute changed default or targeted wrong microphone");
-    fake.state = Object.assign({}, fake.state, {inputs: fake.state.inputs.map(n => n.name === "microphone" ? Object.assign({}, n, {muted: false}) : n)});
+    check(last().op === "mute" && last().values.name === "microphone" && !last().values.muted && fake.defaultSource === "usb", "unmute changed default or targeted wrong microphone");
     check(slider.enabled, "unmuting did not enable gain");
     slider.forceActiveFocus(); input.keyClick(Qt.Key_Right);
-    check(last().op === "volume" && last().values.name === "microphone", "nondefault source gain dispatch");
+    check(last().op === "level" && last().values.name === "microphone" && last().values.value === 56, "nondefault source gain dispatch");
     savedInput = find(drawer, "audioInput:microphone"); savedSlider = slider;
-    fake.state = Object.assign({}, fake.state, {inputs: fake.state.inputs.map(n => n.name === "microphone" ? Object.assign({}, n, {muted: false, volume: 60}) : n)});
+    fake.nodes.microphone.audio.volume = 0.6;
+    fake.state = Object.assign({}, fake.state, {inputs: fake.state.inputs.map(n => Object.assign({}, n))});
    } else if (stage === 2) {
-    check(find(drawer, "audioInput:microphone") === savedInput && slider === savedSlider && slider.activeFocus, "refresh recreated microphone/focus");
+    check(find(drawer, "audioInput:microphone") === savedInput && slider === savedSlider && slider.activeFocus && slider.value === 60, "refresh recreated microphone/focus or missed native level");
     check(find(drawer, "inputState:microphone").text === "In use" && !find(drawer, "inputState:usb").visible, "activity confused with default");
     check(find(drawer, "inputConnection:microphone").visible, "shared input connections not grouped");
     const connection = find(drawer, "inputConnection:microphone");
@@ -901,34 +919,34 @@ FloatingWindow {
     check(connection.currentIndex === 0, "connection changed before confirmation");
     check(last().op === "input-port" && last().values.port === "headset" && last().values.name === "microphone", "connection switch changed default or wrong input");
     click(find(drawer, "inputDefault:microphone"));
-    check(last().op === "input-default" && last().values.name === "microphone", "default selection missing");
-    fake.state = Object.assign({}, fake.state, {inputs: fake.state.inputs.map(n => Object.assign({}, n, {selected: n.name === "microphone"}))});
+    check(last().op === "default" && last().values.name === "microphone", "default selection missing");
     capture("microphone-on.png");
    } else if (stage === 3) {
     check(find(drawer, "inputDefault:microphone").checked && !find(drawer, "inputDefault:usb").checked && slider === savedSlider, "default marker/independent control identity");
-    const route = find(drawer, "recordingInput:24:101");
+    const route = find(drawer, "recordingInput:101");
     check(route.displayText === "Built-in microphone" && route.count === 2, "recording destination list missing");
     route.currentIndex = drawer.destinations.findIndex(n => n.name === "usb");
     route.activated(route.currentIndex);
-    check(route.currentIndex === drawer.destinations.findIndex(n => n.index === 9), "app route changed before confirmation");
-    check(last().op === "move" && last().values.kind === "recording" && last().values.index === 24 && last().values.token === "101" && last().values.destination === "usb", "per-app routing lost stream identity");
-    fake.state = Object.assign({}, fake.state, {recordings: fake.state.recordings.map(n => Object.assign({}, n, {source: 10}))});
+    check(route.currentIndex === drawer.destinations.findIndex(n => n.name === "microphone"), "app route changed before confirmation");
+    check(last().op === "move" && last().values.key === "101" && last().values.destination === "usb", "per-app routing lost stream identity");
+    fake.recordings = fake.recordings.map(n => Object.assign({}, n, {target: "usb"}));
    } else if (stage === 4) {
-    check(find(drawer, "recordingInput:24:101").displayText === "USB microphone", "app route did not update");
+    check(find(drawer, "recordingInput:101").displayText === "USB microphone" && !find(drawer, "inputState:microphone").visible, "app route did not update");
     enabled.forceActiveFocus(); input.keyClick(Qt.Key_Space);
     check(last().op === "input-enabled" && !last().values.enabled && enabled.checked, "disable action/profile confirmation");
     fake.error = "Profile change failed";
    } else if (stage === 5) {
     check(enabled.checked && slider.enabled, "failed hardware change left UI disabled");
-    fake.state = Object.assign({}, fake.state, {inputs: fake.state.inputs.map(n => n.name === "microphone" ? Object.assign({}, n, {muted: true}) : n)});
+    fake.nodes.microphone.audio.muted = true;
     check(!slider.enabled && slider.visible && mute.enabled && usbSlider.enabled, "mute did not disable only its gain slider");
     fake.error = ""; fake.state = STATE;
    } else if (stage === 6) {
     check(!enabled.checked && slider && !slider.enabled && usbSlider.enabled && slider === savedSlider, "disabling removed the retained slider or affected another device");
     check(Math.abs(find(drawer, "inputDevice:card").height - singleHeight) < 1, "single-input card jumped when disabled");
     check(!find(drawer, "inputDefault:microphone").enabled && !find(drawer, "inputConnection:microphone").enabled, "disabled input retained live routing actions");
-    const second = Object.assign({}, BUILTIN, {key: "second", name: "second", index: 11, label: "Second channel", routes: [], port: "", muted: false});
-    fake.state = Object.assign({}, fake.state, {inputs: fake.state.inputs.concat([Object.assign({}, BUILTIN, {muted: false}), second]),
+    const second = Object.assign({}, BUILTIN, {key: "second", name: "second", label: "Second channel", routes: [], port: ""});
+    fake.node("second", {isSink: false}); fake.nodes.microphone.audio.muted = false;
+    fake.state = Object.assign({}, fake.state, {inputs: fake.state.inputs.concat([BUILTIN, second]),
       inputDevices: fake.state.inputDevices.map(n => n.key === "card" ? Object.assign({}, n, {enabled: true, canToggle: false, toggleReason: "Changing microphone availability requires a different playback mode."}) : n)});
    } else if (stage === 7) {
     check(find(drawer, "inputVolume:second:slider").enabled && slider.enabled && !enabled.enabled, "multiple sources on one card share a misleading slider/switch");
@@ -952,7 +970,7 @@ FloatingWindow {
     fake.state = Object.assign({}, fake.state, {inputDevices: [STATE.inputDevices[1]]});
    } else if (stage === 10) {
     check(!enabled && !slider && usbSlider.enabled, "unplug removed unrelated microphone or retained stale controls");
-    fake.state = Object.assign({}, fake.state, {inputs: [], inputDevices: [], recordings: []});
+    fake.state = Object.assign({}, fake.state, {inputs: [], inputDevices: []}); fake.recordings = [];
    } else if (stage === 11) {
     check(find(drawer, "microphoneInputsEmpty").visible && find(drawer, "recordingAppsEmpty").visible, "empty state missing");
     capture("microphone-empty.png");
@@ -969,7 +987,7 @@ FloatingWindow {
   } catch (error) { console.error("AUDIO_FAIL", error.message); Qt.quit(); }
  } }
 }
-'''.replace('STATE', json.dumps(state)).replace('BUILTIN', json.dumps(builtin)))
+'''.replace('FAKE_SERVICE', FAKE_SERVICE).replace('STATE', json.dumps(state)).replace('BUILTIN', json.dumps(builtin)))
 
     def test_status_icon_volume_mute_boost_and_theme(self):
         def setup(root):
@@ -1000,7 +1018,7 @@ FloatingWindow {
  property int stage: 0
  Timer { interval: 100; running: true; repeat: true; onTriggered: {
   try {
-   const icon = button.contentItem.children[0];
+   const icon = Array.from(button.contentItem.children[0].children).find(child => child.objectName === "soundIcon");
    if (stage === 0) {
    for (const [level, name] of [[0, "volume"], [0.2, "volume-1"], [0.5, "volume-1"], [0.51, "volume-2"], [1, "volume-2"], [1.25, "volume-2"]]) {
     audio.volume = level;
@@ -1039,10 +1057,9 @@ FloatingWindow {
 ''', setup)
 
     def test_media_association_and_menu_order_after_inventory_changes(self):
-        outputs, devices = backend.output_inventory([SINK], [CARD], CONFIG, 'laptop')
-        first = dict(STREAM, properties={**STREAM['properties'], 'application.id': 'test.player'})
-        second = dict(STREAM, index=24, properties={'application.name': 'Browser', 'application.process.binary': 'browser', 'object.serial': '101'})
-        state = dict(available=True, outputs=outputs, outputDevices=devices, streams=backend.stream_records([first, second], 'sink'), warning='')
+        outputs, devices = backend.output_inventory([SINK], [CARD], CONFIG)
+        streams = [stream('100', applicationId='test.player'), stream('101', label='Browser', applicationBinary='browser')]
+        state = dict(available=True, outputs=outputs, outputDevices=devices, warning='')
         self.run_qml(r'''import QtQuick
 import QtTest
 import Quickshell
@@ -1050,20 +1067,7 @@ import "drawers"
 FloatingWindow {
  id: window
  implicitWidth: 480; implicitHeight: 1000
- QtObject {
-  id: fake
-  property bool loaded: true
-  property bool busy: false
-  property string error: ""
-  property var state: ({available:true, outputs:[], outputDevices:[], streams:[], warning:""})
-  function observe(owner, active) {}
-  function run(op, values) {}
-  function refresh() {}
-  function boostFor(device) { return false; }
-  function boostPending(device) { return false; }
-  function setBoost(device, enabled) {}
- }
- component Player: QtObject {
+FAKE_SERVICE component Player: QtObject {
   required property string dbusName
   required property string desktopEntry
   property string identity: "Player"
@@ -1108,10 +1112,10 @@ FloatingWindow {
    const browserName="audioPlayer:"+browser.dbusName;
    if (stage === 0) {
     // Devices arrive after page construction in production, not as initial data.
-    fake.state=STATE;
+    fake.state=STATE; fake.streams=fake.attach(STREAMS, true);
    } else if (stage === 1) {
     footer(2);
-    const firstApp=find(drawer,"appPlayback:23:100"), browserApp=find(drawer,"appPlayback:24:101");
+    const firstApp=find(drawer,"appPlayback:100"), browserApp=find(drawer,"appPlayback:101");
     check(find(firstApp,firstName) && find(browserApp,browserName) && !playback.visible,"independent apps did not receive their own player");
     click(find(firstApp,firstName+":playPause")); click(find(browserApp,browserName+":next"));
     check(!first.isPlaying && browser.isPlaying && browser.nextCalls === 1 && first.nextCalls === 0,"transport controls affect another player");
@@ -1122,15 +1126,15 @@ FloatingWindow {
     footer(3); profiles(fake.state.outputDevices[0].profiles.slice(1,2));
    } else if (stage === 3) {
     footer(1); profiles([]);
-    fake.state=Object.assign({},fake.state,{streams:fake.state.streams.concat([Object.assign({},fake.state.streams[0],{key:"25:102",index:25,token:"102"})])});
+    fake.streams=fake.streams.concat(fake.attach([Object.assign({},STREAMS[0],{key:"102",serial:102})], true));
    } else if (stage === 4) {
     footer(0); find(drawer,"outputOptions:card").menu.close();
-    check(playback.visible && find(playback,firstName) && !find(find(drawer,"appPlayback:23:100"),firstName),"ambiguous streams assigned to an arbitrary app row");
-    check(find(find(drawer,"appPlayback:24:101"),browserName) && count(drawer,firstName) === 1,"unrelated app lost controls or ambiguous player duplicated");
-    fake.state=STATE; drawer.players=[first,twin,browser];
+    check(playback.visible && find(playback,firstName) && !find(find(drawer,"appPlayback:100"),firstName),"ambiguous streams assigned to an arbitrary app row");
+    check(find(find(drawer,"appPlayback:101"),browserName) && count(drawer,firstName) === 1,"unrelated app lost controls or ambiguous player duplicated");
+    fake.streams=fake.attach(STREAMS, true); drawer.players=[first,twin,browser];
    } else if (stage === 5) {
-    check(find(playback,firstName) && find(playback,"audioPlayer:"+twin.dbusName) && !find(find(drawer,"appPlayback:23:100"),firstName),"multiple sessions falsely attached to one stream");
-    fake.state=Object.assign({},fake.state,{streams:[]});
+    check(find(playback,firstName) && find(playback,"audioPlayer:"+twin.dbusName) && !find(find(drawer,"appPlayback:100"),firstName),"multiple sessions falsely attached to one stream");
+    fake.streams=[];
    } else if (stage === 6) {
     check(playback.visible && playback.players.length === 3 && find(drawer,"audioAppsEmpty").visible,"paused or streamless players disappeared");
     drawer.players=[twin];
@@ -1145,7 +1149,7 @@ FloatingWindow {
   } catch(error) { console.error("AUDIO_FAIL",error.message); Qt.quit(); }
  } }
 }
-'''.replace('STATE', json.dumps(state)))
+'''.replace('FAKE_SERVICE', FAKE_SERVICE).replace('STREAMS', json.dumps(streams)).replace('STATE', json.dumps(state)))
 
     def test_sound_independent_outputs_routes_profiles_boost_and_lifetime(self):
         jack = dict(SINK['ports'][1], availability='available')
@@ -1155,8 +1159,8 @@ FloatingWindow {
                        active_port='hdmi', ports=[dict(name='hdmi', description='HDMI / DisplayPort', availability='available')])
         card = dict(CARD, properties={'device.description': 'Laptop audio'})
         display_card = dict(CARD, name='display-card', index=5, properties={'device.description': 'Display audio'})
-        outputs, devices = backend.output_inventory([laptop, aux, display], [card, display_card], CONFIG, 'laptop')
-        state = dict(available=True, outputs=outputs, outputDevices=devices, streams=backend.stream_records([STREAM], 'sink'), inputs=[], inputDevices=[], recordings=[], warning='')
+        outputs, devices = backend.output_inventory([laptop, aux, display], [card, display_card], CONFIG)
+        state = dict(available=True, outputs=outputs, outputDevices=devices, inputs=[], inputDevices=[], warning='')
         self.run_qml(r'''import QtQuick
 import QtTest
 import Quickshell
@@ -1165,24 +1169,7 @@ import "ui" as UI
 FloatingWindow {
  id: window
  implicitWidth: 480; implicitHeight: 1000; color: UI.Theme.background
- QtObject {
-  id: fake
-  property bool observing: false
-  property bool loaded: true
-  property bool busy: false
-  property var boosts: ({})
-  property string pendingBoost: ""
-  property string error: ""
-  property var state: STATE
-  property var calls: []
-  function run(op, values) { calls = calls.concat([{op, values}]); }
-  function refresh() {}
-  function boostFor(device) { return !!boosts[device]; }
-  function boostPending(device) { return pendingBoost === device; }
-  function setBoost(device, enabled) { pendingBoost = device; run("output-boost", {device, enabled}); }
-  function observe(owner, active) { observing = active; }
- }
- QtObject {
+FAKE_SERVICE QtObject {
   id: media
   property string dbusName: "org.mpris.MediaPlayer2.test"
   property string desktopEntry: "test-player"
@@ -1220,13 +1207,16 @@ FloatingWindow {
   try {
    const slider = find(drawer, "outputVolume:laptop:slider");
    if (stage === 0) {
+    fake.node("laptop"); fake.node("aux"); fake.node("display"); fake.defaultSink = "laptop";
+    fake.streams = fake.attach(STREAMS, true);
     drawer.players = [media];
-    check(find(drawer, "appPlayback:23:100").visible && !find(drawer, "audioPlayback").visible, "media controls not beside matching application");
+    check(find(drawer, "appPlayback:100").visible && !find(drawer, "audioPlayback").visible, "media controls not beside matching application");
     const prefix = "audioPlayer:" + media.dbusName;
     click(find(drawer, prefix + ":previous")); click(find(drawer, prefix + ":playPause")); click(find(drawer, prefix + ":next"));
     check(media.previousCalls === 1 && media.nextCalls === 1 && !media.isPlaying && find(drawer, prefix + ":playPause").iconName === "play", "media transport dispatch/state");
     media.canGoNext = false; check(!find(drawer, prefix + ":next").enabled, "unsupported next action enabled");
     check(fake.observing && !find(drawer, "masterVolume"), "observation or global-volume assumption");
+    check(!find(drawer, "audioOutputsEmpty").visible && !find(drawer, "audioAppsEmpty").visible, "empty notes shown beside rows");
     check(find(drawer, "outputDevice:card") && find(drawer, "outputDevice:display-card"), "physical output grouping missing");
     check(slider.enabled && find(drawer, "outputVolume:aux:slider").enabled && find(drawer, "outputVolume:display:slider").enabled, "independent output sliders missing");
     check(drawer.destinations.length === 3 && find(drawer, "outputConnection:laptop").count === 2, "shared or disconnected ports treated as independent outputs");
@@ -1239,29 +1229,32 @@ FloatingWindow {
     marker.forceActiveFocus(Qt.TabFocusReason);
     check(marker.background.highlighted, "default output marker has no keyboard feedback");
     click(find(drawer, "outputVolume:aux:mute"));
-    check(last().op === "mute" && last().values.name === "aux" && last().values.muted, "nondefault output mute dispatch");
+    check(last().op === "mute" && last().values.name === "aux" && last().values.muted && fake.nodes.aux.audio.muted, "nondefault output mute dispatch");
+    check(find(drawer, "outputState:aux").text === "Muted" && !find(drawer, "outputVolume:aux:slider").enabled, "native mute not shown");
     savedOutput = find(drawer, "audioOutput:laptop"); savedSlider = slider;
     slider.forceActiveFocus(); input.keyClick(Qt.Key_Right);
-    check(last().op === "volume" && last().values.name === "laptop", "per-output gain dispatch");
+    check(last().op === "level" && last().values.name === "laptop" && last().values.value === 51, "per-output gain dispatch");
     capture("audio-drawer.png");
    } else if (stage === 1) {
-    fake.state = Object.assign({}, fake.state, {outputs: fake.state.outputs.map(n => Object.assign({}, n, {volume: 60}))});
-    check(find(drawer, "audioOutput:laptop") === savedOutput && slider === savedSlider && slider.activeFocus, "refresh recreated output row or lost focus");
+    fake.nodes.laptop.audio.volume = 0.6;
+    fake.state = Object.assign({}, fake.state, {outputs: fake.state.outputs.map(n => Object.assign({}, n))});
+    check(find(drawer, "audioOutput:laptop") === savedOutput && slider === savedSlider && slider.activeFocus && slider.value === 60, "refresh recreated output row, lost focus or missed native level");
     const connection = find(drawer, "outputConnection:laptop");
     connection.currentIndex = 1; connection.activated(1);
-    check(last().op === "output-port" && last().values.port === "jack" && connection.currentIndex === 0, "connection change conflated with default/optimistic state");
+    check(last().op === "output-port" && last().values.port === "jack" && !last().values.boost && connection.currentIndex === 0, "connection change conflated with default/optimistic state");
     click(find(drawer, "outputDefault:display"));
-    check(last().op === "output-default" && last().values.name === "display", "default output dispatch");
-    click(find(drawer, "appVolume:23:100:mute"));
-    check(last().values.token === "100", "stream identity missing");
-    click(find(drawer, "appOptions:23:100"));
+    check(last().op === "default" && last().values.name === "display" && fake.defaultSink === "display", "default output dispatch");
+    check(find(drawer, "outputDefault:display").checked && !find(drawer, "outputDefault:laptop").checked, "default marker did not follow native default");
+    click(find(drawer, "appVolume:100:mute"));
+    check(last().op === "mute" && last().values.name === "app:100", "stream identity missing");
+    click(find(drawer, "appOptions:100"));
    } else if (stage === 2) {
-    const menu = find(drawer, "appOptions:23:100").menu;
+    const menu = find(drawer, "appOptions:100").menu;
     check(menu.visible && menu.count === 3, "app output menu duplicated shared ports");
-    const option = Array.from({length: menu.count}, (_, index) => menu.itemAt(index)).find(item => item.objectName === "appOutput:23:100:display");
+    const option = Array.from({length: menu.count}, (_, index) => menu.itemAt(index)).find(item => item.objectName === "appOutput:100:display");
     check(option && !option.marked, "app route incorrectly follows default request");
     click(option);
-    check(last().op === "move" && last().values.destination === "display" && last().values.token === "100" && !last().values.boost, "app routing/identity/boost scope");
+    check(last().op === "move" && last().values.destination === "display" && last().values.key === "100", "app routing/identity");
     click(find(drawer, "outputOptions:card"));
    } else if (stage === 3) {
     const menu = find(drawer, "outputOptions:card").menu;
@@ -1274,14 +1267,12 @@ FloatingWindow {
     const menu = find(drawer, "outputOptions:card").menu;
     check(menu.itemAt(0).marked && !menu.itemAt(1).marked, "unconfirmed profile changed checkmarks");
     click(menu.itemAt(menu.count-1));
-    check(last().op === "output-boost" && last().values.device === "card" && last().values.enabled && !fake.boostFor("card"), "boost was global or changed before acknowledgement");
-    check(!slider.enabled && !find(drawer, "appVolume:23:100:slider").enabled && find(drawer, "outputVolume:display:slider").enabled, "boost transition permits stale queued gains or blocks unrelated device");
-    fake.boosts = {card: true}; fake.pendingBoost = "";
-    fake.state = Object.assign({}, fake.state, {outputs: fake.state.outputs.map(n => Object.assign({}, n, {volume: n.name === "display" ? 140 : 125})),
-      streams: fake.state.streams.map(n => Object.assign({}, n, {volume: 125}))});
+    check(last().op === "boost" && last().values.device === "card" && last().values.enabled && fake.boostFor("card") && !fake.boostFor("display-card"), "boost was global");
+    fake.nodes.laptop.audio.volume = 1.25; fake.nodes.aux.audio.volume = 1.25; fake.nodes.display.audio.volume = 1.4;
+    fake.streams[0].node.audio.volume = 1.25;
    } else if (stage === 5) {
     check(find(drawer, "outputVolume:laptop").maximum === 150 && find(drawer, "outputVolume:aux").maximum === 150 && find(drawer, "outputVolume:display").maximum === 100, "device boost scope/range");
-    check(find(drawer, "appVolume:23:100").maximum === 150, "app boost does not follow destination device");
+    check(find(drawer, "appVolume:100").maximum === 150, "app boost does not follow destination device");
     check(find(drawer, "outputVolume:display:slider").value === 140 && find(drawer, "outputVolume:display:slider").to >= 140, "external boosted gain clamped in presentation");
     check(find(drawer, "outputVolume:laptop:mute").iconColor.toString() === UI.Theme.accent.toString(), "boosted output icon is not red");
     capture("audio-boost.png");
@@ -1291,15 +1282,12 @@ FloatingWindow {
     const menu = find(drawer, "outputOptions:card").menu;
     check(menu.itemAt(menu.count-1).marked, "boost checkmark not confirmed");
     click(menu.itemAt(menu.count-1));
-    check(last().op === "output-boost" && !last().values.enabled && fake.boostFor("card"), "boost disabled before gain normalization acknowledgement");
-    fake.state = Object.assign({}, fake.state, {outputs: fake.state.outputs.map(n => n.deviceKey === "card" ? Object.assign({}, n, {volume: 100}) : n),
-      streams: fake.state.streams.map(n => Object.assign({}, n, {volume: 100}))});
-    fake.boosts = {card: false}; fake.pendingBoost = "";
+    check(last().op === "boost" && !last().values.enabled && !fake.boostFor("card"), "boost not disabled");
+    fake.nodes.laptop.audio.volume = 1; fake.nodes.aux.audio.volume = 1; fake.streams[0].node.audio.volume = 1;
    } else if (stage === 8) {
-    check(slider.value === 100 && slider.to === 100 && find(drawer, "appVolume:23:100:slider").value === 100, "boost off left slider/gain mismatch");
+    check(slider.value === 100 && slider.to === 100 && find(drawer, "appVolume:100:slider").value === 100, "boost off left slider/gain mismatch");
     check(find(drawer, "outputVolume:display:slider").value === 140 && !fake.boostFor("display-card"), "boost off altered another device or concealed its native level");
-    fake.state = Object.assign({}, fake.state, {outputs: fake.state.outputs.map(n => Object.assign({}, n, {selected: n.name === "display"}))});
-    check(find(drawer, "outputDefault:display").checked && !find(drawer, "outputDefault:laptop").checked && fake.state.streams[0].sink === 7 && slider === savedSlider, "default selection changed explicit app routing or slider identity");
+    check(find(drawer, "outputDefault:display").checked && fake.streams[0].target === "laptop" && slider === savedSlider, "default selection changed explicit app routing or slider identity");
     capture("audio-mixer.png");
    } else if (stage === 9) {
     click(find(drawer, "outputOptions:card"));
@@ -1310,7 +1298,7 @@ FloatingWindow {
     fake.state = Object.assign({}, fake.state, {outputs: fake.state.outputs.filter(n => n.name !== "laptop")});
     check(!find(drawer, "outputVolume:laptop") && find(drawer, "outputVolume:aux") && find(drawer, "outputDefault:display").checked, "unplug removed unrelated independent outputs");
    } else if (stage === 10) {
-    fake.state = Object.assign({}, fake.state, {outputs: [], outputDevices: [], streams: []});
+    fake.state = Object.assign({}, fake.state, {outputs: [], outputDevices: []}); fake.streams = [];
     check(find(drawer, "audioOutputsEmpty").visible && find(drawer, "audioAppsEmpty").visible && find(drawer, "audioPlayback").visible, "empty states or paused player missing");
     capture("audio-empty.png");
    } else if (stage === 11) {
@@ -1328,7 +1316,8 @@ FloatingWindow {
   } catch (error) { console.error("AUDIO_FAIL", error.message); Qt.quit(); }
  } }
 }
-'''.replace('STATE', json.dumps(state)))
+'''.replace('FAKE_SERVICE', FAKE_SERVICE).replace('STREAMS', json.dumps([stream('100')])).replace('STATE', json.dumps(state)))
+
 
 
 if __name__ == '__main__':

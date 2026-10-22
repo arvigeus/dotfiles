@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import "../../ui"
-import "../audio"
 
 Surface {
     id: root
@@ -46,7 +45,7 @@ Surface {
                     root.service.setControl("privacy", value);
                 }
             }
-            AudioIconButton {
+            IconButton {
                 id: options
                 objectName: "webcamSettings"
                 iconName: "settings"; text: qsTr("Camera settings")

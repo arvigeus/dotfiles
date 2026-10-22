@@ -1,0 +1,8 @@
+{
+    "packages": [
+        "switcheroo-control"
+    ],
+    "services": [
+        "switcheroo-control.service"
+    ]
+}

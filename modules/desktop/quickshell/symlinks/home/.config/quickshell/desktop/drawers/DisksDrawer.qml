@@ -4,8 +4,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import "../ui"
-import "network"
-import "network/Models.js" as Models
+import "../ui/Models.js" as Models
 import "disks"
 
 DrawerPage {
@@ -17,7 +16,7 @@ DrawerPage {
     readonly property alias unlockPopup: unlock
     ListModel { id: drivesModel; dynamicRoles: true }
     function sync(): void {
-        Models.sync(drivesModel, service.state.drives, "key", false);
+        Models.sync(drivesModel, service.state.drives, "key");
         if (unlockVolume && !service.state.drives.some(d => d.volumes.some(v => v.key === unlockVolume.key && v.identity === unlockVolume.identity && v.locked))) unlock.close();
     }
     function bytes(value): string {
@@ -27,7 +26,7 @@ DrawerPage {
         while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
         return n.toLocaleString(Qt.locale(), "f", i && n < 10 ? 1 : 0) + " " + units[i];
     }
-    function openLocation(location: string): void { Quickshell.execDetached(["dolphin", "--", location]); closeRequested(); }
+    function openLocation(location: string): void { Apps.launch(["dolphin", "--", location]); closeRequested(); }
     function showUnlock(record): void {
         if (openOptions) openOptions.close();
         unlockVolume = record; passphrase.clear(); unlock.open();
@@ -51,19 +50,19 @@ DrawerPage {
     escapeHandler: cleanup.popupOpen ? (() => cleanup.closePopup()) : unlock.visible ? (() => unlock.close()) : openOptions ? (() => openOptions.close()) : null
     headerActions: RowLayout {
         spacing: 4
-        NetworkIconButton {
+        IconButton {
             objectName: "disksUsage"; iconName: "folder-search"; text: qsTr("Scan largest directories")
             enabled: root.service.state.analyzerAvailable ?? false
             hint: enabled ? qsTr("Open Filelight") : qsTr("Install filelight to analyze directory sizes.")
-            onClicked: { Quickshell.execDetached(["filelight"]); root.closeRequested(); }
+            onClicked: { Apps.launch(["filelight"]); root.closeRequested(); }
         }
-        NetworkIconButton {
+        IconButton {
             objectName: "disksEditor"; iconName: "pencil"; text: qsTr("Open Partition Manager")
             enabled: root.service.state.editorAvailable
             hint: enabled ? qsTr("Partitioning, formatting and advanced filesystem operations") : qsTr("Install partitionmanager to open the partition editor.")
-            onClicked: { Quickshell.execDetached(["partitionmanager"]); root.closeRequested(); }
+            onClicked: { Apps.launch(["partitionmanager"]); root.closeRequested(); }
         }
-        NetworkIconButton {
+        IconButton {
             objectName: "disksRefresh"; iconName: "refresh-cw"; text: qsTr("Refresh storage")
             enabled: !root.service.busy && !root.service.closing
             onClicked: root.service.refresh()
@@ -78,7 +77,7 @@ DrawerPage {
         Layout.fillWidth: true; spacing: 4
         visible: root.service.errorKey === targetKey && root.service.actionError !== ""
         Note { text: root.service.actionError; color: Theme.danger }
-        NetworkIconButton { iconName: "x"; text: qsTr("Dismiss storage error"); onClicked: root.service.dismissError() }
+        IconButton { iconName: "x"; text: qsTr("Dismiss storage error"); onClicked: root.service.dismissError() }
     }
     ColumnLayout {
         anchors.fill: parent; spacing: 8
@@ -137,7 +136,7 @@ DrawerPage {
                 Accessible.name: qsTr("Volume passphrase")
                 onAccepted: root.submitUnlock()
             }
-            NetworkButton { objectName: "diskUnlockSubmit"; text: qsTr("Unlock"); Layout.fillWidth: true; enabled: root.canAct && passphrase.text.length > 0; onClicked: root.submitUnlock() }
+            ShellButton { objectName: "diskUnlockSubmit"; text: qsTr("Unlock"); Layout.fillWidth: true; enabled: root.canAct && passphrase.text.length > 0; onClicked: root.submitUnlock() }
         }
     }
 }

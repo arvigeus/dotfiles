@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Read-only telemetry, UPower and power-profiles API; optional device adapters."""
+"""Telemetry, TuneD policy read-back and optional charge-limit providers.
+
+Battery and power-profile state come from Quickshell's native UPower service.
+"""
 import importlib.util
 import configparser
 from functools import lru_cache
@@ -16,11 +19,6 @@ PROC = Path('/proc')
 SYS = Path('/sys')
 TUNED = Path('/etc/tuned')
 PROPERTIES = 'org.freedesktop.DBus.Properties'
-UPOWER = 'org.freedesktop.UPower'
-DEVICE = UPOWER + '.Device'
-POWER_PATH = '/org/freedesktop/UPower'
-PROFILE_APIS = [('org.freedesktop.UPower.PowerProfiles', '/org/freedesktop/UPower/PowerProfiles'),
-                ('net.hadess.PowerProfiles', '/net/hadess/PowerProfiles')]
 
 
 def number(value, minimum=0, maximum=None):
@@ -56,9 +54,6 @@ class Bus:
             Gio.DBusCallFlags.NO_AUTO_START, 2000, None)
         return result.unpack()[0] if result.n_children() else None
 
-    def properties(self, service, path, interface):
-        return self.call(service, path, PROPERTIES, 'GetAll', '(s)', (interface,))
-
     def set(self, service, path, interface, name, kind, value):
         from gi.repository import GLib
         self.call(service, path, PROPERTIES, 'Set', '(ssv)', (interface, name, GLib.Variant(kind, value)))
@@ -66,59 +61,6 @@ class Bus:
     def owner(self, service):
         return self.call('org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus',
                          'GetNameOwner', '(s)', (service,))
-
-
-def battery_record(path, props):
-    state = props.get('State', 0)
-    full, design = number(props.get('EnergyFull'), 0.001), number(props.get('EnergyFullDesign'), 0.001)
-    return dict(key=path, label=props.get('Model') or props.get('NativePath') or 'System battery',
-                vendor=props.get('Vendor', ''), percentage=number(props.get('Percentage'), 0, 100),
-                state=state, energy=number(props.get('Energy')), full=full, design=design,
-                health=100 * full / design if full is not None and design is not None else None,
-                cycles=number(props.get('ChargeCycles')), rate=number(props.get('EnergyRate')),
-                seconds=number(props.get('TimeToFull' if state == 1 else 'TimeToEmpty'), 1) if state in (1, 2) else None)
-
-
-def battery_snapshot(bus):
-    try:
-        props = bus.properties(UPOWER, POWER_PATH, UPOWER)
-        paths = bus.call(UPOWER, POWER_PATH, UPOWER, 'EnumerateDevices')
-        batteries, peripherals = [], []
-        for path in paths:
-            device = bus.properties(UPOWER, path, DEVICE)
-            if device.get('Type') == 2 and device.get('PowerSupply') and device.get('IsPresent'):
-                batteries.append(battery_record(path, device))
-            elif device.get('IsPresent') and not device.get('PowerSupply') and device.get('Type', 0) > 1:
-                row = battery_record(path, device)
-                row.update(kind=device.get('Type'), level=device.get('BatteryLevel', 0))
-                peripherals.append(row)
-        # UPower's composite display device accounts for multiple batteries and
-        # their charging order; never average percentages or invent time estimates.
-        display = bus.properties(UPOWER, POWER_PATH + '/devices/DisplayDevice', DEVICE) if batteries else {}
-        summary = battery_record('summary', display) if batteries else None
-        return dict(available=True, error='', onBattery=props.get('OnBattery'), batteries=batteries, summary=summary, peripherals=peripherals)
-    except Exception as error:
-        return dict(available=False, error='Battery service unavailable: ' + str(error), onBattery=None, batteries=[], summary=None)
-
-
-def profile_snapshot(bus):
-    for service, path in PROFILE_APIS:
-        try:
-            props = bus.properties(service, path, service)
-            advertised = {row.get('Profile') for row in props.get('Profiles', [])}
-            choices = [name for name in ('power-saver', 'balanced', 'performance') if name in advertised]
-            if not choices:
-                continue
-            warnings = [props.get('PerformanceDegraded', ''), policy_warning()]
-            return dict(available=True, service=service, path=path, identity=bus.owner(service),
-                        active=props.get('ActiveProfile', ''), choices=choices,
-                        degraded='; '.join(item for item in warnings if item),
-                        inhibited=props.get('PerformanceInhibited', ''),
-                        holds=[dict(profile=row.get('Profile', ''), application=row.get('ApplicationId', ''),
-                                    reason=row.get('Reason', '')) for row in props.get('ActiveProfileHolds', [])], error='')
-        except Exception:
-            continue
-    return dict(available=False, active='', choices=[], degraded='', inhibited='', holds=[], error='Power profiles are unavailable.')
 
 
 def policy_config():
@@ -330,36 +272,22 @@ class Controller:
 
     def snapshot(self, details=False):
         rows, errors = self.hardware()
-        profiles = profile_snapshot(self.bus)
-        if details and (warning := thermal_warning()):
-            profiles['degraded'] = '; '.join(filter(None, (profiles.get('degraded'), warning)))
-        return dict(battery=battery_snapshot(self.bus), profiles=profiles, hardware=rows,
-                    hardwareErrors=errors, metrics=self.sampler.snapshot() if details else None)
+        if not details:
+            return dict(hardware=rows, hardwareErrors=errors, metrics=None, policy='')
+        return dict(hardware=rows, hardwareErrors=errors, metrics=self.sampler.snapshot(),
+                    policy='; '.join(filter(None, (policy_warning(), thermal_warning()))))
 
     def handle(self, request):
-        op = request.get('op')
+        op = request.get('op', 'status')
         if op == 'status':
             return self.snapshot(request.get('details') is True)
-        if op == 'profile':
-            current = profile_snapshot(self.bus)
-            target = request.get('value')
-            if not current['available'] or any(request.get(key) != current.get(key) for key in ('service', 'identity', 'active')):
-                raise ValueError('The power profile changed. Refresh and try again.')
-            if target not in current['choices'] or (target == 'performance' and current['inhibited']):
-                raise ValueError('This power profile is not currently available.')
-            self.bus.set(current['service'], current['path'], current['service'], 'ActiveProfile', 's', target)
-            # Read back daemon state; do not optimistically claim success.
-            after = profile_snapshot(self.bus)
-            if after.get('identity') != current['identity'] or after['active'] != target:
-                raise ValueError('The power service did not confirm the requested profile.')
-        elif op == 'charge-limit':
-            key = request.get('key')
-            if key not in self.providers:
-                raise ValueError('The battery care controller is unavailable.')
-            self.providers[key].change(request)
-        else:
+        if op != 'charge-limit':
             raise ValueError('Unknown power operation.')
-        return self.snapshot(request.get('details') is True)
+        provider = self.providers.get(request.get('key'))
+        if provider is None:
+            raise ValueError('The battery care controller is unavailable.')
+        provider.change(request)
+        return None
 
 
 def main():

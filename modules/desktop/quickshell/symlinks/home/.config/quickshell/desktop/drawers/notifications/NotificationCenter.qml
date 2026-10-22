@@ -5,7 +5,7 @@ import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Services.Notifications
 
-QtObject {
+Singleton {
     id: root
     property bool started: false
     property bool initialized: false
@@ -15,20 +15,48 @@ QtObject {
     property var snapshots: ({})
     property int sequence: 0
     property var updates: []
-    property bool savePending: false
     property bool drawerOpen: false
+    readonly property string historyPath: {
+        const base = Quickshell.env("XDG_STATE_HOME") || "";
+        return (base.startsWith("/") ? base : Quickshell.env("HOME") + "/.local/state") + "/quickshell/desktop/notifications.json";
+    }
     readonly property int unseenCount: state.items.filter(row => row.seen === false).length
     onDrawerOpenChanged: if (drawerOpen) {
         while (popups.count) hidePopup(popups.get(0).key);
         markSeen();
     }
-    readonly property string backend: decodeURIComponent(Qt.resolvedUrl("backend.py").toString().replace(/^file:\/\//, ""))
     readonly property ListModel popups: ListModel { dynamicRoles: true }
-    readonly property bool busy: false
 
     function start(): void {
         if (started) return;
-        started = true; storage.request = {op: "load"}; storage.stdinEnabled = true; storage.running = true;
+        started = true;
+        // History and quiet state load before the server accepts notifications.
+        const text = store.text();
+        if (text.trim()) {
+            try { state = normalized(JSON.parse(text)); }
+            catch (_) { error = qsTr("Could not read notification history."); }
+        }
+        initialized = true;
+        if (drawerOpen) markSeen();
+    }
+    // Saved history keeps bounded plain text; actions and images belong to the live connection.
+    function normalized(value: var): var {
+        const rows = [], ids = {};
+        for (const item of Array.isArray(value?.items) ? value.items.slice(0, 100) : []) {
+            if (typeof item?.id !== "string" || !item.id || ids[item.id]) continue;
+            ids[item.id] = true;
+            const text = (key, limit) => String(item[key] ?? "").slice(0, limit);
+            const number = (key, fallback) => typeof item[key] === "number" && Number.isFinite(item[key]) ? item[key] : fallback;
+            const icon = text("appIcon", 2000);
+            rows.push({
+                id: text("id", 150), app: text("app", 250), desktopEntry: text("desktopEntry", 250),
+                summary: text("summary", 2000), body: text("body", 16384),
+                appIcon: !icon.includes("://") || icon.startsWith("file:///") ? icon : "",
+                timestamp: number("timestamp", Date.now() / 1000), urgency: number("urgency", 1), progress: number("progress", -1),
+                processId: number("processId", 0), liveId: number("liveId", 0), actions: [], image: "", seen: item.seen !== false
+            });
+        }
+        return {items: rows, paused: value?.paused === true};
     }
     function plain(value: string): string {
         return value.replace(/<[^>]*>/g, "").replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi, (_, entity) => {
@@ -42,7 +70,7 @@ QtObject {
     function imageSource(value: string): string {
         return value.startsWith("image://") || value.startsWith("file:///") || value.startsWith("/") ? value : "";
     }
-    function save(): void { savePending = true; if (initialized) saveTimer.restart(); }
+    function save(): void { if (initialized) saveTimer.restart(); }
     function updateItem(record: var, retain: bool): void {
         snapshots = Object.assign({}, snapshots, {[record.id]: record});
         const items = state.items.filter(row => row.id !== record.id);
@@ -74,7 +102,7 @@ QtObject {
         const record = {
             id: key, liveId: notification.id, processId: Quickshell.processId,
             seen: drawerOpen || (notification.lastGeneration && !replacement && previous ? previous.seen !== false : false),
-            app: notification.appName || qsTr("Notification"), desktopEntry: String(notification.hints["desktop-entry"] || ""),
+            app: notification.appName || qsTr("Notification"), desktopEntry: notification.desktopEntry || "",
             summary: notification.summary || qsTr("Notification"),
             body: plain(notification.body).slice(0, 16384), timestamp: notification.lastGeneration && !replacement ? state.items.find(row => row.id === key)?.timestamp || Date.now() / 1000 : Date.now() / 1000,
             urgency: notification.urgency, appIcon: notification.appIcon || "", image: imageSource(notification.image),
@@ -86,7 +114,7 @@ QtObject {
             for (const signal of [notification.summaryChanged, notification.bodyChanged, notification.actionsChanged,
                 notification.hintsChanged, notification.appNameChanged, notification.appIconChanged,
                 notification.imageChanged, notification.urgencyChanged, notification.expireTimeoutChanged,
-                notification.transientChanged]) signal.connect(() => root.changed(key));
+                notification.transientChanged, notification.desktopEntryChanged]) signal.connect(() => root.changed(key));
         }
         updateItem(record, !notification.transient);
         if (notification.lastGeneration && !replacement || state.paused || drawerOpen) {
@@ -179,14 +207,14 @@ QtObject {
             save();
         }
     }
-    readonly property IpcHandler ipc: IpcHandler {
+    IpcHandler {
         target: "notifications"; enabled: root.started
         function status(): string {
             return JSON.stringify({paused: root.state.paused, drawerOpen: root.drawerOpen,
                 unseen: root.unseenCount, history: root.state.items.length, popups: root.popups.count});
         }
     }
-    readonly property Loader serverLoader: Loader {
+    Loader {
         active: root.started && root.initialized
         sourceComponent: Component {
             NotificationServer {
@@ -205,14 +233,16 @@ QtObject {
         }
         if (Number.isFinite(deadline)) { expiry.interval = Math.max(1, Math.ceil(deadline - Date.now())); expiry.start(); }
     }
-    readonly property Timer updateTimer: Timer {
+    Timer {
+        id: updateTimer
         interval: 0
         onTriggered: {
             const keys = root.updates; root.updates = [];
             for (const key of keys) if (root.live[key]) root.receive(root.live[key], true);
         }
     }
-    readonly property Timer expiry: Timer {
+    Timer {
+        id: expiry
         onTriggered: {
             const expired = [];
             for (let index = 0; index < root.popups.count; index++) {
@@ -223,34 +253,21 @@ QtObject {
             root.scheduleExpiry();
         }
     }
-    readonly property Timer saveTimer: Timer {
+    Timer {
+        id: saveTimer
         interval: 150
-        onTriggered: {
-            if (storage.running) return;
-            root.savePending = false; storage.request = {op: "save", state: root.state}; storage.stdinEnabled = true; storage.running = true;
-        }
+        onTriggered: store.setText(JSON.stringify(root.normalized(root.state)))
     }
-    readonly property Process storage: Process {
-        property var request: ({})
-        property bool received: false
-        command: ["python3", "-B", root.backend]
-        onStarted: { received = false; write(JSON.stringify(request) + "\n"); stdinEnabled = false; }
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    const result = JSON.parse(text); storage.received = true;
-                    if (result.ok) {
-                        if (storage.request.op === "load") { root.state = result.data; if (root.drawerOpen) root.markSeen(); }
-                        root.error = "";
-                    } else root.error = result.error;
-                } catch (_) { root.error = qsTr("Could not save notification history."); }
-            }
+    FileView {
+        id: store
+        path: root.started ? root.historyPath : ""
+        blockLoading: true
+        atomicWrites: true
+        printErrors: false
+        onLoadFailed: error => {
+            if (error !== FileViewError.FileNotFound) root.error = qsTr("Could not read notification history.");
         }
-        stderr: StdioCollector {}
-        onExited: {
-            if (!received) root.error = qsTr("Notification storage is unavailable.");
-            if (request.op === "load") root.initialized = true;
-            if (root.savePending) saveTimer.restart();
-        }
+        onSaved: root.error = ""
+        onSaveFailed: root.error = qsTr("Could not save notification history. Check the local state directory.")
     }
 }

@@ -1,23 +1,27 @@
-"""Native night light toggle and monitor-scoped Keep awake leases."""
+"""Native night light toggle and monitor-scoped Keep awake leases.
+
+As a CLI for hypridle (via desktop-idle) it exits 0 to allow, 1 to deny and
+2 when the helper itself failed, so callers can choose how to fail.
+"""
 import fcntl
 import json
 import os
 from pathlib import Path
-import select
 import shutil
 import subprocess
 import sys
 import tempfile
-import time
 
 import backend
+
+HELPER_ERROR = 2
 
 
 def session_directory(kind='desktop-keep-awake'):
     signature = os.environ.get('HYPRLAND_INSTANCE_SIGNATURE')
     if not signature:
         raise RuntimeError('Display controls require a Hyprland session.')
-    return Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')) / 'hypr' / signature / kind
+    return Path(os.environ.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}') / 'hypr' / signature / kind
 
 
 def systemctl(*args):
@@ -46,13 +50,7 @@ class Lease:
             self.lock = Path(name)
             self.path = self.lock.with_suffix('.json')
             fcntl.flock(self.fd, fcntl.LOCK_EX)
-        descriptor, temporary = tempfile.mkstemp(dir=directory, prefix='.lease-')
-        try:
-            with os.fdopen(descriptor, 'w') as output:
-                json.dump(displays, output)
-            os.replace(temporary, self.path)
-        finally:
-            Path(temporary).unlink(missing_ok=True)
+        backend.atomic_write(self.path, json.dumps(displays))
 
     def close(self):
         if self.fd is not None:
@@ -100,7 +98,7 @@ def idle_action(op):
         return 1
     displays = backend.snapshot()['displays']
     awake = protected(displays)
-    if op in ('allow-session-idle', 'allow-lock', 'allow-sleep'):
+    if op in ('allow-lock', 'allow-sleep'):
         return 1 if awake else 0
     if op != 'blank':
         raise ValueError('Unknown idle action.')
@@ -135,8 +133,9 @@ class Controller:
                 self.awake = next_awake
 
     def action(self, request):
-        self.error = ''
         op = request.get('op')
+        if op != 'status':
+            self.error = ''
         if op == 'night':
             enabled = request.get('enabled')
             if type(enabled) is not bool:
@@ -193,59 +192,40 @@ class Controller:
 
 
 def main():
+    """Serve newline-JSON requests; the leases live exactly as long as this process."""
     controller = Controller()
-    previous = None
 
-    def emit(reply=False):
-        nonlocal previous
-        state = controller.snapshot()
-        if reply or state != previous:
-            print(json.dumps(dict(reply=reply, state=state)), flush=True)
-            previous = state
+    def emit(reply):
+        print(json.dumps(dict(reply=reply, state=controller.snapshot())), flush=True)
 
-    def tick():
+    try:
         try:
             controller.tick()
         except Exception as error:
             controller.error = str(error)
-
-    try:
-        tick()
-        emit()
-        deadline = time.monotonic() + 3
-        buffer = b''
-        while True:
-            readable, _, _ = select.select([sys.stdin], [], [], max(0, deadline - time.monotonic()))
-            if readable:
-                chunk = os.read(sys.stdin.fileno(), 8192)
-                if not chunk:
-                    break
-                buffer += chunk
-                if len(buffer) > 65536:
-                    raise ValueError('Display comfort request too large.')
-                while b'\n' in buffer:
-                    line, buffer = buffer.split(b'\n', 1)
-                    try:
-                        request = json.loads(line)
-                        if not isinstance(request, dict):
-                            raise ValueError('Expected a display comfort request.')
-                        controller.action(request)
-                    except Exception as error:
-                        controller.error = str(error)
-                    emit(reply=True)
-            if time.monotonic() >= deadline:
-                tick()
-                emit()
-                deadline = time.monotonic() + 3
+        emit(False)
+        for line in sys.stdin:
+            try:
+                request = json.loads(line)
+                if not isinstance(request, dict):
+                    raise ValueError('Expected a display comfort request.')
+                controller.action(request)
+            except Exception as error:
+                controller.error = str(error)
+            emit(True)
     finally:
         controller.close()
 
 
+def cli(op):
+    try:
+        return idle_action(op)
+    except Exception as error:
+        print(error, file=sys.stderr)
+        return HELPER_ERROR
+
+
 if __name__ == '__main__':
     if len(sys.argv) > 1:
-        try:
-            sys.exit(idle_action(sys.argv[1]))
-        except Exception as error:
-            print(error, file=sys.stderr)
-            sys.exit(1)
+        sys.exit(cli(sys.argv[1]))
     main()

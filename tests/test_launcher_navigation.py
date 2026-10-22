@@ -35,7 +35,7 @@ class LauncherNavigationTests(unittest.TestCase):
             source = re.sub(r'^    WlrLayershell\..*\n', '', source, flags=re.M)
             source = re.sub(r'    GlobalShortcut \{.*?\n    \}\n', '', source, count=1, flags=re.S)
             # The activation fixture records the actual ID passed by activate().
-            source = source.replace('["/usr/bin/gtk-launch", "--", entry.id]',
+            source = source.replace('["uwsm", "app", "-t", "service", "--", entry.id + ".desktop"]',
                                     '["/usr/bin/python3", Quickshell.env("LAUNCH_FIXTURE"), "--", entry.id]')
             path.write_text(source)
             apps = root / 'data/applications'

@@ -3,7 +3,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../../ui"
-import "../audio"
 
 RowLayout {
     id: root
@@ -12,7 +11,7 @@ RowLayout {
     property string label: qsTr("Brightness")
     signal edited(real value)
     spacing: 8
-    AudioIconButton {
+    IconButton {
         iconName: "sun"; iconColor: root.record.available ? Theme.text : Theme.muted
         text: root.label
         hint: root.record.available ? qsTr("Brightness: %1%").arg(Math.round(root.record.value)) : root.record.reason

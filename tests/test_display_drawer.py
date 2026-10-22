@@ -11,24 +11,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-DESKTOP = Path(__file__).resolve().parents[1] / 'modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop'
-SPEC = importlib.util.spec_from_file_location('desktop_displays', DESKTOP / 'drawers/displays/backend.py')
-backend = importlib.util.module_from_spec(SPEC)
-_bytecode_disabled = sys.dont_write_bytecode
-sys.dont_write_bytecode = True
-SPEC.loader.exec_module(backend)
-sys.dont_write_bytecode = _bytecode_disabled
-QS = shutil.which('qs')
-
-
-def display(name='eDP-1', **values):
-    return dict(dict(name=name, identity=[name, 'Test', '', '', '123'], label='Test display',
-                     enabled=True, mode='1920x1080@60.00Hz', modes=['1920x1080@60.00Hz', '1920x1080@120.00Hz', '1280x720@60.00Hz'],
-                     scale=1, transform=0, x=0, y=0, mirror='none', dpms=True), **values)
-
-
-def state(rows):
-    return dict(available=True, displays=copy.deepcopy(rows), token=backend.fingerprint(rows))
+from support import DESKTOP, QS, backend, described, display, state
+import support
 
 
 class DisplayBackendTests(unittest.TestCase):
@@ -88,11 +72,12 @@ class DisplayBackendTests(unittest.TestCase):
     def test_mutations_enable_before_disabling_and_quote_names(self):
         rows = [display('old', enabled=False), display('new";os.execute("bad")')]
         with patch.object(backend, 'command', return_value='ok') as command, patch.object(backend, 'snapshot', return_value=state([rows[1]])):
-            backend.apply_rows(rows)
+            backend.apply_rows(rows, backend.selectors(rows))
         self.assertEqual(command.call_count, 2)
-        self.assertIn('disabled=false', command.call_args_list[0].args[1])
-        self.assertIn('disabled=true', command.call_args_list[1].args[1])
-        self.assertNotIn('os.execute', command.call_args_list[0].args[1])
+        self.assertIn('disabled = false', command.call_args_list[0].args[1])
+        self.assertIn('disabled = true', command.call_args_list[1].args[1])
+        self.assertIn('output = "new\\034;os.execute(\\034bad\\034)"', command.call_args_list[0].args[1])
+        self.assertNotIn('"bad"', command.call_args_list[0].args[1])
 
     def test_failed_replacement_never_disables_existing_screen(self):
         rows = [display('old', enabled=False), display('new')]
@@ -101,9 +86,9 @@ class DisplayBackendTests(unittest.TestCase):
                 patch.object(backend, 'snapshot', return_value=actual), \
                 patch.object(backend.time, 'monotonic', side_effect=[0, 4]):
             with self.assertRaisesRegex(ValueError, 'replacement'):
-                backend.apply_rows(rows)
+                backend.apply_rows(rows, backend.selectors(rows))
         self.assertEqual(command.call_count, 1)
-        self.assertNotIn('disabled=true', command.call_args.args[1])
+        self.assertNotIn('disabled = true', command.call_args.args[1])
 
     def test_successful_change_is_immediate_and_leaves_settings_applied(self):
         expected = copy.deepcopy(self.rows)
@@ -112,7 +97,7 @@ class DisplayBackendTests(unittest.TestCase):
         with patch.object(backend, 'snapshot', side_effect=[self.state, state(expected)]), patch.object(backend, 'apply_rows') as apply:
             result = backend.control(request)
         self.assertEqual(result['displays'], expected)
-        apply.assert_called_once_with([expected[0]])
+        apply.assert_called_once_with([expected[0]], backend.selectors(self.rows))
 
     def test_four_hundred_percent_scale_uses_quarter_sized_logical_desktop(self):
         before = state([display(mode='2560x1600@60.00Hz', modes=['2560x1600@60.00Hz'])])
@@ -189,8 +174,8 @@ class DisplayBackendTests(unittest.TestCase):
 
     def test_status_and_unknown_operations_do_not_mutate_hardware(self):
         with patch.object(backend, 'snapshot', return_value=self.state), patch.object(backend, 'apply_rows') as apply:
-            self.assertEqual(backend.handle(dict(op='status')), self.state)
-            for op in ('begin', 'commit', 'cancel', 'unknown'):
+            self.assertEqual(backend.handle(dict(op='status')), dict(data=self.state))
+            for op in ('begin', 'commit', 'cancel', 'unknown', 'restore', 'sync'):
                 result = backend.response(dict(op=op))
                 self.assertFalse(result['ok'])
                 self.assertEqual(result['data'], self.state)
@@ -233,7 +218,7 @@ class DisplayBackendTests(unittest.TestCase):
                               f'rows={self.rows!r}\n'
                               f'log={str(root / "calls.jsonl")!r}\n'
                               'def snapshot(): return dict(available=True,displays=rows,token=b.fingerprint(rows))\n'
-                              'def apply(values):\n'
+                              'def apply(values, names):\n'
                               ' global rows\n'
                               ' rows=[next((row for row in values if row["name"]==old["name"]),old) for old in rows]\n'
                               ' with open(log,"a") as f: f.write(b.json.dumps(rows)+"\\n")\n'
@@ -247,291 +232,140 @@ class DisplayBackendTests(unittest.TestCase):
                 self.assertEqual(process.wait(timeout=8), 0, process.stderr.read())
                 result = json.loads(process.stdout.read())
                 self.assertTrue(result['ok'], result['error'])
-                self.assertEqual(result['baseline']['displays'][0]['mode'], '1920x1080@120.00Hz')
+                self.assertEqual(result['data']['displays'][0]['mode'], '1920x1080@120.00Hz')
             calls = [json.loads(line) for line in (root / 'calls.jsonl').read_text().splitlines()]
             self.assertEqual(calls[0][0]['mode'], '1920x1080@120.00Hz')
             self.assertEqual(len(calls), 1)
             self.assertEqual(calls[-1][0]['mode'], '1920x1080@120.00Hz')
+            self.assertIn('output = "eDP-1", disabled = false, mode = "1920x1080@120.00"',
+                          (root / 'config/hypr/displays.lua').read_text())
 
 
-class DisplayPreferencesTests(unittest.TestCase):
+class DisplayRulesTests(unittest.TestCase):
+    """Confirmed layouts become Hyprland rules in the user-owned displays.lua."""
+
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
-        self.addCleanup(self.directory.cleanup)
-        self.path = Path(self.directory.name) / 'config/quickshell/desktop/displays.json'
-        self.preferences = backend.Preferences(self.path)
-        self.rows = [display(), display('DP-1', x=1920)]
-        self.apply = self.enterContext(patch.object(backend, 'apply_rows', side_effect=self.apply_rows))
-        self.enterContext(patch.object(backend, 'snapshot', side_effect=lambda: state(self.rows)))
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        environment = patch.dict(os.environ, XDG_CONFIG_HOME=str(self.root))
+        environment.start(); self.addCleanup(environment.stop)
+        self.path = self.root / 'hypr/displays.lua'
+        self.panel = described('eDP-1', 'Panel Co P1', mode='1920x1080@120.00Hz', scale=1.25)
+        self.external = described('DP-1', 'Dell Inc. DELL U1 X1', x=1536)
+        self.current = state([self.panel, self.external])
 
-    def apply_rows(self, rows):
-        self.rows = [copy.deepcopy(next((row for row in rows if row['name'] == live['name']), live)) for live in self.rows]
+    def lines(self):
+        return self.path.read_text().splitlines()
 
-    def observe(self, force=False):
-        # Each event launches a new helper; only the acknowledged snapshot lives
-        # in the shell between invocations.
-        baseline = self.preferences.baseline
-        self.preferences = backend.Preferences(self.path)
-        self.preferences.baseline = baseline
-        return self.preferences.observe(state(self.rows), force)
+    def test_selectors_use_unique_descriptions_and_fall_back_to_connectors(self):
+        rows = [described('eDP-1', 'Panel'), described('DP-1', 'Dell U1'), described('DP-2', 'Dell U1 X2'),
+                described('DP-3', ''), described('HDMI-A-1', 'Twin'), described('HDMI-A-2', 'Twin')]
+        self.assertEqual(backend.selectors(rows), {
+            'eDP-1': 'desc:Panel', 'DP-1': 'DP-1', 'DP-2': 'desc:Dell U1 X2', 'DP-3': 'DP-3',
+            'HDMI-A-1': 'HDMI-A-1', 'HDMI-A-2': 'HDMI-A-2'})
 
-    def saved(self, name):
-        return next(row for row in json.loads(self.path.read_text())['outputs'] if row['name'] == name)
+    def test_xdg_path_is_user_owned_and_empty_or_relative_values_use_home(self):
+        self.assertEqual(backend.config_path(), self.path)
+        for value in ('', 'relative'):
+            with self.subTest(value=value), patch.dict(os.environ, XDG_CONFIG_HOME=value), \
+                    patch.object(backend.Path, 'home', return_value=self.root / 'home'):
+                self.assertEqual(backend.config_path(), self.root / 'home/.config/hypr/displays.lua')
 
-    def test_recommended_resolution_saves_resolved_mode_and_rolls_back_on_failure(self):
-        self.preferences.remember(state(self.rows))
-        request = dict(op='change', name='DP-1', identity=self.rows[1]['identity'], values=dict(mode='preferred'))
-        with patch.object(backend, 'command', return_value='1280x720@60.00000'):
-            result = backend.handle(request, self.preferences)
-        self.assertEqual(result['displays'][1]['mode'], '1280x720@60.00Hz')
-        self.assertEqual(self.saved('DP-1')['mode'], '1280x720@60.00Hz')
-        before = copy.deepcopy(self.rows)
-        saved = self.path.read_bytes()
-        with patch.object(backend, 'command', return_value='1920x1080@60.00000'), \
-                patch.object(backend, 'apply_rows', side_effect=[RuntimeError('rejected'), None]) as apply:
-            with self.assertRaisesRegex(RuntimeError, 'rejected'):
-                backend.handle(request, self.preferences)
-        self.assertEqual(apply.call_args.args[0], before)
-        self.assertEqual(self.path.read_bytes(), saved)
-
-    def test_xdg_path_is_user_owned_and_writes_are_private_atomic(self):
-        with patch.dict(os.environ, XDG_CONFIG_HOME=str(self.path.parents[2])):
-            self.assertEqual(backend.Preferences().path, self.path)
-        self.preferences.remember(state(self.rows))
-        self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
-        self.assertEqual(list(self.path.parent.glob('.displays-*')), [])
-        self.assertNotIn('modes', self.saved('DP-1'))
-
-    def test_empty_or_relative_xdg_directory_never_writes_into_working_directory(self):
-        with patch.object(backend.Path, 'home', return_value=Path('/user')):
-            for value in ('', 'relative-config'):
-                with self.subTest(value=value), patch.dict(os.environ, XDG_CONFIG_HOME=value):
-                    self.assertEqual(backend.Preferences().path, Path('/user/.config/quickshell/desktop/displays.json'))
-
-    def test_restart_restores_mode_scale_transform_mirroring_and_enabled_state(self):
-        self.rows[0].update(mode='1920x1080@120.00Hz', scale=1.25, transform=5, x=-864)
-        self.rows[1].update(mirror='eDP-1', x=0)
-        self.rows.append(display('HDMI-A-1', enabled=False, x=1920))
-        self.preferences.remember(state(self.rows))
-        expected = copy.deepcopy(self.rows)
-        self.rows = [display(), display('DP-1', x=1920), display('HDMI-A-1', x=3840)]
-        self.preferences = backend.Preferences(self.path)
-        self.observe()
-        self.assertTrue(backend.matches(expected, state(self.rows)))
-        self.assertEqual(self.saved("HDMI-A-1")["x"], 1920)
-
-    def test_external_wdisplays_changes_save_on_settled_event(self):
-        self.observe()
-        self.assertTrue(self.path.exists())
-        self.rows[1].update(mode='1280x720@60.00Hz', scale=1.25, transform=3, x=2000, y=-100)
-        self.observe()
-        self.assertEqual(self.saved('DP-1')['mode'], '1280x720@60.00Hz')
-        self.assertEqual(self.saved('DP-1')['scale'], 1.25)
-        self.assertEqual(self.saved('DP-1')['transform'], 3)
-        self.assertEqual(self.saved('DP-1')['y'], -100)
-
-    def test_wdisplays_order_is_saved_without_reapplying_monitor_settings(self):
-        self.observe()
-        self.apply.reset_mock()
-        self.rows[0]['x'], self.rows[1]['x'] = 1920, 0
-        self.observe()
-        self.assertEqual(self.saved('DP-1')['x'], 0)
-        self.assertEqual(self.saved('eDP-1')['x'], 1920)
-        saved = self.path.read_bytes()
-        self.observe(); self.observe()
-        self.apply.assert_not_called()
-        self.assertEqual([row['x'] for row in self.rows], [1920, 0])
-        self.assertEqual(self.path.read_bytes(), saved)
-
-    def test_dock_only_preferences_keep_laptop_usable_and_return_on_reconnect(self):
-        self.rows[0]['enabled'] = False
-        self.rows[1]['mode'] = '1920x1080@120.00Hz'
-        self.preferences.remember(state(self.rows))
-        saved = self.path.read_text()
-        self.rows = [display()]
-        self.observe(); self.observe(); self.observe()
-        self.assertTrue(self.rows[0]['enabled'])
-        self.assertEqual(self.path.read_text(), saved)
-        self.rows.append(display('DP-1', x=1920))
-        self.observe()
-        self.assertFalse(self.rows[0]['enabled'])
-        self.assertEqual(self.rows[1]['mode'], '1920x1080@120.00Hz')
-
-    def test_unplug_restores_disabled_panel_geometry_without_saving_safety_override(self):
-        self.rows[0].update(enabled=False, scale=1.25, transform=1, x=-864, y=100)
-        self.preferences.remember(state(self.rows))
-        saved = self.path.read_bytes()
-        self.rows = [display(enabled=False)]
-        self.observe(); self.observe(); self.observe()
-        panel = self.rows[0]
-        self.assertTrue(panel['enabled'])
-        self.assertEqual((panel['scale'], panel['transform'], panel['x'], panel['y']), (1.25, 1, -864, 100))
-        self.assertEqual(self.path.read_bytes(), saved)
-        self.rows.append(display('DP-1', x=1920))
-        self.observe()
-        self.assertFalse(self.rows[0]['enabled'])
-        self.assertTrue(self.rows[1]['enabled'])
-        self.assertEqual(self.path.read_bytes(), saved)
-
-    def test_legacy_fallback_preference_is_not_restored_or_kept_in_memory(self):
-        self.rows.append(display('FALLBACK', x=3840))
-        self.preferences.remember(state(self.rows))
-        preferences = backend.Preferences(self.path)
-        preferences.load()
-        self.assertEqual({row['name'] for row in preferences.saved.values()}, {'eDP-1', 'DP-1'})
-
-    def test_safety_prefers_builtin_panel_and_repairs_placeholder_scale(self):
-        self.rows = [display('DP-1', enabled=False), display(enabled=False, scale=1.3)]
-        self.observe()
-        self.assertFalse(self.rows[0]['enabled'])
-        self.assertTrue(self.rows[1]['enabled'])
-        self.assertEqual(self.rows[1]['scale'], 1)
-
-    def test_missing_mirror_source_temporarily_becomes_independent_without_losing_preference(self):
-        self.rows[1]['mirror'] = 'eDP-1'
-        self.preferences.remember(state(self.rows))
-        self.rows = [display('DP-1')]
-        self.observe(); self.observe(); self.observe()
-        self.assertEqual(self.rows[0]['mirror'], 'none')
-        self.assertEqual(self.saved('DP-1')['mirror'], 'eDP-1')
-        self.rows = [display(), display('DP-1', x=1920)]
-        self.observe()
-        self.assertEqual(self.rows[1]['mirror'], 'eDP-1')
-
-    def test_replaced_hardware_does_not_inherit_mode_or_mirror_target(self):
-        self.rows[0]['mode'] = '1920x1080@120.00Hz'
-        self.rows[1]['mirror'] = 'eDP-1'
-        self.preferences.remember(state(self.rows))
-        self.rows = [display(identity=['eDP-1', 'Replacement', '', '', '456']), display('DP-1', x=1920)]
-        self.observe()
-        self.assertEqual(self.rows[0]['mode'], '1920x1080@60.00Hz')
-        self.assertEqual(self.rows[1]['mirror'], 'none')
-
-    def test_unsupported_saved_mode_is_not_applied_or_overwritten(self):
-        self.rows[1]['mode'] = '1920x1080@120.00Hz'
-        self.preferences.remember(state(self.rows))
-        self.rows[1].update(mode='1920x1080@60.00Hz', modes=['1920x1080@60.00Hz'])
-        self.preferences = backend.Preferences(self.path)
-        self.observe(); self.observe(); self.observe()
-        self.apply.assert_not_called()
-        self.assertEqual(self.saved('DP-1')['mode'], '1920x1080@120.00Hz')
-
-    def test_disabled_preference_is_restored_even_if_old_mode_is_unavailable(self):
-        self.rows[1].update(enabled=False, mode='1920x1080@120.00Hz')
-        self.preferences.remember(state(self.rows))
-        self.rows[1].update(enabled=True, mode='1920x1080@60.00Hz', modes=['1920x1080@60.00Hz'])
-        self.preferences = backend.Preferences(self.path)
-        self.observe()
-        self.assertFalse(self.rows[1]['enabled'])
-
-    def test_disabled_output_keeps_usable_geometry_and_reenables_with_it(self):
-        self.rows[1].update(mode='1280x720@60.00Hz', scale=1.25, transform=3)
-        self.preferences.remember(state(self.rows))
-        before = state(self.rows)
-        self.rows[1].update(enabled=False, mode='1920x1080@60.00Hz', scale=1, transform=0)
-        self.preferences.remember(state(self.rows), before)
-        self.assertEqual(self.saved('DP-1')['mode'], '1280x720@60.00Hz')
-        result = backend.handle(dict(op='change', name='DP-1', identity=self.rows[1]['identity'], values=dict(enabled=True)), self.preferences)
-        self.assertTrue(result['displays'][1]['enabled'])
-        self.assertEqual(self.rows[1]['mode'], '1280x720@60.00Hz')
-        self.assertEqual(self.rows[1]['scale'], 1.25)
-        self.assertEqual(self.rows[1]['transform'], 3)
-
-    def test_failed_action_does_not_replace_saved_settings(self):
-        self.preferences.remember(state(self.rows))
-        saved = self.path.read_text()
-        self.apply.side_effect = RuntimeError('modeset failed')
-        result = backend.response(dict(op='change', name='DP-1', identity=self.rows[1]['identity'], values=dict(mode='1920x1080@120.00Hz')), self.preferences)
-        self.assertFalse(result['ok'])
-        self.assertEqual(self.path.read_text(), saved)
-
-    def test_drawer_change_also_saves_pending_external_edits(self):
-        self.preferences.remember(state(self.rows))
-        self.rows[0]['mode'] = '1920x1080@120.00Hz'
-        result = backend.response(dict(op='change', name='DP-1', identity=self.rows[1]['identity'], values=dict(mode='1280x720@60.00Hz')), self.preferences)
+    def test_confirmed_change_saves_every_connected_output_as_a_desc_rule(self):
+        request = dict(op='change', name='DP-1', identity=self.external['identity'], values=dict(scale=1))
+        with patch.object(backend, 'control', return_value=self.current):
+            result = backend.response(request)
         self.assertTrue(result['ok'], result['error'])
-        self.assertEqual(self.saved('eDP-1')['mode'], '1920x1080@120.00Hz')
-        self.assertEqual(self.saved('DP-1')['mode'], '1280x720@60.00Hz')
+        self.assertEqual(self.lines(), backend.HEADER + [
+            'hl.monitor({ output = "desc:Panel Co P1", disabled = false, mode = "1920x1080@120.00", position = "0x0", scale = 1.25, transform = 0, mirror = "" })',
+            'hl.monitor({ output = "desc:Dell Inc. DELL U1 X1", disabled = false, mode = "1920x1080@60.00", position = "1536x0", scale = 1, transform = 0, mirror = "" })'])
+        self.assertEqual([path.name for path in self.path.parent.iterdir()], ['displays.lua'])
 
-    def test_config_reload_restores_instead_of_saving_reset_defaults(self):
-        self.rows[1]['mode'] = '1920x1080@120.00Hz'
-        self.preferences.remember(state(self.rows))
-        self.rows[1]['mode'] = '1920x1080@60.00Hz'
-        result = backend.handle(dict(op='restore'), self.preferences)
-        self.assertEqual(result['displays'][1]['mode'], '1920x1080@120.00Hz')
-        self.assertEqual(self.saved('DP-1')['mode'], '1920x1080@120.00Hz')
+    def test_unrelated_lines_survive_and_known_rules_are_replaced_in_place(self):
+        self.path.parent.mkdir()
+        self.path.write_text('-- mine\nhl.monitor({ output = "desc:Dell Inc. DELL U1 X1", mode = "preferred" })\n'
+                             'hl.monitor({ output = "desc:Office", mode = "preferred" })\nlocal x = 1\n')
+        backend.persist(self.current, False)
+        lines = self.lines()
+        self.assertEqual(lines[0], '-- mine')
+        self.assertIn('position = "1536x0"', lines[1])
+        self.assertEqual(lines[2:4], ['hl.monitor({ output = "desc:Office", mode = "preferred" })', 'local x = 1'])
+        self.assertIn('output = "desc:Panel Co P1"', lines[4])
+        self.assertEqual(len(lines), 5)
 
-    def test_restore_echo_between_helpers_does_not_mutate_or_rewrite_preferences(self):
-        self.rows[1]['mode'] = '1920x1080@120.00Hz'
-        self.preferences.remember(state(self.rows))
-        self.rows[1]['mode'] = '1920x1080@60.00Hz'
-        result = backend.response(dict(op='restore', baseline=None), backend.Preferences(self.path))
-        self.assertTrue(result['ok'], result['error'])
-        self.apply.reset_mock()
-        with patch.object(backend.os, 'replace') as replace:
-            echo = backend.response(dict(op='sync', baseline=result['baseline']), backend.Preferences(self.path))
-        self.assertTrue(echo['ok'], echo['error'])
-        self.apply.assert_not_called()
-        replace.assert_not_called()
-        self.assertEqual(self.saved('DP-1')['mode'], '1920x1080@120.00Hz')
+    def test_dock_only_panel_choice_is_saved(self):
+        self.path.parent.mkdir()
+        saved = 'hl.monitor({ output = "desc:Panel Co P1", disabled = false, mode = "1920x1080@120.00" })'
+        self.path.write_text(saved + '\n')
+        backend.persist(state([dict(self.panel, enabled=False), self.external]), False)
+        self.assertEqual(self.lines()[0], 'hl.monitor({ output = "desc:Panel Co P1", disabled = true })')
+        self.assertEqual(sum('Panel Co P1' in line for line in self.lines()), 1)
+        backend.persist(state([self.panel, dict(self.external, enabled=False)]), False)
+        self.assertIn('hl.monitor({ output = "desc:Dell Inc. DELL U1 X1", disabled = true })', self.lines())
 
-    def test_failed_restore_echo_does_not_retry_or_save_rollback_state(self):
-        self.rows[1]['mode'] = '1920x1080@120.00Hz'
-        self.preferences.remember(state(self.rows))
-        saved = self.path.read_text()
-        self.rows[1]['mode'] = '1920x1080@60.00Hz'
-        self.apply.side_effect = [RuntimeError('modeset failed'), None]
-        result = backend.response(dict(op='restore', baseline=None), backend.Preferences(self.path))
+    def test_mirror_rules_target_the_source_selector(self):
+        mirrored = state([self.panel, dict(self.external, mirror='eDP-1', x=0)])
+        backend.persist(mirrored, False)
+        self.assertIn('mirror = "desc:Panel Co P1"', self.lines()[-1])
+
+    @unittest.skipUnless(shutil.which('lua'), 'Lua is required')
+    def test_saved_file_is_valid_lua_with_exact_selectors(self):
+        odd = described('DP-2', 'Odd "quoted" \\ Café', x=3456)
+        backend.persist(state([self.panel, self.external, odd]), False)
+        script = 'local outputs = {}\nhl = {monitor = function(rule) outputs[#outputs + 1] = rule.output end}\n' \
+                 'dofile(arg[1])\nprint(table.concat(outputs, "\\n"))\n'
+        result = subprocess.run(['lua', '-', str(self.path)], input=script, text=True, capture_output=True, timeout=4)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ['desc:Panel Co P1', 'desc:Dell Inc. DELL U1 X1', 'desc:Odd "quoted" \\ Café'])
+
+    def test_failed_change_is_not_saved(self):
+        with patch.object(backend, 'control', side_effect=ValueError('rejected')), \
+                patch.object(backend, 'snapshot', return_value=self.current):
+            result = backend.response(dict(op='change'))
         self.assertFalse(result['ok'])
-        self.apply.reset_mock(side_effect=True)
-        echo = backend.response(dict(op='sync', baseline=result['baseline']), backend.Preferences(self.path))
-        self.assertTrue(echo['ok'], echo['error'])
-        self.apply.assert_not_called()
-        self.assertEqual(self.path.read_text(), saved)
-
-    def test_unplug_all_does_not_erase_preferences(self):
-        self.preferences.remember(state(self.rows))
-        saved = self.path.read_text()
-        self.rows = []
-        self.observe(); self.observe()
-        self.assertEqual(self.path.read_text(), saved)
-        self.rows = [display(), display('DP-1', x=1920)]
-        self.observe()
-        self.assertEqual(len(self.rows), 2)
-
-    def test_invalid_file_is_reported_and_left_untouched(self):
-        self.path.parent.mkdir(parents=True)
-        for content in ('{broken', '{"version":2,"outputs":[]}', '{"version":1,"outputs":[{}]}'):
-            with self.subTest(content=content):
-                self.path.write_text(content)
-                result = backend.response(dict(op='sync'), backend.Preferences(self.path))
-                self.assertFalse(result['ok'])
-                self.assertEqual(self.path.read_text(), content)
-        self.apply.assert_not_called()
-
-    def test_new_monitor_does_not_overlap_saved_outputs(self):
-        self.preferences.remember(state(self.rows))
-        self.rows.append(display('HDMI-A-1', x=0))
-        self.observe()
-        self.assertEqual(self.rows[2]['x'], 3840)
-
-    def test_dpms_and_inventory_changes_are_not_saved_as_preferences(self):
-        self.preferences.remember(state(self.rows))
-        saved = self.path.read_text()
-        self.rows[1].update(dpms=False, label='Changed label', modes=self.rows[1]['modes'] + ['800x600@60.00Hz'])
-        self.observe(); self.observe()
-        self.assertEqual(self.path.read_text(), saved)
-        self.apply.assert_not_called()
+        self.assertFalse(self.path.exists())
 
     def test_write_failure_preserves_existing_file_and_cleans_temporary(self):
-        self.preferences.remember(state(self.rows))
+        self.path.parent.mkdir()
+        self.path.write_text('-- previous\n')
+        with patch.object(backend.os, 'replace', side_effect=OSError('disk full')), self.assertRaises(OSError):
+            backend.persist(self.current, False)
+        self.assertEqual(self.path.read_text(), '-- previous\n')
+        self.assertEqual([path.name for path in self.path.parent.iterdir()], ['displays.lua'])
+
+    def test_save_validates_then_makes_live_rules_match_the_saved_layout(self):
+        overlapping = state([self.panel, dict(self.external, x=0)])
+        with patch.object(backend, 'snapshot', return_value=overlapping), patch.object(backend, 'apply_rows') as apply:
+            self.assertFalse(backend.response(dict(op='save'))['ok'])
+        apply.assert_not_called()
+        self.assertFalse(self.path.exists())
+        with patch.object(backend, 'snapshot', return_value=self.current), patch.object(backend, 'apply_rows') as apply:
+            result = backend.response(dict(op='save'))
+        self.assertTrue(result['ok'], result['error'])
+        apply.assert_called_once_with(self.current['displays'], backend.selectors(self.current['displays']))
+        self.assertEqual(len(self.lines()), len(backend.HEADER) + 2)
+
+    def test_ensure_reenables_the_panel_only_when_no_display_is_usable(self):
+        with patch.object(backend, 'command', return_value='ok') as command, patch.object(backend, 'snapshot') as snapshot:
+            self.assertIs(backend.ensure(self.current), self.current)
+            command.assert_not_called()
+            dark = state([dict(self.external, enabled=False), dict(self.panel, enabled=False)])
+            backend.ensure(dark)
+        command.assert_called_once_with('eval', 'hl.monitor({ output = "desc:Panel Co P1", disabled = false })')
+        snapshot.assert_called_once()
+
+    def test_redocking_restores_panel_choice_without_persisting_fallback(self):
+        backend.persist(state([dict(self.panel, enabled=False), self.external]), False)
         saved = self.path.read_text()
-        self.rows[1]['mode'] = '1920x1080@120.00Hz'
-        with patch.object(backend.os, 'replace', side_effect=OSError('disk full')):
-            with self.assertRaisesRegex(OSError, 'disk full'):
-                self.preferences.remember(state(self.rows))
+        with patch.object(backend, 'apply_setup', return_value=self.current) as apply:
+            backend.ensure(self.current)
+        self.assertFalse(apply.call_args.args[0][0]['enabled'])
         self.assertEqual(self.path.read_text(), saved)
-        self.assertEqual(list(self.path.parent.glob('.displays-*')), [])
+        with patch.object(backend, 'apply_setup') as apply:
+            backend.ensure(state([self.panel]))
+            backend.ensure(state([self.panel, dict(self.external, dpms=False)]))
+        apply.assert_not_called()
 
 
 @unittest.skipUnless(shutil.which('lua'), 'Lua is required')
@@ -567,29 +401,7 @@ assert(dispatches == 1)
 
 @unittest.skipUnless(QS, 'Quickshell is required')
 class DisplayQmlTests(unittest.TestCase):
-    def run_qml(self, body, setup=None):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            for name in ('ui', 'icons', 'drawers'):
-                shutil.copytree(DESKTOP / name, root / name)
-            (root / 'runtime').mkdir(mode=0o700)
-            config = root / 'config/quickshell/desktop'; config.mkdir(parents=True)
-            (config / 'theme-mode').write_text('dark\n')
-            (root / 'drawers/displays/brightness.py').write_text('import json,sys; json.loads(sys.stdin.readline()); print(json.dumps(dict(ok=True,values=[])))')
-            if setup: setup(root)
-            (root / 'shell.qml').write_text(body)
-            env = {**os.environ, 'QT_QPA_PLATFORM': os.environ.get('DISPLAY_PREVIEW_PLATFORM', 'offscreen'),
-                   'XDG_CONFIG_HOME': str(root / 'config'), 'XDG_RUNTIME_DIR': str(root / 'runtime')}
-            if env['QT_QPA_PLATFORM'] != 'offscreen': env['XDG_RUNTIME_DIR'] = os.environ['XDG_RUNTIME_DIR']
-            env.pop('HYPRLAND_INSTANCE_SIGNATURE', None)
-            if env['QT_QPA_PLATFORM'] == 'offscreen': env.pop('WAYLAND_DISPLAY', None)
-            result = subprocess.run([QS, '--no-color', '-p', str(root / 'shell.qml')], env=env, check=False, capture_output=True, text=True, timeout=15)
-        log = result.stdout + result.stderr
-        self.assertEqual(result.returncode, 0, log)
-        self.assertIn('DISPLAY_PASS', log)
-        for error in ('DISPLAY_FAIL', 'TypeError', 'ReferenceError', 'Binding loop', 'Unable to assign', 'polish() loop', 'Polish loop', 'Failed to load', 'coerced to void'):
-            self.assertNotIn(error, log)
-        return log
+    run_qml = support.run_qml
 
     def test_flat_menu_closes_on_selection_and_escape_keeps_changes(self):
         rows = json.dumps([display(), display('DP-1', x=1920)])
@@ -956,20 +768,25 @@ counter.write_text(str(count))
 request=json.loads(sys.stdin.readline())
 if request['op']=='crash': sys.exit(1)
 time.sleep(.1)
-print(json.dumps(dict(ok=True,error='',data=dict(available=True,displays=[],token=str(count),last=request,count=count))))
+reply=dict(ok=True,error='',data=dict(available=True,displays=[],token=str(count),last=request,count=count))
+if request['op']=='power': reply['pending']=count<5
+print(json.dumps(reply))
 ''')
         self.run_qml('''import QtQuick
 import Quickshell
+import Quickshell.Services.UPower
 import "drawers/displays"
 ShellRoot {
  property int stage:0
  property int idleTicks:0
  property int expected:0
+ function settled(count){return !DisplayService.worker.running && !DisplayService.request && DisplayService.state.count===count;}
+ function last(op,message){if(DisplayService.state.last.op!==op)throw new Error(message+": "+DisplayService.state.last.op);}
  Timer { interval:80; repeat:true; running:true; onTriggered: {
   try {
    if(stage===0) { DisplayService.powerProfiles=({profile:-1});DisplayService.eventDelay.interval=100;DisplayService.start();DisplayService.start();stage++; }
-   else if(stage===1 && DisplayService.loaded && !DisplayService.worker.running) {
-    if(DisplayService.state.count!==1 || DisplayService.state.last.op!=="restore")throw new Error("startup restore incorrect");
+   else if(stage===1 && settled(1)) {
+    last("ensure","startup must only check for a usable display");
     if(DisplayService.observing || DisplayService.brightnessWorker.running)throw new Error("eager brightness worker");
     DisplayService.handleEvent("activewindowv2","");
     DisplayService.handleEvent("custom","unrelated");
@@ -978,39 +795,60 @@ ShellRoot {
     DisplayService.handleEvent("custom","desktop-displays-changed");
     DisplayService.handleEvent("monitorremoved","");stage++;
    }
-   else if(stage===2 && !DisplayService.worker.running && DisplayService.state.count===2) {
-    if(DisplayService.state.last.op!=="sync" || DisplayService.state.last.baseline.token!=="1")throw new Error("event burst/baseline incorrect");
+   else if(stage===2 && settled(2) && !DisplayService.eventDelay.running) {
+    last("ensure","hotplug burst must run one safety check");
+    if(ComfortService.worker.running)throw new Error("hotplug started the comfort helper without Keep awake");
+    // Rules re-apply themselves on reload; without Powersave nothing runs.
     DisplayService.handleEvent("configreloaded","");
     DisplayService.handleEvent("custom","desktop-displays-changed");stage++;
    }
-   else if(stage===3 && !DisplayService.worker.running && DisplayService.state.count===3) {
-    if(DisplayService.state.last.op!=="restore")throw new Error("layout event displaced reload restore");
-    // A real edit arriving while another request runs needs a follow-up read.
-    DisplayService.run("sync");
+   else if(stage===3 && !DisplayService.eventDelay.running) {
+    if(!settled(2))throw new Error("reload or layout event did background work");
+    DisplayService.powerProfiles=({profile:PowerProfile.PowerSaver});stage++;
+   }
+   else if(stage===4 && settled(3)) {
+    last("power","entering Powersave did not apply the cap");
+    if(!DisplayService.state.last.capped || !DisplayService.powerPending)throw new Error("cap request or pending state incorrect");
+    // A blank panel retries on the next display event (the wake hook).
     DisplayService.handleEvent("custom","desktop-displays-changed");stage++;
    }
-   else if(stage===4 && !DisplayService.worker.running && DisplayService.state.count===5) {
+   else if(stage===5 && settled(4)) {
+    last("power","pending policy was not retried");
+    DisplayService.handleEvent("configreloaded","");stage++;
+   }
+   else if(stage===6 && settled(5)) {
+    last("power","reload did not re-apply the cap");
+    if(DisplayService.powerPending)throw new Error("pending state survived");
+    DisplayService.change({name:"eDP-1",identity:["eDP-1"]},{mode:"1920x1080@120.00Hz"});stage++;
+   }
+   else if(stage===7 && settled(6)) {
+    if(DisplayService.state.last.capped || DisplayService.capped)throw new Error("explicit refresh did not override the cap");
+    DisplayService.handleEvent("configreloaded","");stage++;
+   }
+   else if(stage===8 && !DisplayService.eventDelay.running && settled(6)) {
+    DisplayService.powerProfiles=({profile:-1});stage++;
+   }
+   else if(stage===9 && settled(7)) {
+    last("power","leaving Powersave did not restore");
+    if(DisplayService.state.last.capped || DisplayService.capSuppressed)throw new Error("restore request incorrect");
     DisplayService.run("crash");stage++;
    }
-   else if(stage===5 && !DisplayService.worker.running) {
+   else if(stage===10 && !DisplayService.worker.running && !DisplayService.request) {
     if(!DisplayService.error || DisplayService.state.available)throw new Error("failure not exposed");
-    DisplayService.handleEvent("custom","desktop-displays-changed");stage++;
+    DisplayService.handleEvent("monitorremoved","");stage++;
    }
-   else if(stage===6 && !DisplayService.worker.running && DisplayService.state.available) {
-    if(DisplayService.state.count!==7)throw new Error("recovery was not event-triggered");
+   else if(stage===11 && settled(9)) {
     expected=DisplayService.state.count;stage++;
    }
-   else if(stage===7) {
+   else if(stage===12) {
     if(DisplayService.worker.running || DisplayService.state.count!==expected || DisplayService.eventDelay.running)throw new Error("idle background work");
-    // Longer than the removed three-second polling interval.
     if(++idleTicks>=42){console.log("DISPLAY_PASS");Qt.quit();}
    }
   } catch(e) {console.error("DISPLAY_FAIL",e);Qt.quit();}
  } }
- Timer { interval:9000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout stage "+stage);Qt.quit();} }
+ Timer { interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout stage "+stage);Qt.quit();} }
 }
 ''', setup)
-
 
 if __name__ == '__main__':
     unittest.main()

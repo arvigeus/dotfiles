@@ -50,7 +50,7 @@ if [[ $edit == auto ]]; then
 fi
 $save || edit=false
 
-command -v hyprshot >/dev/null || fail 'Install hyprshot to take screenshots.'
+command -v grim >/dev/null || fail 'Install grim to take screenshots.'
 if $edit; then
     case $editor in
         ksnip|satty) ;;
@@ -59,68 +59,83 @@ if $edit; then
     command -v "$editor" >/dev/null || fail "Install $editor to edit screenshots."
 fi
 
-args=(-m "$mode")
-if [[ $mode == active-window ]]; then
-    args=(-m window -m active)
-elif [[ $mode == output ]]; then
-    args+=(-m "${output:-active}")
-fi
+# Window boxes for slurp, clipped to their monitor's logical area so that
+# scrolled-off columns add no transparent margins. Reads clients or one window.
+window_boxes() {
+    jq -r --argjson monitors "$(hyprctl -j monitors)" --arg scope "$1" '
+        def box: . as $window | first($monitors[] | select(.id == $window.monitor)) as $m
+            | (if $m.transform % 2 == 1 then [$m.height, $m.width] else [$m.width, $m.height] end
+               | map(. / $m.scale)) as [$width, $height]
+            | ([$window.at[0], $m.x] | max) as $x | ([$window.at[1], $m.y] | max) as $y
+            | (([$window.at[0] + $window.size[0], $m.x + $width] | min) - $x | floor) as $w
+            | (([$window.at[1] + $window.size[1], $m.y + $height] | min) - $y | floor) as $h
+            | select($w > 0 and $h > 0) | "\($x),\($y) \($w)x\($h)";
+        if $scope == "active" then box else
+            [$monitors[] | .activeWorkspace.id, .specialWorkspace.id] as $visible
+            | .[] | select(.mapped and (.hidden | not) and (.workspace.id as $id | any($visible[]; . == $id)))
+            | box
+        end'
+}
+
+# Select before capturing: cancelling leaves no image and the clipboard unchanged.
+case $mode in
+    region) geometry=$(slurp -d) || exit 0 ;;
+    window) geometry=$(hyprctl -j clients | window_boxes visible | slurp -r) || exit 0 ;;
+    active-window)
+        geometry=$(hyprctl -j activewindow | window_boxes active)
+        [[ -n $geometry ]] || fail 'There is no window to capture.'
+        ;;
+    output)
+        [[ -n $output ]] || output=$(hyprctl -j monitors | jq -r 'first(.[] | select(.focused)).name // empty')
+        ;;
+esac
+# Whole outputs are captured natively, including their transform.
+if [[ $mode == output ]]; then target=(-o "$output"); else target=(-g "$geometry"); fi
+
 if ! $save; then
-    # Buffer in memory until Hyprshot's child closes stdout. Cancellation must
-    # leave the existing clipboard intact. No temporary image is written.
-    if hyprshot "${args[@]}" --raw --silent | python3 -c '
+    # Buffer in memory so a failed capture cannot replace the clipboard. No
+    # temporary image is written and no notification is sent.
+    grim "${target[@]}" - | python3 -c '
 import subprocess, sys
 image = sys.stdin.buffer.read()
-if not image:
-    raise SystemExit(3)
 if not image.startswith(b"\x89PNG\r\n\x1a\n"):
-    raise SystemExit("Could not capture a PNG image.")
+    raise SystemExit(1)
 subprocess.run(["wl-copy", "--type", "image/png"], input=image, check=True)
 if sys.argv[1] == "true":
     print("clipboard")
-' "$report"; then
-        exit 0
-    else
-        status=${PIPESTATUS[1]}
-        # Hyprshot's monitor may fail after its child supplied a valid image.
-        [[ $status == 0 ]] && exit 0
-        if [[ $status == 3 && $mode != output ]]; then exit 0; fi
-        fail 'Could not copy the screenshot to the clipboard.'
-    fi
+' "$report" || fail 'Could not copy the screenshot to the clipboard.'
+    exit 0
 fi
 
 pictures=$(xdg-user-dir PICTURES) || pictures=$HOME/Pictures
 folder=${pictures:-$HOME/Pictures}/Screenshots
 mkdir -p -- "$folder"
 filename="Screenshot-$(date +%Y-%m-%d-%H%M%S-%N).png"
-args+=(-o "$folder" -f "$filename")
-$edit && args+=(--silent)
-
-# Hyprshot captures in a child process; keep the pipe open until it finishes.
-# Its monitor can fail to kill a nonexistent hyprpicker after a successful grab.
-# Use the resulting image, rather than the monitor's exit status, for handoff.
-hyprshot "${args[@]}" | cat >&2 || true
 image=$folder/$filename
-# Cancelling selection produces no image and should not open the editor.
-if [[ ! -s $image ]]; then
-    # A whole-display capture has no selection to cancel.
+if ! grim "${target[@]}" "$image" || [[ ! -s $image ]]; then
+    rm -f -- "$image"
     [[ $mode != output ]] || fail 'Could not capture the display. It may have disconnected.'
+    fail 'Could not capture the screenshot.'
+fi
+wl-copy --type image/png < "$image" || true
+$report && printf '%s\n' "$image"
+if ! $edit; then
+    notify-send -a Screenshot -i "$image" 'Screenshot saved' \
+        "Saved as $filename and copied to the clipboard." || true
     exit 0
 fi
-$report && printf '%s\n' "$image"
-if $edit; then
-    case $editor in
-        ksnip) editor_args=(ksnip --edit "$image") ;;
-        satty)
-            editor_args=(satty --filename "$image" --output-filename "$image"
-                --copy-command 'wl-copy --type image/png'
-                --actions-on-enter save-to-file,save-to-clipboard,exit
-                --actions-on-escape exit)
-            ;;
-    esac
-    if $report; then
-        "${editor_args[@]}" >/dev/null 2>&1 &
-    else
-        exec "${editor_args[@]}"
-    fi
+case $editor in
+    ksnip) editor_args=(ksnip --edit "$image") ;;
+    satty)
+        # shellcheck disable=SC2054 # Satty takes comma-separated action lists.
+        editor_args=(satty --filename "$image" --output-filename "$image"
+            --copy-command 'wl-copy --type image/png'
+            --actions-on-enter save-to-file,save-to-clipboard,exit
+            --actions-on-escape exit)
+        ;;
+esac
+if $report; then
+    "${editor_args[@]}" >/dev/null 2>&1 &
+else
+    exec "${editor_args[@]}"
 fi

@@ -1,7 +1,9 @@
 """Exercise workspace navigation policy without moving real desktop windows."""
+import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 import unittest
 
 
@@ -339,3 +341,38 @@ assert(#actions == 0)
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipUnless(shutil.which('lua'), 'Lua is required for configuration tests')
+class ConfigurationLoadTests(unittest.TestCase):
+    def test_components_and_input_policy_load_through_require(self):
+        hypr = POLICY.parent
+        method = POLICY.parents[7] / 'modules/hardware/keyboard/input-method/symlinks/home/.config/hypr'
+        with tempfile.TemporaryDirectory() as runtime:
+            state = Path(runtime) / 'input-method/hyprland-a_b'
+            state.mkdir(parents=True)
+            (state / 'secondary').write_text('vi\n')
+            script = f'''
+package.path = {str(hypr / "?.lua")!r} .. ";" .. {str(method / "?.lua")!r}
+local layouts = {{}}
+local stub
+stub = setmetatable({{}}, {{ __index = function() return stub end, __call = function() return stub end }})
+hl = setmetatable({{
+    config = function(values)
+        if values.input and values.input.kb_layout then table.insert(layouts, values.input.kb_layout) end
+    end,
+    get_monitors = function() return {{}} end,
+    get_workspaces = function() return {{}} end,
+}}, {{ __index = function() return stub end }})
+dofile({str(hypr / "hyprland.lua")!r})
+for _, name in ipairs({{"monitors", "appearance", "animations", "layout", "workspaces", "input", "bindings", "windows", "input-method"}}) do
+    assert(package.loaded[name], name)
+end
+assert(not package.loaded["host-monitors"] and not package.loaded["displays"])
+assert(layouts[#layouts] == "us", "saved Vietnamese selection not reapplied")
+InputMethod.apply("bg")
+assert(layouts[#layouts] == "us,bg")
+'''
+            result = subprocess.run(['lua', '-'], input=script, text=True, capture_output=True,
+                                    env=dict(os.environ, XDG_RUNTIME_DIR=runtime, HYPRLAND_INSTANCE_SIGNATURE='a/b'))
+        self.assertEqual(result.returncode, 0, result.stderr)

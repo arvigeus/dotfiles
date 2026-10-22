@@ -1,299 +1,142 @@
 # Desktop shell
 
+A Quickshell bar and drawers for applications, workspaces, audio, networking,
+displays, capture, clipboard history, calendar, notifications and system controls.
+
 ## Shortcuts
 
-| Shortcut                   | Action                                                    |
-| -------------------------- | --------------------------------------------------------- |
-| Win+R                      | Open / close application search.                          |
-| Ctrl+1                     | Open / close Spaces.                                      |
-| Ctrl+Shift+P               | Open / close Performance, including over fullscreen apps. |
-| Ctrl+D (in search)         | Toggle the selected app's favorite.                       |
-| Ctrl+Win+Up / Down         | Go to the workspace above / below.                        |
-| Ctrl+Win+Shift+Up / Down   | Move the active window above / below and follow it.       |
-| Win+Arrow                  | Focus the window in that direction.                       |
-| Win+Shift+Left / Right     | Move the active column left / right.                      |
-| Win+J                      | Give a stacked window its own column.                     |
-| Win+[ / Win+]              | Make the active column narrower / wider.                  |
-| Win+.                      | Center the active column.                                 |
-| Win+mouse wheel            | Scroll through columns.                                   |
-| Win+M                      | Toggle maximization.                                      |
-| Win+V                      | Toggle floating.                                          |
-| Win+left-drag / right-drag | Move / resize a window.                                   |
-| Win+Q / Alt+F4             | Close the active window.                                  |
+| Shortcut | Action |
+| --- | --- |
+| Win+R | Application search |
+| Win+1 or Ctrl+Alt+Delete | Spaces and session actions |
+| Win+Shift+P | Performance, including over fullscreen apps |
+| Ctrl+D in search | Favorite the selected app |
+| Ctrl+Win+Up / Down | Previous / next workspace on this display |
+| Ctrl+Win+Shift+Up / Down | Move the window to that workspace and follow |
+| Win+Arrow | Focus a window |
+| Win+Shift+Left / Right | Move a column |
+| Win+J | Give a stacked window its own column |
+| Win+[ / Win+] | Resize the current column |
+| Win+. | Center the column |
+| Win+mouse wheel | Scroll columns |
+| Win+M / Win+V | Maximize / toggle floating |
+| Win+Q or Alt+F4 | Close a window |
 
-Escape or clicking outside closes search/drawers. Opening another replaces the
-current one. Scroll over the bar islands to reach buttons on narrow displays.
+Workspace navigation stays on the current display without wrapping. Empty
+workspaces disappear when left. Three-finger vertical swipes follow their natural
+direction; horizontal swipes scroll columns. Amber tabs/arrows indicate windows
+requesting attention. Apps must report urgency; unread browser tabs alone may not.
 
-Workspace navigation stays on the current display without wrapping. A populated
-workspace can create a new neighbor; empty workspaces disappear when left.
-Three-finger swipes follow their natural direction: up goes to the workspace
-below and down to the one above; horizontal swipes scroll columns.
+## Spaces and session controls
 
-Windows requesting attention show an amber tab and dot. An amber workspace arrow
-means a window above or below needs attention. Apps must send an urgency request;
-an unread browser tab alone may not trigger it.
+Space entries are placeholders. The header photo opens Mugshot for your account
+photo/name; reopen Spaces after saving to refresh it.
 
-## Spaces
+Hold session actions for two seconds. Shutdown timers continue with the drawer
+closed. **Restart → Reload** closes applications and starts a fresh desktop.
+Sleep/locking pauses clear on shell reload/exit; screen blanking and manual
+lock/suspend remain available. See [desktop sessions](../hyprland/README.md).
 
-Spaces lists Applications, Files, Terminal, Projects, Movies, TV Series,
-Music, Radio, Pictures, Games and Books. These entries are placeholders for now.
+## Capture and clipboard
 
-The header photo opens Mugshot to edit your account picture and display name.
-Phone fields are disabled; this setup uses AccountsService for profile changes.
-Reopen Spaces after saving to refresh the photo.
+Screenshots save under Pictures/Screenshots and copy to the clipboard. Capture's
+editor/save preferences also apply to [screenshot shortcuts](../hyprland/README.md#screenshots-and-recording).
+Clipboard-only capture creates no image file and skips the editor/notification.
+Reopening Capture cancels its countdown.
 
-Hold a session action for two seconds to enter gaming mode, sleep, restart or power off.
-The power-off arrow offers shutdown timers from 15 minutes to five hours and
-cancellation of a scheduled shutdown. Timers continue with the drawer closed.
-The Restart menu offers **Reload**, which closes applications and starts a fresh
-desktop session. The Sleep and gaming-mode menus can pause automatic sleep and locking independently.
-Click coffee or the open lock to restore them. Pauses clear on shell reload or
-exit; screen blanking and manual lock/sleep commands remain available.
+Recording uses GPU Screen Recorder and saves H.264/AAC MP4 in Videos/Recordings.
+It continues through shell reloads and saves when the graphical session ends.
+Win+Shift+R selects an area when idle and stops an active recording. Webcam tests
+stop on drawer dismissal; privacy controls depend on camera support.
 
-## System tray
+Clipboard history is local and limited to 50 items. Pause collection before
+copying sensitive data. Pausing survives shell reloads and resets at the next
+login. It does not remove existing history.
 
-The tray drawer lists background apps and their status, including idle apps.
-Its badge counts tray apps; the button highlights when an app requests attention
-or has an unseen desktop notification. Opening an app from the tray acknowledges
-its notifications. Unread messages can only be detected when the app reports
-attention or sends a desktop notification.
-Right-click an app or use its menu button for application-owned controls;
-middle-click and scrolling retain the app's tray actions. Legacy X11/XEmbed-only
-tray icons are not supported.
+## Audio, Bluetooth and power
 
-## Clipboard
+Sound/Microphone include per-app controls and tests. Boost is remembered per
+device. For names and ceilings, see [audio configuration](ARCHITECTURE.md#audio-configuration).
+Bluetooth pairing and Connect authorize future reconnections. Closing the drawer
+cancels unfinished pairing; searching ends after 30 seconds.
 
-Search recent text and image copies, preview longer entries, restore or remove
-items, and clear history. Collection can be paused from the drawer. History is
-stored locally and limited to 50 items; pause collection before copying
-sensitive data. See [clipboard implementation notes](ARCHITECTURE.md#clipboard).
+**Charge to 100% once** restores the previous limit after unplugging. It needs the
+shell running; pending restoration recovers at startup, but an unplug/replug while
+the shell is stopped cannot be detected. Manual limit changes cancel it.
 
-## Capture
-
-Capture offers fullscreen and region screenshots with a timer, screen recording and
-per-webcam settings and mirrored tests. Images are saved in your Pictures
-directory under `Screenshots` and copied to the clipboard. Reopen Capture during
-a countdown to cancel.
-
-**Open in editor** is remembered and also applies to screenshot shortcuts,
-including Win+Shift+S. Win+Shift+Print always skips editing. **Save to disk** is
-on by default and also applies to shortcuts; turn it off for clipboard-only
-screenshots without an editor or notification. Delayed region captures open area
-selection after the countdown.
-
-Recording closes the drawer and records the full display with GPU Screen
-Recorder. Reopen Capture to stop or pause; the bar shows elapsed time.
-Win+Shift+R selects an area when idle and stops the active recording. Recordings
-are saved as H.264/AAC MP4 in `Videos/Recordings` (following XDG directory settings).
-System audio, microphone and pointer options are remembered. Recording continues
-through shell reloads and saves when the graphical session ends.
-
-Webcam tests stop on drawer dismissal. Camera capture can be disabled only on
-devices exposing a privacy control. Settings reflect hardware support; other
-camera apps may change them. See [capture shortcuts](../hyprland/README.md#screenshots-and-recording).
-
-## System
-
-System brings system updates, boot times and service health together.
-Updates run Topgrade in an interactive terminal. Boot times show startup phases and
-the five slowest units. Services shows failed system/user units, their logs and
-the next scheduled timers. The info button shows the OS, kernel and uptime.
-
-Repair signing keys and Check package health run in a terminal. The latter checks
-for missing package files and dependency problems. The health report can reinstall
-affected repository packages alongside a full system update. Signing repair reloads the
-installed keyrings while keeping custom keys; use Update system for newer keyring
-package versions.
-
-See [system implementation notes](ARCHITECTURE.md#system).
-
-## Battery and performance
-
-Battery shows system and device batteries, with charge-limit control on supported
-hardware. **Charge to 100% once** restores the previous limit after unplugging;
-**Restore charge limit** ends it early. Changing the limit manually cancels it.
-One-time charging needs the shell running; pending restorations recover at startup.
-An unplug/replug cycle while the shell is stopped cannot be detected.
-
-Performance offers power modes, resource readings, btop access and workload
-recording. On Zephyrus, plugging in selects Balanced and unplugging selects
-Powersave; Performance stays selected. See the
-[mode comparison](../../hardware/power/README.md) for CPU, cooling and playback behavior.
-Detailed readings refresh while the drawers are open; sleeping GPUs stay asleep.
-
-**Record performance** observes the current workload until you stop it and saves
-readings and a summary. It requires `power-study`, continues with the drawer
-closed, and stops on shell exit or reload.
-See [power implementation notes](ARCHITECTURE.md#battery-and-performance).
+On Zephyrus, plugging in selects Balanced and unplugging selects Powersave;
+Performance stays selected. See the [mode comparison](../../hardware/power/README.md).
+Performance recording observes your workload until stopped and ends on shell
+exit/reload. Detailed readings do not wake sleeping GPUs.
 
 ## Networking
 
-Wi-Fi, VPN and Cloudflare WARP controls, with transfer rates and an internet
-speed test that follows the current route, including VPNs.
+Wi-Fi, Ethernet, VPN and Cloudflare WARP controls share connection information and
+an internet speed test following the current route. The public IPv4 lookup runs
+only on opening information and caches for ten minutes. Enterprise/WEP networks
+use the connection editor.
 
-**Ports** opens TCP/IPv4 ports to devices on the connected local network. Use
-the × to close one; there is no time limit. Openings clear on disconnect,
-network changes, reboot or UFW reload. Closing removes the temporary allowance; existing
-connections may continue.
+Ports opens TCP/IPv4 access from the current local subnet. Openings disappear on
+firewalld reload/reboot. A changed address/subnet makes them inactive; they can
+apply again if that network returns. Closing a rule may leave established
+connections active. See [firewall access](../../system/security/firewall/README.md).
 
-The header info button shows connection details with copy actions for addresses
-and interface names. The public IPv4 address follows the current route, including
-VPN/WARP, and is fetched only when information opens, with a ten-minute cache.
+## Displays and keyboard
 
-## Audio
+Display changes apply immediately and persist in `~/.config/hypr/displays.lua`.
+Use **Save current layout** after arranging displays in wdisplays. Dock-only panel choices
+return on redocking; undocking temporarily re-enables the panel when necessary.
+Brightness is not restored from the layout. Powersave normally caps the internal
+panel to 60 Hz; choosing another refresh overrides that until the next mode change.
 
-Sound and Microphone drawers provide device and per-application audio controls,
-routing, playback controls, speaker/microphone tests and optional volume boost.
-Custom device names and volume limits are described under
-[audio configuration](ARCHITECTURE.md#audio-configuration).
+Dark mode affects the shell. Night light remembers its enabled state; edit
+`~/.config/hypr/hyprsunset.conf` for warmth/times and restart `hyprsunset.service`.
+Keep awake is temporary, per display, and pauses automatic locking/suspend too.
 
-## Bluetooth
+The keyboard offers English, Bulgarian phonetic and Vietnamese Telex. Alt+Shift
+switches English and the selected secondary language. Lighting controls depend
+on hardware; the lowest brightness is off. See [Logitech backlighting](../../hardware/peripherals/logitech/README.md).
 
-Connect paired devices or search nearby devices to pair, with passkey prompts
-and reported battery levels. Pairing and Connect also authorize that device's
-future reconnections. Searching stops after 30 seconds or when the drawer
-closes. Closing also cancels unfinished pairing. Hold the trash icon to forget a device.
-The bar shows whether Bluetooth is on and lists connected devices on hover.
-The header info button shows adapter details with copy actions; the pencil opens
-Blueman for advanced Bluetooth settings.
+## Time, calendar and notifications
 
-## Time and weather
+Weather places live in `~/.config/quickshell/desktop/weather.json`; see the
+[format](ARCHITECTURE.md#time-and-weather). Pinning changes the system timezone;
+browsing another place leaves it unchanged. Forecasts refresh every 30 minutes
+and remain visible offline. Alarms/reminders continue with the drawer closed,
+clear on shell exit/reload and cannot wake a sleeping computer.
 
-Choose a saved place for its local time, current weather, hourly rain chances and
-five-day forecast. Selection leaves the system island unchanged. Temperatures
-are in °C. The bar's temperature badge, icon and tooltip refresh every 30 minutes, even
-with the drawer closed. The drawer shares that cache and refreshes a selected
-place when its data is older than 30 minutes. The refresh button updates it
-immediately. Each place in the picker shows its local time. Cached forecasts
-remain visible offline with their last update time. Short daily outlooks appear
-under current conditions and in forecast-row tooltips.
+Events/tasks use Nextcloud and keep cached data available offline. Writes need a
+connection; recurring event edits and individual task exceptions are read-only.
+Configure `~/.config/quickshell/desktop/integrations/nextcloud.json` with the
+[account example](symlinks/home/.config/quickshell/desktop/integrations/nextcloud.example.json).
+Save a Nextcloud DAV app password in `integrations/nextcloud-app-password`, owned
+by you with mode `0600`; keep the integrations directory private (`0700`).
+Optional `calendar.json` [selections](symlinks/home/.config/quickshell/desktop/drawers/events/calendar.example.json)
+choose collection names/slugs. Omitted arrays include all; empty arrays include none.
 
-The pin action sets the selected place as current and applies its system timezone
-without a password once the desktop timezone permission rule is installed. Clocks
-and dates then use that timezone, including daylight saving changes. Browsing
-other places leaves system settings alone.
-Only that place refreshes in the background; other places fetch while selected
-and their cache is older than 30 minutes.
+Notifications provide popups, history and Do Not Disturb. The tray highlights
+reported attention or unseen desktop notifications; apps must expose one of these
+signals for unread messages to be detectable. Legacy XEmbed tray icons are unsupported.
 
-Places live in `~/.config/quickshell/desktop/weather.json`, outside the dotfiles.
-See [weather configuration](ARCHITECTURE.md#clock-and-weather) for the file format.
+## System and storage
 
-Add a one-shot alarm with a message, or a repeating focus/break reminder (25/5
-minutes by default). Alarms use system-local time. Reminders keep running with
-the drawer closed and clear when the shell exits or reloads. They send desktop
-notifications; they do not wake a sleeping computer.
+System combines updates, boot times, failed services/logs and timers. Package
+health checks report missing files/dependency problems and can reinstall affected
+repository packages with a full update. Signing repair reloads installed keyrings;
+Update system obtains newer keyring packages.
 
-## Keyboard
-
-English, Български (phonetic) and Tiếng Việt (Telex), with the active language
-shown in the settings island. Alt+Shift switches between English and the
-checkmarked secondary language. The help button has Telex, Bulgarian phonetic
-and desktop shortcut references; the typing field clears when the drawer closes.
-The pencil opens Fcitx input-method settings.
-Keyboard cards provide brightness and supported lighting settings in a cog menu.
-RGB keyboards offer color presets and supported effects. The lowest brightness
-step is off; keyboard input stays enabled.
-
-Lighting support comes from the selected hardware modules. See the
-[Logitech module](../../hardware/peripherals/logitech/README.md) for MX Keys Mini
-backlighting behavior.
-
-See [input language integration](ARCHITECTURE.md#keyboard) for technical details.
-
-## Displays
-
-Per-display controls for refresh rate, mirroring and hardware brightness.
-Each display's cog offers **Use recommended resolution** to apply and save its
-preferred resolution and refresh rate.
-The header edit button opens wdisplays for arrangement, resolution, scale and rotation.
-Settings apply immediately, and the cog menu closes after each selection.
-Identify displays labels the connected screens. Each cog also offers test patterns
-and a motion test. In fullscreen tests, Space/arrow keys cycle patterns, H hides
-controls, and Escape or a click exits. Mirrored outputs share their source’s image.
-External brightness needs DDC/CI support and the monitor's DDC/CI setting enabled.
-
-Dark mode switches the shell's appearance between light and dark.
-Night light starts/stops hyprsunset for all active displays. Configure warmth
-and optional timing in `~/.config/hypr/hyprsunset.conf`; restart
-`hyprsunset.service` after editing it while active.
-
-Keep awake in a display's cog prevents that monitor from blanking and pauses
-automatic locking/suspend while it stays connected. Its bar's monitor icon turns
-red. Checkmarks reset when the shell exits or reloads.
-
-Display settings are saved automatically in
-`~/.config/quickshell/desktop/displays.json` and restored after login, reconnect
-and Hyprland config reload. This user-owned file is separate from the dotfiles.
-Changes made in wdisplays are saved when display-change notifications settle.
-Unplugging the last external display temporarily re-enables the built-in panel;
-your dock-only preference returns on reconnect. Stranded workspaces and off-screen
-floating windows are recovered onto an available display.
-Brightness retention depends on the hardware; the drawer does not restore it.
-The Night light toggle is remembered across logins.
-See [display implementation notes](ARCHITECTURE.md#displays).
-
-## Disks
-
-Storage capacity and free space by drive, with file-manager access to mounted
-locations, encrypted-volume unlock and mount/unmount. Unmounted devices remain
-available to mount again. System volumes stay mounted.
-
-The header scan button opens Filelight; the pencil opens KDE Partition Manager
-for partitioning and filesystem operations. Drive health
-checks run on request where supported; sleeping ATA drives stay asleep.
-
-**Clean system** offers recoverable package, browser and developer caches, unused
-Podman images and Flatpak runtimes, and optional mise tool removal. Select categories
-and hold to confirm. System package cleanup may ask for administrator authentication.
-See [cleanup implementation notes](ARCHITECTURE.md#system-cleanup).
+Disks provides mount/unmount/unlock, on-demand drive health, Filelight and the
+partition editor. System mounts stay mounted and sleeping ATA drives stay asleep.
+Clean system offers selected caches, unused container/runtime resources and mise
+tools. Package cleanup may request administrator authentication.
 
 ## Service
 
-Show or hide the shell with
-`systemctl --user start desktop-shell.service` or
-`systemctl --user stop desktop-shell.service`.
-Stopping/restarting may also close applications launched by the shell.
-
 ```sh
-systemctl --user status desktop-shell.service
+systemctl --user restart desktop-shell.service
 journalctl --user -b -u desktop-shell.service -n 50
 ```
 
-See [implementation notes](ARCHITECTURE.md) for development and troubleshooting.
-
-## Events, tasks and notifications
-
-Events and tasks has a month calendar, an upcoming agenda, and searchable task
-lists with start/due times, priorities, progress, tags and subtasks. Repeating
-tasks support daily, weekday, weekly, monthly and yearly presets, plus custom
-rules. Completing an occurrence advances the next one; completed tasks can be
-reopened. Cached content opens immediately and syncs quietly in the background.
-Actions appear immediately; failed writes restore the item and preserve save
-drafts. Saved calendar data remains available offline. Writes require a connection.
-Recurring events and individual task exceptions are read-only in the drawer.
-
-Notifications use themed popups with app icons, images, progress and inline app
-actions. Hovering pauses the popup timer. The Notifications drawer keeps recent
-history and Do Not Disturb; quiet notifications go straight to history. The bell
-counts unseen notifications; opening the drawer acknowledges them.
-
-Nextcloud uses one shared account in
-`~/.config/quickshell/desktop/integrations/nextcloud.json` for all consumers.
-Start from the [account example](symlinks/home/.config/quickshell/desktop/integrations/nextcloud.example.json).
-Put its referenced DAV app password in
-`integrations/credentials/nextcloud/dav-app-password`, with directory permissions
-`0700` and file permissions `0600`. Generate an app password in Nextcloud's
-Personal settings → Security.
-
-To copy an existing account and its credential files, preserving the originals:
-
-```sh
-python3 ~/.config/quickshell/desktop/integrations/import_account.py \
-  /path/to/nextcloud.json --calendar /path/to/calendar-settings.json
-```
-
-Optional `~/.config/quickshell/desktop/calendar.json` selects calendars and task
-lists by name or slug; see the [selection example](symlinks/home/.config/quickshell/desktop/drawers/events/calendar.example.json).
-Omitted selections include all collections; an empty array includes none.
-See [integration architecture](symlinks/home/.config/quickshell/desktop/integrations/ARCHITECTURE.md)
-and [calendar implementation](symlinks/home/.config/quickshell/desktop/drawers/events/ARCHITECTURE.md).
+Applications launched from the shell run independently and survive its restart.
+Temporary pauses, tests and reminders end on restart. See
+[implementation and validation notes](ARCHITECTURE.md).

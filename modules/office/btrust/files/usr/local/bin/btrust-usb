@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Opt-in udev activation; no separate USB watcher is installed.
+# Overrides the module's default activation rule in /usr/local/lib/udev/rules.d.
 set -Eeuo pipefail
 rule=/etc/udev/rules.d/71-btrust.rules
 usage() { printf 'Usage: sudo btrust-usb enable VENDOR_ID PRODUCT_ID [SERIAL]\n       sudo btrust-usb disable\n       btrust-usb rule VENDOR_ID PRODUCT_ID [SERIAL]\n'; }
@@ -18,17 +18,15 @@ enable|rule)
 	[[ $1 != rule ]] || { printf '%s\n' "$line"; exit 0; }
 	((EUID == 0)) || { usage >&2; exit 1; }
 	install -d -m 0755 /etc/udev/rules.d
+	rm -f -- "$rule"
 	printf '%s\n' "$line" >"$rule"
 	chmod 0644 "$rule"
 	;;
 disable)
 	[[ $# == 1 ]] || { usage >&2; exit 2; }
 	((EUID == 0)) || { usage >&2; exit 1; }
-	# Retain an explicit disabled state across rebuilds instead of falling back
-	# to the module's default rule when preserve_path finds no local file.
 	install -d -m 0755 /etc/udev/rules.d
-	printf '# B-Trust USB activation explicitly disabled.\n' >"$rule"
-	chmod 0644 "$rule"
+	ln -sfn /dev/null "$rule"
 	;;
 *) usage >&2; exit 2 ;;
 esac

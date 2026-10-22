@@ -8,6 +8,7 @@ ConditionEnvironment=HYPRLAND_INSTANCE_SIGNATURE
 
 [Service]
 Type=exec
+UMask=0077
 ExecStart=/usr/bin/qs --no-duplicate --path "%E/quickshell/desktop/shell.qml" --no-color
 Environment=QT_QPA_PLATFORM=wayland
 Slice=session.slice

@@ -1,11 +1,12 @@
 pragma Singleton
 import QtQuick
+import Quickshell
 import Quickshell.Io
 import "../displays"
 
 // The singleton lets a submitted command finish after the drawer is destroyed.
 // No worker or polling remains while idle; systemd owns shutdown timers.
-QtObject {
+Singleton {
     id: root
     property var state: ({capabilities: {}, scheduledShutdown: ""})
     property string actionError: ""
@@ -23,11 +24,12 @@ QtObject {
     function execute(action: string, minutes = 0): void {
         if (actionBusy || (action !== "status" && ComfortService.busy)) return;
         actionError = ""; actionBusy = true; received = false;
-        worker.command = ["python3", "-B", decodeURIComponent(Qt.resolvedUrl("backend.py").toString().replace(/^file:\/\//, "")),
+        worker.command = ["python3", Quickshell.shellPath("drawers/spaces/backend.py"),
             JSON.stringify({action, minutes})];
         worker.running = true;
     }
-    readonly property Process worker: Process {
+    Process {
+        id: worker
         stdout: SplitParser {
             onRead: line => {
                 root.received = true;

@@ -1,7 +1,8 @@
 import QtQuick
+import Quickshell
 import Quickshell.Io
 
-QtObject {
+Scope {
     id: root
     property string phase: "idle"
     property string detail: ""
@@ -12,7 +13,7 @@ QtObject {
     property bool started: false
     property bool completed: false
     readonly property bool running: phase !== "idle"
-    property list<string> command: ["env", "python3", "-B", decodeURIComponent(Qt.resolvedUrl("probe.py").toString().replace(/^file:\/\//, ""))]
+    property list<string> command: ["python3", Quickshell.shellPath("drawers/audio/probe.py")]
     function start(kind: string): void {
         if (running) return;
         mode = kind; phase = "starting"; detail = ""; error = "";
@@ -29,7 +30,8 @@ QtObject {
         worker.signal(15);
         killDelay.restart();
     }
-    readonly property Process worker: Process {
+    Process {
+        id: worker
         command: root.command
         stdinEnabled: true
         onStarted: {
@@ -57,11 +59,13 @@ QtObject {
             root.phase = "idle"; root.detail = ""; root.started = false;
         }
     }
-    readonly property Timer deadline: Timer {
+    Timer {
+        id: deadline
         interval: 120000
         onTriggered: { root.error = qsTr("Audio test timed out."); root.cancel(); }
     }
-    readonly property Timer killDelay: Timer {
+    Timer {
+        id: killDelay
         interval: 1500
         onTriggered: if (worker.running) worker.signal(9)
     }
