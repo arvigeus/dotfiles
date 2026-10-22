@@ -3,6 +3,7 @@
         "quickshell",
         "mugshot",
         "accountsservice",
+        "zenity",
         "adwaita-icon-theme",
         "qt6-multimedia",
         "python-dateutil",

@@ -361,12 +361,12 @@
                     "browser.startup.page": 3,
                     "browser.sessionstore.enabled": true,
                     "browser.sessionstore.privacy_level": 0,
+                    "privacy.clearOnShutdown_v2.cookiesAndStorage": false,
                     "widget.use-xdg-desktop-portal.file-picker": 1,
                     "browser.urlbar.update2.engineAliasRefresh": true,
                     "dom.webgpu.enabled": true,
                     "signon.rememberSignons": false,
-                    "dom.event.contextmenu.shift_suppresses_event": true,
-                    "privacy.clearOnShutdown_v2.cookiesAndStorage": false
+                    "dom.event.contextmenu.shift_suppresses_event": true
                 },
                 "extensions": [
                     "https://addons.mozilla.org/firefox/downloads/latest/bitwarden-password-manager/latest.xpi",
@@ -2696,6 +2696,7 @@
         "quickshell",
         "mugshot",
         "accountsservice",
+        "zenity",
         "adwaita-icon-theme",
         "qt6-multimedia",
         "python-dateutil",

@@ -3,6 +3,7 @@ import QtQuick
 import QtCore
 import Quickshell
 import Quickshell.Io
+import "../../ui"
 
 // Helper state for what Quickshell.Networking lacks: VPN profiles, IP details,
 // WARP and user-scoped profiles for new Wi-Fi networks. Reads run only while the
@@ -30,6 +31,12 @@ Singleton {
     property var state: ({ profiles: [], active: [], details: ({}),
         warp: { available: false, connected: false, running: false, state: qsTr("Checking…"), mode: "" } })
     signal completed(string operation, bool success)
+
+    // A separate application owns the picker, independent of the layer-shell
+    // window that is hidden when the drawer closes.
+    function chooseWireguardConfig(): void {
+        Apps.launch(["python3", Quickshell.shellPath("drawers/network/backend.py"), "--import-wireguard"]);
+    }
 
     Settings {
         id: preferences

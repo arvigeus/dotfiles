@@ -28,6 +28,7 @@ DrawerPage {
     property var trafficSample: null
     property var rates: null
     property Popup informationPopup: null
+    property var vpnImportMenu: null
 
     readonly property var networkState: service.state
     readonly property bool available: networking.backend === NetworkBackendType.NetworkManager
@@ -67,6 +68,7 @@ DrawerPage {
         return null;
     }
     escapeHandler: informationPopup ? (() => informationPopup.close())
+        : vpnImportMenu ? (() => vpnImportMenu.close())
         : ports.popupOpen ? (() => ports.closePopup()) : null
     onRouteContextChanged: {
         publicIp.context = routeContext;
@@ -82,7 +84,7 @@ DrawerPage {
     }
     onActiveChanged: {
         service.observing = active;
-        if (!active) speedTest.cancel();
+        if (!active) { speedTest.cancel(); vpnImportMenu?.close(); }
     }
     Component.onCompleted: { service.observing = active; publicIp.context = routeContext; updateScanner(); }
     Component.onDestruction: {
@@ -113,7 +115,7 @@ DrawerPage {
                 objectName: "wifiInfoPopup"; button: information; active: root.active
                 onAboutToShow: {
                     root.informationPopup = networkInfo;
-                    ports.closePopup(); warpMenu.close(); root.publicIp.lookup();
+                    ports.closePopup(); warpMenu.close(); root.vpnImportMenu?.close(); root.publicIp.lookup();
                 }
                 onDismissed: if (root.informationPopup === networkInfo) root.informationPopup = null
                 ShellText { text: root.accessStatus; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.muted }
@@ -422,6 +424,34 @@ DrawerPage {
             NetworkSection {
                 objectName: "vpnSection"
                 title: qsTr("VPN"); flat: true; collapsible: false
+                action: IconButton {
+                    id: vpnAdd
+                    objectName: "vpnAdd"; iconName: "plus"; text: qsTr("Add VPN connection")
+                    readonly property alias menu: vpnMenu
+                    enabled: root.active && root.available
+                    checked: vpnMenu.visible
+                    onClicked: if (vpnMenu.visible) vpnMenu.close(); else vpnMenu.open()
+                    Menu {
+                        id: vpnMenu
+                        objectName: "vpnImportMenu"
+                        popupType: Popup.Item
+                        x: vpnAdd.width - width; y: vpnAdd.height
+                        width: 220
+                        padding: 6
+                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                        background: Surface { color: Theme.background; radius: Theme.controlRadius }
+                        onAboutToShow: {
+                            root.vpnImportMenu = vpnMenu;
+                            root.informationPopup?.close(); ports.closePopup(); warpMenu.close();
+                        }
+                        onClosed: if (root.vpnImportMenu === vpnMenu) root.vpnImportMenu = null
+                        ShellMenuItem {
+                            objectName: "importWireguard"
+                            text: qsTr("Import WireGuard…")
+                            onTriggered: { root.service.chooseWireguardConfig(); root.closeRequested(); }
+                        }
+                    }
+                }
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 0
@@ -442,7 +472,7 @@ DrawerPage {
                         onClicked: warpMenu.open()
                         Menu {
                             id: warpMenu
-                            onAboutToShow: { root.informationPopup?.close(); ports.closePopup(); }
+                            onAboutToShow: { root.informationPopup?.close(); ports.closePopup(); root.vpnImportMenu?.close(); }
                             objectName: "warpMenu"
                             popupType: Popup.Item
                             x: warpSettings.width - width; y: warpSettings.height
@@ -499,7 +529,7 @@ DrawerPage {
                 service: root.portsService; active: root.active
                 interfaceName: root.statsDevice?.name ?? ""
                 connected: interfaceName !== ""
-                onPopupOpened: { warpMenu.close(); root.informationPopup?.close(); }
+                onPopupOpened: { warpMenu.close(); root.informationPopup?.close(); root.vpnImportMenu?.close(); }
             }
         }
         Button {

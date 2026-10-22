@@ -27,6 +27,31 @@ except (ImportError, ValueError):
     NM = None
 
 
+class WireguardImportTests(unittest.TestCase):
+    def test_picker_cancel_does_not_launch_editor(self):
+        with patch.object(backend.subprocess, 'run', return_value=Mock(returncode=1, stdout='')) as run:
+            backend.import_wireguard()
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0][:2], ['zenity', '--file-selection'])
+
+    def test_selected_filename_is_one_argument_and_contents_are_not_read(self):
+        filename = '/tmp/WireGuard configs/iPhone #% ✓ $(touch unexpected).conf'
+        with patch.object(backend.subprocess, 'run', side_effect=[
+                Mock(returncode=0, stdout=filename + '\n'), Mock(returncode=0)]) as run:
+            backend.import_wireguard()
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_args.args[0],
+                         ['nm-connection-editor', '--type', 'wireguard', '--import', filename])
+
+    def test_editor_failure_shows_generic_error_without_diagnostics(self):
+        with patch.object(backend.subprocess, 'run', side_effect=[
+                Mock(returncode=0, stdout='/tmp/test.conf\n'),
+                Mock(returncode=1, stderr='private-key'), Mock(returncode=0)]) as run:
+            backend.import_wireguard()
+        self.assertEqual(run.call_args.args[0][:2], ['zenity', '--error'])
+        self.assertNotIn('private-key', str(run.call_args))
+
+
 class WarpTests(unittest.TestCase):
     def test_start_waits_for_daemon_and_never_registers_implicitly(self):
         replies = [Mock(stdout='{"code":"FailedToConnectToDaemon"}', stderr=''),
@@ -230,6 +255,8 @@ FloatingWindow {
   property var calls: []
   property string warpMode: "warp+doh"
   property bool warpRegisterNext: false
+  property int importRequests: 0
+  function chooseWireguardConfig() { importRequests++; }
   function selectWarpMode(mode) { warpMode = mode; }
   function setWarpRegistration(value) { warpRegisterNext = value; }
   function dismissError() { error = ""; }
@@ -292,6 +319,14 @@ FloatingWindow {
    if (window.stage === 0) {
     check(find(drawer, "wirelessSection").flat && find(drawer, "vpnSection").flat, "unexpected section background");
     check(!find(drawer, "ethernetSection").visible, "unplugged Ethernet is visible");
+    const addVpn = find(drawer, "vpnAdd");
+    check(addVpn && addVpn.iconName === "plus", "VPN import is not discoverable beside the heading");
+    addVpn.clicked();
+    check(addVpn.menu.visible && drawer.vpnImportMenu === addVpn.menu, "VPN import menu did not open");
+    check(addVpn.menu.itemAt(0).text === "Import WireGuard…", "WireGuard import action is missing");
+    addVpn.menu.itemAt(0).triggered();
+    check(fake.importRequests === 1 && fake.calls.length === 0, "import should open a picker without changing networking");
+    addVpn.menu.close();
     check(!find(window.contentItem, "wifiScan") && find(window.contentItem, "networkEdit") && !find(drawer, "networkEdit"), "header actions");
     check(find(preview, "wifiInfo").iconName === "info", "connection information is not discoverable in header");
     check(find(window.contentItem, "wifiToggle") && !find(drawer, "wifiToggle"), "power did not move to header");
@@ -609,6 +644,14 @@ ShellRoot {
         with tempfile.TemporaryDirectory(prefix='wifi service ') as directory:
             root = Path(directory)
             shutil.copytree(DESKTOP / 'drawers/network', root / 'drawers/network')
+            shutil.copytree(DESKTOP / 'ui', root / 'ui')
+            (root / 'ui/Apps.qml').write_text('''pragma Singleton
+import Quickshell
+Singleton {
+ property var lastLaunch: []
+ function launch(argv) { lastLaunch = argv; }
+}
+''')
             (root / 'drawers/network/backend.py').write_text("""import json,sys,time
 from pathlib import Path
 r=json.loads(sys.stdin.readline())
@@ -620,6 +663,7 @@ print(json.dumps({'ok':True,'data':{'profiles':[{'uuid':'vpn','name':'Work','kin
 import QtCore
 import Quickshell
 import "drawers/network"
+import "ui" as UI
 ShellRoot {
  Settings { id: saved; location: StandardPaths.writableLocation(StandardPaths.ConfigLocation) + "/quickshell/desktop/network.ini"; category: "Network" }
  property int stage: 0
@@ -628,7 +672,14 @@ ShellRoot {
  function check(value, message) { if (!value) throw new Error(message); }
  Timer { interval: 100; running: true; repeat: true; onTriggered: {
   try {
-   if (stage === 0) { NetworkService.observing = true; stage++; }
+   if (stage === 0) {
+    NetworkService.chooseWireguardConfig();
+    check(JSON.stringify(UI.Apps.lastLaunch) === JSON.stringify([
+     "python3", Quickshell.shellPath("drawers/network/backend.py"), "--import-wireguard"
+    ]), "import did not launch the independent picker application");
+    check(!NetworkService.working && !NetworkService.observing, "import changed networking or started observation");
+    NetworkService.observing = true; stage++;
+   }
    else if (stage === 1 && NetworkService.loaded && !NetworkService.working) {
     check(NetworkService.error === "", "status protocol failed: " + NetworkService.error);
     NetworkService.refresh();

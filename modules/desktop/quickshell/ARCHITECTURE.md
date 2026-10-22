@@ -146,6 +146,15 @@ while observed. Mutations finish after dismissal and take priority over reads.
 Passwords use stdin/D-Bus and never argv, status records or diagnostics.
 Enterprise/WEP configurations open the connection editor.
 
+The VPN heading's add menu launches `network/backend.py --import-wireguard`
+through `Apps`, in its own application unit. Zenity owns the `.conf` picker,
+independent of the shell's layer surface and drawer dismissal. Acceptance opens
+`nm-connection-editor --type wireguard --import` for review and saving;
+cancellation creates nothing. Only the local filename is passed in argv, never
+config contents. The shell module owns the Zenity dependency.
+The existing profile refresh discovers saved imports; importing does not activate
+the tunnel.
+
 `PublicIpService` queries only on opening information, caches for ten minutes and
 invalidates on route changes. The speed test follows the current route and is
 cancelled on dismissal. Interface transfer counters are distinct from that test.

@@ -8,6 +8,7 @@ over stdin and D-Bus, never argv, logs, or status snapshots.
 
 import json
 import os
+from pathlib import Path
 import pwd
 import re
 import shutil
@@ -17,6 +18,34 @@ import time
 import uuid
 
 PROFILE_TYPES = ("vpn", "wireguard")
+
+
+def import_wireguard():
+    """Run the chooser and editor outside the shell's layer-surface lifetime."""
+    try:
+        selected = subprocess.run([
+            "zenity", "--file-selection", "--title=Import WireGuard configuration",
+            "--filename=" + str(Path.home() / "Downloads") + "/",
+            "--file-filter=WireGuard configurations | *.conf", "--file-filter=All files | *",
+        ], capture_output=True, text=True, check=False)
+        if selected.returncode:
+            return
+        # Zenity terminates its output with one newline. Preserve whitespace
+        # within the filename and pass it as one argument without a shell.
+        filename = selected.stdout.removesuffix("\n")
+        if not filename:
+            return
+        editor = subprocess.run([
+            "nm-connection-editor", "--type", "wireguard", "--import", filename,
+        ], capture_output=True, text=True, check=False)
+        if not editor.returncode:
+            return
+    except OSError:
+        pass
+    # Never surface CLI output: it can include configuration or credentials.
+    subprocess.run(["zenity", "--error", "--title=WireGuard import",
+                    "--text=Could not open the connection editor. Check that nm-connection-editor is installed."],
+                   capture_output=True, check=False)
 
 
 def command(argv, timeout=20):
@@ -278,4 +307,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["--import-wireguard"]:
+        import_wireguard()
+    else:
+        main()
