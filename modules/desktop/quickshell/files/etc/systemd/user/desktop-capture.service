@@ -1,13 +1,14 @@
 [Unit]
 Description=Desktop screen recording controls
+Requires=desktop-capture.socket
+After=desktop-capture.socket graphical-session.target
 PartOf=graphical-session.target
-After=graphical-session.target
 Requisite=graphical-session.target
 ConditionEnvironment=WAYLAND_DISPLAY
 
 [Service]
 Type=exec
-ExecStart=/usr/bin/python3 -B "%E/quickshell/desktop/drawers/capture/recorder.py" --serve
+ExecStart=/usr/bin/python3 "%E/quickshell/desktop/drawers/capture/recorder.py"
 Slice=session.slice
 KillMode=mixed
 TimeoutStopSec=20s

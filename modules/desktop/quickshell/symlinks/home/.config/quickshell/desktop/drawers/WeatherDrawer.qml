@@ -3,7 +3,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../ui"
-import "audio"
 import "weather"
 import "weather/Conditions.js" as Conditions
 
@@ -26,7 +25,7 @@ DrawerPage {
         target: root.locationSettings
         function onChanged(): void { root.service.refresh(); }
     }
-    headerActions: AudioIconButton {
+    headerActions: IconButton {
         objectName: "weatherRefresh"; iconName: "refresh-cw"; text: qsTr("Refresh weather")
         enabled: root.active && !!root.snapshot.location && !root.service.loading
         onClicked: root.service.fetchWeather(true)
@@ -62,7 +61,7 @@ DrawerPage {
                         }
                         Note { text: [root.snapshot.location?.name, root.snapshot.zone].filter(Boolean).join(" · "); Layout.fillWidth: true; elide: Text.ElideRight }
                     }
-                    AudioIconButton {
+                    IconButton {
                         objectName: "weatherSetCurrent"; iconName: "map-pin"
                         readonly property bool isCurrent: !!root.snapshot.location && root.snapshot.location.id === root.snapshot.currentLocation
                         text: isCurrent ? qsTr("Apply current location and timezone") : qsTr("Use %1 as current location and timezone").arg(root.snapshot.location?.name ?? "")

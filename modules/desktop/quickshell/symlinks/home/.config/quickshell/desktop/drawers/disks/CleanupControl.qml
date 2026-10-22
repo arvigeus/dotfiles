@@ -3,7 +3,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../../ui"
-import "../network"
 
 DrawerActionButton {
     id: root
@@ -92,7 +91,7 @@ DrawerActionButton {
                                 text: choice.modelData.title
                                 onToggled: root.select(choice.modelData.id, checked)
                             }
-                            NetworkIconButton {
+                            IconButton {
                                 objectName: "cleanupAdmin:" + choice.modelData.id
                                 visible: choice.modelData.admin ?? false
                                 iconName: "shield-lock"; text: qsTr("May require administrator approval")

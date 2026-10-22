@@ -5,10 +5,10 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
-import test_display_drawer as fixtures
+import support
 
 
-SPEC = importlib.util.spec_from_file_location('desktop_session', fixtures.DESKTOP / 'drawers/spaces/backend.py')
+SPEC = importlib.util.spec_from_file_location('desktop_session', support.DESKTOP / 'drawers/spaces/backend.py')
 backend = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(backend)
 
@@ -34,7 +34,7 @@ class SessionBackendTests(unittest.TestCase):
 
     def test_gaming_switch_and_reload_use_one_shot_session_requests(self):
         with patch.object(backend, 'snapshot', return_value={}), patch.object(backend, 'run') as run:
-            backend.handle(dict(action='logout'))
+            backend.handle(dict(action='gaming'))
             run.assert_called_with(['session-mode', 'gaming'])
             backend.handle(dict(action='reload'))
             run.assert_called_with(['session-mode', 'desktop'])
@@ -50,7 +50,7 @@ class SessionBackendTests(unittest.TestCase):
                 patch.object(backend, 'session_status', return_value={}), patch.object(backend, 'run') as run:
             run.return_value = subprocess.CompletedProcess([], 0, '', 'Shutdown scheduled for tomorrow.')
             self.assertEqual(backend.snapshot()['scheduledShutdown'], 'Shutdown scheduled for tomorrow.')
-            self.assertFalse(backend.snapshot()['capabilities']['logout'])
+            self.assertFalse(backend.snapshot()['capabilities']['gaming'])
             run.return_value = subprocess.CompletedProcess([], 0, 'No scheduled shutdown.', '')
             self.assertEqual(backend.snapshot()['scheduledShutdown'], '')
         with patch.object(backend.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'Access denied')):
@@ -58,9 +58,9 @@ class SessionBackendTests(unittest.TestCase):
                 backend.run(['systemctl', 'suspend'])
 
 
-@unittest.skipUnless(fixtures.QS, 'Quickshell is required')
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class SpacesDrawerTests(unittest.TestCase):
-    run_qml = fixtures.DisplayQmlTests.run_qml
+    run_qml = support.run_qml
 
     def test_placeholders_hold_confirmation_popover_and_dismissal(self):
         self.run_qml('''import QtQuick
@@ -75,7 +75,7 @@ ShellRoot {
  property int closes:0
  QtObject {
   id:mock
-  property var state:({capabilities:{logout:true,reload:true,suspend:true,reboot:true,poweroff:true},scheduledShutdown:"Shutdown scheduled for tomorrow."})
+  property var state:({capabilities:{gaming:true,reload:true,suspend:true,reboot:true,poweroff:true},scheduledShutdown:"Shutdown scheduled for tomorrow."})
   property bool busy:false
   property string error:""
   property bool pausesAvailable:true
@@ -106,14 +106,14 @@ ShellRoot {
   const sleep=find(drawer,"session-action-suspend");
   check(sleep.holdDuration===2000,"two-second hold missing");
   check(sleep.contentItem.children.length===1,"action retained labels");
-  check(find(drawer,"session-action-logout").text==="Go to gaming mode","gaming action not named correctly");
+  check(find(drawer,"session-action-gaming").text==="Go to gaming mode","gaming action not named correctly");
   check(sleep.data.some(value=>value.target===sleep&&value.text?.includes("Sleep")),"action tooltip missing");
   click(sleep);check(!calls.length,"click executed session action");
   input.mousePress(sleep,sleep.width/2,sleep.height/2);input.wait(200);input.mouseRelease(sleep,sleep.width/2,sleep.height/2);
   check(!calls.length,"early release executed session action");
   input.mousePress(sleep,sleep.width/2,sleep.height/2);input.wait(2100);input.mouseRelease(sleep,sleep.width/2,sleep.height/2);
   check(calls.length===1&&calls[0].action==="suspend","held Sleep did not execute exactly once");
-  for(const action of ["logout","reboot","poweroff"]){
+  for(const action of ["gaming","reboot","poweroff"]){
    const button=find(drawer,"session-action-"+action);button.holdDuration=80;
    input.mousePress(button,button.width/2,button.height/2);input.wait(120);input.mouseRelease(button,button.width/2,button.height/2);
    check(calls[calls.length-1].action===action,"wrong action "+action);
@@ -129,13 +129,13 @@ ShellRoot {
   click(find(drawer,"sessionLockOptions"));input.wait(150);
   check(actions.lockingPopup.visible&&!actions.sleepPopup.visible,"session popovers overlap");
   click(find(actions.lockingPopup.contentItem,"sessionPauseLocking"));input.wait(150);
-  const logout=find(drawer,"session-action-logout");
-  check(mock.lockingPaused&&logout.iconName==="lock-open","locking pause not reflected in icon");
-  check(logout.data.some(value=>value.target===logout&&value.text==="Enable automatic locking"),"restore tooltip describes wrong action");
-  check(find(logout,"session-action-logoutIcon").status===Image.Ready,"lock-open icon missing");
+  const gaming=find(drawer,"session-action-gaming");
+  check(mock.lockingPaused&&gaming.iconName==="lock-open","locking pause not reflected in icon");
+  check(gaming.data.some(value=>value.target===gaming&&value.text==="Enable automatic locking"),"restore tooltip describes wrong action");
+  check(find(gaming,"session-action-gamingIcon").status===Image.Ready,"lock-open icon missing");
   mock.sleepPaused=true;drawer.active=false;input.wait(50);drawer.active=true;
   check(mock.sleepPaused&&mock.lockingPaused,"drawer dismissal cleared temporary pauses");
-  click(logout);click(sleep);
+  click(gaming);click(sleep);
   check(!mock.lockingPaused&&!mock.sleepPaused&&calls.length===4,"restore icons executed destructive actions");
   click(find(drawer,"sessionRestartOptions"));input.wait(150);
   const reload=find(actions.restartPopup.contentItem,"sessionReload");reload.holdDuration=80;
@@ -159,8 +159,8 @@ ShellRoot {
   input.wait(150);click(options);input.wait(150);drawer.active=false;input.wait(150);
   check(!popup.visible&&!sleep.enabled,"dismissed drawer retained controls");
   drawer.active=true;mock.busy=true;check(!sleep.enabled,"busy session permits duplicate action");mock.busy=false;
-  mock.state={capabilities:{logout:false,suspend:true,reboot:true,poweroff:true},scheduledShutdown:""};
-  check(!find(drawer,"session-action-logout").enabled,"unsupported logout enabled");
+  mock.state={capabilities:{gaming:false,suspend:true,reboot:true,poweroff:true},scheduledShutdown:""};
+  check(!find(drawer,"session-action-gaming").enabled,"unsupported gaming enabled");
   mock.error="Access denied";check(find(drawer,"sessionError").text==="Access denied","command error hidden");
   drawer.width=288;drawer.height=380;input.wait(150);
   check(options.mapToItem(drawer,options.width,0).x<=drawer.width+1,"narrow power controls overflow");

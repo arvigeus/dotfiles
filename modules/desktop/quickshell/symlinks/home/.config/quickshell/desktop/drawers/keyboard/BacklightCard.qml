@@ -2,9 +2,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Quickshell
 import "../../ui"
-import "../audio"
-import "../network/Models.js" as Models
 
 Surface {
     id: root
@@ -21,16 +20,8 @@ Surface {
     objectName: "keyboardCard:" + record.key
     implicitHeight: content.implicitHeight + 24
     color: Theme.surface; border.width: 0; radius: Theme.controlRadius
-    ListModel { id: effectModel; dynamicRoles: true }
-    ListModel { id: modeModel; dynamicRoles: true }
-    function sync(): void {
-        Models.sync(effectModel, effects, "id", false);
-        Models.sync(modeModel, modes, "id", false);
-        if (!hasOptions) options.close();
-    }
-    onRecordChanged: sync()
+    onHasOptionsChanged: if (!hasOptions) options.close()
     onActiveChanged: if (!active) options.close()
-    Component.onCompleted: sync()
     Component.onDestruction: if (options.visible) optionsClosed(options)
     ColumnLayout {
         id: content
@@ -51,7 +42,7 @@ Surface {
                 Layout.fillWidth: true; record: root.record; active: root.active
                 onEdited: value => root.service.setBrightness(root.record, value)
             }
-            AudioIconButton {
+            IconButton {
                 id: cog
                 objectName: "keyboardOptions:" + root.record.key
                 iconName: "settings"; text: qsTr("Lighting for %1").arg(root.title)
@@ -94,9 +85,10 @@ Surface {
                 Layout.fillWidth: true; spacing: 2
                 Heading { text: qsTr("Effect") }
                 Repeater {
-                    model: effectModel
+                    model: ScriptModel { values: root.effects; objectProp: "id" }
                     delegate: Option {
-                        required property var record
+                        required property var modelData
+                        readonly property var record: modelData
                         objectName: "keyboardEffect:" + record.id
                         text: record.label; marked: root.record.effect === record.id
                         onClicked: { root.service.setEffect(root.record, record.id); options.close(); }
@@ -144,9 +136,10 @@ Surface {
                 Layout.fillWidth: true; spacing: 2
                 Heading { text: qsTr("Backlight mode") }
                 Repeater {
-                    model: modeModel
+                    model: ScriptModel { values: root.modes; objectProp: "id" }
                     delegate: Option {
-                        required property var record
+                        required property var modelData
+                        readonly property var record: modelData
                         objectName: "keyboardMode:" + record.id
                         text: record.label; marked: root.record.mode === record.id
                         onClicked: { root.service.setMode(root.record, record.id); options.close(); }

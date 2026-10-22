@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import "../ui"
-import "audio"
 import "notifications"
 
 DrawerPage {
@@ -10,7 +9,7 @@ DrawerPage {
     objectName: "notificationsDrawer"
     property var service: NotificationCenter
     readonly property var items: service.state.items
-    headerActions: AudioIconButton {
+    headerActions: IconButton {
         objectName: "notificationsClear"; iconName: "trash"; text: qsTr("Clear notifications")
         enabled: root.items.length > 0
         onClicked: root.service.request("clear")

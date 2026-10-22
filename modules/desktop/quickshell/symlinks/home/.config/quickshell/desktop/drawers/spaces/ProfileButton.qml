@@ -54,7 +54,7 @@ Button {
 
     Process {
         id: reader
-        command: ["python3", "-B", decodeURIComponent(Qt.resolvedUrl("profile.py").toString().replace(/^file:\/\//, ""))]
+        command: ["python3", Quickshell.shellPath("drawers/spaces/profile.py")]
         stdout: StdioCollector {
             onStreamFinished: {
                 try { root.profile = JSON.parse(text); }

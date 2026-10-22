@@ -3,7 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-QtObject {
+Singleton {
     id: root
     property var entries: []
     property bool available: false
@@ -14,8 +14,6 @@ QtObject {
     property var requestQueue: []
     property var thumbnails: ({})
     property var thumbnailPending: ({})
-
-    readonly property string backend: decodeURIComponent(Qt.resolvedUrl("backend.py").toString().replace(/^file:\/\//, ""))
 
     function start(): void {
         if (worker.running) return;
@@ -29,11 +27,12 @@ QtObject {
     function setPaused(value: bool): void { request({op: "pause", value}); }
     function clear(): void { request({op: "clear"}); }
     function remove(id: int): void { request({op: "delete", id}); }
-    function copy(id: int): void { request({op: "copy", id}); }
+    function mimeOf(id: int): string { return entries.find(entry => entry.id === id)?.mime ?? ""; }
+    function copy(id: int): void { request({op: "copy", id, mime: mimeOf(id)}); }
     function loadThumbnail(id: int): void {
         if (thumbnails[id] || thumbnailPending[id]) return;
         thumbnailPending = Object.assign({}, thumbnailPending, {[id]: true});
-        request({op: "thumbnail", id});
+        request({op: "thumbnail", id, mime: mimeOf(id)});
     }
     function request(value): void {
         if (!worker.running) start();
@@ -85,11 +84,11 @@ QtObject {
     }
     signal copied()
 
-    readonly property Process worker: Process {
+    Process {
         id: worker
         property bool busy: false
         property var current: ({})
-        command: ["python3", "-B", root.backend]
+        command: ["python3", Quickshell.shellPath("drawers/clipboard/backend.py")]
         stdinEnabled: true
         onStarted: { root.started = true; root.pump(); }
         stdout: SplitParser { onRead: line => root.receive(line) }

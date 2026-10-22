@@ -1,74 +1,75 @@
 pragma Singleton
 import QtQuick
+import Quickshell
+import Quickshell.Bluetooth
 import Quickshell.Io
 
-QtObject {
+// Device actions use Quickshell.Bluetooth; pairing runs in backend.py because
+// BlueZ sends PIN/passkey prompts only to the agent of the Pair() caller.
+Singleton {
     id: root
-    property var owners: []
-    property var state: ({available: false, adapters: [], devices: []})
-    property bool loaded: false
-    property string error: ""
-    property string errorKey: ""
-    property string pending: ""
-    property string pendingKey: ""
-    property string scanning: ""
+    property QtObject pairingDevice: null
+    // Pair() succeeded and the helper is trusting/connecting; dismissal no longer cancels.
+    property bool pairingConnects: false
     property var prompt: null
-    property bool starting: false
-    property bool closing: false
-    readonly property bool busy: pending !== ""
-    function observe(owner, active: bool): void {
-        owners = owners.filter(item => item !== owner).concat(active ? [owner] : []);
-        if (closing) return;
-        if (owners.length && !worker.running) start();
-        else if (worker.running && !starting) send({op: "observe", active: owners.length > 0});
+    property string error: ""
+    // dbusPath of the device the error belongs to; "" for drawer-wide errors.
+    property string errorKey: ""
+    property QtObject watched: null
+    property string watchedOp: ""
+    property bool finished: false
+
+    function fail(device, message: string): void { error = message; errorKey = device?.dbusPath ?? ""; }
+    function watch(device, op: string): void { error = ""; watched = device; watchedOp = op; }
+    function connect(device): void {
+        watch(device, "connect");
+        // Connecting authorizes the device's future reconnections; observation never does.
+        if (!device.trusted) device.trusted = true;
+        device.connect();
     }
-    function start(): void { loaded = false; starting = true; worker.running = true; }
-    function send(request): void { worker.write(JSON.stringify(request) + "\n"); }
-    function run(op: string, record, fields): void {
-        // Pair/Connect authorize this device's future reconnections; observation never does.
-        if (busy || !owners.length || starting || !worker.running) return;
-        error = ""; errorKey = ""; pending = op; pendingKey = record.key;
-        send(Object.assign({op, key: record.key, address: record.address}, fields || {}));
+    function disconnect(device): void { watch(device, "disconnect"); device.disconnect(); }
+    function forget(device): void { error = ""; device.forget(); }
+    function pair(device): void {
+        if (pairingDevice || pairer.running) return;
+        error = ""; prompt = null; pairingConnects = false; finished = false;
+        pairingDevice = device;
+        pairer.command = ["python3", Quickshell.shellPath("drawers/bluetooth/backend.py"), device.dbusPath, device.address];
+        pairer.running = true;
     }
-    function stopScan(): void { if (worker.running) send({op: "stop-scan"}); }
-    function cancel(): void { if (worker.running) send({op: "cancel"}); }
+    function send(request): void { pairer.write(JSON.stringify(request) + "\n"); }
     function respond(accept: bool, value: string): void {
-        if (prompt) { error = ""; errorKey = ""; send({op: "respond", id: prompt.id, accept, value}); }
+        if (prompt && pairer.running) { error = ""; send({op: "respond", id: prompt.id, accept, value}); }
     }
+    function cancel(): void { if (pairer.running && !pairingConnects) send({op: "cancel"}); }
     function receive(line: string): void {
         let result;
-        try { result = JSON.parse(line); }
-        catch (_) { error = qsTr("Could not read Bluetooth status."); return; }
-        if (result.type === "state") { state = result; loaded = true; }
-        else if (result.type === "pending") { pending = result.op; pendingKey = result.key; }
-        else if (result.type === "scan") scanning = result.key;
-        else if (result.type === "prompt") prompt = result.prompt;
-        else if (result.type === "done") {
-            if (result.error) { error = result.error; errorKey = result.key || pendingKey; }
-            pending = ""; pendingKey = "";
-        } else if (result.type === "error") {
-            error = result.error; errorKey = pendingKey;
-            // Validation failures have no pending event; input errors retain pairing.
-            if (!result.busy) { pending = ""; pendingKey = ""; }
-        }
-        if (!owners.length && !busy && !closing) { closing = true; worker.running = false; }
+        try { result = JSON.parse(line); } catch (_) { return; }
+        if (result.type === "prompt") prompt = result.prompt;
+        else if (result.type === "connecting") pairingConnects = true;
+        else if (result.type === "error") fail(pairingDevice, result.error);
+        else if (result.type === "done") { finished = true; if (result.error) fail(pairingDevice, result.error); }
     }
-    readonly property Process worker: Process {
-        command: ["python3", "-u", decodeURIComponent(Qt.resolvedUrl("backend.py").toString().replace(/^file:\/\//, ""))]
+
+    // Native calls report failure only by returning to the previous state.
+    Connections {
+        target: root.watched
+        function onStateChanged(): void {
+            const device = root.watched;
+            if (device.state === BluetoothDeviceState.Connecting || device.state === BluetoothDeviceState.Disconnecting) return;
+            if (root.watchedOp === "connect" && !device.connected)
+                root.fail(device, qsTr("Could not connect. Make sure the device is awake and nearby."));
+            else if (root.watchedOp === "disconnect" && device.connected)
+                root.fail(device, qsTr("Could not disconnect this device."));
+            root.watched = null;
+        }
+    }
+    Process {
+        id: pairer
         stdinEnabled: true
-        onStarted: { root.starting = false; root.send({op: "observe", active: root.owners.length > 0}); }
         stdout: SplitParser { onRead: line => root.receive(line) }
-        stderr: StdioCollector {}
         onExited: {
-            const expected = root.closing;
-            root.closing = false;
-            root.starting = false; root.scanning = ""; root.prompt = null;
-            if (!expected && (root.owners.length || root.busy)) {
-                root.errorKey = "";
-                root.error = qsTr("Bluetooth helper stopped. Reopen the drawer to retry.");
-            }
-            root.pending = ""; root.pendingKey = "";
-            if (expected && root.owners.length) Qt.callLater(root.start);
+            if (!root.finished) root.fail(root.pairingDevice, qsTr("Bluetooth pairing helper stopped."));
+            root.pairingDevice = null; root.pairingConnects = false; root.prompt = null;
         }
     }
 }

@@ -1,0 +1,11 @@
+[Unit]
+Description=Desktop screen recording control socket
+PartOf=graphical-session.target
+
+[Socket]
+ListenStream=%t/desktop-capture/control.sock
+SocketMode=0600
+DirectoryMode=0700
+
+[Install]
+WantedBy=graphical-session.target

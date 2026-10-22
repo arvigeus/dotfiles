@@ -5,7 +5,7 @@ import Quickshell.Io
 
 // Only opening connection information may start a lookup. Cache successes for ten
 // minutes and failures for one; a route change invalidates either immediately.
-QtObject {
+Singleton {
     id: root
     property string context: ""
     property string address: ""
@@ -27,7 +27,7 @@ QtObject {
         requestContext = context; output = ""; queued = false;
         busy = true; lookupProcess.running = true;
     }
-    readonly property Process process: Process {
+    Process {
         id: lookupProcess
         command: ["curl", "--ipv4", "--fail", "--silent", "--show-error", "--max-time", "2", "--max-filesize", "64", "https://api.ipify.org"]
         stdout: StdioCollector { onStreamFinished: root.output = text.trim() }
@@ -43,7 +43,8 @@ QtObject {
             if (root.queued) Qt.callLater(root.lookup);
         }
     }
-    readonly property Timer watchdog: Timer {
+    Timer {
+        id: watchdog
         interval: 3000; running: root.busy
         onTriggered: lookupProcess.running = false
     }

@@ -110,8 +110,8 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true; spacing: 8
         SessionControl {
-            id: logoutControl
-            action: "logout"; label: restoring ? qsTr("Enable automatic locking") : qsTr("Go to gaming mode")
+            id: gamingControl
+            action: "gaming"; label: restoring ? qsTr("Enable automatic locking") : qsTr("Go to gaming mode")
             restoring: !!root.service.lockingPaused
             iconName: restoring ? "lock-open" : "log-out"
             hasOptions: true; optionsEnabled: !!root.service.pausesAvailable
@@ -147,7 +147,7 @@ ColumnLayout {
     InfoPopover {
         id: lockingMenu
         objectName: "sessionLockPopup"
-        button: logoutControl.menuButton; active: root.active
+        button: gamingControl.menuButton; active: root.active
         y: -height - 8; width: Math.min(280, Math.max(0, (Overlay.overlay?.width ?? 296) - 16))
         padding: 10
         PauseOption {

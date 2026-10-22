@@ -8,9 +8,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import test_display_drawer as fixtures
+import support
 
-SOURCE = fixtures.DESKTOP / 'drawers/spaces/profile.py'
+SOURCE = support.DESKTOP / 'drawers/spaces/profile.py'
 SPEC = importlib.util.spec_from_file_location('desktop_user_profile', SOURCE)
 profile = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(profile)
@@ -51,9 +51,9 @@ class ProfileTests(unittest.TestCase):
             self.assertTrue(profile.profile()['avatar'].startswith(photo.as_uri()))
 
 
-@unittest.skipUnless(fixtures.QS, 'Quickshell is required')
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class ProfileButtonTests(unittest.TestCase):
-    run_qml = fixtures.DisplayQmlTests.run_qml
+    run_qml = support.run_qml
 
     def test_header_photo_hint_fallback_and_editor_launch(self):
         def setup(root):

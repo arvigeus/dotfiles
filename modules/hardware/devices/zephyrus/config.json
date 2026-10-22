@@ -1,8 +1,7 @@
 {
     "packages": [
         "switcheroo-control",
-        "ogc/asusctl",
-        "ogc/rog-control-center"
+        "ogc/asusctl"
     ],
     "services": [
         "switcheroo-control.service"

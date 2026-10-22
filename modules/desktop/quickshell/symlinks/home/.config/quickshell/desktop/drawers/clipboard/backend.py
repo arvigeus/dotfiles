@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""JSON-lines adapter for cliphist and its Wayland capture processes."""
+"""JSON-lines adapter for cliphist; capture runs in the cliphist@ user units."""
 import json
 import mimetypes
 import os
@@ -10,11 +10,8 @@ import signal
 import subprocess
 import sys
 
-MAX_ITEMS = "50"
 MAX_CACHED_IMAGES = 32
-paused_path = pathlib.Path(os.environ.get("XDG_CONFIG_HOME", pathlib.Path.home() / ".config")) / "quickshell/desktop/clipboard-paused"
-cache_root = pathlib.Path(os.environ.get("XDG_CACHE_HOME", pathlib.Path.home() / ".cache")) / "quickshell/clipboard-preview"
-watchers = []
+WATCHERS = ["cliphist@text.service", "cliphist@image.service"]
 cached_images = []
 IMAGE_PREVIEW = re.compile(
     r"^\[\[ binary data (?P<size>\d+(?:\.\d+)?\s+\S+) "
@@ -22,45 +19,26 @@ IMAGE_PREVIEW = re.compile(
     r"(?: (?P<dimensions>\d+x\d+))? \]\]$", re.IGNORECASE)
 
 
+def cache_root():
+    base = os.environ.get("XDG_CACHE_HOME") or ""
+    root = pathlib.Path(base) if os.path.isabs(base) else pathlib.Path.home() / ".cache"
+    return root / "quickshell/clipboard-preview"
+
+
 def command(args, *, input_data=None, timeout=5):
-    return subprocess.run(["cliphist", "-max-items", MAX_ITEMS, *args], input=input_data,
+    return subprocess.run(["cliphist", *args], input=input_data,
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, check=True)
 
 
-def watcher_args(kind):
-    return ["wl-paste", "--type", kind, "--watch", "cliphist", "-max-items", MAX_ITEMS, "store"]
+def paused():
+    """Collection is paused while neither watcher unit is active."""
+    # is-active succeeds when any listed unit is active.
+    return subprocess.run(["systemctl", "--user", "is-active", "--quiet", *WATCHERS], timeout=5).returncode != 0
 
 
-def start_watchers():
-    global watchers
-    stop_watchers()
-    if paused_path.exists():
-        return
-    if not shutil.which("wl-paste") or not shutil.which("cliphist"):
-        return
-    for kind in ("text", "image"):
-        try:
-            watchers.append(subprocess.Popen(watcher_args(kind), stdin=subprocess.DEVNULL,
-                                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                             start_new_session=True))
-        except OSError:
-            stop_watchers()
-            return
-
-
-def stop_watchers():
-    global watchers
-    for proc in watchers:
-        if proc.poll() is None:
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-                proc.wait(timeout=1)
-            except (OSError, subprocess.TimeoutExpired):
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except OSError:
-                    pass
-    watchers = []
+def set_paused(value):
+    subprocess.run(["systemctl", "--user", "stop" if value else "start", *WATCHERS],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=15, check=True)
 
 
 def list_records():
@@ -71,7 +49,7 @@ def list_records():
         if not separator:
             continue
         try:
-            records.append((int(item_id), line + "\n", preview))
+            records.append((int(item_id), preview))
         except ValueError:
             continue
     return records
@@ -110,7 +88,7 @@ def decoded_mime(data, image_hint=None):
 def entries(query=""):
     needle = query.casefold().strip()
     result = []
-    for item_id, _, preview in list_records():
+    for item_id, preview in list_records():
         details = image_details(preview)
         mime = details["mime"] if details else "text/plain;charset=utf-8"
         label = details["preview"] if details else preview
@@ -121,69 +99,42 @@ def entries(query=""):
     return result
 
 
-def raw_record(item_id):
-    for record_id, line, preview in list_records():
-        if record_id == item_id:
-            return line.encode(), preview
-    raise ValueError("Clipboard item no longer exists.")
+def decode(item_id):
+    return command(["decode", str(int(item_id))], timeout=10).stdout
 
 
 def handle(request):
     op = request.get("op")
     if op == "status":
         available = bool(shutil.which("cliphist") and shutil.which("wl-paste") and shutil.which("wl-copy"))
-        return {"op": op, "available": available, "paused": paused_path.exists(), "entries": []}
+        return {"op": op, "available": available, "paused": paused(), "entries": []}
     if op == "list":
-        return {"op": op, "available": True, "paused": paused_path.exists(), "entries": entries(str(request.get("query", "")))}
+        return {"op": op, "available": True, "paused": paused(), "entries": entries(str(request.get("query", "")))}
     if op == "pause":
-        if request.get("value"):
-            paused_path.parent.mkdir(parents=True, exist_ok=True)
-            paused_path.write_text("paused\n")
-        else:
-            paused_path.unlink(missing_ok=True)
-        start_watchers()
-        return {"op": op, "paused": paused_path.exists()}
+        set_paused(bool(request.get("value")))
+        return {"op": op, "paused": paused()}
     if op == "clear":
         command(["wipe"])
         return {"op": op}
     if op == "delete":
-        command(["delete"], input_data=raw_record(int(request["id"]))[0])
+        command(["delete"], input_data=f"{int(request['id'])}\t\n".encode())
         return {"op": op}
     if op == "copy":
-        item_id = int(request["id"])
-        record, preview = raw_record(item_id)
-        decoded = command(["decode"], input_data=record, timeout=10).stdout
-        details = image_details(preview)
-        mime = decoded_mime(decoded, details["mime"] if details else None)
-        process = subprocess.Popen(["wl-copy", "--foreground", "--type", mime], stdin=subprocess.PIPE,
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                   start_new_session=True)
-        try:
-            process.stdin.write(decoded)
-            process.stdin.close()
-        except OSError:
-            process.kill()
-            raise
-        try:
-            code = process.wait(timeout=0.2)
-        except subprocess.TimeoutExpired:
-            # wl-copy stays alive while it owns the clipboard selection.
-            pass
-        else:
-            if code:
-                raise RuntimeError("wl-copy could not set the clipboard contents.")
+        decoded = decode(request["id"])
+        mime = decoded_mime(decoded, request.get("mime") if str(request.get("mime", "")).startswith("image/") else None)
+        # wl-copy forks a server that keeps the selection after this call returns.
+        subprocess.run(["wl-copy", "--type", mime], input=decoded, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.PIPE, timeout=5, check=True)
         return {"op": op}
     if op == "thumbnail":
         item_id = int(request["id"])
-        record, preview = raw_record(item_id)
-        details = image_details(preview)
-        if not details:
+        decoded = decode(item_id)
+        mime = decoded_mime(decoded, request.get("mime") if str(request.get("mime", "")).startswith("image/") else None)
+        if not mime.startswith("image/"):
             raise ValueError("Clipboard item is not an image.")
-        decoded = command(["decode"], input_data=record, timeout=10).stdout
-        mime = decoded_mime(decoded, details["mime"] if details else None)
-        cache_root.mkdir(parents=True, exist_ok=True)
-        suffix = mimetypes.guess_extension(mime) or ".img"
-        path = cache_root / (str(item_id) + suffix)
+        folder = cache_root()
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / (str(item_id) + (mimetypes.guess_extension(mime) or ".img"))
         path.write_bytes(decoded)
         if item_id in cached_images:
             cached_images.remove(item_id)
@@ -192,7 +143,7 @@ def handle(request):
         while len(cached_images) > MAX_CACHED_IMAGES:
             expired = cached_images.pop(0)
             expired_images.append(expired)
-            for old in cache_root.glob(str(expired) + ".*"):
+            for old in folder.glob(str(expired) + ".*"):
                 old.unlink(missing_ok=True)
         return {"op": op, "id": item_id, "url": path.as_uri(), "expired": expired_images}
     raise ValueError("Unknown clipboard operation.")
@@ -200,26 +151,25 @@ def handle(request):
 
 def main():
     os.umask(0o077)
-    cache_root.mkdir(parents=True, exist_ok=True)
-    cache_root.chmod(0o700)
+    folder = cache_root()
+    folder.mkdir(parents=True, exist_ok=True)
+    folder.chmod(0o700)
     # Preview files can contain sensitive clipboard data; keep them private and
     # remove stale preview files whenever this shell session starts.
-    for path in cache_root.iterdir():
+    for path in folder.iterdir():
         if path.is_file():
             path.unlink(missing_ok=True)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
-    start_watchers()
     try:
         for line in sys.stdin:
             try:
                 result = handle(json.loads(line))
-            except (OSError, ValueError, KeyError, json.JSONDecodeError, subprocess.SubprocessError) as exc:
+            except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
                 result = {"op": "error", "error": str(exc)[:200]}
             print(json.dumps(result, ensure_ascii=False), flush=True)
     finally:
-        stop_watchers()
-        shutil.rmtree(cache_root, ignore_errors=True)
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 if __name__ == "__main__":

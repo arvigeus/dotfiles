@@ -7,9 +7,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import support
 import test_keyboard_drawer as fixtures
 
-SOURCE = fixtures.fixtures.DESKTOP / 'drawers/keyboard/backlight.py'
+SOURCE = support.DESKTOP / 'drawers/keyboard/backlight.py'
 REPO = Path(__file__).resolve().parents[1]
 ADAPTERS = {
     'asus': REPO / 'modules/hardware/devices/zephyrus/symlinks/home/.config/devices/keyboard/backends/asus.py',
@@ -244,7 +245,7 @@ class BacklightTests(unittest.TestCase):
             backlight.handle(self.request())
 
 
-@unittest.skipUnless(fixtures.fixtures.QS, 'Quickshell is required')
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class BacklightQmlTests(unittest.TestCase):
     def test_latest_slider_change_finishes_after_dismissal_and_polling_stops(self):
         def setup(root):

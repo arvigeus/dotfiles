@@ -1,0 +1,150 @@
+#!/usr/bin/python3 -I
+"""Runtime-only firewalld TCP/IPv4 openings for the desktop Ports controls.
+
+Reads one JSON request from stdin and prints one JSON response. Authorization is
+firewalld's polkit check; this client runs as the calling user.
+"""
+import ipaddress
+import json
+import re
+import subprocess
+import sys
+
+FIREWALL_CMD = '/usr/bin/firewall-cmd'
+IP = '/usr/bin/ip'
+INTERFACE = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}')
+RULE = re.compile(r'rule family="ipv4" source address="([0-9./]+)" destination address="([0-9.]+)" '
+                  r'port port="([0-9]+)" protocol="tcp" accept')
+
+
+class PortError(Exception):
+    """A failure the drawer can show."""
+
+
+def firewall(*args, failure):
+    try:
+        result = subprocess.run([FIREWALL_CMD, *args], capture_output=True, text=True, timeout=15, check=False)
+    except FileNotFoundError as error:
+        raise PortError('firewalld is not installed.') from error
+    except subprocess.TimeoutExpired as error:
+        raise PortError('The firewall did not respond. Try again.') from error
+    except OSError as error:
+        raise PortError(failure) from error
+    if result.returncode == 252:
+        raise PortError('The firewall is not running.')
+    if result.returncode == 253:
+        raise PortError('Firewall access requires an active local administrator session.')
+    if result.returncode:
+        raise PortError(failure)
+    return result.stdout
+
+
+def rule(network, port):
+    return (f'rule family="ipv4" source address="{network.network}" destination address="{network.ip}" '
+            f'port port="{port}" protocol="tcp" accept')
+
+
+def networks():
+    """Usable local IPv4 interface addresses by interface name."""
+    try:
+        result = subprocess.run([IP, '-j', '-4', 'address', 'show'], capture_output=True, text=True,
+                                timeout=5, check=True)
+        links = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        raise PortError('Could not read network addresses. Try again.') from error
+    found = {}
+    for link in links if isinstance(links, list) else []:
+        for info in link.get('addr_info') or []:
+            try:
+                value = ipaddress.IPv4Interface(f"{info['local']}/{info['prefixlen']}")
+            except (KeyError, TypeError, ValueError):
+                continue
+            if value.ip.is_unspecified or value.ip.is_loopback or value.ip.is_multicast \
+                    or value.network.prefixlen in (0, 32):
+                continue
+            found.setdefault(link.get('ifname'), []).append(value)
+    return found
+
+
+def active_zones():
+    zones, zone = {}, None
+    for line in firewall('--get-active-zones', failure='Could not read the firewall. Try again.').splitlines():
+        if line.strip() and not line[0].isspace():
+            zone = line.split()[0]
+            zones[zone] = []
+        elif zone and line.strip().startswith('interfaces:'):
+            zones[zone] = line.split(':', 1)[1].split()
+    return zones
+
+
+def state():
+    """Return addresses, interface zones and drawer-shaped rules that match a current address."""
+    addresses, zones, rows = networks(), {}, []
+    for zone, interfaces in active_zones().items():
+        names = [name for name in interfaces if name in addresses]
+        zones.update(dict.fromkeys(interfaces, zone))
+        if not names:
+            continue
+        listed = firewall(f'--zone={zone}', '--list-rich-rules', failure='Could not read the firewall. Try again.')
+        for line in listed.splitlines():
+            match = RULE.fullmatch(line.strip())
+            if not match:
+                continue
+            for name in names:
+                if any(str(value.network) == match[1] and str(value.ip) == match[2] for value in addresses[name]):
+                    rows.append({'interface': name, 'port': int(match[3]), 'address': match[2],
+                                 'zone': zone, 'rule': line.strip()})
+    return addresses, zones, rows
+
+
+def public(rows):
+    return sorted(({key: row[key] for key in ('interface', 'port', 'address', 'zone')} for row in rows),
+                  key=lambda row: (row['interface'], row['port']))
+
+
+def handle(request):
+    if not isinstance(request, dict) or set(request) - {'op', 'interface', 'port'}:
+        raise PortError('Invalid port request.')
+    op = request.get('op')
+    if op not in ('status', 'open', 'close'):
+        raise PortError('Unknown port action.')
+    if op != 'status':
+        port, interface = request.get('port'), request.get('interface')
+        if type(port) is not int or not 1 <= port <= 65535:
+            raise PortError('Enter a port from 1 to 65535.')
+        if not isinstance(interface, str) or not INTERFACE.fullmatch(interface):
+            raise PortError('Invalid network interface.')
+    addresses, zones, rows = state()
+    if op == 'open':
+        if any(row['interface'] == interface and row['port'] == port for row in rows):
+            raise PortError('This port is already open.')
+        if interface not in addresses:
+            raise PortError('This network has no usable local IPv4 address.')
+        if interface not in zones:
+            raise PortError('This network has no firewall zone.')
+        network = addresses[interface][0]
+        firewall(f'--zone={zones[interface]}', f'--add-rich-rule={rule(network, port)}',
+                 failure='Could not open the port. Try again.')
+        rows.append({'interface': interface, 'port': port, 'address': str(network.ip), 'zone': zones[interface]})
+    elif op == 'close':
+        closing = {row['rule']: row['zone'] for row in rows if row['interface'] == interface and row['port'] == port}
+        for text, zone in closing.items():
+            firewall(f'--zone={zone}', f'--remove-rich-rule={text}', failure='Could not close the port. Try again.')
+        rows = [row for row in rows if row['rule'] not in closing]
+    return public(rows)
+
+
+def main():
+    try:
+        request = json.loads(sys.stdin.readline(513))
+    except ValueError:
+        request = None
+    try:
+        result = {'ok': True, 'ports': handle(request), 'error': ''}
+    except PortError as error:
+        result = {'ok': False, 'error': str(error)}
+    print(json.dumps(result), flush=True)
+
+
+if __name__ == '__main__':
+    main()

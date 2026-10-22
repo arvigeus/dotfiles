@@ -1,9 +1,11 @@
 pragma Singleton
 import QtQuick
+import Quickshell
 import Quickshell.Io
 
-QtObject {
+Singleton {
     id: root
+    readonly property alias updates: updates
     property var values: []
     property bool loaded: false
     property var owners: []
@@ -63,8 +65,9 @@ QtObject {
         request = null;
         Qt.callLater(root.pump);
     }
-    readonly property Process worker: Process {
-        command: ["python3", "-u", decodeURIComponent(Qt.resolvedUrl("backlight.py").toString().replace(/^file:\/\//, ""))]
+    Process {
+        id: worker
+        command: ["python3", Quickshell.shellPath("drawers/keyboard/backlight.py")]
         stdinEnabled: true
         onStarted: if (root.request) write(JSON.stringify(root.request) + "\n")
         stdout: SplitParser { onRead: line => root.receive(line) }
@@ -78,7 +81,8 @@ QtObject {
             if (root.queue.length || root.refreshPending) Qt.callLater(root.pump);
         }
     }
-    readonly property Timer updates: Timer {
+    Timer {
+        id: updates
         interval: 1000; repeat: true; running: root.owners.length > 0
         onTriggered: root.refresh()
     }

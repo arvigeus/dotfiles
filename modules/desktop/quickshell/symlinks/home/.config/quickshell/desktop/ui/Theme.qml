@@ -3,14 +3,12 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-QtObject {
-    readonly property FileView modeFile: FileView {
+Singleton {
+    FileView {
+        id: modeFile
         path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config")
             + "/quickshell/desktop/theme-mode"
         blockLoading: true
-        // Optional synchronization with external edits or other shell instances.
-        // watchChanges: true
-        // onFileChanged: reload()
         onSaved: reload()
     }
     readonly property string mode: modeFile.text().trim() === "light" ? "light" : "dark"

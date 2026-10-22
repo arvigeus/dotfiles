@@ -2,8 +2,9 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "../../ui"
 
-QtObject {
+Singleton {
     id: root
     property var recorder: ({available: false, phase: "idle", elapsed: 0, options: {}, pictures: "", videos: "", lastVideo: ""})
     property string error: ""
@@ -15,47 +16,50 @@ QtObject {
     property double deadline: 0
     property double now: Date.now()
     property var pending: null
-    property var launch: command => Quickshell.execDetached(command)
+    property var launch: command => Apps.launch(command)
     readonly property bool waiting: pending !== null
     readonly property bool capturing: grabber.running
     readonly property int remaining: waiting ? Math.max(0, Math.ceil((deadline - now) / 1000)) : 0
     readonly property bool sessionActive: recorder.phase !== "idle"
     readonly property bool paused: recorder.phase === "paused"
     readonly property string recordingTime: Math.floor((recorder.elapsed || 0) / 60) + ":" + String((recorder.elapsed || 0) % 60).padStart(2, "0")
-    readonly property bool savingRecordingOption: commander.running
+    // Commands written to the recording service whose replies are outstanding.
+    property int awaiting: 0
+    property var outbox: []
+    readonly property bool savingRecordingOption: awaiting > 0
     property bool recordingPending: false
-    readonly property string backend: decodeURIComponent(Qt.resolvedUrl("recorder.py").toString().replace(/^file:\/\//, ""))
+    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")?.startsWith("/") ? Quickshell.env("XDG_CONFIG_HOME") : Quickshell.env("HOME") + "/.config"
     signal hideRequested()
-    readonly property FileView editorPreference: FileView {
-        path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/quickshell/desktop/screenshot-editor"
-        blockLoading: true; watchChanges: true
-        onFileChanged: reload()
-        onSaved: reload()
-    }
-    readonly property FileView savePreference: FileView {
-        path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/quickshell/desktop/screenshot-save"
-        blockLoading: true; watchChanges: true
-        onFileChanged: reload()
-        onSaved: reload()
-    }
     function setSave(value: bool): void { savePreference.setText(value ? "on\n" : "off\n"); }
     function dismissError(): void { error = ""; send({op: "clear-error"}); }
     function setEdit(value: bool): void { editorPreference.setText(value ? "on\n" : "off\n"); }
 
-    function start(): void { watcher.running = true; }
+    // Reads the recording state once; a session started before a shell reload
+    // keeps the connection open until it ends.
+    function start(): void { send({op: "status"}); }
     property string recordingSource: ""
+    // Connecting starts desktop-capture.service through its socket on demand.
     property var send: request => {
-        if (commander.running) return false;
-        commander.command = ["python3", "-B", backend, "--command", JSON.stringify(request)];
-        commander.running = true;
+        outbox = outbox.concat([request]);
+        if (control.connected) flush();
+        else control.connected = true;
         return true;
+    }
+    function flush(): void {
+        for (const request of outbox) control.write(JSON.stringify(request) + "\n");
+        awaiting += outbox.length;
+        outbox = [];
+        control.flush();
+    }
+    function release(): void {
+        if (!sessionActive && !awaiting && !outbox.length) control.connected = false;
     }
     function capture(name: string, mode = "output"): bool {
         if (waiting || capturing || (mode === "output" && !name) || !["output", "region"].includes(mode) || ![0, 3, 5, 10].includes(delay)) return false;
         error = "";
         pending = {output: name, mode, edit, save, hiding: false};
         now = Date.now();
-        // DrawerWindow's exit takes 200 ms. Leave a compositor frame margin,
+        // DrawerHost's exit takes 200 ms. Leave a compositor frame margin,
         // including for immediate captures; this timer outlives the lazy page.
         deadline = now + Math.max(400, delay * 1000);
         return true;
@@ -90,7 +94,7 @@ QtObject {
         grabber.running = true;
     }
     function record(source = output): bool {
-        if (recordingPending || commander.running || !recorder.available) return false;
+        if (recordingPending || awaiting || !recorder.available) return false;
         if (sessionActive) return send({op: "stop"});
         if (!source) return false;
         error = "";
@@ -102,12 +106,13 @@ QtObject {
     }
     function recordRegion(): void {
         if (sessionActive) { send({op: "stop"}); return; }
-        if (recordingPending || selector.running || regionDelay.running || commander.running) return;
+        if (recordingPending || selector.running || regionDelay.running || awaiting) return;
         hideRequested();
         regionDelay.restart();
     }
     function pauseRecording(): void { send({op: "pause"}); }
-    readonly property Timer recordingDelay: Timer {
+    Timer {
+        id: recordingDelay
         interval: 400
         onTriggered: {
             root.hideRequested();
@@ -115,11 +120,12 @@ QtObject {
             root.recordingPending = false;
         }
     }
-    readonly property Timer regionDelay: Timer {
+    Timer {
+        id: regionDelay
         interval: 400
         onTriggered: selector.running = true
     }
-    readonly property Process selector: Process {
+    Process {
         id: selector
         command: ["slurp", "-f", "%wx%h+%x+%y"]
         property string region: ""
@@ -132,28 +138,53 @@ QtObject {
         if (!sessionActive && !recordingPending) send({op: "option", key, value});
     }
     function updateRecording(line: string): void {
+        awaiting = Math.max(0, awaiting - 1);
         try {
             const state = JSON.parse(line);
             if (state.phase) recorder = state;
             if (state.error) error = state.error;
         } catch (_) { error = qsTr("Could not read recording status."); }
+        Qt.callLater(release);
     }
-    readonly property Process commander: Process {
-        id: commander
-        stdout: SplitParser { onRead: line => root.updateRecording(line) }
-        stderr: StdioCollector {}
-        onExited: (code, status) => { if (code !== 0) root.error = qsTr("Recording controls unavailable. Check desktop-capture.service."); }
+    function disconnected(): void {
+        if (awaiting || outbox.length || sessionActive) error = qsTr("Recording controls unavailable. Check desktop-capture.socket.");
+        awaiting = 0; outbox = [];
+        if (sessionActive) recorder = Object.assign({}, recorder, {phase: "idle", elapsed: 0});
     }
     function openPath(path: string): void { if (path) launch(["xdg-open", path]); }
     function openFolder(kind: string): void {
         if (["pictures", "videos"].includes(kind)) openPath(recorder[kind]);
     }
 
-    readonly property Timer countdown: Timer {
+    Socket {
+        id: control
+        path: (Quickshell.env("XDG_RUNTIME_DIR") || "") + "/desktop-capture/control.sock"
+        parser: SplitParser { onRead: line => root.updateRecording(line) }
+        onConnectionStateChanged: {
+            if (connected) root.flush();
+            else root.disconnected();
+        }
+        onError: root.disconnected()
+    }
+    FileView {
+        id: editorPreference
+        path: root.configHome + "/quickshell/desktop/screenshot-editor"
+        blockLoading: true; watchChanges: true
+        onFileChanged: reload()
+        onSaved: reload()
+    }
+    FileView {
+        id: savePreference
+        path: root.configHome + "/quickshell/desktop/screenshot-save"
+        blockLoading: true; watchChanges: true
+        onFileChanged: reload()
+        onSaved: reload()
+    }
+    Timer {
         interval: 100; repeat: true; running: root.waiting
         onTriggered: root.tick()
     }
-    readonly property Process grabber: Process {
+    Process {
         id: grabber
         property string image: ""
         property string detail: ""
@@ -166,15 +197,4 @@ QtObject {
             } else root.error = detail || qsTr("Could not take the screenshot. Check that the display is connected and desktop-screenshot is installed.");
         }
     }
-    readonly property Process watcher: Process {
-        id: watcher
-        command: ["python3", "-B", root.backend, "--watch"]
-        stdout: SplitParser { onRead: line => root.updateRecording(line) }
-        stderr: StdioCollector {}
-        onExited: (code, status) => {
-            if (code !== 0) root.error = qsTr("Recording controls unavailable. Check desktop-capture.service.");
-            reconnect.restart();
-        }
-    }
-    readonly property Timer reconnect: Timer { interval: 5000; onTriggered: watcher.running = true }
 }

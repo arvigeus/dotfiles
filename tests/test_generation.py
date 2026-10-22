@@ -63,7 +63,7 @@ class GenerationTests(unittest.TestCase):
                 files = {entry['target']: entry for entry in config['extra']['files']}
                 self.assertIn('libnotify', config['packages'])
                 self.assertNotIn('dunst', config['packages'])
-                self.assertTrue(any('pacman -Rns --noconfirm dunst' in command for command in config['custom_commands']))
+                self.assertIn('modules/desktop/notifications/scripts/90_cleanup.sh', config['extra']['scripts'])
                 self.assertIn('home/.local/share/dbus-1/services/org.freedesktop.Notifications.service', {entry['target'] for entry in config['extra']['symlinks']})
                 self.assertIn('archlinux-contrib', config['packages'])
                 self.assertIn('pacman-contrib', config['packages'])
@@ -74,8 +74,6 @@ class GenerationTests(unittest.TestCase):
                 self.assertIn('/etc/pacman.d/hooks/99-report-orphans.hook', files)
                 self.assertIn('/etc/pacman.d/hooks/99-report-stale-services.hook', files)
                 self.assertIn('home/.config/topgrade.d/maintenance.toml', files)
-                self.assertNotIn('/usr/local/libexec/desktop-cpu-boost', files)
-                self.assertNotIn('/usr/share/polkit-1/actions/org.dotfiles.desktop.cpu-boost.policy', files)
                 disk = config['disk_config']['device_modifications'][0]
                 self.assertEqual(disk.pop('device'), device)
                 disk['partitions'][1]['size'].pop('value')
@@ -97,28 +95,27 @@ class GenerationTests(unittest.TestCase):
             config = json.loads((repo / 'user-configuration.json').read_text())
             self.assertEqual(config['packages'], ['first', 'hosts/vm', 'second'])
 
-    def test_named_fragments_share_packages_but_isolate_host_storage(self):
+    def test_only_module_fragments_are_configuration(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             (repo / 'scripts').mkdir()
             shutil.copy(REPO / 'generate-config.py', repo)
-            shutil.copytree(REPO / 'scripts', repo / 'scripts', dirs_exist_ok=True)
             (repo / 'host').write_text('zephyrus\n')
             for host in ('zephyrus', 'vm'):
                 path = repo / 'modules/hosts' / host
                 path.mkdir(parents=True)
                 (path / 'config.json').write_text(json.dumps({'hostname': host}))
                 (path / 'check.sh').write_text(f'[[ $DOTFILES_HOST == {host} ]]\n')
-            (repo / 'modules/hosts/zephyrus/storage.config.jsonc').write_text(
+            (repo / 'modules/hosts/zephyrus/config.jsonc').write_text(
                 '// Host-specific disk\n{"disk_config": {"config_type": "default_layout",},}')
             shared = repo / 'modules/hardware/storage'
             shared.mkdir(parents=True)
-            (shared / 'packages.config.json').write_text('{"packages": ["udisks2"]}')
+            (shared / 'config.json').write_text('{"packages": ["udisks2"]}')
+            (shared / 'packages.config.json').write_text('{"packages": ["not-a-fragment"]}')
             (shared / 'package.json').write_text('{"name": "app", "private": true}')
-            (shared / 'tsconfig.json').write_text('{"compilerOptions": {"strict": true}}')
             assets = shared / 'files/home/.config/example'
             assets.mkdir(parents=True)
-            (assets / 'storage.jsonc').write_text('{"packages": ["app-data"]}')
+            (assets / 'config.jsonc').write_text('{"packages": ["app-data"]}')
             for host in ('zephyrus', 'vm'):
                 subprocess.run(['python3', str(repo / 'generate-config.py')],
                                env=dict(os.environ, DOTFILES_HOST=host),
@@ -127,7 +124,6 @@ class GenerationTests(unittest.TestCase):
                 self.assertEqual(generated['packages'], ['udisks2'])
                 self.assertEqual('disk_config' in generated, host == 'zephyrus')
                 self.assertNotIn('name', generated)
-                self.assertNotIn('compilerOptions', generated)
 
     def test_script_order_extra_merging_and_selection_failure(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -149,8 +145,8 @@ class GenerationTests(unittest.TestCase):
             output = repo / 'user-configuration.json'
             original = output.read_text()
             config = json.loads(original)
-            self.assertIn('echo early', config['custom_commands'][1])
-            self.assertIn('echo late', config['custom_commands'][2])
+            self.assertEqual(config['extra']['scripts'], ['modules/zzz/scripts/00_early.sh', 'modules/aaa/scripts/99_late.sh'])
+            self.assertEqual(len(config['custom_commands']), 1)
             self.assertEqual(config['extra']['aur_packages'], ['shared', 'aaa', 'zzz'])
             self.assertNotIn('postinstall', config['extra'])
             (repo / 'modules/aaa/check.sh').write_text('exit 2\n')

@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell
 
-QtObject {
+Scope {
     id: root
 
     // One owner for every interactive surface, across all outputs. The drawer
@@ -37,7 +37,9 @@ QtObject {
         screen = null;
     }
 
-    readonly property Connections outputs: Connections {
+    Connections {
+
+        id: outputs
         target: Quickshell
         function onScreensChanged(): void {
             if (root.activeSurface && !Quickshell.screens.includes(root.screen))

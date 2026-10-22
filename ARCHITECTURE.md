@@ -1,8 +1,8 @@
 # Architecture
 
-Modules describe the desired system. Generation combines them into
-`user-configuration.json` and `user-configuration.sh`, shared by installation and
-live apply. Entry points do not regenerate configuration or select modules.
+Modules describe the desired system. `generate-config.py` combines the selected
+modules into `user-configuration.json`, shared by installation and live apply.
+Entry points do not regenerate configuration or select modules.
 
 Prefer native archinstall settings for features it supports. Custom hooks cover
 remaining behavior. The configuration does not pin package versions, track
@@ -12,10 +12,9 @@ Breaking changes require manual migration; compatibility layers are not maintain
 ## Modules
 
 Modules are discovered under `modules/`. A directory containing configuration,
-assets, or hooks is a module; discovery stops there. Configuration fragments use
-`config.json`, `config.jsonc`, `config.sh`, `NAME.config.json`, or
-`NAME.config.jsonc`. JSONC accepts comments and trailing commas. Other JSON files
-are assets, not configuration fragments.
+assets, or hooks is a module; discovery stops there. Configuration fragments are
+`config.json`, `config.jsonc` (comments and trailing commas allowed) and
+`config.sh`. Other JSON files are assets, not configuration.
 
 Objects merge recursively. Supported native lists and lists under `extra` are
 combined; duplicate entries are removed except for `custom_commands`. Conflicting
@@ -30,7 +29,9 @@ settings and device aliases. Reusable accessories belong under
 Native archinstall fields control packages and services. `extra` holds custom
 metadata, including AUR packages, Flatpak remotes/apps, assets, and hooks.
 `extra.packages`, `extra.services`, `extra.disabled_services`, and
-`extra.masked_services` are descriptive lists, not execution instructions.
+`extra.masked_services` record what native handlers (such as `app_config` or the
+desktop profile) or hooks install and enable. Nothing executes them yet; they
+keep those dependencies explicit for future reconciliation by live apply.
 Declare shared script/build tools in their owning modules rather than repeating
 them in application modules.
 
@@ -40,14 +41,19 @@ them in application modules.
 | ----------------- | ----------------------------------------------------------------------------------------------- |
 | `check.sh`        | Read-only module selection during generation: exit 0 includes, 1 excludes, other statuses fail. |
 | `config.sh`       | Emit dynamic JSON configuration during generation.                                              |
-| `prerequisite.sh` | Runtime safeguard, snapshotted into the generated configuration.                                |
+| `prerequisite.sh` | Runtime safeguard, run before anything is changed.                                              |
 | `pre.sh`          | Early setup before native configuration, including repository key preparation.                  |
-| `scripts/*.sh`    | Custom configuration actions, snapshotted with shared helpers into `custom_commands`.           |
+| `scripts/*.sh`    | Custom configuration actions, run after assets and extra packages are installed.                 |
 
 Selection checks receive `DOTFILES_HOST`, `DOTFILES_DESKTOP` (default `hyprland`),
 and the repository path as their first argument. Select by target-host criteria,
 not the generator machine's hardware. Scripts are ordered globally by filename,
 then module path for ties; use numeric prefixes for dependencies.
+
+Hooks run from the checkout as root, with the regular user's name as `$1` and in
+`USERNAME`, and the checkout in `DOTFILES_REPO`. They read the active configuration
+through `/run/system-configuration.json`. Generation records which hooks exist, so
+editing a hook needs no regeneration; adding or removing one does.
 
 Keep fixed configuration in assets. Use scripts for generated content and runtime
 actions. Avoid explicit service restarts; users reboot after applying changes.
@@ -59,19 +65,26 @@ directory, `home/` targets the regular user's home and other paths target `/`.
 Keep application-rewritten configuration in `files/home/` to avoid checkout noise.
 Use plain installed filenames such as `bash.sh` or `fcitx.conf`.
 
-The XDG module declares directories in both shell startup and the systemd user
-environment. Cache files use `~/.local/cache`; other XDG directories use their
-standard defaults.
+Hooks write generated home configuration into a temporary staging home (`HOME`
+and the XDG variables point there). Home outputs are published with user
+ownership; generated outputs are regular files. Publishing replaces managed
+destinations and leaves omitted outputs alone.
 
-Scripts write generated home configuration into a temporary staging home.
-Home outputs are published with user ownership; generated outputs are regular
-files. Publishing replaces managed destinations and leaves omitted outputs alone.
+## Shell environment
+
+Declare environment variables once, in `files/etc/environment.d/*.conf`. The
+systemd user manager reads them, and `/etc/profile.d/environment.sh` exports the
+same result to login shells; graphical sessions inherit it from the login shell.
+Aliases and other interactive Bash settings go in `files/etc/bash.bashrc.d/*.sh`,
+which `/etc/bash.bashrc` sources. The managed `~/.bashrc` is empty so the
+system-wide settings take effect. Cache files use `~/.local/cache`; other XDG
+directories use their standard defaults.
 
 ## Boot and login
 
-EFI stub boot uses UKIs. A final boot hook adapts archinstall’s encryption
-command line for the declared systemd initramfs and rebuilds the UKIs. Routine
-boot output is suppressed; errors and the disk-unlock prompt remain visible.
+EFI stub boot uses UKIs. A final boot hook quiets archinstall's kernel command
+line, drops the stock splash image and rebuilds the UKIs. Routine boot output is
+suppressed; errors and the disk-unlock prompt remain visible.
 
 ## Mirrors
 
@@ -85,21 +98,14 @@ live apply preserves the list rather than restoring fixed mirror URLs.
 `bootstrap.sh` runs prerequisites and early setup on the ISO, then invokes
 archinstall. The installation plugin copies the checkout into the target and
 runs early setup again after base installation, before application packages.
-Archinstall runs the generated custom commands to finish configuration.
+Archinstall's single custom command then runs `scripts/configure.sh`.
 
 `apply.sh` validates the configuration, then uses a live adapter around
 archinstall's parser and native handlers. It applies packages, network, profile,
-console, and zram settings, followed by the same custom commands. Installation-only
+console, and zram settings, followed by the same custom command. Installation-only
 disk, bootloader, account, and snapshot operations are skipped. System locale is
 configured at installation; live apply leaves it unchanged. Login services are
 enabled without restarting the session.
 
-The generated executor installs declared assets and extra packages and coordinates
-hook execution and home publication. Hooks read the active configuration through
-`/run/system-configuration.json`. Each custom command runs in a separate shell;
-exports do not carry between commands. Shared staging and temporary invocation
-context bridge those commands and are cleaned up after completion or on the next
-invocation following an interruption. They are not system-state manifests.
-
 See [scripts/ARCHITECTURE.md](scripts/ARCHITECTURE.md) for executor, adapter and
-shared-helper details.
+helper details.

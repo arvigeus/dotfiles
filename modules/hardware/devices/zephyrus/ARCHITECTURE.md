@@ -1,6 +1,6 @@
 # Zephyrus hardware integration
 
-`config.json` owns the asusctl and ROG Control Center dependencies. The module's
+`config.json` owns the asusctl dependency. The module's
 host check installs its assets only for the Zephyrus host.
 
 ## Keyboard lighting

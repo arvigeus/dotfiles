@@ -6,14 +6,10 @@ hl.monitor({
     scale    = "auto",
 })
 
--- Selected host assets supply only the outputs that need a fixed preference.
-local config = os.getenv("XDG_CONFIG_HOME") or (os.getenv("HOME") .. "/.config")
-local path = config .. "/hypr/host-monitors.lua"
-local file = io.open(path, "r")
-if file then
-    file:close()
-    dofile(path)
-end
+-- Optional rules; later rules for an output replace earlier ones. The selected
+-- host supplies fixed preferences, then layouts confirmed in the Displays drawer.
+pcall(require, "host-monitors")
+pcall(require, "displays")
 
 -- Forward native output changes (including wdisplays mode/position edits) to
 -- the shell's existing IPC subscription. No command or polling process is used.

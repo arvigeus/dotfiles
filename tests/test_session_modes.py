@@ -27,44 +27,35 @@ class SessionModeTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.binary = self.root / 'bin'; self.binary.mkdir()
         self.runtime = self.root / 'runtime'; self.runtime.mkdir(mode=0o700)
+        self.state = self.runtime / 'session-mode'
         runner = self.binary / 'session-mode'
-        runner.write_text(f'''#!/usr/bin/env python3
-import functools,importlib.machinery,importlib.util,os,sys
-from pathlib import Path
+        runner.write_text(f"""#!/usr/bin/env python3
+import importlib.machinery,importlib.util,sys
 loader=importlib.machinery.SourceFileLoader('modes',{str(SOURCE)!r})
 spec=importlib.util.spec_from_loader(loader.name,loader)
 m=importlib.util.module_from_spec(spec);loader.exec_module(m)
-m.runtime_directory=lambda:Path(os.environ['SESSION_TEST_RUNTIME'])
-m.Supervisor=functools.partial(m.Supervisor,startup_timeout=.4,stop_timeout=.5)
+m.STARTUP_TIMEOUT=.4
 sys.exit(m.main())
-''')
+""")
         runner.chmod(0o755)
         stub = self.binary / 'fixture'
-        stub.write_text('''#!/usr/bin/env python3
+        stub.write_text("""#!/usr/bin/env python3
 import os,sys,time
 from pathlib import Path
 root=Path(os.environ['SESSION_TEST_ROOT']);name=Path(sys.argv[0]).name
-
 def log(text):
  with (root/'events').open('a') as output:output.write(text+'\\n')
 def wait_for_stop(mode):
  stop=root/('stop-'+mode)
  while not stop.exists():time.sleep(.02)
  stop.unlink()
-if name=='loginctl':
- if sys.argv[1]=='show-session':print('User='+str(os.getuid())+'\\nTTY=tty1\\nRemote=no')
- elif sys.argv[1]=='list-sessions':
-  import json
-  print(json.dumps([dict(session='fixture',uid=os.getuid(),tty='tty1',**{'class':'user'})]))
- else:
-  log('terminate-login')
-  if os.environ.get('SESSION_TEST_DENY'):raise SystemExit(1)
-elif name=='uwsm':
- if sys.argv[1]=='check':raise SystemExit(1)
+if name=='uwsm':
  if sys.argv[1]=='start':
   log('desktop');wait_for_stop('desktop')
  elif sys.argv[1]=='stop':
-  log('stop-desktop');(root/'stop-desktop').touch()
+  log('stop-desktop')
+  if os.environ.get('SESSION_TEST_STOP_FAIL'):raise SystemExit(1)
+  (root/'stop-desktop').touch()
 elif name=='gaming-session':
  log('gaming')
  scenario=os.environ.get('SESSION_TEST_GAME','ready')
@@ -74,13 +65,13 @@ elif name=='gaming-session':
 elif name=='steam':
  assert sys.argv[1:]==['-shutdown'],sys.argv
  log('stop-gaming');(root/'stop-gaming').touch()
-''')
+""")
         stub.chmod(0o755)
-        for name in ('uwsm', 'gaming-session', 'steam', 'gamescope', 'loginctl'):
+        for name in ('uwsm', 'gaming-session', 'steam', 'gamescope'):
             (self.binary / name).symlink_to(stub)
         self.env = dict(os.environ, PATH=str(self.binary)+':'+os.environ['PATH'],
-                        SESSION_TEST_ROOT=str(self.root), SESSION_TEST_RUNTIME=str(self.runtime),
-                        XDG_SESSION_ID='fixture', PYTHONDONTWRITEBYTECODE='1')
+                        SESSION_TEST_ROOT=str(self.root), XDG_RUNTIME_DIR=str(self.runtime),
+                        PYTHONDONTWRITEBYTECODE='1')
         self.process = None
         self.addCleanup(self.stop)
 
@@ -117,14 +108,16 @@ elif name=='steam':
 
     def test_desktop_gaming_return_hook_and_desktop_reload(self):
         self.start(); self.wait_event('desktop')
-        self.assertTrue(json.loads(self.command('status').stdout)['supervised'])
+        self.assertEqual(json.loads(self.command('status').stdout), dict(available=True, gaming=True))
         self.command('gaming'); self.wait_event('gaming')
         subprocess.run([str(HOOK), 'plasma'], env=self.env, check=True, timeout=5)
         self.wait_event('desktop', 2)
         self.command('desktop'); self.wait_event('desktop', 3)
         self.assertEqual(self.events()[:7], ['desktop', 'stop-desktop', 'gaming', 'stop-gaming',
                                           'desktop', 'stop-desktop', 'desktop'])
-        self.assertFalse((self.runtime/'next.json').exists())
+        self.assertFalse((self.state/'next').exists())
+        self.stop()
+        self.assertEqual(self.events().count('desktop'), 3, 'stopping must not start another session')
 
     def test_steam_exit_and_failed_gaming_start_return_to_desktop(self):
         for scenario in ('ready', 'fail'):
@@ -146,44 +139,38 @@ elif name=='steam':
         self.stop()
         self.assertIn('Gaming startup timed out', self.output[1])
 
-    def test_live_console_handoff_is_consumed_once_and_next_login_is_desktop(self):
-        self.command('gaming')
-        self.assertIn('terminate-login', self.events())
-        self.assertTrue((self.runtime/'handoff.json').exists())
-        self.start(); self.wait_event('gaming')
-        self.assertFalse((self.runtime/'handoff.json').exists())
-        self.stop()
-        self.start(); self.wait_event('desktop')
-        self.assertEqual(self.events().count('gaming'), 1)
-
-    def test_rejected_handoff_leaves_no_boot_choice(self):
-        self.env['SESSION_TEST_DENY']='1'
+    def test_requests_need_a_supervisor_and_a_new_login_starts_desktop(self):
+        self.assertEqual(json.loads(self.command('status').stdout), dict(available=False, gaming=False))
         self.assertNotEqual(self.command('gaming', check=False).returncode, 0)
-        self.assertFalse((self.runtime/'handoff.json').exists())
+        self.assertEqual(self.events(), [])
+        self.state.mkdir()
+        (self.state/'next').write_text('gaming')
+        self.start(); self.wait_event('desktop')
+        self.assertNotIn('gaming', self.events())
+        self.assertFalse((self.state/'next').exists())
 
-    def test_desktop_app_without_session_id_resolves_local_login(self):
-        self.env.pop('XDG_SESSION_ID', None)
-        state=json.loads(self.command('status').stdout)
-        self.assertTrue(state['available'])
-        self.assertTrue(state['gaming'])
-        self.command('desktop')
-        self.assertIn('terminate-login', self.events())
-
-    def test_stale_requests_and_unavailable_gaming_are_rejected(self):
-        modes.atomic_json(self.runtime/'handoff.json', dict(mode='gaming', created=time.monotonic()-120))
-        self.assertIsNone(modes.take_request(self.runtime, 'handoff.json'))
-        self.assertFalse((self.runtime/'handoff.json').exists())
+    def test_failed_stop_withdraws_the_request(self):
+        self.start(); self.wait_event('desktop')
+        self.env['SESSION_TEST_STOP_FAIL']='1'
+        self.assertNotEqual(self.command('gaming', check=False).returncode, 0)
+        self.assertFalse((self.state/'next').exists())
         with patch.object(modes, 'gaming_available', return_value=False), self.assertRaises(ValueError):
-            modes.request_mode(self.runtime, 'gaming')
-        self.assertFalse((self.runtime/'handoff.json').exists())
+            modes.request_mode(self.state, 'gaming')
+        self.assertFalse((self.state/'next').exists())
 
-    def test_gaming_command_preserves_hardware_settings_and_adds_steam_hook_mode(self):
+    def test_gaming_command_preserves_hardware_settings_and_exports_steam_features(self):
         result = subprocess.run([str(GAMING)], env=dict(self.env, SYSTEM_GAMING_DRY_RUN='1',
             SYSTEM_GAMING_GPU='1002:73df', SYSTEM_GAMING_HDR='1', SYSTEM_GAMING_OUTPUT='DP-1',
-            SESSION_MODE_READY_FD='9'), check=True, text=True, capture_output=True)
+            SYSTEM_GAMING_USER_CONFIG='/nonexistent', SESSION_MODE_READY_FD='9'),
+            check=True, text=True, capture_output=True)
         for part in ('--backend drm', '--steam', '--ready-fd 9', '--prefer-output DP-1',
-                     '--prefer-vk-device 1002:73df', '--hdr-enabled', '-gamepadui -steamos3'):
+                     '--prefer-vk-device 1002:73df', '--hdr-enabled', '-gamepadui -steamos3',
+                     'STEAM_GAMESCOPE_HDR_SUPPORTED=1', 'STEAM_MULTIPLE_XWAYLANDS=1', 'STEAM_USE_MANGOAPP=1',
+                     f'MANGOHUD_CONFIGFILE={self.runtime}/gaming-session/mangohud.conf'):
             self.assertIn(part, result.stdout)
+        result = subprocess.run([str(GAMING)], env=dict(self.env, SYSTEM_GAMING_DRY_RUN='1', SYSTEM_GAMING_HDR='0',
+            SYSTEM_GAMING_USER_CONFIG='/nonexistent'), check=True, text=True, capture_output=True)
+        self.assertNotIn('HDR', result.stdout.replace('--hdr', ''))
 
 
 if __name__=='__main__':unittest.main()

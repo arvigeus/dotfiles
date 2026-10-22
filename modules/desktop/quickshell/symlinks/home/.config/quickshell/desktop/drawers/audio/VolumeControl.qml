@@ -20,7 +20,7 @@ RowLayout {
     signal volumeEdited(real value)
     signal muteClicked()
     spacing: 8
-    AudioIconButton {
+    IconButton {
         objectName: root.objectName + ":mute"
         iconName: root.microphone ? (root.muted ? "mic-off" : "mic") : AudioIcons.volume(root.volume, root.muted)
         text: root.muteHint || (root.microphone ? (root.muted ? qsTr("Turn on microphone") : qsTr("Turn off microphone"))

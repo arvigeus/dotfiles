@@ -49,9 +49,10 @@ class WebcamTests(unittest.TestCase):
                 self.assertEqual(command.call_count, 1)
 
     def test_replaced_device_and_unsupported_paths_never_mutate(self):
-        with patch.object(webcam, 'identity', side_effect=['old', 'new']), patch.object(webcam, 'command', return_value=CONTROLS) as command:
+        request = dict(op='set', device='/dev/video0', token='old', key='brightness', value=14)
+        with patch.object(webcam, 'identity', return_value='new'), patch.object(webcam, 'command', return_value=CONTROLS) as command:
             with self.assertRaisesRegex(ValueError, 'changed'):
-                webcam.handle(dict(device='/dev/video0'))
+                webcam.handle(request)
             self.assertEqual(command.call_count, 1)
         for device in ('/dev/null', '/tmp/video0', '/dev/video0;echo fail', None):
             with self.subTest(device=device), self.assertRaises(ValueError):

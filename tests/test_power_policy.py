@@ -1,4 +1,4 @@
-"""Policy ownership, thermal guards and valid whole-battery accounting."""
+"""Policy ownership and valid whole-battery accounting."""
 import configparser
 import copy
 import importlib.machinery
@@ -15,7 +15,7 @@ import time
 import sys
 from unittest.mock import patch
 
-import test_display_drawer as displays
+import support
 
 REPO = Path(__file__).resolve().parents[1]
 POWER = REPO / 'modules/hardware/power'
@@ -231,46 +231,6 @@ class ThermalDelegation(unittest.TestCase):
 
 
 class Measurements(unittest.TestCase):
-    def test_workload_descendants_are_stopped_after_the_launcher_exits(self):
-        child = subprocess.Popen([sys.executable, '-c', '''import os,signal,time
-if os.fork():
-    os._exit(0)
-signal.signal(signal.SIGTERM, signal.SIG_IGN)
-print('ready', flush=True)
-time.sleep(30)
-'''], stdout=subprocess.PIPE, text=True, start_new_session=True)
-        try:
-            self.assertTrue(select.select([child.stdout], [], [], 3)[0], 'Descendant did not initialize')
-            self.assertEqual(child.stdout.readline().strip(), 'ready')
-            child.wait(timeout=3)
-            study.stop_workload(child)
-            self.assertTrue(select.select([child.stdout], [], [], 3)[0], 'Descendant retained the output pipe')
-            self.assertEqual(child.stdout.read(), '')
-        finally:
-            try:
-                os.killpg(child.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            child.wait()
-            child.stdout.close()
-
-    def test_guard_immediately_stops_a_workload_that_ignores_graceful_termination(self):
-        child = subprocess.Popen([sys.executable, '-c',
-            "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print('ready',flush=True); time.sleep(30)"],
-            stdout=subprocess.PIPE, text=True, start_new_session=True)
-        try:
-            self.assertTrue(select.select([child.stdout], [], [], 3)[0], 'Child did not initialize')
-            self.assertEqual(child.stdout.readline().strip(), 'ready')
-            started = time.monotonic()
-            study.stop_workload(child, abort=True)
-            self.assertEqual(child.returncode, -signal.SIGKILL)
-            self.assertLess(time.monotonic() - started, 2, 'Thermal abort waited through the grace period')
-        finally:
-            if child.poll() is None:
-                os.killpg(child.pid, signal.SIGKILL)
-                child.wait()
-            child.stdout.close()
-
     def row(self, seconds=0, wh=40, watts=10, status='Discharging'):
         return dict(monotonic=seconds, batteries=dict(BAT0=dict(status=status, watts=watts, wh=wh, full_wh=50)),
                     temperatures={'k10temp:Tctl': 60}, gpus={'gpu': dict(state='suspended')})
@@ -300,26 +260,6 @@ time.sleep(30)
         result = study.summarize(rows)
         self.assertNotIn('estimated_full_hours', result['batteries']['BAT0'])
 
-    def test_guards_use_cpu_and_each_gpu_sensor_separately(self):
-        row = self.row()
-        self.assertEqual(study.guard(row), '')
-        row['temperatures']['k10temp:Tctl'] = 82
-        self.assertIn('k10temp:Tctl', study.guard(row))
-        row['temperatures']['k10temp:Tctl'] = 60
-        row['gpus']['gpu'].update(state='active', edge=65, junction=90)
-        self.assertIn('junction', study.guard(row))
-        row['gpus']['gpu'].update(junction=80, mem=90)
-        self.assertIn('mem', study.guard(row))
-
-    def test_missing_thermal_telemetry_refuses_a_guarded_load(self):
-        row = self.row()
-        self.assertEqual(study.sensor_failure(row), '')
-        row['temperatures'] = {}
-        self.assertIn('CPU temperature', study.sensor_failure(row))
-        row['temperatures'] = {'k10temp:Tctl': 60}
-        row['gpus']['gpu'].update(id='0x73ef', state='active')
-        self.assertIn('thermal telemetry', study.sensor_failure(row))
-
     def test_battery_observation_never_reads_even_an_active_gpu_sensor(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -341,14 +281,14 @@ time.sleep(30)
             self.assertNotIn('edge', row['gpus']['device'])
 
     def test_suspend_gap_invalidates_a_recording_even_when_monotonic_pauses(self):
-        from unittest.mock import Mock
+        import io
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             output = root / 'recording'
             with patch.object(study, 'SYS', root), \
                     patch.object(study.time, 'clock_gettime', side_effect=[0, 0, 2, 120]), \
                     patch.object(study.time, 'monotonic', side_effect=[0, 0, 2, 4]), \
-                    patch.object(study.time, 'sleep'), patch.object(sys, 'stdout', Mock()), \
+                    patch.object(study.time, 'sleep'), patch.object(sys, 'stdout', io.StringIO()), \
                     patch.object(sys, 'argv', ['power-study', '--duration', '4', '--warmup', '0',
                                                    '--output', str(output), 'test']):
                 before = dict(sample=study.sample(), monitors=None)
@@ -368,7 +308,7 @@ class Ownership(unittest.TestCase):
     def test_boost_has_exactly_one_authority_and_every_mode_sets_it(self):
         common = self.config('common')
         self.assertNotIn('boost', common['cpu'])
-        for name, value in [('balanced', '0'), ('battery', '0'), ('performance', '1'), ('powersave', '0')]:
+        for name, value in [('balanced', '0'), ('performance', '1'), ('powersave', '0')]:
             profile = self.config(name)
             self.assertEqual(profile['main']['include'], 'zephyrus-common')
             self.assertNotIn('boost', profile['cpu'])
@@ -405,105 +345,102 @@ class Ownership(unittest.TestCase):
 
 
 class PanelPolicy(unittest.TestCase):
+    """Powersave's 60 Hz panel cap lives only in Hyprland's live rules."""
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.path = Path(temporary.name) / 'displays.json'
-        self.prefs = displays.backend.Preferences(self.path)
-        self.panel = displays.display('eDP-1', mode='1920x1080@120.00Hz')
-        self.external = displays.display('DP-1', mode='1920x1080@120.00Hz', x=1920)
-        self.before = displays.state([self.panel, self.external])
-        self.prefs.remember(self.before)
-        apply = patch.object(displays.backend, 'apply_setup', side_effect=lambda rows, before: displays.state(rows))
+        environment = patch.dict(os.environ, XDG_CONFIG_HOME=temporary.name)
+        environment.start(); self.addCleanup(environment.stop)
+        self.path = Path(temporary.name) / 'hypr/displays.lua'
+        self.backend = support.backend
+        self.panel = support.described('eDP-1', 'Panel', mode='1920x1080@120.00Hz')
+        self.external = support.described('DP-1', 'External', mode='1920x1080@120.00Hz', x=1920)
+        self.before = support.state([self.panel, self.external])
+        self.capped = support.state([dict(self.panel, mode='1920x1080@60.00Hz'), self.external])
+        apply = patch.object(self.backend, 'apply_setup', side_effect=lambda rows, before: support.state(rows))
         self.apply = apply.start()
         self.addCleanup(apply.stop)
+        # The native preferred-mode query; tests never reach Hyprland.
+        preferred = patch.object(self.backend, 'command', return_value='1920x1080@120.00000')
+        self.command = preferred.start()
+        self.addCleanup(preferred.stop)
 
-    def test_internal_only_cap_preserves_preferences_and_restores_mode(self):
-        capped = self.prefs.power_refresh(self.before, True)
-        self.assertEqual(capped['displays'][0]['mode'], '1920x1080@60.00Hz')
-        self.assertEqual(capped['displays'][1]['mode'], '1920x1080@120.00Hz')
-        # Even a simultaneous placement edit must not save the automatic cap.
-        changed = copy.deepcopy(capped)
-        changed['displays'][0]['y'] = 10
-        self.prefs.remember(changed, capped)
-        self.assertEqual(json.loads(self.path.read_text())['outputs'][0]['mode'], self.panel['mode'])
-        restored = self.prefs.power_refresh(changed, False)
-        self.assertEqual(restored['displays'][0]['mode'], self.panel['mode'])
-        self.assertEqual(restored['displays'][0]['y'], 10)
+    def save(self, mode):
+        self.path.parent.mkdir(exist_ok=True)
+        self.path.write_text(f'hl.monitor({{ output = "desc:Panel", disabled = false, mode = "{mode}" }})\n')
 
-    def test_external_manual_refresh_override_wins_until_mode_exit(self):
-        capped = self.prefs.power_refresh(self.before, True)
-        changed = copy.deepcopy(capped)
-        changed['displays'][0]['mode'] = self.panel['mode']
-        changed['token'] = displays.backend.fingerprint(changed['displays'])
-        current = self.prefs.power_refresh(changed, True)
-        self.assertEqual(current['displays'][0]['mode'], self.panel['mode'])
-        again = self.prefs.power_refresh(current, True)
-        self.assertEqual(again['displays'][0]['mode'], self.panel['mode'])
-        self.prefs.power_refresh(again, False)
-        self.assertEqual(self.prefs.power_refresh(again, True)['displays'][0]['mode'], '1920x1080@60.00Hz')
+    def modes(self, result):
+        return [row['mode'] for row in result['displays']]
 
-    def test_disabling_a_capped_panel_preserves_its_original_mode(self):
-        capped = self.prefs.power_refresh(self.before, True)
-        disabled = displays.state([dict(capped['displays'][0], enabled=False), self.external])
-        self.prefs.remember(disabled, capped, capped)
-        saved = self.prefs.saved[self.prefs.key(self.panel)]
-        self.assertFalse(saved['enabled'])
-        self.assertEqual(saved['mode'], self.panel['mode'])
-
-    def test_power_signal_saves_pending_external_edits_before_updating_baseline(self):
-        changed = displays.state([dict(self.panel, y=50), self.external])
-        with patch.object(displays.backend, 'snapshot', return_value=changed):
-            result = displays.backend.response(dict(op='power', baseline=self.before, powerMode='power-saver'), self.prefs)
-        self.assertTrue(result['ok'], result['error'])
-        self.assertEqual(self.prefs.saved[self.prefs.key(self.panel)]['y'], 50)
-        self.assertEqual(self.prefs.saved[self.prefs.key(self.panel)]['mode'], self.panel['mode'])
-
-    def test_enabling_a_panel_does_not_count_as_a_manual_refresh_override(self):
-        disabled = displays.state([dict(self.panel, enabled=False), self.external])
-        self.prefs.power_state['active'] = True
-        with patch.object(displays.backend, 'snapshot', return_value=disabled), \
-                patch.object(displays.backend, 'control', return_value=self.before):
-            current = displays.backend.handle(dict(op='change', name=self.panel['name'],
-                identity=self.panel['identity'], values={'enabled': True}), self.prefs)
-        self.assertEqual(self.prefs.power_state['suppressed'], [])
-        self.assertEqual(self.prefs.power_refresh(current, True)['displays'][0]['mode'], '1920x1080@60.00Hz')
-
-    def test_failed_modeset_never_commits_a_fictitious_override(self):
-        self.apply.side_effect = RuntimeError('modeset failed')
-        with self.assertRaises(RuntimeError):
-            self.prefs.power_refresh(self.before, True)
-        self.assertFalse(self.prefs.power_state['active'])
-        self.assertEqual(self.prefs.power_state['overrides'], {})
-
-    def test_policy_does_not_wake_a_blank_panel_or_change_resolution(self):
-        before = displays.state([dict(self.panel, dpms=False), self.external])
-        self.prefs.power_refresh(before, True)
-        self.apply.assert_not_called()
-        self.panel['modes'] = ['1920x1080@120.00Hz', '1280x720@60.00Hz']
-        self.prefs.power_refresh(displays.state([self.panel]), True)
-        self.apply.assert_not_called()
-
-    def test_dark_panel_restoration_is_deferred_until_wake_without_losing_original(self):
-        capped = self.prefs.power_refresh(self.before, True)
-        dark = displays.state([dict(capped['displays'][0], dpms=False), self.external])
+    def test_powersave_caps_only_internal_panels_without_saving(self):
+        result, pending = self.backend.power(self.before, True)
+        self.assertEqual(self.modes(result), ['1920x1080@60.00Hz', '1920x1080@120.00Hz'])
+        self.assertFalse(pending)
+        self.assertFalse(self.path.exists())
         self.apply.reset_mock()
-        left = self.prefs.power_refresh(dark, False)
+        self.assertEqual(self.backend.power(result, True), (result, False))
         self.apply.assert_not_called()
-        self.assertFalse(self.prefs.power_state['active'])
-        self.assertTrue(self.prefs.power_state['overrides'])
-        awake = displays.state([dict(left['displays'][0], dpms=True), self.external])
-        restored = self.prefs.power_refresh(awake, False)
-        self.assertEqual(restored['displays'][0]['mode'], self.panel['mode'])
-        self.assertEqual(self.prefs.power_state['overrides'], {})
 
-    def test_powersave_reentry_before_wake_retains_the_original_refresh(self):
-        capped = self.prefs.power_refresh(self.before, True)
-        dark = displays.state([dict(capped['displays'][0], dpms=False), self.external])
-        self.prefs.power_refresh(dark, False)
-        self.prefs.power_refresh(dark, True)
-        awake = displays.state([dict(dark['displays'][0], dpms=True), self.external])
-        self.assertEqual(self.prefs.power_refresh(awake, False)['displays'][0]['mode'], self.panel['mode'])
+    def test_leaving_powersave_restores_the_saved_or_default_refresh(self):
+        result, _ = self.backend.power(self.capped, False)
+        self.assertEqual(self.modes(result)[0], '1920x1080@120.00Hz')
+        self.assertEqual(self.command.call_args.args[0], 'repl')
+        self.command.reset_mock()
+        self.save('1920x1080@120.00')
+        result, _ = self.backend.power(self.capped, False)
+        self.assertEqual(self.modes(result)[0], '1920x1080@120.00Hz')
+        self.command.assert_not_called()
+
+    def test_a_saved_60hz_choice_is_not_raised(self):
+        self.save('1920x1080@60.00')
+        self.apply.reset_mock()
+        self.assertEqual(self.backend.power(self.capped, False), (self.capped, False))
+        self.apply.assert_not_called()
+
+    def test_saving_while_capped_keeps_the_uncapped_refresh(self):
+        moved = support.state([dict(self.capped['displays'][0], y=10), self.external])
+        self.backend.persist(moved, True)
+        rule = next(line for line in self.path.read_text().splitlines() if 'desc:Panel' in line)
+        self.assertIn('mode = "1920x1080@120.00"', rule)
+        self.assertIn('position = "0x10"', rule)
+        # An explicit refresh choice (not capped) is saved as chosen.
+        self.backend.persist(moved, False)
+        self.assertIn('mode = "1920x1080@60.00"', self.path.read_text())
+
+    def test_powersave_change_saves_then_reapplies_the_cap(self):
+        enabled = support.state([self.panel, self.external])
+        request = dict(op='change', name='eDP-1', identity=self.panel['identity'], values=dict(enabled=True), capped=True)
+        with patch.object(self.backend, 'control', return_value=enabled):
+            result = self.backend.response(request)
+        self.assertTrue(result['ok'], result['error'])
+        self.assertEqual(self.modes(result['data'])[0], '1920x1080@60.00Hz')
+        self.assertIn('mode = "1920x1080@120.00"', self.path.read_text())
+        self.apply.reset_mock()
+        with patch.object(self.backend, 'control', return_value=enabled):
+            result = self.backend.response(dict(request, capped=False))
+        self.apply.assert_not_called()
+        self.assertEqual(self.modes(result['data'])[0], '1920x1080@120.00Hz')
+
+    def test_blank_panels_are_not_woken_and_report_pending(self):
+        for powersave, current in ((True, self.before), (False, self.capped)):
+            dark = support.state([dict(current['displays'][0], dpms=False), self.external])
+            with self.subTest(powersave=powersave):
+                self.assertEqual(self.backend.power(dark, powersave), (dark, True))
+        self.apply.assert_not_called()
+
+    def test_policy_never_changes_resolution_or_external_outputs(self):
+        panel = dict(self.panel, modes=['1920x1080@120.00Hz', '1280x720@60.00Hz'])
+        current = support.state([panel, self.external])
+        self.assertEqual(self.backend.power(current, True), (current, False))
+        self.apply.assert_not_called()
+
+    def test_failed_modeset_is_reported(self):
+        self.apply.side_effect = RuntimeError('modeset failed')
+        with patch.object(self.backend, 'snapshot', return_value=self.before):
+            result = self.backend.response(dict(op='power', capped=True))
+        self.assertFalse(result['ok'])
+        self.assertIn('modeset failed', result['error'])
 
 
 if __name__ == '__main__':

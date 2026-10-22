@@ -5,19 +5,14 @@ import QtQuick.Templates as T
 import QtQuick.Layouts
 import Quickshell
 import "../ui"
-import "audio"
 import "keyboard"
-import "network"
-import "network/Models.js" as Models
 
 DrawerPage {
     id: root
     property var service: InputLanguage
     // Observation follows this page; the singleton finishes pending adjustments.
     property var backlightService: BacklightService
-    ListModel { id: backlightsModel; dynamicRoles: true }
-    function syncBacklights(): void { Models.sync(backlightsModel, backlightService.values, "key", false); }
-    Connections { target: root.backlightService; function onValuesChanged(): void { root.syncBacklights(); } }
+    ScriptModel { id: backlightsModel; values: root.backlightService.values; objectProp: "key" }
     readonly property alias referencePopup: reference
     property Popup openLighting: null
     property bool focusAfterSelection: false
@@ -36,12 +31,12 @@ DrawerPage {
             Qt.inputMethod.reset(); testInput.clear();
         }
     }
-    Component.onCompleted: { syncBacklights(); backlightService.observe(root, active); if (active) service.refresh(); }
+    Component.onCompleted: { backlightService.observe(root, active); if (active) service.refresh(); }
     Component.onDestruction: backlightService.observe(root, false)
-    headerActions: AudioIconButton {
+    headerActions: IconButton {
         objectName: "keyboardSettings"
         iconName: "pencil"; text: qsTr("Input method settings")
-        onClicked: { Quickshell.execDetached(["fcitx5-configtool"]); root.closeRequested(); }
+        onClicked: { Apps.launch(["fcitx5-configtool"]); root.closeRequested(); }
     }
     Connections {
         target: root.service
@@ -66,7 +61,7 @@ DrawerPage {
             RowLayout {
                 Layout.fillWidth: true
                 ShellText { text: qsTr("Languages"); font.weight: Font.DemiBold; Layout.fillWidth: true }
-                AudioIconButton {
+                IconButton {
                     id: helpButton
                     objectName: "keyboardHelp"; iconName: "info"; text: qsTr("Language maps and keyboard shortcuts")
                     checked: reference.visible
@@ -150,7 +145,7 @@ DrawerPage {
                 text: qsTr("Vietnamese is unavailable. It needs Fcitx5, UniKey and the Vietnamese input service.")
             }
             ColumnLayout {
-                visible: backlightsModel.count > 0 || root.backlightService.error !== ""
+                visible: backlightsModel.values.length > 0 || root.backlightService.error !== ""
                     || (root.backlightService.loaded === false && root.backlightService.busy === true)
                 Layout.fillWidth: true; spacing: 4
                 ShellText { text: qsTr("Keyboards"); font.weight: Font.DemiBold }
@@ -162,6 +157,8 @@ DrawerPage {
                 Repeater {
                     model: backlightsModel
                     delegate: BacklightCard {
+                        required property var modelData
+                        record: modelData
                         Layout.fillWidth: true; service: root.backlightService; active: root.active
                         onOptionsOpened: menu => {
                             if (root.openLighting && root.openLighting !== menu) root.openLighting.close();
@@ -330,7 +327,8 @@ DrawerPage {
                     Repeater {
                         model: [
                             ["Alt+Shift", qsTr("Switch input language")],
-                            ["Win+R", qsTr("Application search")], ["Ctrl+1", qsTr("Spaces")],
+                            ["Win+R", qsTr("Application search")],
+                            ["Win+1 / Ctrl+Alt+Delete", qsTr("Spaces")], ["Win+Shift+P", qsTr("Performance")],
                             ["Ctrl+D in search", qsTr("Toggle app favorite")],
                             ["Win+T / F / B", qsTr("Terminal / files / browser")],
                             ["Win+Arrow", qsTr("Focus window")],

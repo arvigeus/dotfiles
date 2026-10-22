@@ -79,8 +79,8 @@ env_output=${SYSTEM_GAMING_OUTPUT-}
 SYSTEM_GAMING_GPU=auto
 SYSTEM_GAMING_HDR=0
 SYSTEM_GAMING_OUTPUT=auto
-read_config "${SYSTEM_GAMING_SYSTEM_CONFIG:-/etc/system/gaming-session.conf}"
-read_config "${SYSTEM_GAMING_USER_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/system/gaming-session.conf}"
+read_config "${SYSTEM_GAMING_SYSTEM_CONFIG:-/etc/gaming-session.conf}"
+read_config "${SYSTEM_GAMING_USER_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/gaming-session.conf}"
 [[ -z $env_gpu_set ]] || SYSTEM_GAMING_GPU=$env_gpu
 [[ -z $env_hdr_set ]] || SYSTEM_GAMING_HDR=$env_hdr
 [[ -z $env_output_set ]] || SYSTEM_GAMING_OUTPUT=$env_output
@@ -118,9 +118,25 @@ if [[ $SYSTEM_GAMING_GPU != auto ]]; then
 			"$SYSTEM_GAMING_GPU" >&2
 	fi
 fi
-[[ $SYSTEM_GAMING_HDR == 0 ]] || args+=(--hdr-enabled)
+# Steam enables the matching features only when told the session supports them.
+# See ChimeraOS's sessions.d/steam for the SteamOS equivalents.
+runtime=${XDG_RUNTIME_DIR:?No user runtime directory}/gaming-session
+session_env=(
+    XDG_CURRENT_DESKTOP=gamescope XDG_SESSION_DESKTOP=gamescope XDG_SESSION_TYPE=wayland
+    STEAM_MULTIPLE_XWAYLANDS=1 # --xwayland-count 2
+    STEAM_GAMESCOPE_VRR_SUPPORTED=1 # --adaptive-sync
+    STEAM_GAMESCOPE_TEARING_SUPPORTED=1 STEAM_GAMESCOPE_HAS_TEARING_SUPPORT=1
+    # --mangoapp: Steam writes the selected performance overlay level here.
+    STEAM_USE_MANGOAPP=1 STEAM_MANGOAPP_PRESETS_SUPPORTED=1 "MANGOHUD_CONFIGFILE=$runtime/mangohud.conf"
+    STEAM_USE_DYNAMIC_VRS=1 "RADV_FORCE_VRS_CONFIG_FILE=$runtime/radv-vrs.conf"
+    STEAM_ENABLE_VOLUME_HANDLER=1 SRT_URLOPEN_PREFER_STEAM=1
+)
+if [[ $SYSTEM_GAMING_HDR == 1 ]]; then
+    args+=(--hdr-enabled)
+    session_env+=(STEAM_GAMESCOPE_HDR_SUPPORTED=1)
+fi
 
-command=("$gamescope_bin" "${args[@]}" -- "$steam_bin" -gamepadui -steamos3)
+command=(env "${session_env[@]}" "$gamescope_bin" "${args[@]}" -- "$steam_bin" -gamepadui -steamos3)
 if [[ ${SYSTEM_GAMING_DRY_RUN:-0} == 1 ]]; then
 	printf '%q ' "${command[@]}"
 	printf '\n'
@@ -136,7 +152,8 @@ command -v "$steam_bin" >/dev/null || {
 	exit 127
 }
 
-export XDG_CURRENT_DESKTOP=gamescope
-export XDG_SESSION_DESKTOP=gamescope
-export XDG_SESSION_TYPE=wayland
+# Fresh files per session: the overlay stays hidden until Steam selects a level.
+mkdir -p -- "$runtime"
+printf 'no_display\n' >"$runtime/mangohud.conf"
+printf '1x1\n' >"$runtime/radv-vrs.conf"
 exec "${command[@]}"

@@ -2,10 +2,10 @@
 set -Eeuo pipefail
 # Prepare trust before native repository transactions, on both ISO and target.
 pacman-key --init
+# ogc (Ayush Mukherjee) and chaotic-aur (Pedro Henrique Lara Campos)
 for key in \
     F79100EF8C802DAB81C323BB8EEA5962FE510E19 \
-    8F654886F17D497FEFE3DB448B15A6B0E9A3FA35 \
-    3056513887B78AEB; do
+    EF925EA60F33D0CB85C44AD13056513887B78AEB; do
     if ! pacman-key --list-keys "$key" >/dev/null 2>&1; then
         pacman-key --recv-keys "$key" --keyserver keyserver.ubuntu.com
     fi

@@ -21,7 +21,9 @@ def config_root():
 
 
 def cache_root():
-    return Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'quickshell/desktop/calendar'
+    base = os.environ.get('XDG_CACHE_HOME') or ''
+    root = Path(base) if os.path.isabs(base) else Path.home() / '.cache'
+    return root / 'quickshell/desktop/calendar'
 
 
 def atomic_json(path, value):
@@ -48,8 +50,6 @@ def locked(name='sync.lock'):
 def configuration():
     path = config_root() / 'calendar.json'
     options = nextcloud.read_json(path) if path.exists() else {}
-    if options.get('provider', 'nextcloud') != 'nextcloud':
-        raise ValueError('This calendar provider is not available.')
     return {key: caldav.selection(options, key) for key in ('calendars', 'task_lists') if key in options}
 
 
@@ -60,32 +60,29 @@ def context(request):
     if not account:
         return None, None, dict(empty, state='unconfigured')
     try:
-        nextcloud.credential(account)
+        nextcloud.app_password()
+        info = nextcloud.password_path().stat()
     except nextcloud.CredentialMissing:
         return None, None, dict(empty, state='needs_password')
     start = date.fromisoformat(request['start'])
     end = date.fromisoformat(request['end'])
     if not 0 < (end - start).days <= 180:
         raise ValueError('Choose a calendar range of at most 180 days.')
-    signature = []
-    for reference in account['credentials'].values():
-        path = nextcloud.config_root() / 'credentials/nextcloud' / reference['file']
-        try:
-            info = path.stat()
-            signature.append((info.st_ino, info.st_size, info.st_mtime_ns))
-        except OSError:
-            signature.append(None)
-    identity = [account, options, signature]
+    # A replaced password file selects a new cache scope, like an account change.
+    identity = [account, options, [info.st_ino, info.st_size, info.st_mtime_ns]]
     empty['account_id'] = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
-    # Retain the existing filename contract so installed snapshots remain usable.
-    key = hashlib.sha256(json.dumps([*identity, str(start), str(end)], sort_keys=True).encode()).hexdigest()
-    return {**account, **options}, cache_root() / (key + '.json'), empty
+    return {**account, **options}, cache_root() / f"{empty['account_id']}-{start}-{end}.json", empty
+
+
+ENVELOPE = ('account_id', 'start', 'end', 'upcoming_start', 'upcoming_end', 'attempt_start', 'attempt_end')
 
 
 def read_cache(path):
     try:
         value = json.loads(path.read_text())
         if (not isinstance(value.get('data'), dict) or not isinstance(value.get('fetched'), (int, float))
+                or not isinstance(value.get('attempted'), (int, float)) or not isinstance(value.get('complete'), bool)
+                or any(not isinstance(value.get(key), str) for key in ENVELOPE)
                 or any(not isinstance(value['data'].get(key), list) for key in ('events', 'tasks', 'calendars'))):
             return None
         return value
@@ -140,22 +137,18 @@ def envelope(data, request, account_id, fetched, **extra):
 def cached_status(request, path, empty):
     """Called under the short publication lock; never performs network I/O."""
     cached = read_cache(path)
-    if cached and not cached.get('account_id'):
-        cached.update(account_id=empty['account_id'], start=request['start'], end=request['end'])
-        # Upgrade old snapshots without changing their freshness or private data.
-        atomic_json(path, cached)
     exact = cached is not None
     candidates = [value for item in cache_root().glob('*.json')
-                  if (value := read_cache(item)) and value.get('account_id') == empty['account_id'] and value['fetched']]
+                  if (value := read_cache(item)) and value['account_id'] == empty['account_id'] and value['fetched']]
     latest = max(candidates, key=lambda value: value['fetched'], default=None)
     if not cached: cached = latest
-    covered = bool(cached and (exact and cached.get('complete', True) or
-        cached.get('start', '~') <= request['start'] and cached.get('end', '') >= request['end'] or
-        cached.get('upcoming_start', '~') <= request['start'] and cached.get('upcoming_end', '') >= request['end']))
+    covered = bool(cached and (exact and cached['complete'] or
+        cached['start'] <= request['start'] and cached['end'] >= request['end'] or
+        cached['upcoming_start'] <= request['start'] and cached['upcoming_end'] >= request['end']))
     now = time.time()
     stale = not cached or cached.get('dirty', False) or now - cached['fetched'] >= 900
-    same_attempt = cached and cached.get('attempt_start', cached.get('start')) == request['start'] and cached.get('attempt_end', cached.get('end')) == request['end']
-    due = (stale or not covered) and (not same_attempt or now - cached.get('attempted', 0) >= 300)
+    same_attempt = cached and cached['attempt_start'] == request['start'] and cached['attempt_end'] == request['end']
+    due = (stale or not covered) and (not same_attempt or now - cached['attempted'] >= 300)
     global_data = {key: latest['data'].get(key, empty.get(key)) for key in ('tasks', 'calendars', 'task_count')} if latest else {}
     return dict({**empty, **(cached['data'] if cached else {}), **global_data},
                 state=('ready' if cached['fetched'] else 'unavailable') if cached else 'loading',
@@ -197,7 +190,7 @@ def patch_resource(data, href, kind, rows):
 
 def mutate(request, config, empty):
     account_id = empty['account_id']
-    if request.get('account_id', account_id) != account_id:
+    if request.get('account_id') != account_id:
         raise nextcloud.NextcloudError('The account or collection selection changed. Review this item before saving.')
     kind, entry = request.get('kind', 'VTODO'), request.get('entry', {})
     if kind not in ('VTODO', 'VEVENT') or not isinstance(entry, dict):
@@ -231,12 +224,7 @@ def mutate(request, config, empty):
                 try:
                     for path in cache_root().glob('*.json'):
                         cached = read_cache(path)
-                        if not cached: continue
-                        if not cached.get('account_id'):
-                            # Legacy snapshots cannot be safely patched by source.
-                            path.unlink(missing_ok=True)
-                            continue
-                        if cached.get('account_id') != account_id: continue
+                        if not cached or cached['account_id'] != account_id: continue
                         if result and not result.get('reconcile'):
                             rows = resource_rows(result, kind, cached)
                             cached['data'] = patch_resource(cached['data'], result['href'], kind, rows)
@@ -276,7 +264,7 @@ def handle(request):
             cached = read_cache(path)
             if not cached:
                 candidates = [value for item in cache_root().glob('*.json')
-                    if (value := read_cache(item)) and value.get('account_id') == empty['account_id'] and value['fetched']]
+                    if (value := read_cache(item)) and value['account_id'] == empty['account_id'] and value['fetched']]
                 cached = max(candidates, key=lambda value: value['fetched'], default=None)
                 if cached: cached['complete'] = False
             if not cached:

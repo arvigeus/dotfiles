@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Recoverable charge-once actions and bounded performance recordings."""
+"""Recoverable charge-once actions and bounded performance recordings.
+
+Quickshell reports UPower's OnBattery as {"op": "power", "onBattery": bool|null}.
+"""
 import fcntl
 import json
 import os
@@ -36,7 +39,7 @@ class Session:
                 migrate = saved != self.data
         except (OSError, ValueError):
             pass
-        self.battery = dict(available=False, summary=None, onBattery=None, peripherals=[])
+        self.on_battery = None
         self.error = ''
         self.dirty = False
         self.child = None
@@ -66,10 +69,6 @@ class Session:
         return dict(self.data, error=self.error,
                     recordAvailable=self.record_available)
 
-    def refresh(self, force=False):
-        if force or self.data['once']:
-            self.battery = backend.battery_snapshot(self.controller.bus)
-            self.reconcile()
 
     def restore_charge(self):
         once = self.data['once']
@@ -89,22 +88,24 @@ class Session:
 
     def reconcile(self):
         once = self.data['once']
-        if once and self.battery['available'] and (self.battery.get('onBattery') is True or once.get('boot') != self.boot):
+        if once and (self.on_battery is True or once.get('boot') != self.boot):
             self.restore_charge()
 
     def handle(self, request):
-        self.error = ''
         op = request.get('op')
-        if op in ('profile', 'charge-limit'):
+        if op != 'power':
+            self.error = ''
+        if op == 'power':
+            value = request.get('onBattery')
+            self.on_battery = value if isinstance(value, bool) else None
+        elif op == 'charge-limit':
             self.controller.handle(request)
-            if op == 'charge-limit':
-                self.data['once'] = None
-                self.save()
+            self.data['once'] = None
+            self.save()
         elif op == 'charge-once':
-            self.refresh(force=True)
             if self.data['once']:
                 raise ValueError('A one-time full charge is already active.')
-            if self.battery.get('onBattery') is not False or not self.battery.get('summary'):
+            if self.on_battery is not False:
                 raise ValueError('Connect external power before starting a one-time full charge.')
             rows, _ = self.controller.hardware()
             row = next((r for r in rows if r['key'] == request.get('key')), None)
@@ -132,7 +133,7 @@ class Session:
                 self.child.terminate()
         else:
             raise ValueError('Unknown power utility.')
-        self.refresh()
+        self.reconcile()
 
     def record(self, request):
         if self.child or not self.record_available:
@@ -193,7 +194,7 @@ class Session:
 
 
 def main():
-    from gi.repository import Gio, GLib, GLibUnix
+    from gi.repository import GLib, GLibUnix
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
     lock = (STATE / 'session.lock').open('w')
     try:
@@ -202,7 +203,7 @@ def main():
         return 1
     session = Session()
     loop = GLib.MainLoop()
-    pending = {'refresh': 0, 'recording': 0}
+    pending = {'recording': 0}
 
     def emit(reply=False):
         print(json.dumps(dict(state=session.state(), reply=reply), allow_nan=False), flush=True)
@@ -221,28 +222,13 @@ def main():
             return False
         return True
 
-    def refresh():
-        pending['refresh'] = 0
+    def reconcile():
         try:
-            session.refresh()
+            session.reconcile()
         except Exception as error:
             session.error = str(error)
-        emit()
-        return False
 
-    def changed(*_):
-        if session.data['once'] and not pending['refresh']:
-            pending['refresh'] = GLib.timeout_add(250, refresh)
-
-    bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
-    session.controller.bus.connection = bus
-    bus.signal_subscribe(backend.UPOWER, None, None, None, None, Gio.DBusSignalFlags.NONE, changed)
-    bus.signal_subscribe('org.freedesktop.DBus', 'org.freedesktop.DBus', 'NameOwnerChanged', '/org/freedesktop/DBus',
-                         backend.UPOWER, Gio.DBusSignalFlags.NONE, changed)
-    bus.signal_subscribe('org.freedesktop.login1', 'org.freedesktop.login1.Manager', 'PrepareForSleep',
-                         None, None, Gio.DBusSignalFlags.NONE, changed)
-
-    # Nonblocking stdin prevents a partial JSON line from blocking D-Bus events.
+    # Nonblocking stdin prevents a partial JSON line from blocking the recording poll.
     os.set_blocking(sys.stdin.fileno(), False)
     buffer = bytearray()
     def command(_fd, condition):
@@ -255,17 +241,15 @@ def main():
             while b'\n' in buffer:
                 line, _, tail = buffer.partition(b'\n')
                 buffer[:] = tail
+                request = {}
                 try:
-                    session.handle(json.loads(line))
+                    request = json.loads(line)
+                    session.handle(request)
                 except Exception as error:
                     session.error = str(error)
-                    # A failed readback may still have applied a change. Reconcile
-                    # fresh daemon state before publishing utility status.
-                    try:
-                        session.refresh()
-                    except Exception:
-                        pass
-                emit(reply=True)
+                    # A failed readback may still have applied a change.
+                    reconcile()
+                emit(reply=not isinstance(request, dict) or request.get('op') != 'power')
         if condition & (GLib.IOCondition.HUP | GLib.IOCondition.ERR):
             loop.quit()
             return False
@@ -277,7 +261,8 @@ def main():
     for signum in (signal.SIGTERM, signal.SIGINT):
         GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, signum, stop)
     try:
-        refresh()
+        reconcile()
+        emit()
         loop.run()
     finally:
         session.close()

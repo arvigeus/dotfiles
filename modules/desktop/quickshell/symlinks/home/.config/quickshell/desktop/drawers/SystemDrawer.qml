@@ -3,7 +3,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../ui"
-import "network"
 import "power"
 import "system"
 
@@ -27,7 +26,7 @@ DrawerPage {
         return days ? qsTr("%1 d %2 h").arg(days).arg(hours % 24) : hours ? qsTr("%1 h %2 min").arg(hours).arg(minutes % 60) : qsTr("%1 min").arg(minutes);
     }
     function logs(scope = "system", unit = ""): void { service.openTerminal("logs", scope, unit); }
-    headerActions: NetworkIconButton {
+    headerActions: IconButton {
         id: information
         objectName: "systemInfo"; iconName: "info"; text: qsTr("System information")
         enabled: root.active; checked: systemInfo.visible
@@ -46,8 +45,8 @@ DrawerPage {
                 Reading { label: qsTr("Kernel"); value: root.state.kernel }
                 Reading { label: qsTr("Uptime"); value: root.uptime(root.state.uptime) }
                 Note {
-                    visible: root.state.reboot || root.state.kernelChanged; color: Theme.warning
-                    text: root.state.reboot ? qsTr("A restart is required to finish updates.") : qsTr("Running kernel modules are missing. A newer kernel may be installed; consider restarting.")
+                    visible: root.state.kernelChanged; color: Theme.warning
+                    text: qsTr("Running kernel modules are missing. A newer kernel may be installed; consider restarting.")
                 }
             }
         }
@@ -150,7 +149,7 @@ DrawerPage {
                                         Note { text: parent.parent.modelData.unit; color: Theme.danger }
                                         Note { text: parent.parent.modelData.description }
                                     }
-                                    NetworkIconButton {
+                                    IconButton {
                                         iconName: "list"; text: qsTr("Open unit logs"); enabled: root.state.terminalAvailable
                                         onClicked: root.logs(scopeCard.modelData.scope, parent.modelData.unit)
                                     }

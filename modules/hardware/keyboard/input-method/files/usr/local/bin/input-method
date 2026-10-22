@@ -91,16 +91,10 @@ read_secondary() {
 		IFS= read -r selected <"$directory/secondary" || true
 	fi
 }
+# Layouts live in input-method.lua, which also reapplies $directory/secondary
+# when Hyprland reloads its configuration.
 hypr_config() {
-	local layout=us,bg variant=,phonetic options=terminate:ctrl_alt_bksp,grp:alt_shift_toggle
-	if [[ $1 == vi ]]; then
-		layout=us variant='' options=terminate:ctrl_alt_bksp
-	fi
-	local script="hl.config({input={kb_layout=\"$layout\",kb_variant=\"$variant\",kb_options=\"$options\"}})"
-	run hyprctl eval "$script" >/dev/null
-	# Hyprland reloads this instance-specific layout after its default policy.
-	local identity=${HYPRLAND_INSTANCE_SIGNATURE//[^a-zA-Z0-9_.-]/_}
-	printf '%s\n' "$script" | write_file "$XDG_RUNTIME_DIR/hypr/input-language-$identity.lua"
+	run hyprctl eval "InputMethod.apply(\"$1\")" >/dev/null
 }
 stop_input() {
 	printf 'bg\n' | write_file "$directory/secondary"

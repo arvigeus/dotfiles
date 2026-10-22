@@ -3,7 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-QtObject {
+Singleton {
     id: root
     property var entries: []
     property var results: []
@@ -55,8 +55,9 @@ QtObject {
             error = result.error || "";
         } catch (_) { error = qsTr("Could not read the cleanup response."); }
     }
-    readonly property Process worker: Process {
-        command: ["python3", "-u", decodeURIComponent(Qt.resolvedUrl("cleanup.py").toString().replace(/^file:\/\//, ""))]
+    Process {
+        id: worker
+        command: ["python3", Quickshell.shellPath("drawers/disks/cleanup.py")]
         stdinEnabled: true
         onStarted: { write(root.input); root.input = ""; }
         stdout: SplitParser { onRead: line => root.receive(line) }

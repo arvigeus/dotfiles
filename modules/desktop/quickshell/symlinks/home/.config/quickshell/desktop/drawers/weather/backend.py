@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Private location inventory, timezone clocks and cached Open-Meteo forecasts."""
 import hashlib
-import fcntl
 import json
 import math
 import os
@@ -301,16 +300,12 @@ def fetch(selected, force=True):
     location = next((row for row in locations() if row['id'] == selected), None)
     if location is None:
         raise ValueError('Location is no longer configured.')
-    # Different outputs and the drawer share the same per-place cache. Recheck
-    # freshness under a lock so simultaneous automatic refreshes fetch only once.
-    path = cache_path(location)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with os.fdopen(os.open(path.with_suffix('.lock'), os.O_CREAT | os.O_RDWR, 0o600), 'w') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        cache = cached(location)
-        if not force and cache and 0 <= time.time() - cache['fetchedAt'] < TTL:
-            return
-        fetch_location(location)
+    # The bar and the drawer share the per-place cache; skip a fetch the other
+    # one already made.
+    cache = cached(location)
+    if not force and cache and 0 <= time.time() - cache['fetchedAt'] < TTL:
+        return
+    fetch_location(location)
 
 
 def fetch_location(location):

@@ -11,9 +11,9 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-import test_display_drawer as fixtures
+import support
 
-SOURCE = fixtures.DESKTOP / 'drawers/weather/backend.py'
+SOURCE = support.DESKTOP / 'drawers/weather/backend.py'
 SPEC = importlib.util.spec_from_file_location('desktop_weather', SOURCE)
 backend = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(backend)
@@ -313,10 +313,10 @@ for(const id of ['set-timezone','set-time','set-ntp','set-local-rtc'])
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
-@unittest.skipUnless(fixtures.QS, 'Quickshell is required')
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class WeatherQmlTests(unittest.TestCase):
     def run_qml(self, body, setup=None):
-        return fixtures.DisplayQmlTests.run_qml(self, body, setup)
+        return support.run_qml(self, body, setup)
 
     def test_selection_keyboard_escape_states_and_resizing(self):
         self.run_qml('''import QtQuick
@@ -422,7 +422,6 @@ ShellRoot {
 
     def test_background_requests_refresh_updates_icon_and_backs_off_after_failure(self):
         def setup(root):
-            shutil.copytree(fixtures.DESKTOP / 'bar', root / 'bar')
             (root / 'drawers/weather/backend.py').write_text('''import json,sys
 from pathlib import Path
 r=json.loads(sys.stdin.readline());p=Path(__file__).with_name('calls')
@@ -431,9 +430,9 @@ print(json.dumps(dict(location=dict(id='east',name='East'),weather=dict(current=
 ''')
         self.run_qml('''import QtQuick
 import Quickshell
-import "bar"
+import "drawers/weather"
 ShellRoot {
- WeatherStatus{id:status}
+ readonly property var status: WeatherStatus
  function check(value,message){if(!value)throw new Error(message);}
  property int stage:0
  Timer{interval:70;repeat:true;running:true;onTriggered:{try{
@@ -465,7 +464,6 @@ ShellRoot {
 
     def test_pin_saves_current_location_updates_island_and_survives_drawer_destruction(self):
         def setup(root):
-            shutil.copytree(fixtures.DESKTOP / 'bar', root / 'bar')
             cache_dir = root / 'cache'
             with patch.dict(os.environ, XDG_CONFIG_HOME=str(root / 'config'), XDG_CACHE_HOME=str(cache_dir)):
                 rows = [place(), place('west', 'America/New_York', 40, -74)]
@@ -485,13 +483,12 @@ ShellRoot {
 import QtQuick.Controls
 import QtTest
 import Quickshell
-import "bar"
 import "drawers"
 import "drawers/weather"
 import "ui"
 ShellRoot {
  TestCase{id:input;when:false;parent:window.contentItem}
- WeatherStatus{id:bar}
+ readonly property var bar: WeatherStatus
  FloatingWindow{id:window;implicitWidth:480;implicitHeight:800;visible:true;color:Theme.background
   Loader{id:page;x:16;y:60;width:448;height:720;sourceComponent:Component{WeatherDrawer{active:true}}}
   Loader{id:header;x:350;y:10;sourceComponent:page.item?.headerActions??null}

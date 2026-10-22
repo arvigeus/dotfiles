@@ -3,8 +3,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../../ui"
-import "../audio"
-import "../network"
 
 ColumnLayout {
     id: root
@@ -88,7 +86,7 @@ ColumnLayout {
                         }
                     }
                     Note { text: qsTr("Repeats until stopped.") }
-                    NetworkButton {
+                    ShellButton {
                         id: startFocus
                         objectName: "focusStart"; Layout.fillWidth: true; text: qsTr("Start")
                         enabled: focusMinutes.acceptableInput && breakMinutes.acceptableInput && !root.focusEntry
@@ -148,7 +146,7 @@ ColumnLayout {
                         Accessible.name: qsTr("Reminder message")
                         onAccepted: if (addReminder.enabled) addReminder.clicked()
                     }
-                    NetworkButton {
+                    ShellButton {
                         id: addReminder
                         objectName: "reminderStart"; Layout.fillWidth: true; text: qsTr("Schedule")
                         enabled: reminderEditor.futureTime
@@ -170,7 +168,7 @@ ColumnLayout {
                     ShellText { text: reminder.modelData.message || qsTr("Reminder"); Layout.fillWidth: true; elide: Text.ElideRight }
                     Note { objectName: "reminderStatus:" + reminder.modelData.id; text: root.service.dueLabel(reminder.modelData.deadline) }
                 }
-                AudioIconButton {
+                IconButton {
                     objectName: "reminderStop:" + reminder.modelData.id
                     iconName: "x"; text: qsTr("Stop %1").arg(reminder.modelData.message || qsTr("reminder"))
                     background: Item {}

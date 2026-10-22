@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 # Install a seed only once. Keep charge limits, lighting and user preferences.
 if [[ ! -f /etc/asusd/asusd.ron ]]; then
-    install -Dm0644 /usr/share/dotfiles/power/asusd.ron /etc/asusd/asusd.ron
+    install -Dm0644 /usr/local/share/dotfiles/power/asusd.ron /etc/asusd/asusd.ron
 else
     python3 -I - <<'PY'
 from pathlib import Path
@@ -33,10 +33,4 @@ if updated != original:
 PY
 fi
 
-# Session integration uses inotify through systemd; no timer or daemon.
-install -d /etc/systemd/user/graphical-session.target.wants
-ln -sfn ../power-session.path /etc/systemd/user/graphical-session.target.wants/power-session.path
-
-# Migrate the retired, independently writable boost control.
-rm -f /usr/local/libexec/desktop-cpu-boost \
-    /usr/share/polkit-1/actions/org.dotfiles.desktop.cpu-boost.policy
+systemctl --global enable power-session.path

@@ -5,8 +5,6 @@ import QtQuick.Layouts
 import Quickshell
 import "../ui"
 import "audio"
-import "network"
-import "network/Models.js" as Models
 
 DrawerPage {
     id: root
@@ -16,24 +14,18 @@ DrawerPage {
     readonly property var inputs: service.state.inputs ?? []
     readonly property var devices: service.state.inputDevices ?? []
     readonly property var destinations: inputs.filter(input => input.available && (!input.routes.length || input.routes.some(route => route.selected)))
+    readonly property var recordings: service.recordings ?? []
     readonly property bool canAct: active && service.state.available
-    headerActions: AudioIconButton {
+    headerActions: IconButton {
         iconName: "pencil"; text: qsTr("Advanced microphone settings")
-        onClicked: { Quickshell.execDetached(["pavucontrol-qt", "--tab=4"]); root.closeRequested(); }
+        onClicked: { Apps.launch(["pavucontrol-qt", "--tab=4"]); root.closeRequested(); }
     }
-    ListModel { id: devicesModel; dynamicRoles: true }
-    ListModel { id: recordingsModel; dynamicRoles: true }
-    function syncModels(): void {
-        Models.sync(devicesModel, devices.filter(device => device.available), "key", false);
-        Models.sync(recordingsModel, service.state.recordings ?? [], "key", false);
-    }
-    Connections { target: root.service; function onStateChanged(): void { root.syncModels(); } }
+    ScriptModel { id: devicesModel; values: root.devices.filter(device => device.available); objectProp: "key" }
+    ScriptModel { id: recordingsModel; values: root.recordings; objectProp: "key" }
     onActiveChanged: { service.observe(root, active); if (!active) audioTest.cancel(); }
-    Component.onCompleted: { syncModels(); service.observe(root, active); }
+    Component.onCompleted: service.observe(root, active)
     Component.onDestruction: { service.observe(root, false); audioTest.cancel(); }
-    function recordingAction(op, recording, values = {}): void {
-        service.run(op, Object.assign({kind: "recording", index: recording.index, token: recording.token}, values));
-    }
+    function muted(name: string): bool { return service.nodes[name]?.audio?.muted ?? true; }
     component Note: ShellText {
         Layout.fillWidth: true; color: Theme.muted; font.pixelSize: Theme.smallFontSize
         wrapMode: Text.Wrap; textFormat: Text.PlainText
@@ -45,14 +37,14 @@ DrawerPage {
         property bool live: true
         Layout.fillWidth: true
         ShellText { text: title.record.label; Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
-        AudioIconButton {
+        IconButton {
             objectName: "inputDefault:" + title.record.key
             iconName: "check"; text: qsTr("Use %1 as the default microphone").arg(title.record.label)
-            checked: title.live && title.record.selected; iconColor: checked ? Theme.accent : Theme.muted
+            checked: title.live && root.service.defaultSource === title.record.name; iconColor: checked ? Theme.accent : Theme.muted
             highlightChecked: false
             Accessible.checkable: true; Accessible.checked: checked
             enabled: title.live && root.canAct && !root.service.busy && root.destinations.some(node => node.name === title.record.name)
-            onClicked: root.service.run("input-default", {name: title.record.name})
+            onClicked: root.service.setDefault(root.service.nodes[title.record.name])
         }
     }
     component DeviceToggle: Switch {
@@ -93,52 +85,54 @@ DrawerPage {
     }
     component InputControl: ColumnLayout {
         id: input
-        required property var record
+        required property var modelData
         required property var deviceRecord
+        readonly property var record: modelData
+        readonly property var node: record.live ? root.service.nodes[record.name] ?? null : null
+        readonly property bool live: !!node?.audio
+        readonly property bool muted: node?.audio?.muted ?? true
         objectName: "audioInput:" + record.key
         Layout.fillWidth: true; spacing: 4
-        ListModel { id: routesModel; dynamicRoles: true }
-        onRecordChanged: Models.sync(routesModel, record.routes, "name", false)
-        Component.onCompleted: Models.sync(routesModel, record.routes, "name", false)
-        InputTitle { record: input.record; live: input.record.live }
+        ScriptModel { id: routesModel; values: input.record.routes; objectProp: "name" }
+        InputTitle { record: input.record; live: input.live }
         Note {
             objectName: "inputState:" + input.record.key
             visible: text !== ""
             text: !input.record.live && input.deviceRecord.enabled ? qsTr("Input unavailable")
-                : input.record.live && !input.record.muted && root.service.state.recordings?.some(app => app.source === input.record.index && app.recording && !app.muted) ? qsTr("In use") : ""
+                : input.live && !input.muted && root.recordings.some(app => app.target === input.record.name && app.active && !app.node?.audio?.muted) ? qsTr("In use") : ""
         }
         RowLayout {
             Layout.fillWidth: true; spacing: 8
             VolumeControl {
                 objectName: "inputVolume:" + input.record.key; Layout.fillWidth: true
                 enabled: root.canAct; microphone: true; maximum: 100; showPercentage: false
-                label: input.record.label; volume: input.record.volume; muted: !input.record.live || input.record.muted
-                canVolume: input.record.live && input.deviceRecord.enabled && !input.record.muted
-                canMute: input.record.live && input.deviceRecord.enabled && !root.service.busy
-                muteHint: input.record.muted ? qsTr("Unmute %1").arg(input.record.label) : qsTr("Mute %1").arg(input.record.label)
-                onMuteClicked: root.service.run("mute", {kind: "source", name: input.record.name, muted: !input.record.muted})
-                onVolumeEdited: value => root.service.run("volume", {kind: "source", name: input.record.name, value})
+                label: input.record.label; volume: root.service.level(input.node); muted: input.muted
+                canVolume: input.live && input.deviceRecord.enabled && !input.muted
+                canMute: input.live && input.deviceRecord.enabled && !root.service.busy
+                muteHint: input.muted ? qsTr("Unmute %1").arg(input.record.label) : qsTr("Mute %1").arg(input.record.label)
+                onMuteClicked: root.service.setMuted(input.node, !input.muted)
+                onVolumeEdited: value => root.service.setLevel(input.node, value)
             }
         }
-        NetworkChoice {
+        ShellChoice {
             id: connection
             objectName: "inputConnection:" + input.record.key; Layout.fillWidth: true
-            visible: routesModel.count > 1 || (routesModel.count > 0 && !input.record.routes.some(route => route.selected))
-            enabled: input.record.live && root.canAct && !root.service.busy
+            visible: routesModel.values.length > 1 || (routesModel.values.length > 0 && !input.record.routes.some(route => route.selected))
+            enabled: input.live && root.canAct && !root.service.busy
             Accessible.name: qsTr("Connection for %1").arg(input.record.label)
-            model: routesModel; textRole: "identity"
+            model: routesModel; textRole: "modelData"
             delegate: ItemDelegate {
-                required property var record
+                required property var modelData
                 required property int index
                 width: connection.popup.width
-                text: record.label
+                text: modelData.label
                 highlighted: index === connection.highlightedIndex
                 palette.text: Theme.text; palette.highlightedText: Theme.text
             }
             displayText: input.record.routes.find(route => route.selected)?.label ?? qsTr("Choose a connection")
             currentIndex: input.record.routes.findIndex(route => route.selected)
             onActivated: index => {
-                const port = routesModel.get(index).record.name;
+                const port = input.record.routes[index].name;
                 currentIndex = Qt.binding(() => input.record.routes.findIndex(route => route.selected));
                 root.service.run("input-port", {name: input.record.name, port});
             }
@@ -146,24 +140,21 @@ DrawerPage {
     }
     component InputDevice: Surface {
         id: device
-        required property var record
+        required property var modelData
+        readonly property var record: modelData
         readonly property var sources: root.inputs.filter(input => input.deviceKey === record.key && input.available)
         property var lastSources: []
         readonly property var displaySources: {
             if (sources.length) return sources.map(source => Object.assign({}, source, {live: true}));
             const slots = lastSources.length ? lastSources : record.inputSlots ?? [{key: record.key + "/input", label: record.label, routes: []}];
-            return slots.map(source => Object.assign({name: "", index: -1, volume: 0, muted: true, routes: []}, source, {live: false, selected: false}));
+            return slots.map(source => Object.assign({name: "", routes: []}, source, {live: false}));
         }
         objectName: "inputDevice:" + record.key
         Layout.fillWidth: true; implicitHeight: content.implicitHeight + 24
         color: Theme.surface; border.width: 0; radius: Theme.controlRadius
-        ListModel { id: sourcesModel; dynamicRoles: true }
+        ScriptModel { id: sourcesModel; values: device.displaySources; objectProp: "key" }
         onSourcesChanged: { if (sources.length) lastSources = sources; }
-        onDisplaySourcesChanged: Models.sync(sourcesModel, displaySources, "key", false)
-        Component.onCompleted: {
-            if (sources.length) lastSources = sources;
-            Models.sync(sourcesModel, displaySources, "key", false);
-        }
+        Component.onCompleted: { if (sources.length) lastSources = sources; }
         ColumnLayout {
             id: content
             anchors.fill: parent; anchors.margins: 12; spacing: 8
@@ -187,8 +178,8 @@ DrawerPage {
         RowLayout {
             visible: root.service.error !== ""; Layout.fillWidth: true
             Note { objectName: "microphoneError"; text: root.service.error; color: Theme.danger }
-            AudioIconButton { iconName: "refresh-cw"; text: qsTr("Refresh microphones"); onClicked: root.service.refresh() }
-            AudioIconButton { iconName: "x"; text: qsTr("Dismiss microphone error"); onClicked: root.service.error = "" }
+            IconButton { iconName: "refresh-cw"; text: qsTr("Refresh microphones"); onClicked: root.service.refresh() }
+            IconButton { iconName: "x"; text: qsTr("Dismiss microphone error"); onClicked: root.service.error = "" }
         }
         Note { visible: root.service.state.warning !== ""; text: root.service.state.warning; color: Theme.warning }
         RowLayout {
@@ -199,36 +190,37 @@ DrawerPage {
         DrawerColumn {
             objectName: "microphoneScroll"; Layout.fillWidth: true; Layout.fillHeight: true
             Heading { text: qsTr("Inputs") }
-            Note { objectName: "microphoneInputsEmpty"; visible: root.service.loaded && !devicesModel.count; text: qsTr("No microphones connected.") }
+            Note { objectName: "microphoneInputsEmpty"; visible: root.service.loaded && !devicesModel.values.length; text: qsTr("No microphones connected.") }
             Repeater { model: devicesModel; delegate: InputDevice {} }
             Heading { text: qsTr("Applications"); Layout.topMargin: 8 }
-            Note { objectName: "recordingAppsEmpty"; visible: root.service.loaded && !recordingsModel.count; text: qsTr("No applications are using a microphone.") }
+            Note { objectName: "recordingAppsEmpty"; visible: root.service.loaded && !recordingsModel.values.length; text: qsTr("No applications are using a microphone.") }
             Repeater {
                 model: recordingsModel
                 delegate: ColumnLayout {
                     id: app
-                    required property var record
+                    required property var modelData
+                    readonly property var record: modelData
                     objectName: "recordingApp:" + record.key
                     Layout.fillWidth: true; spacing: 4
                     RowLayout {
                         Layout.fillWidth: true; spacing: 10
                         AppIcon { visible: app.record.icon !== ""; icon: app.record.icon; Layout.preferredWidth: 20; Layout.preferredHeight: 20 }
                         ShellText { text: app.record.label; Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
-                        Note { Layout.fillWidth: false; text: app.record.muted || root.inputs.some(input => input.index === app.record.source && input.muted)
-                            ? qsTr("Muted") : app.record.recording ? qsTr("Recording") : qsTr("Paused") }
+                        Note { Layout.fillWidth: false; text: (app.record.node?.audio?.muted ?? false) || (!!app.record.target && root.muted(app.record.target))
+                            ? qsTr("Muted") : app.record.active ? qsTr("Recording") : qsTr("Paused") }
                     }
-                    NetworkChoice {
+                    ShellChoice {
                         id: appInput
                         objectName: "recordingInput:" + app.record.key; Layout.fillWidth: true
                         enabled: root.canAct && !root.service.busy && root.destinations.length > 0
                         Accessible.name: qsTr("Microphone for %1").arg(app.record.label)
                         model: root.destinations; textRole: "label"
-                        currentIndex: root.destinations.findIndex(input => input.index === app.record.source)
-                        displayText: root.destinations.find(input => input.index === app.record.source)?.label ?? qsTr("Input unavailable")
+                        currentIndex: root.destinations.findIndex(input => input.name === app.record.target)
+                        displayText: root.destinations.find(input => input.name === app.record.target)?.label ?? qsTr("Input unavailable")
                         onActivated: index => {
-                            const destination = root.destinations[index].name;
-                            currentIndex = Qt.binding(() => root.destinations.findIndex(input => input.index === app.record.source));
-                            root.recordingAction("move", app.record, {destination});
+                            const destination = root.destinations[index];
+                            currentIndex = Qt.binding(() => root.destinations.findIndex(input => input.name === app.record.target));
+                            root.service.move(app.record, destination);
                         }
                     }
                 }
@@ -237,9 +229,9 @@ DrawerPage {
         AudioTestButton {
             objectName: "microphoneTestButton"; Layout.fillWidth: true
             microphone: true; tester: root.audioTest
-            readonly property var input: root.destinations.find(node => node.selected)
-            readonly property var output: (root.service.state.outputs ?? []).find(node => node.selected && node.available && (!node.routes.length || node.routes.some(route => route.selected)))
-            canStart: root.canAct && !root.service.busy && !!input && !input.muted && !!output && !output.muted
+            readonly property var input: root.destinations.find(node => node.name === root.service.defaultSource)
+            readonly property var output: (root.service.state.outputs ?? []).find(node => node.name === root.service.defaultSink && node.available && (!node.routes.length || node.routes.some(route => route.selected)))
+            canStart: root.canAct && !root.service.busy && !!input && !root.muted(input.name) && !!output && !root.muted(output.name)
             targetLabel: [input?.label, output?.label].filter(label => label).join(" → ")
         }
     }

@@ -10,9 +10,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import test_display_drawer as fixtures
+import support
 
-SOURCE = fixtures.DESKTOP / 'drawers/displays/comfort.py'
+SOURCE = support.DESKTOP / 'drawers/displays/comfort.py'
 SPEC = importlib.util.spec_from_file_location('display_comfort', SOURCE)
 comfort = importlib.util.module_from_spec(SPEC)
 sys.path.insert(0, str(SOURCE.parent))
@@ -31,7 +31,7 @@ class ComfortTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.env = patch.dict(os.environ, XDG_RUNTIME_DIR=self.directory.name, HYPRLAND_INSTANCE_SIGNATURE='test')
         self.env.start(); self.addCleanup(self.env.stop)
-        self.rows = [fixtures.display(), fixtures.display('DP-1')]
+        self.rows = [support.display(), support.display('DP-1')]
         self.inventory = patch.object(comfort.backend, 'snapshot', side_effect=lambda: dict(displays=self.rows))
         self.inventory.start(); self.addCleanup(self.inventory.stop)
         self.binary = patch.object(comfort.shutil, 'which', return_value='/usr/bin/hyprsunset')
@@ -59,17 +59,17 @@ class ComfortTests(unittest.TestCase):
 
     def test_crashed_lease_and_stale_identity_do_not_inhibit(self):
         self.awake()
-        replaced = [fixtures.display(identity=['eDP-1', 'replacement'])]
+        replaced = [support.display(identity=['eDP-1', 'replacement'])]
         self.assertEqual(comfort.protected(replaced), set())
-        self.assertEqual(comfort.protected([fixtures.display(enabled=False)]), set())
+        self.assertEqual(comfort.protected([support.display(enabled=False)]), set())
         # Simulate process death leaving runtime files behind.
         os.close(self.controller.lease.fd)
         self.controller.lease.fd = None
         self.assertEqual(comfort.protected(self.rows), set())
 
     def test_hotplug_disable_and_replacement_prune_checkmarks(self):
-        for replacement in ([], [fixtures.display(enabled=False)], [fixtures.display(identity=['replacement'])]):
-            self.rows = [fixtures.display()]
+        for replacement in ([], [support.display(enabled=False)], [support.display(identity=['replacement'])]):
+            self.rows = [support.display()]
             self.awake()
             self.rows = replacement
             self.controller.tick()
@@ -88,16 +88,34 @@ class ComfortTests(unittest.TestCase):
         with patch.object(comfort.backend, 'command') as command:
             self.assertEqual(comfort.idle_action('blank'), 0)
         command.assert_called_once_with('dispatch', 'hl.dsp.dpms({action="off",monitor=' + comfort.backend.lua_string('DP-1') + '})')
-        self.assertEqual(comfort.idle_action('allow-session-idle'), 1)
+        self.assertEqual(comfort.cli('allow-lock'), 1)
         self.awake(enabled=False)
-        self.assertEqual(comfort.idle_action('allow-session-idle'), 0)
+        self.assertEqual(comfort.cli('allow-lock'), 0)
+        self.assertEqual(comfort.cli('allow-session-idle'), comfort.HELPER_ERROR)
         # Guarded rules retry after unchecking, rather than losing their timeout.
         config = Path(__file__).resolve().parents[1] / 'modules/desktop/hyprland/files/home/.config/hypr/hypridle.conf'
         self.assertEqual(config.read_text().count('condition_retry = 10'), 2)
         self.assertNotIn('ignore_inhibit', config.read_text())
 
+    def test_helper_errors_are_distinct_from_denial(self):
+        # desktop-idle fails open on 2 (helper error); 1 always means "deny".
+        with patch.object(comfort.backend, 'snapshot', side_effect=RuntimeError('Hyprland is unavailable.')):
+            for op in ('allow-lock', 'allow-sleep', 'blank'):
+                with self.subTest(op=op):
+                    self.assertEqual(comfort.cli(op), comfort.HELPER_ERROR)
+        self.controller.action(dict(op='pause-locking', enabled=True))
+        self.assertEqual(comfort.cli('allow-lock'), 1)
+        self.assertEqual(comfort.cli('allow-sleep'), 0)
+
+    def test_status_reads_do_not_clear_action_errors(self):
+        with self.assertRaises(ValueError):
+            self.controller.action(dict(op='night', enabled=1))
+        self.controller.error = 'Invalid night light switch.'
+        self.controller.action(dict(op='status'))
+        self.assertEqual(self.controller.error, 'Invalid night light switch.')
+
     def test_waking_a_dark_monitor_is_targeted_and_quoted(self):
-        self.rows = [fixtures.display('DP-"quoted', dpms=False)]
+        self.rows = [support.display('DP-"quoted', dpms=False)]
         with patch.object(comfort.backend, 'command') as command:
             self.awake()
         command.assert_called_once_with('dispatch', 'hl.dsp.dpms({action="on",monitor=' + comfort.backend.lua_string('DP-"quoted') + '})')
@@ -190,16 +208,16 @@ c.main()
         self.assertEqual(list(comfort.session_directory().iterdir()), [])
 
 
-@unittest.skipUnless(fixtures.QS, 'Quickshell is required')
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class ComfortQmlTests(unittest.TestCase):
     def run_qml(self, body, setup=None):
         def prepare(root):
-            shutil.copytree(fixtures.DESKTOP / 'bar', root / 'bar')
+            shutil.copytree(support.DESKTOP / 'bar', root / 'bar')
             if setup: setup(root)
-        return fixtures.DisplayQmlTests.run_qml(self, body, prepare)
+        return support.run_qml(self, body, prepare)
 
     def test_simple_toggle_cog_checkmark_and_per_screen_indicator(self):
-        rows = json.dumps([fixtures.display(), fixtures.display('DP-1')])
+        rows = json.dumps([support.display(), support.display('DP-1')])
         self.run_qml('''import QtQuick
 import QtQuick.Controls
 import QtTest
@@ -216,7 +234,8 @@ ShellRoot {
   property string error:""
   property var state:({nightEnabled:false,nightAvailable:true,awake:{}})
   property int calls:0
-  function start(){}
+  property var owners:[]
+  function observe(owner,active){owners=owners.filter(item=>item!==owner).concat(active?[owner]:[]);}
   function awakeFor(name){return !!state.awake[name];}
   function setAwake(record,enabled){const awake=Object.assign({},state.awake);if(enabled)awake[record.name]=record.identity;else delete awake[record.name];state=Object.assign({},state,{awake});calls++;}
   function run(op,values){state=Object.assign({},state,{nightEnabled:values.enabled});calls++;}
@@ -270,13 +289,14 @@ ShellRoot {
 }
 '''.replace('ROWS', rows))
 
-    def test_service_finishes_requests_after_dismissal(self):
+    def test_service_finishes_requests_after_dismissal_and_polls_only_while_observed(self):
         def setup(root):
             (root / 'drawers/displays/comfort.py').write_text('''import json,sys,time
-state=dict(nightEnabled=False,nightAvailable=True,awake={},error="")
+state=dict(nightEnabled=False,nightAvailable=True,awake={},error="",polls=0)
 print(json.dumps(dict(reply=False,state=state)),flush=True)
 for line in sys.stdin:
  r=json.loads(line);time.sleep(.1)
+ if r['op']=='status':state['polls']+=1
  if r['op']=='night':state['nightEnabled']=r['enabled']
  if r['op']=='awake':state['awake'][r['name']]=r['identity']
  print(json.dumps(dict(reply=True,state=state)),flush=True)
@@ -286,6 +306,9 @@ import Quickshell
 import "drawers/displays"
 ShellRoot {
  property int stage:0
+ property int baseline:0
+ property int ticks:0
+ property var owner:({})
  Timer {interval:80;repeat:true;running:true;onTriggered:{try{
   if(stage===0){ComfortService.start();stage++;}
   else if(stage===1&&ComfortService.ready){
@@ -293,13 +316,25 @@ ShellRoot {
    ComfortService.setAwake({name:"panel",identity:["panel"]},true);stage++;
   }else if(stage===2&&!ComfortService.busy){
    if(!ComfortService.state.nightEnabled||!ComfortService.awakeFor("panel")||!ComfortService.worker.running)throw new Error("state did not survive dismissal");
-   console.log("DISPLAY_PASS");Qt.quit();
+   if(ComfortService.state.polls!==0)throw new Error("helper polled without an observer");
+   ComfortService.observe(owner,true);
+   if(ComfortService.busy)throw new Error("background read disabled the switches");
+   stage++;
+  }else if(stage===3&&ComfortService.state.polls>=2&&!ComfortService.request){
+   ComfortService.observe(owner,false);
+   ComfortService.prune();stage++;
+  }else if(stage===4&&!ComfortService.request){
+   if(ComfortService.state.polls!==3)throw new Error("Keep awake prune did not read state");
+   baseline=ComfortService.state.polls;stage++;
+  }else if(stage===5){
+   if(ComfortService.state.polls!==baseline||ComfortService.request)throw new Error("helper polled after dismissal");
+   // Longer than the three-second observation interval.
+   if(++ticks>=44){console.log("DISPLAY_PASS");Qt.quit();}
   }
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
- Timer {interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
+ Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout stage "+stage);Qt.quit();}}
 }
 ''', setup)
-
 
 if __name__ == '__main__':
     unittest.main()

@@ -18,9 +18,9 @@ selects the default machine; pass a host name to generate for another target.
 ```
 
 Use `./generate-config.py --configure` to prompt for dynamic module settings
-again. Review and commit both generated files: `user-configuration.json` and
-`user-configuration.sh`. Regenerate after changing modules or shared helpers;
-installation and live apply consume the generated files directly.
+again. Review and commit the generated `user-configuration.json`. Regenerate after
+changing module configuration or adding, removing or selecting modules, assets or
+hooks; edits to existing assets and hooks apply directly.
 
 ## Install
 
@@ -61,7 +61,7 @@ Run as your regular user:
 Validation runs archinstall's silent, offline dry-run. It does not execute custom
 commands or validate `extra`.
 
-Apply updates packages and settings and runs the generated hooks. It skips disk,
+Apply updates packages and settings and runs the module hooks. It skips disk,
 bootloader, account creation, and filesystem snapshot initialization. Reboot
 after applying to activate changed settings.
 
@@ -69,11 +69,8 @@ Managed configuration is replaced on each apply. Omitted files, packages, and
 services are left in place; removal and migration are manual. There is no
 backward compatibility support: update your system when the configuration changes.
 
-Hyprland starts automatically on TTY1. Spaces offers **Go to gaming mode**;
-Steam's **Go to Desktop** or **Exit Steam** returns to Hyprland. Gaming mode is
-temporary: rebooting starts the desktop. **Restart → Reload** closes applications
-and immediately starts a fresh desktop session. Gaming startup failures return
-to the desktop automatically.
+Hyprland starts automatically on TTY1; see the [desktop README](modules/desktop/hyprland/README.md)
+for the session, gaming mode and shortcuts.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the module conventions and execution
 model, and [execution-tool details](scripts/ARCHITECTURE.md) for the scripts.

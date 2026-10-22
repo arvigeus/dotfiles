@@ -1,5 +1,4 @@
 {
-  "provider": "nextcloud",
   "calendars": ["Personal"],
   "task_lists": ["Tasks"]
 }

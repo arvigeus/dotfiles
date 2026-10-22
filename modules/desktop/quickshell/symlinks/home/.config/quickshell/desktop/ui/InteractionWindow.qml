@@ -11,17 +11,13 @@ PanelWindow {
     required property InteractionState interactionState
     property Item initialFocus: null
     property var escapeHandler: null
-    // Drawers can retain their presentation while closing. Input ownership still
-    // follows opened, so an exiting surface cannot intercept application input.
-    property bool keepVisible: false
-    property ShellScreen presentationScreen: null
     property real backdropOpacity: 1
     readonly property bool opened: interactionState.activeSurface === root
-    readonly property ShellScreen targetScreen: opened ? interactionState.screen
-        : keepVisible ? presentationScreen : null
+    // DrawerHost extends both to stay on its output during the exit animation.
+    property ShellScreen targetScreen: opened ? interactionState.screen : null
 
     screen: targetScreen
-    visible: (opened || keepVisible) && targetScreen !== null
+    visible: opened && targetScreen !== null
     anchors { top: true; bottom: true; left: true; right: true }
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"

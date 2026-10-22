@@ -8,7 +8,7 @@ import "spaces"
 DrawerPage {
     id: root
     property var service: SessionService
-    property var launch: argv => Quickshell.execDetached(argv)
+    property var launch: argv => Apps.launch(argv)
     headerActions: Component {
         ProfileButton {
             active: root.active

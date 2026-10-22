@@ -116,9 +116,10 @@ InteractionWindow {
         launch.applicationName = entry.name;
         launch.launchSession = session;
         launching = true;
-        // GIO handles Terminal, Path, field codes and D-Bus activation. Pass the
-        // ID as one argument; do not parse Exec or interpolate a shell command.
-        launch.exec(["/usr/bin/gtk-launch", "--", entry.id]);
+        // uwsm parses the entry (Terminal, Path, field codes) and starts it as its
+        // own service, so it outlives desktop-shell.service restarts and the
+        // command returns once the app started. Pass the ID as one argument.
+        launch.exec(["uwsm", "app", "-t", "service", "--", entry.id + ".desktop"]);
     }
 
     Process {

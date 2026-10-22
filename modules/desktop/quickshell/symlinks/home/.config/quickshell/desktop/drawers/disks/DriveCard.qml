@@ -3,8 +3,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../../ui"
-import "../network"
-import "../network/Models.js" as Models
+import "../../ui/Models.js" as Models
 
 Surface {
     id: root
@@ -28,7 +27,7 @@ Surface {
     function sync(): void {
         if (record.identity !== observedIdentity) { expanded = false; options.close(); observedIdentity = record.identity; }
         if (!record.volumes.some(v => v.mounts.length > 0)) expanded = false;
-        Models.sync(volumesModel, record.volumes, "key", false);
+        Models.sync(volumesModel, record.volumes, "key");
     }
     onRecordChanged: sync()
     onCanExpandChanged: if (!canExpand) expanded = false
@@ -43,7 +42,7 @@ Surface {
         RowLayout {
             Layout.fillWidth: true; spacing: 4
             Icon { name: "hard-drive"; Layout.preferredWidth: 18; Layout.preferredHeight: 18 }
-            NetworkButton {
+            ShellButton {
                 id: title
                 Layout.fillWidth: true; Layout.preferredWidth: 1; implicitWidth: 0; implicitHeight: 30; padding: 2
                 enabled: root.canExpand
@@ -56,7 +55,7 @@ Surface {
                 PassiveToolTip { target: title; text: root.info }
             }
             BusySpinner { visible: root.service.pendingKey === root.record.key; running: visible; implicitWidth: 16; implicitHeight: 16 }
-            NetworkIconButton {
+            IconButton {
                 id: healthButton
                 readonly property alias menu: options
                 objectName: "diskHealth:" + root.record.key
@@ -117,7 +116,7 @@ Surface {
                                         qsTr("Checked %1").arg(new Date(root.health.updated * 1000).toLocaleString(Qt.locale(), Locale.ShortFormat))].filter(Boolean).join(" · ") : ""
                                 }
                             }
-                            NetworkButton {
+                            ShellButton {
                                 objectName: "diskHealthRefresh:" + root.record.key
                                 Layout.fillWidth: true; visible: root.record.healthSupported
                                 text: root.health ? qsTr("Refresh health") : qsTr("Check health")
@@ -128,7 +127,7 @@ Surface {
                     }
                 }
             }
-            NetworkIconButton {
+            IconButton {
                 objectName: "diskExpand:" + root.record.key
                 iconName: root.expanded ? "chevron-up" : "chevron-down"
                 text: root.expanded ? qsTr("Hide volumes and mount points") : qsTr("Show volumes and mount points")
@@ -168,7 +167,7 @@ Surface {
         RowLayout {
             visible: root.hasError; Layout.fillWidth: true; spacing: 4
             ShellText { text: root.service.actionError; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.danger; font.pixelSize: Theme.smallFontSize; textFormat: Text.PlainText }
-            NetworkIconButton { iconName: "x"; text: qsTr("Dismiss storage error"); implicitWidth: 28; implicitHeight: 28; onClicked: root.service.dismissError() }
+            IconButton { iconName: "x"; text: qsTr("Dismiss storage error"); implicitWidth: 28; implicitHeight: 28; onClicked: root.service.dismissError() }
         }
     }
 }

@@ -39,7 +39,7 @@ ColumnLayout {
                 id: row; anchors.fill: parent; anchors.margins: 10; spacing: 8
                 ShellText { text: String(card.modelData.port); font.family: Theme.monospaceFamily }
                 ShellText { text: qsTr("TCP"); color: Theme.muted; font.pixelSize: Theme.smallFontSize; Layout.fillWidth: true }
-                NetworkIconButton {
+                IconButton {
                     objectName: "portClose:" + card.modelData.port
                     iconName: "x"; text: qsTr("Close")
                     enabled: root.active && !root.service.busy

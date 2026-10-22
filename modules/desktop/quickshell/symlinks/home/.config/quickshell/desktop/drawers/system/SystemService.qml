@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "../../ui"
 
 Item {
     id: root
@@ -11,12 +12,12 @@ Item {
     property bool timedOut: false
     property int generation: 0
     property int readingGeneration: 0
-    property var state: ({os: "", kernel: "", uptime: null, reboot: false, kernelChanged: false,
+    property var state: ({os: "", kernel: "", uptime: null, kernelChanged: false,
         boot: {phases: [], total: "", summary: ""}, slow: [], scopes: [], timers: [], errors: {}, terminalAvailable: false})
     property string error: ""
     readonly property bool busy: readingSection !== ""
-    readonly property string backend: decodeURIComponent(Qt.resolvedUrl("backend.py").toString().replace(/^file:\/\//, ""))
-    property var launch: argv => Quickshell.execDetached(argv)
+    readonly property string backend: Quickshell.shellPath("drawers/system/backend.py")
+    property var launch: argv => Apps.launch(argv)
     function refresh(): void {
         if (!active || !section || readingSection) return;
         error = ""; timedOut = false;

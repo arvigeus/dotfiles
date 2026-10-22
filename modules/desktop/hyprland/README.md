@@ -1,23 +1,22 @@
 # Hyprland
 
 This module configures the desktop and its session. Edit the Lua files under
-`symlinks/home/.config/hypr/`, then reload:
-
-```sh
-hyprctl reload config-only
-```
-
-Run `hyprctl configerrors` if a change does not work as expected.
+`symlinks/home/.config/hypr/`; Hyprland reloads them automatically. Run
+`hyprctl configerrors` if a change does not work as expected.
 
 ## Desktop and gaming mode
 
-The desktop starts automatically on TTY1. Hold Spaces' **Go to gaming mode**
-button for two seconds to enter Steam's dedicated gaming session. Steam's
-**Go to Desktop** or **Exit Steam** returns to the desktop. Ctrl+Alt+Delete also
-switches to gaming mode. Rebooting always starts Hyprland.
+The desktop starts automatically on TTY1. Win+1 or Ctrl+Alt+Delete opens Spaces;
+hold its **Go to gaming mode** button for two seconds to enter Steam's dedicated
+gaming session. Steam's **Go to Desktop** or **Exit Steam** returns to the
+desktop. Rebooting always starts Hyprland.
 
 **Restart → Reload** starts a fresh desktop session, closing running applications.
 Gaming exits, startup failures and a compositor startup timeout return to Hyprland.
+
+Per-machine Gamescope settings (`SYSTEM_GAMING_GPU`, `SYSTEM_GAMING_HDR`,
+`SYSTEM_GAMING_OUTPUT`) go in `/etc/gaming-session.conf` or
+`~/.config/gaming-session.conf`.
 
 ## Locking
 
@@ -63,7 +62,8 @@ to move the rectangle; release Space to resize it before releasing the mouse.
 The Capture drawer's **Open in editor** setting applies to these screenshot
 shortcuts; Win+Shift+Print always skips editing. Ksnip is the default editor.
 Satty remains available with
-`DESKTOP_SCREENSHOT_EDITOR=satty desktop-screenshot edit`.
+`DESKTOP_SCREENSHOT_EDITOR=satty desktop-screenshot edit`. Without the editor, a
+notification confirms the saved file.
 The shell's [Capture drawer](../quickshell/README.md#capture) adds display capture
 with a delay, GPU Screen Recorder controls and a webcam test. Win+Shift+R selects
 an area when idle and stops the active recording.

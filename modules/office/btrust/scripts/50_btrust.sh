@@ -4,8 +4,6 @@ repo_dir=${DOTFILES_REPO:?}
 
 source "$repo_dir/scripts/config-helpers.sh"
 
-# sac-core supplies the signing libraries; sac-gui/SACMonitor are unnecessary.
-
 configure() {
 	[[ -x /opt/btrustbiss/bin/BISS && -r /usr/lib/pkcs11/libIDPrimePKCS11.so ]]
 	# Undo the AUR install hook, also enforced after mutable package upgrades.
@@ -23,10 +21,6 @@ polkit.addRule(function(action, subject) {
     }
 });
 EOF
-
-	# NSS lives in the real user's persistent home and is initialized on launch.
-	# Shipping database files in skel would overwrite browser state on rebuilds.
-
 }
 
 configure

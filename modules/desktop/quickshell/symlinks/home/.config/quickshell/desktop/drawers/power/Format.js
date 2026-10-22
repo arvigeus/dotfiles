@@ -24,10 +24,15 @@ function batteryState(state) {
     return ({1: qsTr("Charging"), 2: qsTr("Discharging"), 3: qsTr("Empty"), 4: qsTr("Fully charged"),
         5: qsTr("Not charging"), 6: qsTr("Waiting to discharge")})[state] || qsTr("State unavailable");
 }
-function estimate(row) {
-    if (!row) return "";
-    if (row.state === 1) return row.seconds > 0 ? qsTr("About %1 until full").arg(duration(row.seconds)) : qsTr("Estimating time to full…");
-    if (row.state === 2) return row.seconds > 0 ? qsTr("About %1 remaining").arg(duration(row.seconds)) : qsTr("Estimating remaining time…");
+// UPowerDevice states: 1 charging, 2 discharging.
+function seconds(device) {
+    return !device ? 0 : device.state === 1 ? device.timeToFull : device.state === 2 ? device.timeToEmpty : 0;
+}
+function estimate(device) {
+    if (!device) return "";
+    const s = seconds(device);
+    if (device.state === 1) return s > 0 ? qsTr("About %1 until full").arg(duration(s)) : qsTr("Estimating time to full…");
+    if (device.state === 2) return s > 0 ? qsTr("About %1 remaining").arg(duration(s)) : qsTr("Estimating remaining time…");
     return "";
 }
 function profile(value) {

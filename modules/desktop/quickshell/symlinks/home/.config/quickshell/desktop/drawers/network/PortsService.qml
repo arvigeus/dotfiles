@@ -3,8 +3,9 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-QtObject {
+Singleton {
     id: root
+    readonly property alias process: process
     property bool observing: false
     property bool loaded: false
     property bool available: false
@@ -30,7 +31,7 @@ QtObject {
         if (operation === "") return;
         if (!received) {
             loaded = true; available = false;
-            error = qsTr("Port service unavailable. Install the UFW desktop port service.");
+            error = qsTr("Port helper unavailable. Install the firewall module.");
             completed(operation, false);
         }
         operation = ""; request = null; process.stdinEnabled = true;
@@ -40,8 +41,9 @@ QtObject {
         }
     }
     onObservingChanged: if (observing) refresh()
-    readonly property Process process: Process {
-        command: ["/usr/local/libexec/desktop-ports"]
+    Process {
+        id: process
+        command: ["/usr/local/libexec/firewall-ports"]
         stdinEnabled: true
         onRunningChanged: {
             if (!running && root.request) {
@@ -71,7 +73,8 @@ QtObject {
         stderr: StdioCollector {}
         onExited: root.finish()
     }
-    readonly property Timer refreshTimer: Timer {
+    Timer {
+        id: refreshTimer
         interval: 5000; repeat: true; running: root.observing
         onTriggered: root.refresh()
     }

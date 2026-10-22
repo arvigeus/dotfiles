@@ -3,7 +3,6 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import "../../ui"
-import "../audio"
 
 Surface {
     id: root
@@ -100,7 +99,7 @@ Surface {
                 visible: !root.compact; text: Qt.formatDateTime(new Date(root.record.timestamp * 1000), "d MMM, HH:mm")
                 color: Theme.muted; font.pixelSize: Theme.smallFontSize
             }
-            AudioIconButton {
+            IconButton {
                 objectName: "notificationDismiss:" + root.record.id
                 implicitWidth: 26; implicitHeight: 26; padding: 5; iconName: "x"
                 text: root.compact ? qsTr("Hide popup") : qsTr("Dismiss notification")

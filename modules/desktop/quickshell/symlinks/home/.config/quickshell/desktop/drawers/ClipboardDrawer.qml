@@ -3,7 +3,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../ui"
-import "network"
 import "clipboard"
 
 DrawerPage {
@@ -20,7 +19,7 @@ DrawerPage {
 
     headerActions: RowLayout {
         spacing: 4
-        NetworkIconButton {
+        IconButton {
             objectName: "clipboardPause"
             iconName: ClipboardService.paused ? "play" : "pause"
             text: ClipboardService.paused ? qsTr("Resume collection") : qsTr("Pause collection")
@@ -179,7 +178,7 @@ DrawerPage {
                             }
                         }
                     }
-                    NetworkIconButton {
+                    IconButton {
                         objectName: "clipboardDelete:" + card.modelData.id
                         iconName: "x"
                         text: qsTr("Remove item")

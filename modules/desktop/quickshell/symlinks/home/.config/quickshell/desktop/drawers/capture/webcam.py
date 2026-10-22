@@ -1,5 +1,4 @@
 """Read and validate the ordinary V4L2 controls exposed by a webcam."""
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -21,21 +20,18 @@ LABELS = {
 
 
 def identity(device):
+    """Device number and sysfs path; a different camera node invalidates stale UI actions.
+
+    Image controls are harmless on any camera and every write is range-checked
+    against that device's fresh control list, so no deeper fingerprint is needed.
+    """
     if not isinstance(device, str) or not re.fullmatch(r'/dev/video\d+', device):
         raise ValueError('This camera does not expose Linux webcam controls.')
     info = os.stat(device)
     if not stat.S_ISCHR(info.st_mode):
         raise ValueError('The webcam is no longer connected.')
     node = (Path('/sys/class/video4linux') / Path(device).name).resolve(strict=True)
-    parts = [str(info.st_rdev), str(node)]
-    # Detect a replacement on the same USB port before applying stale actions.
-    for parent in node.parents:
-        for name in ('serial', 'idVendor', 'idProduct'):
-            try:
-                parts.append((parent / name).read_text().strip())
-            except OSError:
-                pass
-    return hashlib.sha256('\0'.join(parts).encode()).hexdigest()
+    return f'{info.st_rdev}:{node}'
 
 
 def command(device, *args):
@@ -79,11 +75,7 @@ def parse_controls(text):
 
 
 def snapshot(device):
-    token = identity(device)
-    controls = parse_controls(command(device, '--list-ctrls-menus'))
-    if identity(device) != token:
-        raise ValueError('The webcam changed. Reopen its settings.')
-    return dict(token=token, controls=controls)
+    return dict(token=identity(device), controls=parse_controls(command(device, '--list-ctrls-menus')))
 
 
 def handle(request):

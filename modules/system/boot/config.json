@@ -1,0 +1,7 @@
+{
+    "bootloader_config": {
+        "bootloader": "Efistub",
+        "removable": false,
+        "uki": true
+    }
+}

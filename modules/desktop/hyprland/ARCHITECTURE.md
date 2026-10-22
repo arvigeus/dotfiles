@@ -4,51 +4,57 @@ Desktop portals use GTK for file dialogs and Hyprland for screenshots and screen
 sharing. User-facing troubleshooting commands and session shortcuts are in
 [README.md](README.md).
 
+## Configuration loading
+
+`hyprland.lua` loads each component with Hyprland's `require()`, which searches
+`~/.config/hypr/`, records errors per file, watches the resolved files (including
+symlink targets) and re-runs them on reload. Optional files use
+`pcall(require, ...)`: `input-method` from the input-method module, then in
+`monitors.lua` the selected host's `host-monitors` and the user-owned `displays`
+written by the Displays drawer, so confirmed layouts override host defaults.
+Settings equal to Hyprland's built-in defaults are omitted. Hyprland itself imports
+its environment into systemd and notifies UWSM of readiness; `XCURSOR_SIZE` is
+declared in `environment.d` because X11 clients otherwise choose their own size.
+
 ## Session ownership
 
-The TTY1 autologin profile replaces Bash with `session-mode run`; it has no
-interactive terminal fallback. The supervisor stays outside the graphical user
-services and owns exactly one foreground compositor process group in the same
-PAM/controlling-terminal session. Hyprland runs through `uwsm start -e -D
-Hyprland hyprland.desktop`. A desktop exit restarts Hyprland; an explicit
-`session-mode gaming` request instead starts the existing DRM `gaming-session`
-launcher. `session-mode desktop` closes the current session and starts a fresh
-Hyprland session, including when already on desktop (the Reload action).
+`/etc/profile.d/zz-session-mode.sh` runs on login shells (sorted last so the session
+inherits every profile export). On TTY1, when `uwsm check may-start` passes, it
+replaces the shell with `session-mode run`, so no prompt appears; other consoles,
+SSH and UWSM's environment preloader fail that check. `~/.hushlogin` silences the
+login banner.
 
-Provisioning creates a private, user-owned `/run/desktop-session-<username>`
-through `/etc/tmpfiles.d/desktop-session.conf`. An advisory owner lock proves
-supervisor liveness. Atomic `next.json` requests are consumed once; expired or
-malformed requests are discarded. Requests and the directory never survive a
-reboot, and the ordinary initial mode is always desktop. No home preference,
-display-manager default or permanent gaming selection is modified.
+The supervisor runs one session at a time as an ordinary child in the console's
+foreground process group: Hyprland via `uwsm start -e -D Hyprland
+hyprland.desktop`, or the DRM `gaming-session` launcher. Logind grants DRM and
+input through libseat to both compositors, so no terminal process-group handoff
+is needed. It holds a lock on `$XDG_RUNTIME_DIR/session-mode/current`, which
+records the running mode; `session-mode status` reports availability from it.
 
-For an already running legacy Bash/UWSM session, the first request validates its
-logind UID, TTY1 and local status, then writes a one-shot `handoff.json` and
-terminates that login. Getty immediately autologins into the new profile. The
-supervisor consumes the request and drains the previous UWSM envelope before
-starting its replacement. The dedicated `/run` directory survives this PAM
-handoff even if logind recreates the user's runtime directory. Installation
-does not terminate the active desktop. `desktop-session` is removed by cleanup;
-the manual launcher is no longer part of the startup path.
+`session-mode desktop|gaming` writes the one-shot `next` request beside it and
+stops the current session itself: `uwsm stop` for desktop, `steam -shutdown` for
+gaming. The request is withdrawn only when that command reports failure, since
+stopping the desktop normally terminates the caller too. When the child exits,
+the supervisor consumes the request; without one, it starts the desktop. Any
+gaming exit, including Steam Exit, a crash or startup failure, therefore returns
+to Hyprland, and gaming never survives logout or reboot. Requesting desktop from
+desktop is Reload. Startup discards stale requests.
 
-The supervisor stops desktop through UWSM and gaming through `steam -shutdown`.
-An owned child process group is terminated after a bounded graceful-stop wait.
-Gaming uses Gamescope's inherited `--ready-fd`; failure to become ready within
-45 seconds returns to desktop. Any gaming child exit, including Steam Exit or a
-startup failure, returns to desktop. Repeated short desktop failures retry with
-a capped backoff rather than revealing a prompt. SIGTERM/SIGHUP end supervision
-without restarting a compositor during system shutdown; Ctrl+C is ignored.
+Gaming passes a pipe to Gamescope's `--ready-fd` through `SESSION_MODE_READY_FD`;
+no readiness within 45 seconds terminates the launcher and returns to desktop.
+Desktop exits within 5 seconds without a request retry with a capped backoff.
+SIGTERM/SIGHUP forward SIGTERM to the session (UWSM then stops the compositor
+cleanly) and end supervision; Ctrl+C is ignored by the supervisor only.
 
 Steam's `-steamos3` exposes the `steamos-session-select` hook, installed in
 `/usr/bin` and routed to `session-mode desktop`. See the
 [gaming launcher architecture](../../gaming/gamescope-session/ARCHITECTURE.md).
 
 `tests/test_session_modes.py` runs the production supervisor and Steam hook with
-isolated compositor, Steam and logind executables. It covers both transitions,
-Reload, Steam exit, gaming failure/timeout, first live handoff, rejected/stale
-requests and the next-login desktop default. `test_boot_and_session.py` checks
-autologin provisioning and that the profile uses exec only on a local TTY1 login.
-These tests do not replace a real DRM/Steam round trip on the installed hardware.
+isolated compositor and Steam executables, covering transitions, Reload, Steam
+exit, gaming failure/timeout, failed stops, and the desktop default of a new login.
+`test_boot_and_session.py` checks autologin provisioning and the TTY1 profile
+gate. Neither replaces a real DRM/Steam round trip on the installed hardware.
 
 ## Desktop integration
 
@@ -71,28 +77,28 @@ their placement. This policy launches no helper and has no repeating timer.
 The Quickshell display service owns re-enabling a disabled panel when no real
 independent output would survive; it excludes `FALLBACK` from its inventory.
 
-`desktop-screenshot` keeps Hyprshot's native Hyprland capture modes, output path
-and clipboard behavior. Region selection uses slurp. It waits for Hyprshot's
-child capture process and skips the editor when selection produces no image.
-The saved nonempty image determines success: Hyprshot's parent monitor may exit
-nonzero while trying to stop an absent hyprpicker even when capture succeeds.
-The default editor launches as `ksnip --edit` with the literal image path;
-Ksnip never needs to capture through its generic Wayland/portal fallback.
-`DESKTOP_SCREENSHOT_EDITOR=satty` selects the alternative editor.
-The Ksnip preferences disable its tray icon and minimize/close-to-tray behavior.
-User geometry and annotator preferences stay outside the managed defaults.
+`desktop-screenshot` selects with slurp (`-d` for areas, `-r` over visible window
+boxes) before capturing with grim, so cancelling writes nothing and leaves the
+clipboard alone. Window boxes come from `hyprctl -j` and are clipped to their
+monitor's logical area, keeping scrolled-off columns out of the image. Whole
+displays use `grim -o NAME`, which captures at native resolution with the
+output's transform. Saved images are copied to the clipboard; without the editor,
+a notification confirms the file. The default editor launches as
+`ksnip --edit` with the literal image path; `DESKTOP_SCREENSHOT_EDITOR=satty`
+selects the alternative. The Ksnip preferences disable its tray icon and
+minimize/close-to-tray behavior. User geometry and annotator preferences stay
+outside the managed defaults. Bindings start the helper through `uwsm-app`, like
+other applications, so an editor runs in its own unit.
 
 The helper reads `$XDG_CONFIG_HOME/quickshell/desktop/screenshot-editor` (`on` or
 `off`, default `on`) for ordinary capture modes. `edit`/`--edit` force editing;
 `--no-edit` forces raw capture. Print and Win+Shift+S use `region` so the shared
 preference applies; Win+Shift+Print explicitly passes `--no-edit`.
 The shared `screenshot-save` preference also defaults to `on`; explicit
-`--save`/`--no-save` override it. Clipboard-only mode overrides editing and uses
-Hyprshot's raw PNG stdout, buffered in Python memory before calling wl-copy.
-No screenshot directory or temporary image is created. Empty selection leaves
-the clipboard unchanged, and this path sends no notification, including on
-failure. The raw consumer's exit status controls success so a Hyprshot monitor
-failure cannot discard a valid capture.
+`--save`/`--no-save` override it. Clipboard-only mode overrides editing; grim's PNG
+stdout is buffered in Python memory and checked before calling wl-copy, so a
+failed capture cannot replace the clipboard. No screenshot directory or temporary
+image is created, and this path sends no notification, including on failure.
 
 The Capture drawer uses `output --output NAME` or `region`, plus `--report` and
 explicit editor/save flags, to read back a saved image path (or `clipboard`) and
@@ -106,23 +112,22 @@ shortcut. It selects an area through Slurp when idle and stops an active recordi
 The shell owns recording preferences and the supervised recording service; see
 [Capture architecture](../quickshell/ARCHITECTURE.md#capture).
 
-Night light uses the packaged `hyprsunset.service`, with a Hyprland environment
-condition matching the other session services. Its enablement belongs to the
+Night light uses the packaged `hyprsunset.service`. Its enablement belongs to the
 Display drawer toggle, so provisioning does not enable it globally. The native
 `hyprsunset.conf` asset defines the filter and optional profiles.
 
 Hypridle calls `desktop-idle blank` to turn off only unprotected monitors. Lock
-and suspend listeners use `desktop-idle allow-lock` and `allow-sleep` as their conditions,
-retrying every ten seconds. The wrapper invokes the Quickshell display helper,
-which owns the session-local Keep awake leases and independent temporary sleep/
-locking pauses. Pauses end when the shell exits or reloads; dead lease locks are
-ignored. See
+and suspend listeners use `desktop-idle allow-lock` and `allow-sleep` as their
+conditions, retrying every ten seconds. The wrapper invokes the Quickshell display
+helper, which owns the session-local Keep awake leases and independent temporary
+sleep/locking pauses; it exits 0 to allow, 1 to defer and any other status on
+failure. Helper failures allow locking but block automatic suspend. See
 [the display architecture](../quickshell/ARCHITECTURE.md#night-light-and-keep-awake)
 for liveness and hardware matching. Existing application inhibitors are respected.
-Manual lock and before-sleep commands remain unconditional.
-`desktop-idle wake` retains the normal DPMS wake action and then notifies the
-display service. Both idle resume and system resume use it, so deferred power-mode
-refresh adjustments apply after wake without waking dark panels during a switch.
+Manual lock and before-sleep commands remain unconditional. Idle and system resume
+turn every display on with the DPMS dispatcher, then emit
+`desktop-displays-changed` so the display service reapplies adjustments it skipped
+while panels were dark.
 
 `monitors.lua` registers the native `monitor.layout_changed` Lua callback and
 forwards it with `hl.dsp.event("desktop-displays-changed")`. Quickshell consumes

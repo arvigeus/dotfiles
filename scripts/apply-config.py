@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 from types import SimpleNamespace
 
@@ -84,7 +85,6 @@ def apply_native(config, extra=None):
         # Update declared repository sections instead of appending on each apply.
         path = Path('/etc/pacman.conf')
         for repo in config.mirror_config.custom_repositories:
-            import re
             text = path.read_text()
             block = config.mirror_config.repositories_config()
             # Each declared repository is emitted by archinstall's serializer.
@@ -99,14 +99,6 @@ def apply_native(config, extra=None):
     pacman_config.configure(config.pacman_config)
     if config.network_config and config.network_config.type != NicType.ISO:
         install_network_config(config.network_config, installation, config.profile_config)
-    # The native UFW handler edits its packaged config immediately. The live
-    # adapter queues packages, so install UFW first on systems without it.
-    if config.app_config and config.app_config.firewall_config:
-        from archinstall.applications.firewall import FirewallApp
-        from archinstall.lib.models.application import Firewall
-        if (config.app_config.firewall_config.firewall == Firewall.UFW
-                and not (installation.target / 'etc/ufw/ufw.conf').exists()):
-            run('pacman', '-Syu', '--needed', '--', *FirewallApp().ufw_packages)
     if config.app_config:
         ApplicationHandler().install_applications(installation, config.app_config)
     if config.profile_config:
@@ -142,12 +134,13 @@ def main():
     if os.geteuid() != 0 or not os.environ.get('SUDO_USER'):
         parser.error('Run through ./apply.sh as a regular user')
     repo = args.config.resolve().parent
-    environment = dict(os.environ, CONFIG_REPO=str(repo), CONFIG_MODE='live')
-    subprocess.run(['bash', str(repo / 'user-configuration.sh'), '--check'], env=environment, check=True)
+    environment = dict(os.environ, CONFIG_MODE='live')
+    configure = ['bash', str(repo / 'scripts/configure.sh')]
+    subprocess.run([*configure, '--check'], env=environment, check=True)
     link = Path('/run/system-configuration.json')
     link.unlink(missing_ok=True)
     link.symlink_to(args.config.resolve())
-    subprocess.run(['bash', str(repo / 'user-configuration.sh'), '--pre'], env=environment, check=True)
+    subprocess.run([*configure, '--pre'], env=environment, check=True)
     installation = apply_native(config, raw.get('extra', {}))
     for command in raw.get('custom_commands', []):
         subprocess.run(['bash', '-Eeuo', 'pipefail', '-c', command], env=environment, check=True, cwd=repo)
@@ -155,11 +148,10 @@ def main():
     if installation.disabled_services:
         run('systemctl', 'disable', *dict.fromkeys(installation.disabled_services))
     if installation.services:
-        run('systemctl', 'enable', *dict.fromkeys(installation.services))
-    # Match normal apply activation without restarting the graphical login session.
-    start = installation.services
-    if start:
-        run('systemctl', 'start', *dict.fromkeys(start))
+        # Starting an already running unit is a no-op; nothing is restarted.
+        services = dict.fromkeys(installation.services)
+        run('systemctl', 'enable', *services)
+        run('systemctl', 'start', *services)
 
 
 if __name__ == '__main__':

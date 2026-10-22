@@ -1,12 +1,13 @@
 import QtQuick
+import Quickshell
 import Quickshell.Services.Pipewire
 import "../ui"
 import "../ui/AudioIcons.js" as AudioIcons
 
 // Native notifications keep the passive bar current without starting the drawer helper.
-QtObject {
+Scope {
     readonly property var sink: Pipewire.defaultAudioSink
-    readonly property PwObjectTracker tracker: PwObjectTracker { objects: [sink].filter(n => n) }
+    PwObjectTracker { id: tracker; objects: [sink].filter(n => n) }
     readonly property real volume: (sink?.audio?.volume ?? 0) * 100
     readonly property string iconName: AudioIcons.volume(volume, !sink?.audio || sink.audio.muted)
     readonly property color iconColor: volume > 100 ? Theme.accent : Theme.text

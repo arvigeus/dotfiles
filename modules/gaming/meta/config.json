@@ -1,6 +1,5 @@
 {
     "packages": [
-        "ibus",
         "noto-fonts",
         "ttf-dejavu"
     ]

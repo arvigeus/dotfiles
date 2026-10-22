@@ -7,6 +7,7 @@ from pathlib import Path
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -152,7 +153,7 @@ while True:
 ''')
         native.chmod(0o755)
         env = dict(os.environ, PATH=str(binary) + ':' + os.environ['PATH'])
-        process = subprocess.Popen(['python3', '-B', str(BACKEND), '--serve'], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        process = subprocess.Popen(['python3', '-B', str(BACKEND)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         endpoint = recorder.runtime_dir() / 'control.sock'
         deadline = time.monotonic() + 4
         while not endpoint.exists() and process.poll() is None and time.monotonic() < deadline:
@@ -172,7 +173,7 @@ while True:
         def state_until(predicate):
             deadline = time.monotonic() + 4
             while time.monotonic() < deadline:
-                with connect(dict(op='watch')) as connection:
+                with connect(dict(op='status')) as connection:
                     state = json.loads(connection.makefile().readline())
                 if predicate(state): return state
                 time.sleep(.03)
@@ -183,11 +184,11 @@ while True:
             first = state_until(lambda state: state['phase'] == 'recording')
             # A status client may close before reading any reply (shell reload).
             for _ in range(20):
-                connect(dict(op='watch')).close()
-            self.assertEqual(command(dict(op='watch'))['error'], '')
+                connect(dict(op='status')).close()
+            self.assertEqual(command(dict(op='status'))['error'], '')
             self.assertEqual(command(dict(op='pause'))['phase'], 'paused')
             # The watch that started this session is gone; a new client sees it paused.
-            reconnected = command(dict(op='watch'))
+            reconnected = command(dict(op='status'))
             self.assertEqual(reconnected['phase'], 'paused')
             self.assertEqual(reconnected['path'], first['path'])
             command(dict(op='pause'))
@@ -206,6 +207,34 @@ while True:
             if process.poll() is None:
                 process.terminate()
                 process.communicate(timeout=5)
+
+
+    def test_socket_activation_uses_inherited_listener_and_exits_when_idle(self):
+        endpoint = self.root / 'desktop-capture/control.sock'
+        listener = socket.socket(socket.AF_UNIX)
+        listener.bind(str(endpoint)); listener.listen()
+        self.addCleanup(listener.close)
+        script = ('import os,runpy,sys\nos.dup2(int(sys.argv[2]),3)\nos.environ["LISTEN_PID"]=str(os.getpid())\n'
+                  'os.environ["LISTEN_FDS"]="1"\nimport importlib.util\n'
+                  'spec=importlib.util.spec_from_file_location("r",sys.argv[1]);r=importlib.util.module_from_spec(spec)\n'
+                  'spec.loader.exec_module(r);r.IDLE_EXIT=0.3;r.location=lambda kind:r.Path(os.environ["XDG_RUNTIME_DIR"])/kind\n'
+                  'r.serve()\n')
+        client = socket.socket(socket.AF_UNIX)
+        client.connect(str(endpoint))
+        client.sendall(b'{"op":"status"}\n{"op":"option","key":"pointer","value":false}\n')
+        process = subprocess.Popen([sys.executable, '-c', script, str(BACKEND), str(listener.fileno())],
+                                   pass_fds=(listener.fileno(),), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            with client, client.makefile() as replies:
+                self.assertEqual(json.loads(replies.readline())['phase'], 'idle')
+                # Broadcasts may interleave with replies; the option reply follows in order.
+                self.assertTrue(any(not json.loads(replies.readline())['options']['pointer'] for _ in range(3)))
+            # No client and no recording: the service exits; systemd keeps the socket.
+            self.assertEqual(process.wait(timeout=5), 0, process.stderr.read())
+            self.assertTrue(endpoint.exists())
+        finally:
+            if process.poll() is None:
+                process.kill(); process.wait()
 
 
 if __name__ == '__main__':

@@ -10,12 +10,10 @@ WheelScroll 1.0 WheelScroll.qml
 ScrollListView 1.0 ScrollListView.qml
 InteractionState 1.0 InteractionState.qml
 InteractionWindow 1.0 InteractionWindow.qml
-DrawerWindow 1.0 DrawerWindow.qml
 DrawerDefinition 1.0 DrawerDefinition.qml
 DrawerHost 1.0 DrawerHost.qml
 DrawerPage 1.0 DrawerPage.qml
 DrawerColumn 1.0 DrawerColumn.qml
-DrawerBrief 1.0 DrawerBrief.qml
 BusySpinner 1.0 BusySpinner.qml
 NumberField 1.0 NumberField.qml
 PlainInputField 1.0 PlainInputField.qml
@@ -28,3 +26,6 @@ ShellSwitch 1.0 ShellSwitch.qml
 InfoPopover 1.0 InfoPopover.qml
 InfoRow 1.0 InfoRow.qml
 ShellChoice 1.0 ShellChoice.qml
+ShellMenuItem 1.0 ShellMenuItem.qml
+IconButton 1.0 IconButton.qml
+singleton Apps 1.0 Apps.qml

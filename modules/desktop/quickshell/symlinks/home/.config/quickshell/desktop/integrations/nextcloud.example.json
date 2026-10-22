@@ -1,10 +1,4 @@
 {
   "url": "https://cloud.example.com/",
-  "username": "your-username",
-  "credentials": {
-    "dav": {"provider": "file", "file": "dav-app-password"}
-  },
-  "capabilities": {
-    "dav": {"credential": "dav"}
-  }
+  "username": "your-username"
 }

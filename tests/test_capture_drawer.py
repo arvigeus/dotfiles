@@ -1,16 +1,19 @@
 """Capture lifecycle and drawer layout without taking pictures or recording."""
+import json
 import os
+import socket
+import threading
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
-import test_display_drawer as fixtures
+import support
 
 
-@unittest.skipUnless(fixtures.QS, 'Quickshell is required')
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class CaptureTests(unittest.TestCase):
-    run_qml = fixtures.DisplayQmlTests.run_qml
+    run_qml = support.run_qml
 
     def test_countdown_freezes_request_survives_page_and_can_cancel(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -59,8 +62,20 @@ ShellRoot {
 }''')
 
     def test_recording_start_waits_for_dismissal_and_survives_closed_page(self):
+        seen = []
+
         def setup(root):
-            (root / 'drawers/capture/recorder.py').write_text('import json,sys\nassert sys.argv[1]=="--command"\nassert json.loads(sys.argv[2])==dict(op="start",source="DP-2")\nprint(json.dumps(dict(phase="recording",available=True,elapsed=0)))\n')
+            # A fake service on the runtime control socket (systemd would own it).
+            directory = root / 'runtime/desktop-capture'; directory.mkdir(parents=True)
+            server = socket.socket(socket.AF_UNIX); server.bind(str(directory / 'control.sock')); server.listen()
+            def serve():
+                with server:
+                    connection, _ = server.accept()
+                    with connection, connection.makefile() as requests:
+                        for line in requests:
+                            seen.append(json.loads(line))
+                            connection.sendall((json.dumps(dict(phase="recording" if seen[-1]["op"] == "start" else "idle", available=True, elapsed=0)) + "\n").encode())
+            threading.Thread(target=serve, daemon=True).start()
         self.run_qml('''import QtQuick
 import Quickshell
 import "drawers/capture"
@@ -79,12 +94,14 @@ ShellRoot {
   }else if(stage===1){check(CaptureService.recordingPending,"recording started before drawer exit");
   }else if(stage>=4){
    check(!CaptureService.recordingPending&&hidden===2&&!CaptureService.error,"recording request did not finish after dismissal: "+CaptureService.error);
+   check(CaptureService.sessionActive,"recording state was not received over the control socket");
    console.log("DISPLAY_PASS");Qt.quit();
   }
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:4000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }''', setup)
+        self.assertEqual(seen, [dict(op='start', source='DP-2')])
 
     def test_region_shortcut_selection_cancellation_and_stop(self):
         with tempfile.TemporaryDirectory() as directory:

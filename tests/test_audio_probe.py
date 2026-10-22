@@ -59,10 +59,6 @@ class ProbeTests(unittest.TestCase):
                     probe.Probe().record(source['name'])
                 spawn.assert_not_called()
 
-    def test_test_streams_do_not_appear_in_the_application_mixer(self):
-        own = dict(STREAM, properties={'application.id': probe.APPLICATION_ID})
-        self.assertEqual(backend.stream_records([own, STREAM], 'sink'), backend.stream_records([STREAM], 'sink'))
-
 
 FAKE_CLIENT = r'''#!/usr/bin/env python3
 import json,os,signal,sys,time
@@ -265,9 +261,9 @@ ShellRoot {
 ''', setup)
 
     def test_footer_mouse_keyboard_release_and_drawer_cancellation(self):
-        outputs, devices = backend.output_inventory([SINK], [], {}, 'laptop')
-        source = dict(outputs[0], key='mic', name='mic', label='Built-in microphone', index=9)
-        state = dict(available=True, outputs=outputs, outputDevices=devices, inputs=[source], inputDevices=[], streams=[], recordings=[], warning='')
+        outputs, devices = backend.output_inventory([SINK], [], {})
+        source = dict(outputs[0], key='mic', name='mic', label='Built-in microphone')
+        state = dict(available=True, outputs=outputs, outputDevices=devices, inputs=[source], inputDevices=[], warning='')
         self.run_qml(r'''import QtQuick
 import QtTest
 import Quickshell
@@ -276,19 +272,7 @@ import "ui" as UI
 FloatingWindow {
  id: window; implicitWidth:480; implicitHeight:720
  property int pageWidth:448
- QtObject {
-  id: fake
-  property bool loaded:true
-  property bool busy:false
-  property string error:""
-  property var state:STATE
-  function observe(owner,active) {}
-  function run(op,values) {}
-  function refresh() {}
-  function boostFor(device) { return false; }
-  function boostPending(device) { return false; }
- }
- component Tester: QtObject {
+FAKE_SERVICE component Tester: QtObject {
   property bool running:false
   property string phase:"idle"
   property string error:""
@@ -326,6 +310,7 @@ FloatingWindow {
   try {
    const speakerButton=find(sound,"speakerTestButton"), micButton=find(mic,"microphoneTestButton");
    if(stage === 0) {
+    fake.node("laptop"); fake.node("mic", {isSink:false}); fake.defaultSink="laptop"; fake.defaultSource="mic";
     check(speakerButton.enabled,"speaker test unavailable");
     input.mouseClick(speakerButton,speakerButton.width/2,speakerButton.height/2);
     check(speakers.starts === 1 && speakers.running,"speaker test did not start");
@@ -351,10 +336,10 @@ FloatingWindow {
     input.keyRelease(Qt.Key_Space);
     check(microphone.releases === 2 && microphone.running,"keyboard release did not play");
     mic.active=false;check(!microphone.running,"recording survived dismissal");
-    mic.active=true;fake.state=Object.assign({},fake.state,{inputs:fake.state.inputs.map(n => Object.assign({},n,{muted:true}))});
+    mic.active=true;fake.nodes.mic.audio.muted=true;
    } else if(stage === 4) {
     check(!micButton.enabled,"muted default input can be tested");
-    fake.state=STATE;
+    fake.nodes.mic.audio.muted=false;
     input.mousePress(micButton,micButton.width/2,micButton.height/2);
     input.mouseMove(micButton,-30,-30);
     input.mouseRelease(micButton,-30,-30);
@@ -370,7 +355,7 @@ FloatingWindow {
   } catch(error) {console.error("AUDIO_FAIL",error.message);Qt.quit();}
  } }
 }
-'''.replace('STATE', json.dumps(state)).replace('PREVIEW_DIR', json.dumps(os.environ.get('AUDIO_PREVIEW_DIR', ''))))
+'''.replace('FAKE_SERVICE', drawer_tests.FAKE_SERVICE).replace('STATE', json.dumps(state)).replace('PREVIEW_DIR', json.dumps(os.environ.get('AUDIO_PREVIEW_DIR', ''))))
 
 
 if __name__ == '__main__':

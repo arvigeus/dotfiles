@@ -1,4 +1,4 @@
-"""Exercise screenshot/editor handoff without capturing the desktop."""
+"""Exercise grim/slurp capture and editor handoff without capturing the desktop."""
 import json
 import os
 from pathlib import Path
@@ -29,23 +29,32 @@ class ScreenshotTests(unittest.TestCase):
             log = root / 'editor.json'
             programs = {
                 'xdg-user-dir': '#!/bin/sh\nprintf "%s\\n" "$PICTURES"\n',
-                'hyprshot': '''#!/usr/bin/env python3
-import os, subprocess, sys
-args = sys.argv[1:]
-if os.environ.get('CAPTURE_LOG'):
-    import json, pathlib
-    pathlib.Path(os.environ['CAPTURE_LOG']).write_text(json.dumps(args))
+                'slurp': '''#!/usr/bin/env python3
+import json, os, pathlib, sys
+pathlib.Path(os.environ['SLURP_LOG']).write_text(json.dumps([sys.argv[1:], sys.stdin.read() if '-r' in sys.argv else '']))
 if os.environ.get('CANCEL'):
-    sys.exit(0)
-if '--raw' in args:
-    subprocess.Popen([sys.executable, '-c',
-        'import sys,time; time.sleep(.1); sys.stdout.buffer.write(bytes([137,80,78,71,13,10,26,10])+b"image")'])
-    sys.exit(int(os.environ.get('MONITOR_STATUS', '0')))
-image = os.path.join(args[args.index('-o') + 1], args[args.index('-f') + 1])
-# Match Hyprshot's fork: parent exits before the child writes the screenshot.
-subprocess.Popen([sys.executable, '-c',
-    'import pathlib, sys, time; time.sleep(.1); pathlib.Path(sys.argv[1]).write_bytes(b"image")', image])
-sys.exit(int(os.environ.get('MONITOR_STATUS', '0')))
+    sys.exit(1)
+print('10,20 300x200')
+''',
+                'grim': '''#!/usr/bin/env python3
+import json, os, pathlib, sys
+args = sys.argv[1:]
+pathlib.Path(os.environ['CAPTURE_LOG']).write_text(json.dumps(args))
+if os.environ.get('GRIM_FAIL'):
+    sys.exit(1)
+image = bytes([137, 80, 78, 71, 13, 10, 26, 10]) + b'image'
+if args[-1] == '-':
+    sys.stdout.buffer.write(image)
+else:
+    pathlib.Path(args[-1]).write_bytes(b'image')
+''',
+                'hyprctl': '''#!/usr/bin/env python3
+import json, sys
+monitor = dict(id=0, name='DP-1', x=0, y=0, width=2000, height=1000, scale=2, transform=0, focused=True,
+               activeWorkspace=dict(id=1), specialWorkspace=dict(id=0))
+window = dict(mapped=True, hidden=False, monitor=0, workspace=dict(id=1), at=[900, 100], size=[400, 300])
+hidden = dict(window, workspace=dict(id=2))
+print(json.dumps(dict(monitors=[monitor], clients=[window, hidden], activewindow=window)[sys.argv[2]]))
 ''',
                 'ksnip': '''#!/usr/bin/env python3
 import json, os, pathlib, sys
@@ -64,6 +73,7 @@ pathlib.Path(os.environ['EDITOR_LOG']).write_text(json.dumps(sys.argv))
             env = dict(os.environ, PATH=str(commands) + ':' + os.environ['PATH'],
                        HOME=str(root), XDG_CONFIG_HOME=str(root / 'config'), PICTURES=str(pictures), EDITOR_LOG=str(log))
             env['CAPTURE_LOG'] = str(root / 'capture.json')
+            env['SLURP_LOG'] = str(root / 'slurp.json')
             env['CLIPBOARD_LOG'] = str(root / 'clipboard.png')
             env['NOTICE_LOG'] = str(root / 'notification')
             env.pop('DESKTOP_SCREENSHOT_EDITOR', None)
@@ -78,26 +88,39 @@ pathlib.Path(os.environ['EDITOR_LOG']).write_text(json.dumps(sys.argv))
                         if log.exists():
                             break
                         time.sleep(.01)
-                return dict(result=result, args=json.loads((root / 'capture.json').read_text()),
+                capture = root / 'capture.json'
+                return dict(result=result, args=json.loads(capture.read_text()) if capture.exists() else None,
+                            slurp=json.loads((root / 'slurp.json').read_text()) if (root / 'slurp.json').exists() else None,
                             editor=json.loads(log.read_text()) if log.exists() else None,
                             saved=list(pictures.rglob('*.png')),
                             clipboard=(root / 'clipboard.png').read_bytes() if (root / 'clipboard.png').exists() else None,
                             notified=(root / 'notification').exists())
             return json.loads(log.read_text()) if log.exists() else None
 
-    def test_editor_waits_for_capture_and_receives_literal_path(self):
+    def test_editor_receives_literal_path_of_saved_capture(self):
         command = self.run_capture()
         self.assertEqual(Path(command[0]).name, 'ksnip')
         self.assertEqual(command[1], '--edit')
         self.assertIn('Pictures with spaces; $dollars/Screenshots/', command[2])
 
-    def test_cancellation_and_raw_capture_skip_editor(self):
-        self.assertIsNone(self.run_capture(CANCEL='1'))
+    def test_selection_precedes_capture_and_cancellation_changes_nothing(self):
+        capture = self.run_capture('region', details=True)
+        self.assertEqual(capture['slurp'][0], ['-d'])
+        self.assertEqual(capture['args'][:2], ['-g', '10,20 300x200'])
+        self.assertEqual(capture['clipboard'], b'image')
+        for save in ('on', 'off'):
+            capture = self.run_capture('region', save_preference=save, details=True, CANCEL='1')
+            self.assertIsNone(capture['args'])
+            self.assertIsNone(capture['clipboard'])
+            self.assertFalse(capture['saved'] or capture['notified'] or capture['editor'])
         self.assertIsNone(self.run_capture('region', options=['--no-edit']))
 
-    def test_successful_capture_survives_hyprshot_monitor_failure(self):
-        command = self.run_capture(MONITOR_STATUS='1')
-        self.assertEqual(Path(command[0]).name, 'ksnip')
+    def test_windows_are_clipped_to_their_monitor(self):
+        capture = self.run_capture('window', details=True)
+        self.assertEqual(capture['slurp'], [['-r'], '900,100 100x300\n'])
+        capture = self.run_capture('active-window', options=['--no-edit'], details=True)
+        self.assertEqual(capture['args'][:2], ['-g', '900,100 100x300'])
+        self.assertTrue(capture['notified'])
 
     def test_previous_editor_remains_available(self):
         command = self.run_capture(DESKTOP_SCREENSHOT_EDITOR='satty')
@@ -107,16 +130,17 @@ pathlib.Path(os.environ['EDITOR_LOG']).write_text(json.dumps(sys.argv))
 
     def test_drawer_captures_named_display_and_reports_image(self):
         capture = self.run_capture('output', options=['--output', 'DP-2', '--report', '--edit'], details=True)
-        self.assertEqual(capture['args'][:2], ['-m', 'output'])
-        self.assertIn('DP-2', capture['args'])
-        self.assertIn('--silent', capture['args'])
-        self.assertNotIn('active', capture['args'])
+        self.assertEqual(capture['args'][:2], ['-o', 'DP-2'])
         self.assertEqual(capture['result'].stdout.strip(), capture['editor'][2])
+        self.assertFalse(capture['notified'])
+        capture = self.run_capture('output', options=['--no-edit'], details=True)
+        self.assertEqual(capture['args'][:2], ['-o', 'DP-1'])
 
     def test_whole_display_failure_does_not_look_like_selection_cancellation(self):
-        capture = self.run_capture('output', options=['--report'], details=True, expected_status=1, CANCEL='1')
+        capture = self.run_capture('output', options=['--report'], details=True, expected_status=1, GRIM_FAIL='1')
         self.assertEqual(capture['result'].stdout, '')
         self.assertIn('Could not capture', capture['result'].stderr)
+        self.assertFalse(capture['saved'])
 
     def test_shared_preference_controls_region_and_display_captures(self):
         self.assertIsNone(self.run_capture('region', preference='off'))
@@ -129,31 +153,26 @@ pathlib.Path(os.environ['EDITOR_LOG']).write_text(json.dumps(sys.argv))
         self.assertIsNotNone(self.run_capture('region', preference='off', options=['--edit']))
         self.assertIsNone(self.run_capture('region', preference='on', options=['--no-edit']))
 
-    def test_clipboard_only_is_global_silent_and_writes_no_image(self):
+    def test_clipboard_only_is_silent_and_writes_no_image(self):
         for mode in ('region', 'output', 'active-window'):
             with self.subTest(mode=mode):
                 capture = self.run_capture(mode, save_preference='off', preference='on', options=['--report'], details=True)
-                self.assertIn('--raw', capture['args'])
-                self.assertIn('--silent', capture['args'])
-                self.assertNotIn('-o', capture['args'])
+                self.assertEqual(capture['args'][-1], '-')
                 self.assertFalse(capture['saved'])
                 self.assertIsNone(capture['editor'])
                 self.assertFalse(capture['notified'])
                 self.assertTrue(capture['clipboard'].startswith(b'\x89PNG'))
                 self.assertEqual(capture['result'].stdout.strip(), 'clipboard')
 
-    def test_clipboard_cancellation_does_not_replace_clipboard_or_notify(self):
-        capture = self.run_capture('region', save_preference='off', CANCEL='1', details=True)
+    def test_failed_clipboard_capture_keeps_clipboard_and_does_not_notify(self):
+        capture = self.run_capture('output', save_preference='off', details=True, expected_status=1, GRIM_FAIL='1')
         self.assertIsNone(capture['clipboard'])
-        self.assertFalse(capture['saved'])
-        self.assertFalse(capture['notified'])
-        capture = self.run_capture('output', save_preference='off', CANCEL='1', details=True, expected_status=1)
         self.assertFalse(capture['notified'])
 
-    def test_explicit_save_override_and_clipboard_survives_monitor_failure(self):
+    def test_explicit_save_override(self):
         capture = self.run_capture('region', save_preference='off', options=['--save', '--no-edit'], details=True)
         self.assertTrue(capture['saved'])
-        capture = self.run_capture('output', options=['--no-save', '--report', '--edit'], MONITOR_STATUS='1', details=True)
+        capture = self.run_capture('output', options=['--no-save', '--report', '--edit'], details=True)
         self.assertEqual(capture['result'].stdout.strip(), 'clipboard')
         self.assertFalse(capture['saved'])
         self.assertIsNone(capture['editor'])

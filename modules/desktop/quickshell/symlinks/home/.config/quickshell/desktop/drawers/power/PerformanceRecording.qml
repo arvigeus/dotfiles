@@ -3,7 +3,6 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import "../../ui"
-import "../network"
 import "Format.js" as Format
 
 ColumnLayout {
@@ -18,10 +17,10 @@ ColumnLayout {
         visible: !!root.recording && !root.running
         Layout.fillWidth: true
         ShellText { text: qsTr("Last recording"); Layout.fillWidth: true; font.weight: Font.DemiBold }
-        NetworkIconButton {
+        IconButton {
             objectName: "performanceRecordFolder"
             text: qsTr("Open recording folder"); iconName: "folder-open"
-            onClicked: Quickshell.execDetached(["xdg-open", root.recording.path])
+            onClicked: Apps.launch(["xdg-open", root.recording.path])
         }
     }
     ShellText {

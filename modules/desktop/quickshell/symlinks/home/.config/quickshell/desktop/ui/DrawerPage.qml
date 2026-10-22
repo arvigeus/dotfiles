@@ -15,5 +15,4 @@ FocusScope {
     // An open popup can consume Escape before the host dismisses the page.
     property var escapeHandler: null
     signal closeRequested()
-    signal drawerRequested(string key)
 }

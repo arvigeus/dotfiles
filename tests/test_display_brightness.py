@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from test_display_drawer import DESKTOP, backend, display, state
+from support import DESKTOP, backend, display, state
 
 SPEC = importlib.util.spec_from_file_location('desktop_brightness', DESKTOP / 'drawers/displays/brightness.py')
 brightness = importlib.util.module_from_spec(SPEC)

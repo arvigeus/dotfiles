@@ -4,6 +4,11 @@ local browser     = "firefox"
 
 local mainMod = "SUPER"
 
+-- Applications run in their own systemd units rather than as compositor children.
+local function app(command)
+    return hl.dsp.exec_cmd("uwsm-app -- " .. command)
+end
+
 -- WORKAROUND: missing geometry events (https://github.com/hyprwm/Hyprland/discussions/15519).
 -- Stale bar order? Check this wrapper, release hooks below, and desktop/shell.qml's
 -- "desktop-layout-changed" listener. New reorder paths must notify it too.
@@ -15,25 +20,26 @@ local function layoutAction(action)
     end
 end
 
-hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal))
-hl.bind(mainMod .. " + F", hl.dsp.exec_cmd(fileManager))
-hl.bind(mainMod .. " + B", hl.dsp.exec_cmd(browser))
+hl.bind(mainMod .. " + T", app(terminal))
+hl.bind(mainMod .. " + F", app(fileManager))
+hl.bind(mainMod .. " + B", app(browser))
 hl.bind(mainMod .. " + Q", hl.dsp.window.close())
 hl.bind("ALT + F4", hl.dsp.window.close())
 hl.bind(mainMod .. " + M", hl.dsp.window.fullscreen({ mode = "maximized", action = "toggle" }))
-hl.bind("CTRL + ALT + DELETE", hl.dsp.exec_cmd("session-mode gaming"))
--- Lock requests are handled by hypridle/hyprlock once locking is configured.
+-- Hypridle answers lock-session by starting hyprlock.
 hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("loginctl lock-session"))
 hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }))
 hl.bind(mainMod .. " + R", hl.dsp.global("desktop:launcher"))
-hl.bind("CTRL + 1", hl.dsp.global("desktop:spaces"))
-hl.bind("CTRL + SHIFT + P", hl.dsp.global("desktop:performance"))
-hl.bind("PRINT", hl.dsp.exec_cmd("desktop-screenshot region"))
-hl.bind(mainMod .. " + SHIFT + S", hl.dsp.exec_cmd("desktop-screenshot region"))
-hl.bind(mainMod .. " + SHIFT + PRINT", hl.dsp.exec_cmd("desktop-screenshot region --no-edit"))
-hl.bind(mainMod .. " + PRINT", hl.dsp.exec_cmd("desktop-screenshot active-window"))
-hl.bind(mainMod .. " + CTRL + PRINT", hl.dsp.exec_cmd("desktop-screenshot window"))
-hl.bind("SHIFT + PRINT", hl.dsp.exec_cmd("desktop-screenshot output"))
+hl.bind(mainMod .. " + 1", hl.dsp.global("desktop:spaces"))
+hl.bind("CTRL + ALT + DELETE", hl.dsp.global("desktop:spaces"))
+hl.bind(mainMod .. " + SHIFT + P", hl.dsp.global("desktop:performance"))
+-- Screenshots may open an editor, so they run as applications too.
+hl.bind("PRINT", app("desktop-screenshot region"))
+hl.bind(mainMod .. " + SHIFT + S", app("desktop-screenshot region"))
+hl.bind(mainMod .. " + SHIFT + PRINT", app("desktop-screenshot region --no-edit"))
+hl.bind(mainMod .. " + PRINT", app("desktop-screenshot active-window"))
+hl.bind(mainMod .. " + CTRL + PRINT", app("desktop-screenshot window"))
+hl.bind("SHIFT + PRINT", app("desktop-screenshot output"))
 hl.bind(mainMod .. " + SHIFT + R", hl.dsp.global("desktop:record-region"))
 hl.bind(mainMod .. " + period", layoutAction(hl.dsp.layout("center")))
 hl.bind(mainMod .. " + J", layoutAction(hl.dsp.layout("promote"))) -- Give a stacked window its own column.

@@ -43,7 +43,7 @@ class RepositoryTests(unittest.TestCase):
             calls = log.read_text().splitlines()
             transaction = next(i for i, call in enumerate(calls) if call.startswith('pacman -U'))
             trust = [i for i, call in enumerate(calls) if call.startswith('pacman-key --lsign-key')]
-            self.assertEqual(len(trust), 3)
+            self.assertEqual(len(trust), 2)
             self.assertTrue(all(index < transaction for index in trust))
             self.assertEqual(calls[-1], 'pacman-key --populate chaotic')
 
@@ -53,12 +53,12 @@ class RepositoryTests(unittest.TestCase):
             root = Path(directory)
             source = root / 'source'
             (source / 'scripts').mkdir(parents=True)
-            (source / 'user-configuration.json').write_text(json.dumps({'extra': {'pre': [{'script': 'prepare keys'}]}}))
+            (source / 'user-configuration.json').write_text(json.dumps({'extra': {'pre': ['modules/repositories/pre.sh']}}))
             target = root / 'target'
             target.mkdir()
             commands = []
             from unittest.mock import patch
             with patch.object(plugin, '__file__', str(source / 'scripts/copy-checkout.py')):
                 plugin.Plugin().on_install(SimpleNamespace(target=target, arch_chroot=commands.append))
-            self.assertEqual(commands, ['CONFIG_MODE=install bash /root/system-configuration/user-configuration.sh --pre'])
+            self.assertEqual(commands, ['CONFIG_MODE=install bash /root/system-configuration/scripts/configure.sh --pre'])
             self.assertTrue((target / 'root/system-configuration/user-configuration.json').exists())

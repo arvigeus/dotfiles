@@ -1,3 +1,11 @@
 #!/usr/bin/env bash
-set -euo pipefail
-exec python3 "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/desktop/drawers/displays/comfort.py" "$@"
+# Hypridle hooks backed by the shell's display helper. The helper exits 0 to
+# allow, 1 to defer (Keep awake or a pause) and any other status on failure.
+set -uo pipefail
+python3 "${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/desktop/drawers/displays/comfort.py" "$@"
+status=$?
+# A broken helper must not leave the desktop unlocked, nor suspend it unexpectedly.
+if [[ ${1-} == allow-lock ]] && ((status > 1)); then
+    exit 0
+fi
+exit "$status"

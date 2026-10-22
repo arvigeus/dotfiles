@@ -5,9 +5,7 @@ import QtQuick.Layouts
 import QtQml.Models
 import Quickshell
 import "../ui"
-import "audio"
-import "network"
-import "network/Models.js" as Models
+import "../ui/Models.js" as Models
 import "displays"
 
 DrawerPage {
@@ -21,11 +19,11 @@ DrawerPage {
     readonly property bool canEdit: active && service.state.available && !service.busy && !service.closing
     readonly property var rotations: [qsTr("Normal"), qsTr("90° counterclockwise"), qsTr("180°"), qsTr("90° clockwise"), qsTr("Flipped"), qsTr("Flipped, 90° counterclockwise"), qsTr("Flipped, 180°"), qsTr("Flipped, 90° clockwise")]
     ListModel { id: displaysModel; dynamicRoles: true }
-    function syncModels(): void { Models.sync(displaysModel, displays, "name", false); }
+    function syncModels(): void { Models.sync(displaysModel, displays, "name"); }
     function startTest(kind: string, record): void {
         if (displayTests.start(kind, record)) closeRequested();
     }
-    function openEditor(): void { Quickshell.execDetached(["wdisplays"]); root.closeRequested(); }
+    function openEditor(): void { Apps.launch(["wdisplays"]); root.closeRequested(); }
     function outputLabel(name: string): string {
         if (/^(eDP|LVDS|DSI)-/.test(name)) return qsTr("Built-in display");
         if (name.startsWith("DP-")) return qsTr("DisplayPort · %1").arg(name);
@@ -53,13 +51,22 @@ DrawerPage {
                 {kind: "action", key: "test:motion", text: qsTr("Motion test"), action: "motion"}]);
     }
     Connections { target: root.service; function onStateChanged(): void { root.syncModels(); } }
-    onActiveChanged: { if (!active && openOptions) openOptions.close(); service.observe(root, active); if (active) comfortService.start(); }
-    Component.onCompleted: { syncModels(); service.observe(root, active); if (active) comfortService.start(); }
-    Component.onDestruction: service.observe(root, false)
-    headerActions: AudioIconButton {
-        objectName: "displaySettings"; iconName: "pencil"; text: qsTr("Arrange displays in wdisplays")
-        enabled: !root.service.busy
-        onClicked: root.openEditor()
+    onActiveChanged: { if (!active && openOptions) openOptions.close(); service.observe(root, active); comfortService.observe(root, active); }
+    Component.onCompleted: { syncModels(); service.observe(root, active); comfortService.observe(root, active); }
+    Component.onDestruction: { service.observe(root, false); comfortService.observe(root, false); }
+    headerActions: RowLayout {
+        spacing: 4
+        IconButton {
+            objectName: "displaySave"; iconName: "hard-drive-download"; text: qsTr("Save current layout")
+            hint: qsTr("Keep the current arrangement, including wdisplays changes, for these displays.")
+            enabled: root.canEdit
+            onClicked: root.service.save()
+        }
+        IconButton {
+            objectName: "displaySettings"; iconName: "pencil"; text: qsTr("Arrange displays in wdisplays")
+            enabled: !root.service.busy
+            onClicked: root.openEditor()
+        }
     }
     component Note: ShellText {
         Layout.fillWidth: true; color: Theme.muted; font.pixelSize: Theme.smallFontSize
@@ -125,7 +132,7 @@ DrawerPage {
                     label: qsTr("Brightness for %1").arg(card.record.label)
                     onEdited: value => root.service.setBrightness(card.record.name, value)
                 }
-                AudioIconButton {
+                IconButton {
                     id: optionsButton
                     readonly property alias menu: options
                     objectName: "displayOptions:" + card.record.name
@@ -151,7 +158,7 @@ DrawerPage {
                         ListModel { id: optionsModel; dynamicRoles: true }
                         readonly property real itemsHeight: root.optionsFor(card.record).reduce((total, entry) => total + entryHeight(entry.kind), 0)
                         function entryHeight(kind: string): int { return kind === "heading" ? 28 : kind === "separator" ? 13 : 36; }
-                        function sync(): void { Models.sync(optionsModel, root.optionsFor(card.record), "key", false); }
+                        function sync(): void { Models.sync(optionsModel, root.optionsFor(card.record), "key"); }
                         function activate(entry): void {
                             if (!card.editable) return;
                             if (entry.kind === "option") root.service.change(card.record, entry.values);
@@ -205,7 +212,7 @@ DrawerPage {
                                     Keys.onReturnPressed: if (currentIndex >= 0) options.activate(optionsModel.get(currentIndex).record)
                                     Keys.onEnterPressed: if (currentIndex >= 0) options.activate(optionsModel.get(currentIndex).record)
                                     ScrollBar.vertical: ScrollBar { policy: list.contentHeight > list.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff }
-                                    delegate: NetworkMenuItem {
+                                    delegate: ShellMenuItem {
                                         id: entry
                                         required property var record
                                         required property int index
@@ -261,8 +268,8 @@ DrawerPage {
         RowLayout {
             visible: root.service.error !== ""; Layout.fillWidth: true
             Note { objectName: "displayError"; text: root.service.error; color: Theme.danger }
-            AudioIconButton { iconName: "refresh-cw"; text: qsTr("Refresh displays"); onClicked: root.service.refresh() }
-            AudioIconButton { iconName: "x"; text: qsTr("Dismiss display error"); onClicked: root.service.error = "" }
+            IconButton { iconName: "refresh-cw"; text: qsTr("Refresh displays"); onClicked: root.service.refresh() }
+            IconButton { iconName: "x"; text: qsTr("Dismiss display error"); onClicked: root.service.error = "" }
         }
         RowLayout {
             visible: !root.service.loaded

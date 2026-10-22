@@ -10,10 +10,10 @@ import subprocess
 import sys
 
 
-def run(*args):
+def run(*args, accept=(0,)):
     result = subprocess.run(args, cwd=Path.home(), stdin=subprocess.DEVNULL,
                             capture_output=True, text=True, timeout=600)
-    if result.returncode:
+    if result.returncode not in accept:
         raise RuntimeError((result.stderr.strip() or result.stdout.strip() or
                             f"{args[0]} failed.")[-1200:])
     return result.stdout.strip()
@@ -28,16 +28,15 @@ def catalog():
     cache = location("XDG_CACHE_HOME", home / ".local/cache")
     data = location("XDG_DATA_HOME", home / ".local/share")
     cargo = location("CARGO_HOME", data / "cargo")
-    mise_data = location("MISE_DATA_DIR", data / "mise")
     # Each path has one owner. No blanket XDG cache or app-profile deletion.
     return [
         dict(id="pacman", admin=True, title="System packages", detail="Removes offline rollback copies.", command=["pkexec", "/usr/bin/paccache", "--remove", "--keep", "0"], requires=["pkexec", "paccache"]),
         dict(id="paru", title="AUR packages", detail="Archives only; keeps source edits.", paths=[cache / "paru"], archives=True),
-        dict(id="mise-cache", title="Mise cache", detail="Keeps installed tools.", paths=[location("MISE_CACHE_DIR", cache / "mise"), mise_data / "downloads"]),
-        dict(id="npm", title="npm cache", detail="Downloaded packages.", paths=[location("npm_config_cache", cache / "npm") / "_cacache"]),
+        dict(id="mise-cache", title="Mise cache", detail="Keeps installed tools.", command=["mise", "cache", "clear"]),
+        dict(id="npm", title="npm cache", detail="Downloaded packages.", command=["npm", "cache", "clean", "--force"]),
         dict(id="pnpm", title="pnpm store", detail="Unused packages only.", command=["pnpm", "store", "prune"]),
         dict(id="bun", title="Bun cache", detail="Downloaded packages.", command=["bun", "pm", "cache", "rm"]),
-        dict(id="pip", title="pip cache", detail="Downloaded packages & wheels.", paths=[location("PIP_CACHE_DIR", cache / "pip")]),
+        dict(id="pip", title="pip cache", detail="Downloaded packages & wheels.", command=["pip", "cache", "purge"]),
         dict(id="uv", title="uv cache", detail="Keeps environments.", command=["uv", "cache", "clean"]),
         dict(id="cargo", title="Cargo cache", detail="Crate archives only.", paths=[cargo / "registry/cache"]),
         dict(id="browser", title="Browser cache", detail="Close browsers first.", paths=[cache / "google-chrome", cache / "chromium", cache / "mozilla", home / ".var/app/com.google.Chrome/cache/google-chrome", home / ".var/app/org.chromium.Chromium/cache/chromium", home / ".var/app/org.mozilla.firefox/cache/mozilla"]),
@@ -117,22 +116,12 @@ def clear_directory(fd, archives=False):
 
 
 def podman_images():
-    images = json.loads(run("podman", "images", "--no-trunc", "--format", "json"))
-    candidates = []
-    for image in images:
-        identity = image.get("Id") or image.get("ID") or image.get("id", "")
-        if not re.fullmatch(r"(?:sha256:)?[a-f0-9]{64}", identity):
-            continue
-        records = json.loads(run("podman", "image", "inspect", identity))
-        if not records or not records[0].get("RepoDigests"):
-            continue
-        # Ancestor includes derived-image users and stopped containers too.
-        if run("podman", "ps", "--all", "--quiet", "--filter", "ancestor=" + identity):
-            continue
-        candidates.append(identity)
-    for identity in dict.fromkeys(candidates):
-        # Never force: Podman rechecks container use/dependent images at removal.
-        run("podman", "rmi", identity)
+    """Remove pulled registry images; local builds have no RepoDigests."""
+    for image in json.loads(run("podman", "images", "--format", "json")):
+        identity = image.get("Id", "")
+        if image.get("RepoDigests") and re.fullmatch(r"(?:sha256:)?[a-f0-9]{64}", identity):
+            # Never force: rmi exits 2 for images used by containers or child images.
+            run("podman", "rmi", identity, accept=(0, 1, 2))
 
 
 def failure_message(error):

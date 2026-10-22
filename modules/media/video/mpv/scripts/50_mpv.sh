@@ -5,9 +5,7 @@ set -Eeuo pipefail
 repo_dir=${DOTFILES_REPO:?}
 
 source "$repo_dir/scripts/config-helpers.sh"
-source "$repo_dir/scripts/helpers/hardware.sh"
 
-# Configuration
 SHADERS_DIR="${MPV_SHADERS_DIR:-/usr/share/mpv-shim-default-shaders/shaders}"
 PACK_JSON="${MPV_SHADER_PACK:-/usr/share/mpv-shim-default-shaders/pack-next.json}"
 MPV_CONF_DIR="${MPV_CONF_DIR:-$HOME/.config/mpv}"
@@ -16,7 +14,7 @@ configure() {
 	# Physical GA402RK comparisons found VA-API/OpenGL substantially cheaper
 	# than the original Vulkan/software-decoding path for tested H.264 playback.
 	# Keep driver and codec discovery automatic.
-	if dmi_matches ga402rk; then
+	if grep -qi ga402rk /sys/class/dmi/id/product_name 2>/dev/null; then
 		file_append "${MPV_CONF_DIR}/mpv.conf" <<'EOF'
 # GA402RK playback renderer preference
 gpu-api=opengl
@@ -80,7 +78,7 @@ glsl-shaders=${SHADERS_DIR}/FSR.glsl
 glsl-shaders-append=${SHADERS_DIR}/CAS-scaled.glsl
 EOF
 
-	# The owner selected generic-high as the default; preserve all other profiles.
+	# generic-high is the default; the other profiles stay selectable.
 	jq -e '.profiles | has("generic-high")' "$PACK_JSON" >/dev/null || {
 		printf 'Shader pack is missing the requested generic-high profile.\n' >&2
 		return 1

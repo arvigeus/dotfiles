@@ -1,0 +1,10 @@
+// Active local wheel users may start/stop WARP without an authentication dialog
+// competing with the desktop drawer's keyboard focus. No other unit or verb.
+polkit.addRule(function(action, subject) {
+    if (action.id === "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") === "warp-svc.service" &&
+        (action.lookup("verb") === "start" || action.lookup("verb") === "stop") &&
+        subject.local && subject.active && subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+    }
+});

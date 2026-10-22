@@ -1,7 +1,6 @@
 """Private shared accounts, DAV conflicts/recurrence, caching and production drawers."""
 import copy
 from datetime import datetime, timezone
-import importlib.util
 import io
 import json
 import os
@@ -16,18 +15,17 @@ from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
 
-import test_display_drawer as fixtures
+import support
 
-DESKTOP = fixtures.DESKTOP
+DESKTOP = support.DESKTOP
 sys.path.insert(0, str(DESKTOP))
+from icalendar import Calendar
 from integrations import nextcloud as accounts
-from integrations import import_account
 from drawers.events import backend, caldav
 
 
 def account():
-    return dict(url='https://cloud.example/nextcloud/', username='alice',
-                credentials={'dav': dict(provider='file', file='app-password')}, capabilities={'dav': dict(credential='dav')})
+    return dict(url='https://cloud.example/nextcloud/', username='alice')
 
 
 def todo(*lines):
@@ -38,25 +36,36 @@ def collection():
     return dict(name='Tasks', slug='tasks', url='https://cloud.example/tasks/', writable=True, components={'VTODO'})
 
 
+def todos(data):
+    return Calendar.from_ical(data).walk('VTODO')
+
+
+def write_password(root, secret='test-secret'):
+    path = accounts.password_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(secret); path.chmod(0o600)
+    return path
+
+
 class AccountTests(unittest.TestCase):
-    def test_shared_credentials_and_transport_scope(self):
+    def test_app_password_and_transport_scope(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            secret = root / 'credentials/nextcloud/app-password'; secret.parent.mkdir(parents=True)
-            secret.write_text('example-secret'); secret.chmod(0o600)
-            self.assertEqual(accounts.credential(account(), root=root), 'example-secret')
+            with self.assertRaises(accounts.CredentialMissing): accounts.app_password(root)
+            secret = write_password(root, 'example-secret')
+            self.assertEqual(accounts.app_password(root), 'example-secret')
             secret.chmod(0o644)
-            with self.assertRaises(accounts.NextcloudError): accounts.credential(account(), root=root)
+            with self.assertRaises(accounts.NextcloudError): accounts.app_password(root)
             secret.unlink(); secret.symlink_to(root / 'another')
-            with self.assertRaises(accounts.NextcloudError): accounts.credential(account(), root=root)
-        with patch.object(accounts, 'credential', return_value='example-secret'):
+            with self.assertRaises(accounts.NextcloudError): accounts.app_password(root)
+        with patch.object(accounts, 'app_password', return_value='example-secret'):
             client = caldav.Client(account(), opener=Mock())
         for url in ['http://cloud.example/', 'https://evil.example/', client.home + '../bob/a.ics', client.home + '%2e%2e/bob/a.ics', client.home + 'x.ics?x=1', client.home.replace('alice/', 'alice2/')]:
             with self.subTest(url=url), self.assertRaises(accounts.NextcloudError): client.request('GET', url)
         client.opener.open.assert_not_called()
 
     def test_dav_errors_explain_data_rejection_without_exposing_response_body(self):
-        with patch.object(accounts, 'credential', return_value='example-secret'):
+        with patch.object(accounts, 'app_password', return_value='example-secret'):
             client = caldav.Client(account(), opener=Mock())
         for code in (400, 415, 422):
             client.opener.open.side_effect = HTTPError(client.home, code, 'Rejected', {}, io.BytesIO(b'private server details'))
@@ -65,31 +74,15 @@ class AccountTests(unittest.TestCase):
             self.assertNotIn('private', str(raised.exception))
             client.opener.open.side_effect.close()
 
-    def test_config_references_and_provider_are_validated(self):
-        for url in ['http://cloud.example', 'https://alice:password@cloud.example', 'https://cloud.example/%2e%2e/']:
-            with self.assertRaises(accounts.NextcloudError): accounts.validate_account(dict(account(), url=url))
-        for file in ['../secret', '/tmp/secret', 'a/./secret']:
-            config = account(); config['credentials']['dav']['file'] = file
-            with self.assertRaises(accounts.NextcloudError): accounts.validate_account(config)
+    def test_account_and_selections_are_validated(self):
+        for url in ['http://cloud.example', 'https://alice:password@cloud.example', 'https://cloud.example/%2e%2e/',
+                    'https://cloud.example:99999/', 'https://cloud.example:0/', 'https://cloud.example:port/']:
+            with self.subTest(url=url), self.assertRaises(accounts.NextcloudError): accounts.validate_account(dict(account(), url=url))
+        self.assertEqual(accounts.validate_account(dict(account(), url='https://cloud.example:8443/nc')),
+                         dict(url='https://cloud.example:8443/nc/', username='alice'))
+        with patch.dict(os.environ, XDG_CONFIG_HOME=''):
+            self.assertEqual(accounts.config_root(), Path.home() / '.config/quickshell/desktop/integrations')
         with self.assertRaises(accounts.NextcloudError): caldav.selection(dict(calendars=[42]), 'calendars')
-
-    def test_import_privacy_conflicts_and_originals_are_preserved(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            source = root/'source'; source.mkdir()
-            config = source/'nextcloud.json'; config.write_text(json.dumps(account()))
-            secret = source/'credentials/nextcloud/app-password'; secret.parent.mkdir(parents=True)
-            secret.write_text('test-secret'); secret.chmod(0o755)
-            destination = root/'destination/integrations'
-            import_account.install(config, destination=destination)
-            target = destination/'credentials/nextcloud/app-password'
-            self.assertEqual(target.read_text(), 'test-secret')
-            self.assertEqual(target.stat().st_mode & 0o777, 0o600)
-            self.assertEqual(secret.stat().st_mode & 0o777, 0o755)
-            import_account.install(config, destination=destination)
-            secret.write_text('different-secret')
-            with self.assertRaises(ValueError): import_account.install(config, destination=destination)
-            self.assertEqual(target.read_text(), 'test-secret')
 
 
 class CalendarTests(unittest.TestCase):
@@ -99,23 +92,34 @@ class CalendarTests(unittest.TestCase):
         client.request = Mock(return_value=(data.encode(), {'ETag': '"1"'}))
         return client
 
+    def written(self, client):
+        writes = [call for call in client.request.call_args_list if call.args[0] == 'PUT']
+        self.assertEqual(len(writes), 1)
+        return writes[0].args[2].decode()
+
     def test_future_recurring_and_completed_tasks_remain_available(self):
         entries = [('https://cloud.example/tasks/a.ics', '"1"', todo('DUE;VALUE=DATE:20301022', 'RRULE:FREQ=YEARLY', 'PRIORITY:1', 'PERCENT-COMPLETE:25', 'CATEGORIES:home,work', 'RELATED-TO:parent')),
-                   ('https://cloud.example/tasks/b.ics', '"1"', todo('STATUS:COMPLETED', 'PERCENT-COMPLETE:100'))]
+                   ('https://cloud.example/tasks/b.ics', '"1"', todo('STATUS:COMPLETED', 'PERCENT-COMPLETE:100')),
+                   ('https://cloud.example/tasks/broken.ics', '"1"', 'not a calendar')]
         rows = caldav.tasks_from(entries, collection(), ZoneInfo('UTC'))
         self.assertEqual(len(rows), 2)
         self.assertTrue(rows[0]['actionable']); self.assertTrue(rows[0]['recurring'])
-        self.assertEqual((rows[0]['priority'], rows[0]['percent'], rows[0]['parent']), (1, 25, 'parent'))
+        self.assertEqual((rows[0]['priority'], rows[0]['percent'], rows[0]['parent'], rows[0]['categories']), (1, 25, 'parent', 'home, work'))
+        self.assertEqual((rows[0]['due'], rows[0]['due_time'], rows[0]['recurrence_rule']), ('2030-10-22', '', 'FREQ=YEARLY'))
         self.assertTrue(rows[1]['completed'])
 
     def test_rich_task_create_and_validation(self):
         fields = caldav.entry_fields('VTODO', dict(summary='Water plants\r\nnot a property', description='notes', start_date='2026-10-21', start_time='08:30', due='2026-10-22', due_time='09:15', priority=2, percent=40, status='IN-PROCESS', categories='home, plants', parent='parent', recurrence_rule='FREQ=WEEKLY;INTERVAL=2;COUNT=4'))
-        self.assertIn('RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=4', fields)
-        self.assertIn('PERCENT-COMPLETE:40', fields)
-        self.assertTrue(any(line.startswith('DUE:') for line in fields))
-        self.assertFalse(any('\r' in line or '\n' in line for line in fields))
+        parsed = todos(b'BEGIN:VCALENDAR\r\n' + fields.to_ical() + b'END:VCALENDAR\r\n')[0]
+        self.assertEqual(str(parsed['SUMMARY']), 'Water plants\nnot a property')
+        self.assertEqual(dict(parsed['RRULE']), dict(FREQ=['WEEKLY'], INTERVAL=[2], COUNT=[4]))
+        self.assertEqual((parsed['PERCENT-COMPLETE'], str(parsed['STATUS']), parsed['RELATED-TO'].params['RELTYPE']), (40, 'IN-PROCESS', 'PARENT'))
+        self.assertTrue(parsed['DUE'].to_ical().endswith(b'Z'))
+        self.assertEqual([str(tag) for tag in parsed['CATEGORIES'].cats], ['home', 'plants'])
         for values in [dict(priority=10), dict(percent=-1), dict(recurrence_rule='FREQ=SECONDLY', due='2026-10-22'), dict(recurrence_rule='FREQ=DAILY'), dict(start_date='2026-10-23', due='2026-10-22')]:
             with self.subTest(values=values), self.assertRaises(ValueError): caldav.entry_fields('VTODO', dict(summary='Test', **values))
+        with self.assertRaisesRegex(accounts.NextcloudError, 'task time separately'):
+            caldav.entry_fields('VTODO', dict(summary='Test', due='2026-10-22', recurrence_rule='FREQ=DAILY;BYHOUR=9'))
 
     def test_completion_and_reopening_replace_existing_modification_timestamp(self):
         original = todo('DTSTAMP:20260101T000000Z', 'LAST-MODIFIED:20260101T000000Z',
@@ -125,13 +129,14 @@ class CalendarTests(unittest.TestCase):
         for completed in (True, False, True):
             client = self.client(original)
             client.set_completed({}, entry, completed)
-            updated = client.request.call_args.args[2].decode()
-            props = caldav.components(updated)[0][1]
-            self.assertEqual(len(props['LAST-MODIFIED']), 1)
-            self.assertEqual(caldav.first(props, 'STATUS')[1], 'COMPLETED' if completed else 'NEEDS-ACTION')
-            self.assertEqual('COMPLETED' in props, completed)
-            self.assertIn('DESCRIPTION:Keep this', updated)
-            self.assertIn('TRIGGER:-PT15M', updated)
+            updated = self.written(client)
+            task = todos(updated)[0]
+            self.assertNotIsInstance(task['LAST-MODIFIED'], list)
+            self.assertNotEqual(task['LAST-MODIFIED'].to_ical(), b'20260101T000000Z')
+            self.assertEqual(str(task['STATUS']), 'COMPLETED' if completed else 'NEEDS-ACTION')
+            self.assertEqual('COMPLETED' in task, completed)
+            self.assertEqual(str(task['DESCRIPTION']), 'Keep this')
+            self.assertEqual(str(task.walk('VALARM')[0]['TRIGGER'].to_ical(), 'ascii'), '-PT15M')
             original = updated
 
     def test_recurrence_completion_is_atomic_preserves_alarm_and_count(self):
@@ -139,39 +144,34 @@ class CalendarTests(unittest.TestCase):
         client = self.client(data)
         entry = dict(collection='tasks', href='https://cloud.example/tasks/a.ics', etag='"1"')
         client.set_completed({}, entry, True)
-        writes = [call for call in client.request.call_args_list if call.args[0] == 'PUT']
-        self.assertEqual(len(writes), 1)
-        self.assertEqual(writes[0].args[3]['If-Match'], '"1"')
-        text = writes[0].args[2].decode()
-        records = [props for kind, props in caldav.components(text)]
-        self.assertEqual(len(records), 2)
-        master, done = records
-        self.assertTrue(all(len(props['LAST-MODIFIED']) == 1 for props in records))
-        self.assertEqual(caldav.first(master, 'DUE')[1], '20261022')
-        self.assertEqual(caldav.first(master, 'DTSTART')[1], '20261021')
-        self.assertEqual(caldav.first(master, 'RRULE')[1], 'FREQ=DAILY;COUNT=2')
-        self.assertEqual(caldav.first(done, 'RECURRENCE-ID')[1], '20261021')
-        self.assertEqual(caldav.first(done, 'STATUS')[1], 'COMPLETED')
+        self.assertEqual(client.request.call_args.args[3]['If-Match'], '"1"')
+        text = self.written(client)
+        master, done = todos(text)
+        self.assertTrue(all(not isinstance(task['LAST-MODIFIED'], list) for task in (master, done)))
+        self.assertEqual(master['DUE'].to_ical(), b'20261022')
+        self.assertEqual(master['DTSTART'].to_ical(), b'20261021')
+        self.assertEqual(master['RRULE'].to_ical(), b'FREQ=DAILY;COUNT=2')
+        self.assertEqual((done['RECURRENCE-ID'].to_ical(), done['RECURRENCE-ID'].params.get('VALUE')), (b'20261021', 'DATE'))
+        self.assertEqual((str(done['STATUS']), 'RRULE' in done), ('COMPLETED', False))
+        self.assertEqual((str(master['STATUS']), 'COMPLETED' in master), ('NEEDS-ACTION', False))
         self.assertEqual(text.count('X-CUSTOM:keep'), 2)
         self.assertEqual(text.count('BEGIN:VALARM'), 2)
-        # A second completion must retain the first exception and advance once.
-        updated = caldav.advance_task(text, master)
-        self.assertEqual(updated.count('BEGIN:VTODO'), 3)
-        updated_records = [props for kind, props in caldav.components(updated)]
-        self.assertTrue(all(len(props['LAST-MODIFIED']) == 1 for props in updated_records))
-        self.assertEqual(updated_records[1]['LAST-MODIFIED'], done['LAST-MODIFIED'])
-        self.assertIn('DUE;VALUE=DATE:20261023', updated)
+        # A second completion retains the first exception and advances once.
+        calendar = Calendar.from_ical(text)
+        caldav.advance_task(calendar, caldav.master_of(calendar, 'VTODO'))
+        records = calendar.walk('VTODO')
+        self.assertEqual(len(records), 3)
+        self.assertEqual(records[1]['LAST-MODIFIED'].to_ical(), done['LAST-MODIFIED'].to_ical())
+        self.assertEqual(records[0]['DUE'].to_ical(), b'20261023')
 
     def test_last_occurrence_until_and_dst(self):
         for rule in ('FREQ=DAILY;COUNT=1', 'FREQ=DAILY;UNTIL=20261021'):
-            data = todo('DUE;VALUE=DATE:20261021', 'RRULE:' + rule)
-            props = caldav.components(data)[0][1]
-            updated = caldav.advance_task(data, props)
-            self.assertIn('STATUS:COMPLETED', updated)
-            self.assertEqual(updated.count('BEGIN:VTODO'), 1)
-        data = todo('DUE;TZID=America/New_York:20261031T090000', 'RRULE:FREQ=DAILY;COUNT=3')
-        updated = caldav.advance_task(data, caldav.components(data)[0][1])
-        self.assertIn('DUE;TZID=America/New_York:20261101T090000', updated)
+            calendar = Calendar.from_ical(todo('DUE;VALUE=DATE:20261021', 'RRULE:' + rule))
+            caldav.advance_task(calendar, caldav.master_of(calendar, 'VTODO'))
+            self.assertEqual([str(task['STATUS']) for task in calendar.walk('VTODO')], ['COMPLETED'])
+        calendar = Calendar.from_ical(todo('DUE;TZID=America/New_York:20261031T090000', 'RRULE:FREQ=DAILY;COUNT=3'))
+        caldav.advance_task(calendar, caldav.master_of(calendar, 'VTODO'))
+        self.assertIn(b'DUE;TZID=America/New_York:20261101T090000', calendar.to_ical())
 
     def test_conflict_read_only_and_reopen(self):
         entry = dict(collection='tasks', href='https://cloud.example/tasks/a.ics', etag='"old"')
@@ -185,18 +185,29 @@ class CalendarTests(unittest.TestCase):
         with self.assertRaises(accounts.NextcloudError): client.delete_item(dict(task_lists=[]), 'VTODO', entry)
 
     def test_edit_master_preserves_exceptions_and_other_properties(self):
-        data = todo('DUE;VALUE=DATE:20261021', 'RRULE:FREQ=WEEKLY', 'X-PRIVATE:keep')
-        data = caldav.advance_task(data, caldav.components(data)[0][1])
-        updated = caldav.update_ical(data, 'VTODO', ['SUMMARY:Changed'], {'SUMMARY'}).decode()
+        calendar = Calendar.from_ical(todo('DUE;VALUE=DATE:20261021', 'RRULE:FREQ=WEEKLY', 'X-PRIVATE:keep'))
+        caldav.advance_task(calendar, caldav.master_of(calendar, 'VTODO'))
+        client = self.client(calendar.to_ical().decode())
+        client.save_item({}, 'VTODO', dict(summary='Changed', collection='tasks', href='https://cloud.example/tasks/a.ics',
+                                           etag='"1"', due='2026-10-28', recurrence_rule='FREQ=WEEKLY'))
+        updated = self.written(client)
         self.assertEqual(updated.count('SUMMARY:Changed'), 1)
         self.assertIn('RECURRENCE-ID;VALUE=DATE:20261021', updated)
         self.assertEqual(updated.count('X-PRIVATE:keep'), 2)
+        self.assertEqual(client.request.call_args.args[3]['If-Match'], '"1"')
 
     def test_edits_preserve_timezone_and_reject_parent_cycles(self):
         data = todo('DUE;TZID=America/New_York:20261031T090030', 'RRULE:FREQ=DAILY')
-        moment, _ = caldav.date_value(caldav.first(caldav.components(data)[0][1], 'DUE'), ZoneInfo('UTC'))
-        utc = moment.astimezone(timezone.utc).strftime('%Y%m%dT%H%M00Z')
-        self.assertEqual(caldav.preserve_task_dates(data, ['DUE:' + utc]), ['DUE;TZID=America/New_York:20261031T090030'])
+        master = todos(data)[0]
+        local = master.decoded('DUE').astimezone(caldav.tz.gettz())
+        fields = caldav.entry_fields('VTODO', dict(summary='Test', due=local.date().isoformat(), due_time=local.strftime('%H:%M')))
+        caldav.preserve_task_dates(master, fields)
+        self.assertEqual(fields['DUE'].to_ical(), b'20261031T090030')
+        self.assertEqual(fields['DUE'].params['TZID'], 'America/New_York')
+        later = (local.replace(second=0) + (datetime(2000, 1, 1, 1) - datetime(2000, 1, 1))).strftime('%H:%M')
+        fields = caldav.entry_fields('VTODO', dict(summary='Test', due=local.date().isoformat(), due_time=later))
+        caldav.preserve_task_dates(master, fields)
+        self.assertEqual((fields['DUE'].to_ical(), fields['DUE'].params['TZID']), (b'20261031T100000', 'America/New_York'))
         client = self.client(data)
         child = todo('RELATED-TO:task-1').replace('UID:task-1', 'UID:child')
         client.report = Mock(return_value=[('a', '1', data), ('b', '1', child)])
@@ -205,10 +216,37 @@ class CalendarTests(unittest.TestCase):
         client.request.assert_not_called()
 
     def test_events_expand_recurrence_and_respect_exclusions(self):
-        data = 'BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:e\nSUMMARY:Meeting\nDTSTART:20261020T090000Z\nDTEND:20261020T100000Z\nRRULE:FREQ=DAILY;COUNT=3\nEXDATE:20261021T090000Z\nEND:VEVENT\nEND:VCALENDAR'
-        rows = caldav.events_from([('https://cloud.example/e.ics', '"1"', data)], collection(), datetime(2026,10,20,tzinfo=timezone.utc), datetime(2026,10,24,tzinfo=timezone.utc), ZoneInfo('UTC'))
-        self.assertEqual([row['date'] for row in rows], ['2026-10-20', '2026-10-22'])
-        self.assertFalse(rows[0]['editable'])
+        def rows(*lines, zone=ZoneInfo('UTC'), start=datetime(2026, 10, 20, tzinfo=timezone.utc), end=datetime(2026, 10, 24, tzinfo=timezone.utc)):
+            data = '\r\n'.join(['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:e', 'SUMMARY:Meeting', *lines, 'END:VEVENT', 'END:VCALENDAR', ''])
+            return caldav.events_from([('https://cloud.example/e.ics', '"1"', data)], dict(collection(), components={'VEVENT'}), start, end, zone)
+        recurring = rows('DTSTART:20261020T090000Z', 'DTEND:20261020T100000Z', 'RRULE:FREQ=DAILY;COUNT=3', 'EXDATE:20261021T090000Z')
+        self.assertEqual([row['date'] for row in recurring], ['2026-10-20', '2026-10-22'])
+        self.assertFalse(recurring[0]['editable'])
+        # Outlook zone names, DATE exclusions, PERIOD dates and lowercase names.
+        self.assertEqual(rows('DTSTART;TZID=W. Europe Standard Time:20261020T090000', 'DTEND;TZID=W. Europe Standard Time:20261020T100000')[0]['start'], '2026-10-20T09:00:00+02:00')
+        self.assertEqual([row['date'] for row in rows('DTSTART;TZID=Europe/Berlin:20261020T090000', 'RRULE:FREQ=DAILY;COUNT=3', 'EXDATE;VALUE=DATE:20261021')], ['2026-10-20', '2026-10-22'])
+        self.assertEqual([row['date'] for row in rows('DTSTART:20261020T020000Z', 'DTEND:20261020T030000Z', 'RDATE;VALUE=PERIOD:20261022T020000Z/PT1H')], ['2026-10-20', '2026-10-22'])
+        single = rows('dtstart;value=date:20261021', 'status:confirmed')
+        self.assertEqual((single[0]['date'], single[0]['last_date'], single[0]['all_day'], single[0]['editable']), ('2026-10-21', '2026-10-21', True, True))
+        self.assertEqual(rows('DTSTART:20261021T090000Z', 'STATUS:CANCELLED'), [])
+        # Sub-daily rules stay bounded per resource.
+        self.assertEqual(len(rows('DTSTART:20261020T000000Z', 'RRULE:FREQ=MINUTELY')), 2000)
+
+    def test_event_edits_use_utc_and_refuse_recurring_series(self):
+        event = '\r\n'.join(['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:e', 'SUMMARY:Old', 'DTSTART:20261020T090000Z', 'X-KEEP:1', 'END:VEVENT', 'END:VCALENDAR', ''])
+        client = self.client(event)
+        client.propfind = lambda: [dict(collection(), components={'VEVENT'})]
+        entry = dict(summary='New', collection='tasks', href='https://cloud.example/tasks/e.ics', etag='"1"',
+                     start_date='2026-10-21', end_date='2026-10-22', all_day=True)
+        client.save_item({}, 'VEVENT', entry)
+        updated = Calendar.from_ical(self.written(client)).walk('VEVENT')[0]
+        self.assertEqual((updated['DTSTART'].to_ical(), updated['DTEND'].to_ical(), str(updated['X-KEEP'])), (b'20261021', b'20261023', '1'))
+        client = self.client(event.replace('X-KEEP:1', 'RRULE:FREQ=DAILY'))
+        client.propfind = lambda: [dict(collection(), components={'VEVENT'})]
+        with self.assertRaisesRegex(accounts.NextcloudError, 'Recurring'):
+            client.save_item({}, 'VEVENT', entry)
+        fields = caldav.entry_fields('VEVENT', dict(summary='Timed', start_date='2026-10-21', start_time='09:00', end_date='2026-10-21', end_time='10:00'))
+        self.assertTrue(fields['DTSTART'].to_ical().endswith(b'Z'))
 
 
 class CacheTests(unittest.TestCase):
@@ -218,8 +256,7 @@ class CacheTests(unittest.TestCase):
         env.start(); self.addCleanup(env.stop)
         folder = accounts.config_root(); folder.mkdir(parents=True)
         (folder/'nextcloud.json').write_text(json.dumps(account()))
-        secret = folder/'credentials/nextcloud/app-password'; secret.parent.mkdir(parents=True)
-        secret.write_text('test-secret'); secret.chmod(0o600)
+        write_password(folder)
         self.request = dict(op='status', start='2026-10-01', end='2026-11-01')
 
     def test_cached_open_failure_backoff_and_account_change(self):
@@ -243,7 +280,7 @@ class CacheTests(unittest.TestCase):
         config, _, _ = backend.context(self.request)
         self.assertEqual(config['url'], account()['url'])
         self.assertEqual(config['calendars'], [])
-        (accounts.config_root()/'credentials/nextcloud/app-password').unlink()
+        accounts.password_path().unlink()
         self.assertEqual(backend.handle(self.request)['state'], 'needs_password')
         (accounts.config_root()/'nextcloud.json').unlink()
         self.assertEqual(backend.handle(self.request)['state'], 'unconfigured')
@@ -361,13 +398,13 @@ class CacheTests(unittest.TestCase):
         self.assertTrue(state['stale']);self.assertTrue(state['due'])
 
 
-@unittest.skipUnless(fixtures.QS, 'Quickshell is required')
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class CalendarQmlTests(unittest.TestCase):
     def run_qml(self, body, setup=None):
         def prepare(root):
             shutil.copytree(DESKTOP/'integrations', root/'integrations')
             if setup: setup(root)
-        return fixtures.DisplayQmlTests.run_qml(self, body, prepare)
+        return support.run_qml(self, body, prepare)
 
     def test_drawer_tabs_editor_and_notifications_load(self):
         self.run_qml('''import QtQuick
@@ -527,7 +564,7 @@ ShellRoot {
 r=json.loads(sys.stdin.readline())
 time.sleep(.25)
 if r['op']=='save':
- print(json.dumps(dict(ok=True,data=dict(saved=True))),flush=True)
+ print(json.dumps(dict(ok=True,data=dict(saved=True,href='https://cloud.example/tasks/new.ics',account_id='',reconcile=True))),flush=True)
 else:
  print(json.dumps(dict(ok=True,data=dict(state='ready',events=[],tasks=[],calendars=[],month=r['start'][:7],due=False,stale=False,updated=1))),flush=True)
 """)

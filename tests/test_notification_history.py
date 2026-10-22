@@ -1,70 +1,64 @@
 """Native notification lifecycle, private history, and production cards/drawer."""
-import importlib.util
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
-import tempfile
 import unittest
 from unittest.mock import patch
-import test_display_drawer as fixtures
-
-spec = importlib.util.spec_from_file_location('notification_history', fixtures.DESKTOP/'drawers/notifications/backend.py')
-backend = importlib.util.module_from_spec(spec); spec.loader.exec_module(backend)
+import support
 
 
-class HistoryTests(unittest.TestCase):
-    def test_private_atomic_history_preserves_text_and_strips_dead_actions(self):
-        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, XDG_STATE_HOME=directory):
-            self.assertEqual(backend.load(), dict(items=[], paused=False))
-            state = dict(items=[dict(id='one',app='Mail',desktopEntry='org.example.Mail',summary='New mail',body='Literal $(command) & text',timestamp=10,
-                                    appIcon='https://example.test/icon',image='image://temporary',actions=[dict(identifier='open',text='Open')],seen=False)],paused=True)
-            backend.save(state)
-            saved = backend.load()
-            self.assertEqual(saved['items'][0]['body'], state['items'][0]['body'])
-            self.assertEqual(saved['items'][0]['desktopEntry'], 'org.example.Mail')
-            self.assertTrue(saved['paused'])
-            self.assertFalse(saved['items'][0]['seen'])
-            self.assertEqual(saved['items'][0]['actions'], [])
-            self.assertEqual(saved['items'][0]['appIcon'], '')
-            self.assertEqual(saved['items'][0]['image'], '')
-            self.assertEqual(backend.state_path().stat().st_mode & 0o777, 0o600)
-            self.assertEqual(list(backend.state_path().parent.glob('.notifications-*')), [])
-
-    def test_history_is_bounded_and_clear_is_persistent(self):
-        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, XDG_STATE_HOME=directory):
-            backend.save(dict(items=[dict(id=str(i),body='文'*20000) for i in range(150)],paused=False))
-            saved = backend.load()
-            self.assertEqual(len(saved['items']), 100)
-            self.assertEqual(len(saved['items'][0]['body']), 16384)
-            backend.save(dict(items=[],paused=False))
-            self.assertEqual(backend.load()['items'], [])
-            for value in ({}, dict(items=[],paused='yes')):
-                with self.assertRaises(ValueError): backend.save(value)
-
-    def test_explicit_dunst_migration_preserves_history_and_refuses_overwrite(self):
-        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, XDG_STATE_HOME=directory):
-            old = json.dumps(dict(data=[[dict(id={'data':2},appname={'data':'Mail'},summary={'data':'New mail'},body={'data':'<b>Hello</b> &amp; friends'},timestamp={'data':1000000})]]))
-            with patch.object(backend.subprocess,'run',side_effect=[subprocess.CompletedProcess([],0,old),subprocess.CompletedProcess([],0,'true')]):
-                result = backend.import_dunst()
-            self.assertEqual(result['items'][0]['body'], 'Hello & friends')
-            self.assertTrue(result['paused'])
-            self.assertTrue(result['items'][0]['seen'])
-            with self.assertRaises(ValueError): backend.import_dunst()
-
-
-@unittest.skipUnless(fixtures.QS and shutil.which('dbus-run-session'),'Quickshell and private D-Bus are required')
+@unittest.skipUnless(support.QS and shutil.which('dbus-run-session'),'Quickshell and private D-Bus are required')
 class HistoryQmlTests(unittest.TestCase):
     def run_qml(self, body, setup=None):
         run = subprocess.run
         def isolated(command, **kwargs):
-            if command[0] == fixtures.QS:
+            if command[0] == support.QS:
                 kwargs['env']['XDG_STATE_HOME'] = str(Path(kwargs['env']['XDG_CONFIG_HOME']).parent/'state')
                 command = ['dbus-run-session', '--', *command]
             return run(command, **kwargs)
-        with patch.object(fixtures.subprocess,'run',side_effect=isolated):
-            return fixtures.DisplayQmlTests.run_qml(self,body,setup)
+        with patch.object(support.subprocess,'run',side_effect=isolated):
+            return support.run_qml(self,body,setup)
+
+    def test_history_loads_bounded_and_saves_normalized_snapshot(self):
+        def setup(root):
+            path = root/'state/quickshell/desktop/notifications.json'; path.parent.mkdir(parents=True)
+            first = dict(id='one', app='Mail', desktopEntry='org.example.Mail', summary='New mail', body='Literal $(command) & text', timestamp=10,
+                         appIcon='https://example.test/icon', image='image://temporary', actions=[dict(identifier='open', text='Open')], seen=False)
+            rows = [first, dict(first, summary='Duplicate')] + [dict(id=str(i), body='文'*20000) for i in range(150)]
+            path.write_text(json.dumps(dict(items=rows, paused=True))); path.chmod(0o600)
+        self.run_qml('''import QtQuick
+import Quickshell
+import Quickshell.Io
+import "drawers/notifications"
+ShellRoot {
+ property var center:NotificationCenter
+ property int stage:0
+ property int ticks:0
+ Process {id:reader;command:["cat",Quickshell.env("XDG_STATE_HOME")+"/quickshell/desktop/notifications.json"];stdout:StdioCollector{id:output}}
+ function check(v,m){if(!v)throw Error(m);}
+ Component.onCompleted:center.start()
+ Timer {interval:100;running:true;repeat:true;onTriggered:{try{
+  ticks++;
+  if(stage===0){
+   check(center.initialized&&!center.error,"history did not load: "+center.error);
+   const items=center.state.items;
+   check(center.state.paused===true&&items.length===99,"loaded history was not bounded and deduplicated: "+items.length);
+   check(items[0].summary==="New mail"&&items[0].body==="Literal $(command) & text"&&items[0].desktopEntry==="org.example.Mail"&&items[0].seen===false,"saved text or seen state lost");
+   check(items[0].actions.length===0&&items[0].image===""&&items[0].appIcon==="","dead actions or remote images restored");
+   check(items[1].body.length===16384&&items[1].seen===true,"body was not capped or seen did not default");
+   center.request("pause","",false);center.request("remove","one");stage++;ticks=0;
+  }else if(stage===1&&ticks>4){reader.running=true;stage++;
+  }else if(stage===2&&!reader.running&&output.text){
+   const saved=JSON.parse(output.text);
+   check(saved.paused===false&&saved.items.length===98&&saved.items[0].id==="0"&&saved.items[0].actions.length===0,"saved snapshot was not normalized");
+   check(!center.error,"storage error: "+center.error);
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  if(ticks>40)throw Error("timeout at "+stage+" "+center.error);
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+}''',setup)
 
     def test_missing_images_do_not_render_placeholders_and_actions_get_optional_icons(self):
         def setup(root):

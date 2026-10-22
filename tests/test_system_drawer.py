@@ -10,9 +10,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import call, patch
 
-import test_display_drawer as fixtures
+import support
 
-SPEC = importlib.util.spec_from_file_location('desktop_system', fixtures.DESKTOP / 'drawers/system/backend.py')
+SPEC = importlib.util.spec_from_file_location('desktop_system', support.DESKTOP / 'drawers/system/backend.py')
 backend = importlib.util.module_from_spec(SPEC)
 _bytecode_disabled = sys.dont_write_bytecode
 sys.dont_write_bytecode = True
@@ -21,7 +21,7 @@ sys.dont_write_bytecode = _bytecode_disabled
 
 
 def snapshot():
-    return dict(os='Arch Linux', kernel='test-kernel', uptime=90061, reboot=True, kernelChanged=False,
+    return dict(os='Arch Linux', kernel='test-kernel', uptime=90061, kernelChanged=True,
                 boot=dict(total='22.5s', phases=[dict(label='Kernel', duration='2.5s'), dict(label='Userspace', duration='20s')], summary=''),
                 slow=[dict(unit='slow.service', duration='10s')],
                 scopes=[dict(scope='system', failed=[dict(unit='broken.service', description='Test failure')]), dict(scope='user', failed=[])],
@@ -174,9 +174,9 @@ if os.environ['BROKEN'] == '1':
                 self.assertEqual(log.read_text().splitlines(), commands)
 
 
-@unittest.skipUnless(fixtures.QS, 'Quickshell is required')
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class SystemDrawerTests(unittest.TestCase):
-    run_qml = fixtures.DisplayQmlTests.run_qml
+    run_qml = support.run_qml
 
     def test_full_width_actions_popovers_info_and_narrow_layout(self):
         state = json.dumps(snapshot())
