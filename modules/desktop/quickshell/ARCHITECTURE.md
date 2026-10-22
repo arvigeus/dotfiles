@@ -23,7 +23,9 @@ Other helpers run only while observed or while completing an action.
 `InteractionWindow` handles focus, keyboard ownership, backdrop clicks and Escape.
 `DrawerHost` owns the catalogue, shortcut registrations, sliding card and one lazy
 `DrawerPage`. Dismissal clears `active` immediately; the page remains during its
-exit animation. Page-owned popovers consume Escape first. Bind observation and
+exit animation. Entrance waits for the lazy page to become ready (or fail), so
+cold module/device initialization cannot stop the card halfway through its slide.
+Page-owned popovers consume Escape first. Bind observation and
 cancellable work to `active`; put operations that must survive dismissal in a
 feature service. Header actions belong to the page.
 
@@ -114,6 +116,9 @@ Screenshots use `desktop-screenshot` (grim/slurp); see
 before capture and cancels a countdown when Capture reopens. `screenshot-editor`
 and `screenshot-save` are user-owned on/off preferences shared with shortcuts.
 Clipboard-only capture overrides editing and produces no file or notification.
+Screenshot and recording-region processes explicitly close stdin after each
+spawn. Slurp reads non-terminal stdin for suggested boxes before showing its
+overlay; an open, unused Qt pipe otherwise leaves selection waiting indefinitely.
 
 Recording belongs to socket-activated `desktop-capture.service`, independent of
 shell reloads. `desktop-capture.socket` exposes a private runtime Unix socket at

@@ -76,6 +76,15 @@ InteractionWindow {
     onOpenedChanged: {
         if (opened)
             presentationScreen = interactionState.screen;
+        if (opened) Qt.callLater(animatePresentation);
+        else animatePresentation();
+    }
+
+    function animatePresentation(): void {
+        // Cold page creation (notably Qt Multimedia) can block the GUI thread.
+        // Finish loading before moving the card so it cannot freeze mid-slide.
+        if (opened && page.status !== Loader.Ready && page.status !== Loader.Error)
+            return;
         slide.to = opened ? 1 : 0;
         slide.restart();
     }
@@ -199,6 +208,7 @@ InteractionWindow {
                     active: root.opened || root.keepVisible
                     asynchronous: true
                     source: root.currentDrawer?.source ?? ""
+                    onStatusChanged: if (root.opened) Qt.callLater(root.animatePresentation)
                     onLoaded: if (root.currentPage) {
                         root.currentPage.screen = Qt.binding(() => root.targetScreen);
                         root.currentPage.active = Qt.binding(() => root.opened);

@@ -20,6 +20,7 @@ class CaptureTests(unittest.TestCase):
             command = Path(directory) / 'desktop-screenshot'
             command.write_text('''#!/usr/bin/env python3
 import sys
+assert sys.stdin.read() == ''
 assert sys.argv[1:] == ['output', '--output', 'DP-2', '--report', '--save', '--edit'], sys.argv
 print('/tmp/Last screenshot.png')
 ''')
@@ -107,7 +108,7 @@ ShellRoot {
         with tempfile.TemporaryDirectory() as directory:
             selector = Path(directory) / 'slurp'
             count = Path(directory) / 'count'
-            selector.write_text("#!/usr/bin/env python3\nfrom pathlib import Path\np=Path(" + repr(str(count)) + ")\nif p.exists():raise SystemExit(1)\np.touch()\nprint('640x360+6656+0')\n")
+            selector.write_text("#!/usr/bin/env python3\nimport sys\nfrom pathlib import Path\nassert sys.stdin.read() == ''\np=Path(" + repr(str(count)) + ")\nif p.exists():raise SystemExit(1)\np.touch()\nprint('640x360+6656+0')\n")
             selector.chmod(0o755)
             with patch.dict(os.environ, PATH=directory + ':' + os.environ['PATH']):
                 self.run_qml('''import QtQuick
@@ -223,7 +224,7 @@ ShellRoot {
     def test_delayed_region_freezes_clipboard_choice_and_accepts_clipboard_result(self):
         with tempfile.TemporaryDirectory() as directory:
             command = Path(directory) / 'desktop-screenshot'
-            command.write_text("#!/usr/bin/env python3\nimport sys\nassert sys.argv[1:]==['region','--report','--no-save','--edit'],sys.argv\nprint('clipboard')\n")
+            command.write_text("#!/usr/bin/env python3\nimport sys\nassert sys.stdin.read() == ''\nassert sys.argv[1:]==['region','--report','--no-save','--edit'],sys.argv\nprint('clipboard')\n")
             command.chmod(0o755)
             with patch.dict(os.environ, PATH=directory + ':' + os.environ['PATH']):
                 self.run_qml('''import QtQuick
@@ -243,6 +244,13 @@ ShellRoot {
    CaptureService.tick(deadline-400);CaptureService.tick(CaptureService.deadline);
   }else if(stage===5){
    check(!CaptureService.error&&!CaptureService.capturing&&!CaptureService.lastImage,"clipboard result treated as file/error: "+CaptureService.error);
+   CaptureService.setSave(false);
+  }else if(stage===6){
+   // Reusing the same Process must close its new stdin pipe too.
+   check(CaptureService.capture("","region"),"repeat capture rejected");
+   CaptureService.tick(CaptureService.deadline-400);CaptureService.tick(CaptureService.deadline);
+  }else if(stage===10){
+   check(!CaptureService.error&&!CaptureService.capturing,"repeat capture hung: "+CaptureService.error);
    console.log("DISPLAY_PASS");Qt.quit();
   }
   stage++;

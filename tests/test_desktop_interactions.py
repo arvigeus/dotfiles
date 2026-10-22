@@ -117,7 +117,13 @@ DrawerPage {
     property int ticks: 0
     onActiveChanged: if (active && !screen) throw new Error("active before output assignment")
     initialFocus: field
-    Component.onCompleted: ProbeState.record("created:probe")
+    // Spread cold creation across incubation frames, then simulate device setup.
+    Repeater { model: 200; delegate: Item {} }
+    Component.onCompleted: {
+        const until = Date.now() + 80;
+        while (Date.now() < until) {}
+        ProbeState.record("created:probe");
+    }
     Component.onDestruction: ProbeState.record("destroyed:probe")
     Timer { interval: 1; repeat: true; running: root.active; onTriggered: root.ticks++ }
     TextField { id: field; objectName: "probeField" }
@@ -139,6 +145,13 @@ ShellRoot {
     InteractionState { id: state }
     Launcher { id: launcher; interactionState: state }
     Drawers { id: drawers; interactionState: state }
+    property var entranceProgress: []
+    Connections {
+        target: drawers
+        function onCurrentPageChanged() {
+            if (drawers.currentPage) root.entranceProgress.push(drawers.slideProgress);
+        }
+    }
     DrawerDefinition { id: probe; key: "probe"; title: "Probe"; source: Qt.resolvedUrl("drawers/ProbeDrawer.qml"); edge: DrawerDefinition.Left }
     DrawerDefinition { id: broken; key: "broken"; title: "Broken"; source: Qt.resolvedUrl("drawers/Missing.qml") }
     Bar {
@@ -212,8 +225,17 @@ ShellRoot {
         if (owner === drawers) check(drawers.currentDrawer.key === key, "wrong category");
     }
     function open(key) { drawers.openDrawer(key, Quickshell.screens[0]); sole(key); }
+    property int entranceWaits: 0
     Timer { id: steps; interval: 250; running: true; repeat: true; onTriggered: {
         try {
+            // Loading now precedes entrance. Geometry/focus assertions wait for
+            // both; the explicit motion/reversal stages still inspect mid-slide.
+            if (drawers.opened && ((! [13,14,15].includes(stage) && drawers.slideProgress < 1)
+                || (stage === 15 && drawers.slideProgress === 0))) {
+                check(++entranceWaits < 40, "drawer did not finish loading/entering");
+                return;
+            }
+            entranceWaits = 0;
             const screen = Quickshell.screens[0];
             if (stage === 0) {
                 sole(null);
@@ -333,8 +355,6 @@ ShellRoot {
                 check(ProbeState.count("destroyed:probe") === 2, "additional page lifetime");
             } else if (stage >= 20 && stage < 20 + previewKeys.length) {
                 if (stage > 20) {
-                    // The first QtMultimedia import (Capture) can block the GUI
-                    // thread for over a second on a cold cache; wait it out.
                     if (drawers.currentPage === null && ++previewWaits < 20) return;
                     previewWaits = 0;
                     check(drawers.currentPage !== null, "preview page did not load");
@@ -510,6 +530,8 @@ ShellRoot {
                 Theme.setMode("light");
                 check(drawers.currentPage === null && !drawers.visible, "preview teardown");
                 narrowBar.destroy();
+                check(root.entranceProgress.length > 0 && root.entranceProgress.every(value => value === 0),
+                    "page creation interrupted an entrance: " + JSON.stringify(root.entranceProgress));
                 console.log("INTERACTIONS_PASS"); Qt.quit(); return;
             }
             stage++;

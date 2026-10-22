@@ -129,7 +129,8 @@ Singleton {
         id: selector
         command: ["slurp", "-f", "%wx%h+%x+%y"]
         property string region: ""
-        onStarted: region = ""
+        // Toggle after each spawn: closing before start can leave the Qt pipe open.
+        onStarted: { region = ""; stdinEnabled = true; stdinEnabled = false; }
         stdout: StdioCollector { onStreamFinished: selector.region = text.trim() }
         stderr: StdioCollector {}
         onExited: (code, status) => { if (code === 0 && region) root.record(region); }
@@ -186,9 +187,11 @@ Singleton {
     }
     Process {
         id: grabber
+        // Slurp reads non-terminal stdin for boxes before showing its overlay.
+        // Close the unused pipe so it receives EOF rather than waiting forever.
         property string image: ""
         property string detail: ""
-        onStarted: { image = ""; detail = ""; }
+        onStarted: { image = ""; detail = ""; stdinEnabled = true; stdinEnabled = false; }
         stdout: StdioCollector { onStreamFinished: grabber.image = text.trim() }
         stderr: StdioCollector { onStreamFinished: grabber.detail = text.trim() }
         onExited: (code, status) => {
