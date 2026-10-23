@@ -139,6 +139,7 @@ class GenerationTests(unittest.TestCase):
                 (path / 'scripts' / filename).write_text(f'echo {marker}\n')
                 (path / 'config.json').write_text(json.dumps({'extra': {
                     'aur_packages': ['shared', module],
+                    'cargo_packages': ['tokei', module],
                     'flatpak': {'remotes': {'flathub': 'same-url'}}}}))
             command = ['python3', str(repo / 'generate-config.py')]
             subprocess.run(command, check=True, capture_output=True)
@@ -148,6 +149,7 @@ class GenerationTests(unittest.TestCase):
             self.assertEqual(config['extra']['scripts'], ['modules/zzz/scripts/00_early.sh', 'modules/aaa/scripts/99_late.sh'])
             self.assertEqual(len(config['custom_commands']), 1)
             self.assertEqual(config['extra']['aur_packages'], ['shared', 'aaa', 'zzz'])
+            self.assertEqual(config['extra']['cargo_packages'], ['tokei', 'aaa', 'zzz'])
             self.assertNotIn('postinstall', config['extra'])
             (repo / 'modules/aaa/check.sh').write_text('exit 2\n')
             result = subprocess.run(command, capture_output=True, text=True)

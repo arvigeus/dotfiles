@@ -18,6 +18,7 @@ DrawerPage {
     property var speedTest: SpeedTestService
     property var portsService: PortsService
     property var publicIp: PublicIpService
+    property var deviceDiscovery: DeviceDiscoveryService
     property string trafficRoot: "/sys/class/net"
     property var selected: null
     property string passwordText: ""
@@ -49,6 +50,9 @@ DrawerPage {
     readonly property string localAddress: (details?.ipv4?.[0] ?? "").split("/")[0]
     readonly property var statsDevice: adapter?.connected ? adapter : wiredDevices.find(d => d.connected) ?? null
     readonly property string statsInterface: active ? statsDevice?.name ?? "" : ""
+    readonly property string discoveryContext: JSON.stringify([statsInterface,
+        networkState.details?.[statsInterface]?.ipv4 ?? []])
+    onDiscoveryContextChanged: deviceDiscovery.clear()
     readonly property string routeContext: service.loaded ? JSON.stringify([networkState.active,
         networkState.warp.connected ? networkState.warp.mode : ""]) : ""
     readonly property string errorText: service.error || connectionError
@@ -71,6 +75,7 @@ DrawerPage {
         : vpnImportMenu ? (() => vpnImportMenu.close())
         : ports.popupOpen ? (() => ports.closePopup()) : null
     onRouteContextChanged: {
+        deviceDiscovery.clear();
         publicIp.context = routeContext;
         if (informationPopup && active) Qt.callLater(publicIp.lookup);
     }
@@ -84,11 +89,11 @@ DrawerPage {
     }
     onActiveChanged: {
         service.observing = active;
-        if (!active) { speedTest.cancel(); vpnImportMenu?.close(); }
+        if (!active) { speedTest.cancel(); deviceDiscovery.cancel(); vpnImportMenu?.close(); }
     }
     Component.onCompleted: { service.observing = active; publicIp.context = routeContext; updateScanner(); }
     Component.onDestruction: {
-        service.observing = false; speedTest.cancel();
+        service.observing = false; speedTest.cancel(); deviceDiscovery.cancel();
         if (scanningDevice) scanningDevice.scannerEnabled = false;
     }
 
@@ -508,6 +513,14 @@ DrawerPage {
                         onClicked: root.service.run(modelData.active ? "disconnect" : "connect", {uuid: modelData.uuid}, modelData.uuid)
                     }
                 }
+            }
+            DevicesControls {
+                Layout.fillWidth: true
+                Layout.leftMargin: 4; Layout.rightMargin: 4
+                service: root.deviceDiscovery; active: root.active
+                interfaceName: root.statsDevice?.name ?? ""
+                localAddresses: (root.networkState.details?.[interfaceName]?.ipv4 ?? []).map(address => address.split("/")[0])
+                gatewayAddress: root.networkState.details?.[interfaceName]?.ipv4Gateway ?? ""
             }
             PortsControls {
                 id: ports

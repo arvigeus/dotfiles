@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install AUR and Flatpak packages; archinstall/pacman own repository packages.
+# Install AUR, Cargo and Flatpak packages; archinstall/pacman own repository packages.
 # Usage: extra-packages.sh CONFIG USER
 set -Eeuo pipefail
 config=${1:?Configuration required}
@@ -32,6 +32,10 @@ if ((${#aur[@]})); then
     # provider (for example arkenfox-user.js-git for arkenfox-user.js).
     run_as_user paru --aur --noconfirm --needed -S -- "${aur[@]}"
 fi
+
+while IFS= read -r crate; do
+    run_as_user env CARGO_HOME="$user_home/.local/share/cargo" cargo install --locked -- "$crate"
+done < <(jq -r '.extra.cargo_packages[]?' "$config")
 
 flatpak_system() (
     # Flatpak writes per-user state even for system operations; keep it out of the real home.

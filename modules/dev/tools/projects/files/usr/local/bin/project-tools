@@ -1,0 +1,271 @@
+#!/usr/bin/env python3
+"""Project-scoped Mise tasks and previewed Git maintenance."""
+import argparse
+import fnmatch
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+PROTECTED = ('.env', '.env.*', '.envrc', '.direnv', '*.local', '*.local.*')
+
+
+
+def git(root, *arguments):
+    return subprocess.run(['git', '-C', str(root), *arguments], check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+def repository(path):
+    try:
+        root = Path(git(path, 'rev-parse', '--show-toplevel')).resolve()
+    except subprocess.CalledProcessError:
+        return None
+    return root
+
+
+def protected(path):
+    return any(fnmatch.fnmatchcase(part, pattern) for part in Path(path).parts for pattern in PROTECTED)
+
+
+def clean_arguments():
+    arguments = ['clean', '-fdx']
+    for pattern in PROTECTED:
+        arguments.extend(['-e', pattern])
+    return arguments
+
+
+def cleanup_candidates(root):
+    data = subprocess.run(['git', '-C', str(root), 'ls-files', '--others', '--ignored',
+                           '--exclude-standard', '--directory', '-z'], check=True,
+                          capture_output=True).stdout
+    def expand(path):
+        if protected(path.relative_to(root)) or (path.is_dir() and (path / '.git').exists()):
+            return [], True
+        if path.is_symlink() or not path.is_dir():
+            return [path.relative_to(root).as_posix()], False
+        children, contains_protected = [], False
+        for child in sorted(path.iterdir()):
+            candidates, keep = expand(child)
+            children.extend(candidates)
+            contains_protected |= keep
+        # Git -X can remove a whole ignored parent without considering an
+        # unignored child. Select only safe subtrees when local settings exist.
+        return (children if contains_protected else [path.relative_to(root).as_posix()]), contains_protected
+
+    candidates = []
+    for value in data.split(b'\0'):
+        if value:
+            candidates.extend(expand(root / value.decode().rstrip('/'))[0])
+    return sorted(set(candidates))
+
+
+def clean_selected(root, selected):
+    current = set(cleanup_candidates(root))
+    if not selected or any(path not in current for path in selected):
+        raise ValueError('The cleanup selection has changed. Preview it again.')
+    # Git clean -X can broaden an ignored child pathspec to its ignored parent.
+    # Delete exactly the freshly validated inventory entries instead.
+    for path in selected:
+        target = root / path
+        if not target.parent.resolve().is_relative_to(root.resolve()):
+            raise ValueError('A selected path moved outside the repository.')
+        if target.is_symlink() or not target.is_dir():
+            target.unlink()
+        else:
+            shutil.rmtree(target)
+
+
+def upstream(root):
+    branch = git(root, 'symbolic-ref', '--quiet', '--short', 'HEAD')
+    remote = git(root, 'config', f'branch.{branch}.remote')
+    target = git(root, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}')
+    return remote, target
+
+
+def ensure_idle(root):
+    for marker in ['MERGE_HEAD', 'rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD', 'REVERT_HEAD']:
+        if Path(git(root, 'rev-parse', '--path-format=absolute', '--git-path', marker)).exists():
+            raise ValueError('Finish the active merge, rebase, cherry-pick or revert first.')
+
+
+def reset_to_upstream(root, target):
+    ensure_idle(root)
+    # Keep local environment/configuration and nested repositories; retain reflogs.
+    commit = git(root, 'rev-parse', '--verify', target + '^{commit}')
+    git(root, 'reset', '--hard', commit)
+    git(root, *clean_arguments(), '--', '.')
+
+
+def tasks(root):
+    result = subprocess.run(['mise', 'tasks', '--json', '--local'], cwd=root, check=True,
+                            capture_output=True, text=True)
+    data = json.loads(result.stdout)
+    return sorted(item['name'] for item in data)
+
+
+def select(items):
+    for index, item in enumerate(items, 1):
+        print(f'{index:>3}. {item}')
+    answer = input('Select numbers separated by spaces (Enter cancels): ').strip()
+    if not answer:
+        return []
+    numbers = [int(value) for value in answer.split()]
+    if any(number < 1 or number > len(items) for number in numbers):
+        raise ValueError('Invalid selection.')
+    return list(dict.fromkeys(items[number - 1] for number in numbers))
+
+
+def perform(action, path, task=None, runner='mise', arguments=()):
+    path = Path(path).resolve()
+    root = repository(path)
+    working = root or path
+    # These are user-triggered terminal operations; config trust stays interactive.
+    if action in ('install', 'upgrade'):
+        command = ['mise', 'install'] if action == 'install' else ['mise', 'upgrade', '--local']
+        return subprocess.run(command, cwd=working, check=False).returncode
+    if action == 'task' and runner != 'mise':
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib/project-tools'))
+        from project_tasks import command
+        if task is None:
+            raise ValueError('Choose a task from the project overview.')
+        native = command(working, runner, task, arguments)
+        if any((working / config).is_file() for config in ('mise.toml', '.mise.toml', '.mise/config.toml', '.config/mise/config.toml', '.tool-versions')):
+            native = ['mise', 'exec', '--', *native]
+        return subprocess.run(native, cwd=working, check=False).returncode
+    if action == 'task':
+        names = tasks(working)
+        if not names:
+            print('No project-local Mise tasks.')
+            return 0
+        if task is not None and (task not in names or task.startswith('-')):
+            raise ValueError('The selected task is no longer available. Refresh the project overview.')
+        chosen = [task] if task is not None else select(names)
+        for name in chosen:
+            code = subprocess.run(['mise', 'run', name, *arguments], cwd=working, check=False).returncode
+            if code:
+                return code
+        return 0
+    if action in ('fetch', 'push', 'pull', 'commit'):
+        if root is None:
+            raise ValueError('Choose a Git repository.')
+        return git_action(action, root)
+    if root is None or root in (Path('/'), Path.home()):
+        raise ValueError('Choose a project Git repository.')
+    print(f'Project: {root}\n')
+    if action == 'clean':
+        candidates = cleanup_candidates(root)
+        if not candidates:
+            print('No removable ignored build files.')
+            return 0
+        chosen = select(candidates)
+        if not chosen:
+            return 0
+        print('\nOnly these ignored build files will be removed. Local environment/settings are protected.')
+        if input(f'Type {root.name} to confirm: ') == root.name:
+            clean_selected(root, chosen)
+    elif action == 'reset':
+        ensure_idle(root)
+        remote, _ = upstream(root)
+        # Fetch first. A failed fetch leaves all working files unchanged.
+        if remote != '.':
+            subprocess.run(['git', '-C', str(root), 'fetch', '--prune', '--', remote], check=True)
+        _, target = upstream(root)
+        commit = git(root, 'rev-parse', target)
+        branch = git(root, 'symbolic-ref', '--quiet', '--short', 'HEAD')
+        print(f'Reset current branch to {target} ({commit[:12]}).')
+        print('Tracked changes, local branch commits and untracked/build files will be discarded.')
+        print('Untracked local environment/settings and nested repositories stay; reflogs are retained.\n')
+        print(git(root, 'status', '--short') or 'No working-file changes.')
+        print('\nLocal commits:\n' + (git(root, 'log', '--oneline', f'{target}..HEAD') or 'None'))
+        print('\nUntracked/build cleanup preview:\n' + git(root, *[
+            '-ndx' if a == '-fdx' else a for a in clean_arguments()], '--', '.'))
+        if input(f'\nType {root.name} to reset and update this project: ') == root.name:
+            if git(root, 'symbolic-ref', '--quiet', '--short', 'HEAD') != branch:
+                raise ValueError('The current branch changed. Preview the reset again.')
+            reset_to_upstream(root, commit)
+    return 0
+
+
+def git_action(action, root):
+    """Delegate authentication, commit editors/signing and hooks to native Git."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib/project-tools'))
+    from project_inspector import git_status
+    ensure_idle(root)
+    state = git_status(root)
+    if state['conflicts'] or state['operation']:
+        raise ValueError('Finish the active Git operation or resolve conflicts first.')
+    if action == 'commit':
+        if not state['staged']:
+            raise ValueError('Stage changes first, for example in Zed.')
+        command = ['commit']
+    elif action == 'fetch':
+        if not state['remote_name']:
+            raise ValueError('Configure a remote first.')
+        command = ['fetch', '--prune', '--', state['remote_name']]
+    else:
+        remote, _ = upstream(root)
+        branch = git(root, 'symbolic-ref', '--quiet', '--short', 'HEAD')
+        merge = git(root, 'config', f'branch.{branch}.merge')
+        if not merge.startswith('refs/heads/'):
+            raise ValueError('The upstream does not identify a branch.')
+        if action == 'pull':
+            if state['ahead'] and state['behind']:
+                raise ValueError('Branches have diverged. Reconcile them in Zed before pulling.')
+            command = ['pull', '--ff-only', '--', remote, merge]
+        else:
+            if state['behind']:
+                raise ValueError('Fetch and reconcile upstream changes before pushing.')
+            command = ['push', '--', remote, 'HEAD:' + merge]
+    return subprocess.run(['git', '-C', str(root), *command], check=False).returncode
+
+
+def open_terminal(action, path, task=None, runner='mise', arguments=()):
+    command = ['uwsm', 'app', '-t', 'service', '--', 'xdg-terminal-exec', f'--dir={path}']
+    if action != 'terminal':
+        command += ['--hold', sys.executable, str(Path(__file__).resolve()), '--action', action]
+        if task is not None:
+            command += ['--runner', runner, '--task', task]
+            command.extend('--task-arg=' + value for value in arguments)
+        command.append(str(path))
+    return subprocess.Popen(command)
+
+
+def window(path):
+    from PySide6.QtWidgets import QApplication, QFileDialog
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib/project-tools'))
+    from project_dashboard import ProjectDialog
+
+    _app = QApplication.instance() or QApplication(sys.argv[:1])
+    if path is None:
+        path = QFileDialog.getExistingDirectory(None, 'Select project', str(Path.home() / 'Projects'))
+        if not path:
+            return 0
+    dialog = ProjectDialog(path, open_terminal)
+    dialog.exec()
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--action', choices=['install', 'upgrade', 'task', 'clean', 'reset', 'fetch', 'push', 'pull', 'commit'])
+    parser.add_argument('--task', help='Run a project task (with --action task).')
+    parser.add_argument('--runner', choices=['mise', 'package', 'make', 'just'], default='mise')
+    parser.add_argument('--task-arg', action='append', default=[])
+    parser.add_argument('path', nargs='?')
+    options = parser.parse_args()
+    if options.action and not options.path:
+        parser.error('An action requires a project path.')
+    if options.task is not None and options.action != 'task':
+        parser.error('--task requires --action task.')
+    try:
+        return perform(options.action, options.path, options.task, options.runner, options.task_arg) if options.action else window(options.path)
+    except (ValueError, OSError, subprocess.SubprocessError) as error:
+        print(f'Project action failed: {error}', file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

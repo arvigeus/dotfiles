@@ -130,6 +130,8 @@ class Supervisor:
             ready, write = os.pipe2(os.O_CLOEXEC)
             env['SESSION_MODE_READY_FD'] = str(write)
             command = ['gaming-session']
+        else:
+            env['UWSM_SILENT_START'] = '1'
         try:
             self.child = subprocess.Popen(command, env=env, process_group=0,
                                           pass_fds=() if write is None else (write,))

@@ -32,12 +32,13 @@ these limits as well as the boost flag. `power-study` records every policy's
 minimum, maximum, hardware maximum and boost flag.
 
 TuneD's PPD daemon persists the selected mode. `power-source.service` observes
-UPower's `OnBattery` property through D-Bus: on an actual source edge, it replaces
+UPower's `OnBattery` property through D-Bus: at listener startup and on an actual source edge, it replaces
 Balanced/Powersave with Balanced on AC or Powersave on battery. Performance and
 unrecognized profiles remain untouched. Manual daily-mode selections survive
-until the next source edge, including deliberate Powersave on AC or Balanced on
-battery. The first source read only seeds the baseline, preserving saved choices
-at boot or service restart. Charging/charge-limit changes do not trigger selection.
+until the next source edge or listener restart, including deliberate Powersave on
+AC or Balanced on battery. The first source read reconciles the saved daily mode
+with the current adapter state, including changes while the laptop was off.
+Charging/charge-limit changes do not trigger selection.
 The listener runs system-wide, independent of desktop drawers, Hyprland or Gaming
 Mode, and writes only the public PPD property, followed by confirmed readback.
 It has no hardware controls or polling loop. Its subscription is installed before

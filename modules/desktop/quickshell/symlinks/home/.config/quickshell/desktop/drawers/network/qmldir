@@ -1,8 +1,10 @@
 singleton NetworkService 1.0 NetworkService.qml
 singleton SpeedTestService 1.0 SpeedTestService.qml
 singleton PublicIpService 1.0 PublicIpService.qml
+singleton DeviceDiscoveryService 1.0 DeviceDiscoveryService.qml
 singleton PortsService 1.0 PortsService.qml
 PortsControls 1.0 PortsControls.qml
 NetworkSection 1.0 NetworkSection.qml
+DevicesControls 1.0 DevicesControls.qml
 WifiIcon 1.0 WifiIcon.qml
 NetworkRow 1.0 NetworkRow.qml

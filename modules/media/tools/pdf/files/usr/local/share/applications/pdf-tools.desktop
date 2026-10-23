@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=PDF tools
+Comment=Combine, split, rotate, protect and OCR PDFs
+Icon=application-pdf
+Exec=/usr/local/bin/pdf-tools %F
+MimeType=application/pdf;inode/directory;
+Categories=Office;
+Terminal=false

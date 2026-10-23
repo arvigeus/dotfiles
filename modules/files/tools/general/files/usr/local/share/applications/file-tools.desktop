@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=File tools
+Comment=Rename, find files, manage links and verify checksums
+Icon=system-file-manager
+Exec=/usr/local/bin/file-tools %F
+MimeType=application/octet-stream;inode/directory;text/plain;text/x-dotfiles-md5;text/x-dotfiles-sha1;text/x-dotfiles-sha256;text/x-dotfiles-sha512;
+Categories=Utility;
+Terminal=false

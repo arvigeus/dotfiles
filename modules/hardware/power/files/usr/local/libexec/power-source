@@ -1,5 +1,5 @@
 #!/usr/bin/python3 -I
-"""Select daily power modes on UPower source edges through TuneD's PPD API."""
+"""Select daily power modes at startup and on UPower source edges via PPD."""
 import sys
 
 UPOWER = 'org.freedesktop.UPower'
@@ -18,10 +18,11 @@ class SourcePolicy:
         on_battery = self.bus.on_battery()
         if not isinstance(on_battery, bool):
             raise RuntimeError('UPower did not report a valid power source')
-        if self.previous is None or self.previous == on_battery:
-            self.previous = on_battery
+        if self.previous == on_battery:
             return
-        # Re-read the effective mode at the edge, including external/manual edits.
+        # Reconcile the initial source too: an unplug while powered off cannot
+        # produce an edge in this process. Later reads preserve manual choices
+        # until the source actually changes.
         active = self.bus.active_profile()
         target = 'power-saver' if on_battery else 'balanced'
         if active in ('balanced', 'power-saver') and active != target:
@@ -73,8 +74,7 @@ def main():
             failed = True
             loop.quit()
 
-    # Subscribe before reading the initial source. Startup seeds the baseline;
-    # a saved/manual mode is not replaced merely because this service restarts.
+    # Subscribe before reconciling the initial source so a startup edge is not lost.
     bus.connection.signal_subscribe(UPOWER, PROPERTIES, 'PropertiesChanged',
         UPOWER_PATH, UPOWER, Gio.DBusSignalFlags.NONE, changed)
     policy.observe()

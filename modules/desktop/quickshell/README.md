@@ -5,22 +5,22 @@ displays, capture, clipboard history, calendar, notifications and system control
 
 ## Shortcuts
 
-| Shortcut | Action |
-| --- | --- |
-| Win+R | Application search |
-| Win+1 or Ctrl+Alt+Delete | Spaces and session actions |
-| Win+Shift+P | Performance, including over fullscreen apps |
-| Ctrl+D in search | Favorite the selected app |
-| Ctrl+Win+Up / Down | Previous / next workspace on this display |
+| Shortcut                 | Action                                       |
+| ------------------------ | -------------------------------------------- |
+| Win+R                    | Application search                           |
+| Win+1 or Ctrl+Alt+Delete | Spaces and session actions                   |
+| Win+Shift+P              | Performance, including over fullscreen apps  |
+| Ctrl+D in search         | Favorite the selected app                    |
+| Ctrl+Win+Up / Down       | Previous / next workspace on this display    |
 | Ctrl+Win+Shift+Up / Down | Move the window to that workspace and follow |
-| Win+Arrow | Focus a window |
-| Win+Shift+Left / Right | Move a column |
-| Win+J | Give a stacked window its own column |
-| Win+[ / Win+] | Resize the current column |
-| Win+. | Center the column |
-| Win+mouse wheel | Scroll columns |
-| Win+M / Win+V | Maximize / toggle floating |
-| Win+Q or Alt+F4 | Close a window |
+| Win+Arrow                | Focus a window                               |
+| Win+Shift+Left / Right   | Move a column                                |
+| Win+J                    | Give a stacked window its own column         |
+| Win+[ / Win+]            | Resize the current column                    |
+| Win+.                    | Center the column                            |
+| Win+mouse wheel          | Scroll columns                               |
+| Win+M / Win+V            | Maximize / toggle floating                   |
+| Win+Q or Alt+F4          | Close a window                               |
 
 Workspace navigation stays on the current display without wrapping. Empty
 workspaces disappear when left. Three-finger vertical swipes follow their natural
@@ -28,9 +28,6 @@ direction; horizontal swipes scroll columns. Amber tabs/arrows indicate windows
 requesting attention. Apps must report urgency; unread browser tabs alone may not.
 
 ## Spaces and session controls
-
-Space entries are placeholders. The header photo opens Mugshot for your account
-photo/name; reopen Spaces after saving to refresh it.
 
 Hold session actions for two seconds. Shutdown timers continue with the drawer
 closed. **Restart → Reload** closes applications and starts a fresh desktop.
@@ -75,6 +72,10 @@ Wi-Fi, Ethernet, VPN and Cloudflare WARP controls share connection information a
 an internet speed test following the current route. The public IPv4 lookup runs
 only on opening information and caches for ten minutes. Enterprise/WEP networks
 use the connection editor.
+
+**Devices on this network** discovers reachable IPv4 devices on the connected
+private network (up to 256 addresses). Hover for gateway/local-device labels and
+response times when available. Sleeping or firewalled devices may not respond.
 
 Ports opens TCP/IPv4 access from the current local subnet. Openings disappear on
 firewalld reload/reboot. A changed address/subnet makes them inactive; they can

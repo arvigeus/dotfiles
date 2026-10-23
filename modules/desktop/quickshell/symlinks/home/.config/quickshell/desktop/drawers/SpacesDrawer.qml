@@ -12,7 +12,7 @@ DrawerPage {
     headerActions: Component {
         ProfileButton {
             active: root.active
-            onEditRequested: { root.closeRequested(); root.launch(["/usr/local/bin/mugshot"]); }
+            onEditRequested: { root.closeRequested(); root.launch(["/usr/local/bin/account-tools"]); }
         }
     }
     escapeHandler: sessionActions.popupOpen ? () => { sessionActions.closePopup(); return true; } : null
@@ -25,10 +25,6 @@ DrawerPage {
             contentSpacing: 8
             Repeater {
                 model: [
-                    {id: "apps", name: qsTr("Applications"), icon: "layout-grid"},
-                    {id: "files", name: qsTr("Files"), icon: "folder"},
-                    {id: "terminal", name: qsTr("Terminal"), icon: "terminal"},
-                    {id: "projects", name: qsTr("Projects"), icon: "folder-git-2"},
                     {id: "movies", name: qsTr("Movies"), icon: "film"},
                     {id: "series", name: qsTr("TV Series"), icon: "tv"},
                     {id: "music", name: qsTr("Music"), icon: "music"},

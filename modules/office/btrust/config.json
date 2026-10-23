@@ -41,6 +41,11 @@
                     }
                 }
             }
+        },
+        "private": {
+            "files": [
+                "home/.local/share/syntaxis-signing"
+            ]
         }
     }
 }

@@ -4,7 +4,8 @@ Choose Performance, Balanced or Powersave in the Performance drawer, or use
 `power-mode performance|balanced|powersave`. Run `power-mode` to read the mode.
 The bar's Performance icon follows the active mode. Plugging in selects Balanced;
 unplugging selects Powersave. Performance stays selected across both changes.
-You can choose another mode manually until the next power-source change.
+Startup also selects the daily mode for the current power source. You can choose
+another mode manually until the next power-source change or power-service restart.
 
 | Mode | CPU and power budgets | Cooling | Display and mpv quality | Plug / unplug |
 | --- | --- | --- | --- | --- |

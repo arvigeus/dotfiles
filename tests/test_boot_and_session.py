@@ -47,6 +47,18 @@ class BootTests(unittest.TestCase):
                 self.assertEqual(updated, repeated)
                 self.assertEqual((root / 'rebuilds').read_text(), '-P\n-P\n')
 
+    def test_disables_mitigations_and_replaces_existing_values(self):
+        for existing in ('', 'mitigations=auto', 'mitigations=auto,nosmt mitigations=off'):
+            with self.subTest(existing=existing), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                result, updated = self.run_hook(root, f'root=/dev/vda2 rw {existing}\n')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual([p for p in updated.split() if p.split('=', 1)[0] == 'mitigations'],
+                                 ['mitigations=off'])
+                result, repeated = self.run_hook(root, updated)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(updated, repeated)
+
     def test_rejects_invalid_boot_configuration_before_replacing_cmdline(self):
         cases = [
             ('rw\n', 'default_uki="image"\n'),

@@ -94,7 +94,7 @@ ShellRoot {
   check(button.profileHint==="@alice","missing full name produced duplicate or empty text");
   input.wait(50);check(!button.hasAvatar,"cleared photo retained image");
   input.mouseClick(button,button.width/2,button.height/2);
-  check(root.closes===1&&root.launches.length===1&&JSON.stringify(root.launches[0])==='["/usr/local/bin/mugshot"]',"profile did not dismiss and launch editor");
+  check(root.closes===1&&root.launches.length===1&&JSON.stringify(root.launches[0])==='["/usr/local/bin/account-tools"]',"profile did not dismiss and launch editor");
   drawer.active=false;check(!button.enabled,"dismissed header still accepts clicks");
   console.log("DISPLAY_PASS");Qt.quit();
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}

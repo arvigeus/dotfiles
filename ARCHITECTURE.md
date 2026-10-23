@@ -31,13 +31,18 @@ settings and device aliases. Reusable accessories belong under
 `modules/hardware/peripherals/`; their matching rules can travel between hosts.
 
 Native archinstall fields control packages and services. `extra` holds custom
-metadata, including AUR packages, Flatpak remotes/apps, assets, and hooks.
+metadata, including AUR/Cargo packages, Flatpak remotes/apps, assets, and hooks.
 `extra.packages`, `extra.services`, `extra.disabled_services`, and
 `extra.masked_services` record what native handlers (such as `app_config` or the
 desktop profile) or hooks install and enable. Nothing executes them yet; they
 keep those dependencies explicit for future reconciliation by live apply.
 Declare shared script/build tools in their owning modules rather than repeating
 them in application modules.
+
+`extra.private.files` and `extra.private.symlinks` declare private live paths for
+the separate backup/restore workflow. See [private backups](scripts/ARCHITECTURE.md#private-backups)
+for the schema and private module executor. Public installation/apply does not
+copy these paths into this checkout or restore them.
 
 ## Selection and hooks
 

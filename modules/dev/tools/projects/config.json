@@ -1,0 +1,7 @@
+{
+    "extra": {
+        "cargo_packages": [
+            "tokei"
+        ]
+    }
+}

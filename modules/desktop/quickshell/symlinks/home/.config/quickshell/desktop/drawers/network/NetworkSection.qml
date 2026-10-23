@@ -17,6 +17,7 @@ Surface {
     property bool flat: false
     default property alias contents: body.data
     readonly property bool showContents: !collapsible || expanded
+    function toggle(): void { expanded = !expanded; }
     Layout.fillWidth: true
     implicitHeight: layout.implicitHeight + (showContents && !flat ? 24 : 8)
     color: showContents && !flat ? Theme.surface : "transparent"
@@ -30,18 +31,12 @@ Surface {
             Layout.fillWidth: true
             spacing: 4
             Loader {
-                active: root.leading !== null || root.iconName !== ""
-                sourceComponent: root.leading ?? sectionIcon
-                Component {
-                    id: sectionIcon
-                    Item {
-                        implicitWidth: Theme.controlHeight; implicitHeight: Theme.controlHeight
-                        Icon { anchors.centerIn: parent; width: 20; height: 20; name: root.iconName; color: Theme.muted }
-                    }
-                }
+                active: root.leading !== null
+                sourceComponent: root.leading
             }
             Button {
                 id: heading
+                objectName: root.objectName + "Heading"
                 Layout.fillWidth: true
                 implicitHeight: Theme.controlHeight
                 padding: 0
@@ -49,9 +44,19 @@ Surface {
                 text: root.title
                 Accessible.name: root.title
                 Accessible.role: root.collapsible ? Accessible.Button : Accessible.Heading
-                onClicked: if (root.collapsible) root.expanded = !root.expanded
+                onClicked: if (root.collapsible) root.toggle()
                 contentItem: RowLayout {
                     spacing: 8
+                    Item {
+                        visible: root.leading === null && root.iconName !== ""
+                        implicitWidth: Theme.controlHeight; implicitHeight: Theme.controlHeight
+                        Icon {
+                            anchors.centerIn: parent
+                            width: 20; height: 20
+                            name: root.iconName
+                            color: root.collapsible && (heading.hovered || heading.visualFocus) ? Theme.accent : Theme.muted
+                        }
+                    }
                     ShellText { text: root.title; font.weight: Font.DemiBold; Layout.fillWidth: true; elide: Text.ElideRight }
                     ShellText { text: root.summary; color: Theme.muted; font.pixelSize: Theme.smallFontSize; elide: Text.ElideRight; Layout.maximumWidth: 140 }
                     Icon { visible: root.collapsible; name: root.expanded ? "chevron-up" : "chevron-down"; width: 16; height: 16; color: Theme.muted }

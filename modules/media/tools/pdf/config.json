@@ -1,5 +1,11 @@
 {
     "packages": [
-        "ghostscript"
+        "ghostscript",
+        "qpdf",
+        "python-pikepdf",
+        "poppler",
+        "qt6-webengine",
+        "qt6-svg",
+        "chaotic-aur/ocrmypdf"
     ]
 }

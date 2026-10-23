@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Video tools
+Comment=Inspect video streams and convert with saved presets
+Icon=video-x-generic
+Exec=/usr/local/bin/video-tools %F
+MimeType=video/mp4;video/x-matroska;video/webm;video/quicktime;video/x-msvideo;video/mpeg;video/mp2t;video/ogg;video/x-flv;video/x-ms-wmv;video/3gpp;
+Categories=AudioVideo;Video;AudioVideoEditing;
+Terminal=false

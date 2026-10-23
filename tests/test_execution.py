@@ -14,6 +14,32 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 class ExecutionTests(unittest.TestCase):
+    def test_cargo_packages_install_as_the_user_outside_the_staging_home(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); commands = root / 'bin'; commands.mkdir()
+            home = root / 'real home'; home.mkdir()
+            log = root / 'calls.jsonl'
+            config = root / 'config.json'
+            config.write_text(json.dumps({'extra': {'aur_packages': [],
+                'cargo_packages': ['tokei', 'just'], 'flatpak': {'remotes': {}, 'packages': []}}}))
+            (commands / 'getent').write_text('#!/bin/sh\nprintf \'%s\\n\' "$ACCOUNT_RECORD"\n')
+            (commands / 'runuser').write_text('#!/usr/bin/python3\nimport json,os,sys\nwith open(os.environ["CALL_LOG"],"a") as out: out.write(json.dumps(sys.argv[1:])+"\\n")\n')
+            for command in commands.iterdir(): command.chmod(0o755)
+            result = subprocess.run(['bash', str(REPO / 'scripts/extra-packages.sh'), str(config), 'tester'],
+                env=dict(os.environ, PATH=str(commands)+':'+os.environ['PATH'],
+                    HOME=str(root / 'staging'), CARGO_HOME=str(root / 'staging/cargo'),
+                    ACCOUNT_RECORD=f'tester:x:1000:1000::{home}:/bin/bash', CALL_LOG=str(log)),
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = [json.loads(line) for line in log.read_text().splitlines()]
+            self.assertEqual(len(calls), 2)
+            for call, crate in zip(calls, ['tokei', 'just']):
+                self.assertEqual(call[:3], ['-u', 'tester', '--'])
+                self.assertIn('HOME='+str(home), call)
+                self.assertIn('CARGO_HOME='+str(home / '.local/share/cargo'), call)
+                self.assertEqual(call[-5:], ['cargo', 'install', '--locked', '--', crate])
+                self.assertFalse(any('staging' in value for value in call))
+
     def test_xdg_folders_are_published_without_staging_paths(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

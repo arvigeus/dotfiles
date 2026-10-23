@@ -29,7 +29,8 @@ for preset in active_presets:
         r'\1\2\2', original)
     if updated != original:
         preset.write_text(updated)
-quiet = {
+settings = {
+    'mitigations': 'mitigations=off',
     'quiet': 'quiet',
     'loglevel': 'loglevel=3',
     'systemd.show_status': 'systemd.show_status=auto',
@@ -40,9 +41,9 @@ quiet = {
 }
 result = []
 for parameter in parameters:
-    if parameter.split('=', 1)[0] not in quiet:
+    if parameter.split('=', 1)[0] not in settings:
         result.append(parameter)
-result.extend(quiet.values())
+result.extend(settings.values())
 # Do not replace the active command line until all checks have passed.
 with tempfile.NamedTemporaryFile(mode='w', dir=cmdline.parent, delete=False) as temporary:
     target = Path(temporary.name)
@@ -54,5 +55,5 @@ with tempfile.NamedTemporaryFile(mode='w', dir=cmdline.parent, delete=False) as 
     finally:
         target.unlink(missing_ok=True)
 PY_BOOT
-# Rebuild the UKIs with the updated console settings and existing hooks.
+# Rebuild the UKIs with the updated kernel parameters and existing hooks.
 mkinitcpio -P

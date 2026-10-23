@@ -462,6 +462,30 @@
                 }
             }
         },
+        "private": {
+            "files": [
+                "home/.config/hypr/displays.lua",
+                "home/.config/quickshell/input-language.json",
+                "home/.config/quickshell/desktop/audio.ini",
+                "home/.config/quickshell/desktop/calendar.json",
+                "home/.config/quickshell/desktop/integrations/nextcloud-app-password",
+                "home/.config/quickshell/desktop/integrations/nextcloud.json",
+                "home/.config/quickshell/desktop/launcher.ini",
+                "home/.config/quickshell/desktop/network.ini",
+                "home/.config/quickshell/desktop/recording.json",
+                "home/.config/quickshell/desktop/screenshot-editor",
+                "home/.config/quickshell/desktop/screenshot-save",
+                "home/.config/quickshell/desktop/theme-mode",
+                "home/.config/quickshell/desktop/weather-selection.json",
+                "home/.config/quickshell/desktop/weather.json",
+                "home/.config/npm/npmrc",
+                "home/.config/git/config",
+                "home/.config/rclone/rclone.conf",
+                "home/.local/share/syntaxis-signing",
+                "home/.local/share/gnupg",
+                "home/.ssh"
+            ]
+        },
         "vscode": {
             "settings": {
                 "update.mode": "none",
@@ -647,6 +671,9 @@
                 "ms-vscode.test-adapter-converter": {}
             }
         },
+        "cargo_packages": [
+            "tokei"
+        ],
         "services": [
             "bluetooth.service",
             "NetworkManager.service",
@@ -856,14 +883,29 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/desktop/quickshell/files/usr/local/bin/account-tools",
+                "target": "/usr/local/bin/account-tools",
+                "mode": "0755"
+            },
+            {
                 "source": "modules/desktop/quickshell/files/usr/local/bin/desktop-theme",
                 "target": "/usr/local/bin/desktop-theme",
                 "mode": "0755"
             },
             {
-                "source": "modules/desktop/quickshell/files/usr/local/bin/mugshot",
-                "target": "/usr/local/bin/mugshot",
-                "mode": "0755"
+                "source": "modules/desktop/quickshell/files/usr/local/lib/account-tools/account_core.py",
+                "target": "/usr/local/lib/account-tools/account_core.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/desktop/quickshell/files/usr/local/lib/account-tools/account_gui.py",
+                "target": "/usr/local/lib/account-tools/account_gui.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/desktop/quickshell/files/usr/local/share/applications/account-tools.desktop",
+                "target": "/usr/local/share/applications/account-tools.desktop",
+                "mode": "0644"
             },
             {
                 "source": "modules/dev/editors/nano/files/etc/nanorc",
@@ -948,6 +990,91 @@
             {
                 "source": "modules/dev/tools/podman/files/etc/bash.bashrc.d/pods.sh",
                 "target": "/etc/bash.bashrc.d/pods.sh",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/dev/tools/projects/files/usr/local/bin/project-tools",
+                "target": "/usr/local/bin/project-tools",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/dev/tools/projects/files/usr/local/lib/project-tools/project_dashboard.py",
+                "target": "/usr/local/lib/project-tools/project_dashboard.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/dev/tools/projects/files/usr/local/lib/project-tools/project_inspector.py",
+                "target": "/usr/local/lib/project-tools/project_inspector.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/dev/tools/projects/files/usr/local/lib/project-tools/project_tasks.py",
+                "target": "/usr/local/lib/project-tools/project_tasks.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/dev/tools/projects/files/usr/local/share/applications/project-tools.desktop",
+                "target": "/usr/local/share/applications/project-tools.desktop",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/files/tools/common/files/usr/local/lib/desktop-file-tools/tool_jobs.py",
+                "target": "/usr/local/lib/desktop-file-tools/tool_jobs.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/files/tools/common/files/usr/local/lib/desktop-file-tools/tool_specs.py",
+                "target": "/usr/local/lib/desktop-file-tools/tool_specs.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/files/tools/common/files/usr/local/lib/desktop-file-tools/tool_worker.py",
+                "target": "/usr/local/lib/desktop-file-tools/tool_worker.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/files/tools/common/files/usr/local/lib/desktop-file-tools/tools_gui.py",
+                "target": "/usr/local/lib/desktop-file-tools/tools_gui.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/files/tools/common/files/usr/local/share/licenses/desktop-file-tools/UPSTREAM-LICENSE",
+                "target": "/usr/local/share/licenses/desktop-file-tools/UPSTREAM-LICENSE",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/files/tools/encryption/files/usr/local/bin/encryption-tools",
+                "target": "/usr/local/bin/encryption-tools",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/files/tools/encryption/files/usr/local/lib/desktop-file-tools/encryption_tasks.py",
+                "target": "/usr/local/lib/desktop-file-tools/encryption_tasks.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/files/tools/encryption/files/usr/local/share/applications/encryption-tools.desktop",
+                "target": "/usr/local/share/applications/encryption-tools.desktop",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/files/tools/general/files/usr/local/bin/file-tools",
+                "target": "/usr/local/bin/file-tools",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/files/tools/general/files/usr/local/lib/desktop-file-tools/file_tasks.py",
+                "target": "/usr/local/lib/desktop-file-tools/file_tasks.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/files/tools/general/files/usr/local/share/applications/file-tools.desktop",
+                "target": "/usr/local/share/applications/file-tools.desktop",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/files/tools/general/files/usr/local/share/mime/packages/dotfiles-checksums.xml",
+                "target": "/usr/local/share/mime/packages/dotfiles-checksums.xml",
                 "mode": "0644"
             },
             {
@@ -1216,8 +1343,88 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/media/tools/audio/files/home/.config/audio-tools/presets.json",
+                "target": "home/.config/audio-tools/presets.json",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/media/tools/audio/files/usr/local/bin/audio-tools",
+                "target": "/usr/local/bin/audio-tools",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/media/tools/audio/files/usr/local/lib/audio-tools/core.py",
+                "target": "/usr/local/lib/audio-tools/core.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/media/tools/audio/files/usr/local/lib/audio-tools/gui.py",
+                "target": "/usr/local/lib/audio-tools/gui.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/media/tools/audio/files/usr/local/share/applications/audio-tools.desktop",
+                "target": "/usr/local/share/applications/audio-tools.desktop",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/media/tools/pdf/files/usr/local/bin/pdf-tools",
+                "target": "/usr/local/bin/pdf-tools",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/media/tools/pdf/files/usr/local/lib/desktop-file-tools/pdf_drafts.py",
+                "target": "/usr/local/lib/desktop-file-tools/pdf_drafts.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/media/tools/pdf/files/usr/local/lib/desktop-file-tools/pdf_edits.py",
+                "target": "/usr/local/lib/desktop-file-tools/pdf_edits.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/media/tools/pdf/files/usr/local/lib/desktop-file-tools/pdf_gui.py",
+                "target": "/usr/local/lib/desktop-file-tools/pdf_gui.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/media/tools/pdf/files/usr/local/lib/desktop-file-tools/pdf_tasks.py",
+                "target": "/usr/local/lib/desktop-file-tools/pdf_tasks.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/media/tools/pdf/files/usr/local/share/applications/pdf-tools.desktop",
+                "target": "/usr/local/share/applications/pdf-tools.desktop",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/media/tools/subtitles/files/etc/bash.bashrc.d/subtitlecomposer.sh",
                 "target": "/etc/bash.bashrc.d/subtitlecomposer.sh",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/media/tools/video/files/home/.config/video-tools/presets.json",
+                "target": "home/.config/video-tools/presets.json",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/media/tools/video/files/usr/local/bin/video-tools",
+                "target": "/usr/local/bin/video-tools",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/media/tools/video/files/usr/local/lib/video-tools/video_core.py",
+                "target": "/usr/local/lib/video-tools/video_core.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/media/tools/video/files/usr/local/lib/video-tools/video_gui.py",
+                "target": "/usr/local/lib/video-tools/video_gui.py",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/media/tools/video/files/usr/local/share/applications/video-tools.desktop",
+                "target": "/usr/local/share/applications/video-tools.desktop",
                 "mode": "0644"
             },
             {
@@ -1794,6 +2001,14 @@
                 "target": "home/.config/quickshell/desktop/drawers/keyboard/qmldir"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/DeviceDiscoveryService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/network/DeviceDiscoveryService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/DevicesControls.qml",
+                "target": "home/.config/quickshell/desktop/drawers/network/DevicesControls.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/NetworkRow.qml",
                 "target": "home/.config/quickshell/desktop/drawers/network/NetworkRow.qml"
             },
@@ -1828,6 +2043,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/backend.py",
                 "target": "home/.config/quickshell/desktop/drawers/network/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/discovery.py",
+                "target": "home/.config/quickshell/desktop/drawers/network/discovery.py"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/network/qmldir",
@@ -2641,12 +2860,15 @@
             "modules/system/performance/gravity-mark/scripts/40_gravity-mark.sh",
             "modules/media/video/mpv/scripts/40_sosc.sh",
             "modules/base/xdg/scripts/45_user-directories.sh",
+            "modules/media/tools/audio/scripts/50_audio-tools.sh",
             "modules/base/bash/scripts/50_bash.sh",
             "modules/hardware/bluetooth/scripts/50_bluetooth.sh",
             "modules/office/btrust/scripts/50_btrust.sh",
             "modules/browsers/chromium/scripts/50_chromium.sh",
             "modules/internet/cloudflare/scripts/50_cloudflare.sh",
             "modules/ai/codex/scripts/50_codex.sh",
+            "modules/files/dolphin/scripts/50_dolphin-databases.sh",
+            "modules/files/dolphin/scripts/50_dolphin-preferences.sh",
             "modules/browsers/firefox/scripts/50_firefox.sh",
             "modules/system/security/gnupg/scripts/50_gnupg.sh",
             "modules/look-and-feel/icons/scripts/50_icons.sh",
@@ -2654,11 +2876,13 @@
             "modules/media/video/mpv/scripts/50_mpv.sh",
             "modules/hardware/network/scripts/50_network.sh",
             "modules/hardware/power/scripts/50_power.sh",
+            "modules/dev/tools/projects/scripts/50_project-tools.sh",
             "modules/dev/languages/python/scripts/50_python.sh",
             "modules/desktop/quickshell/scripts/50_quickshell.sh",
             "modules/gaming/games/roblox/scripts/50_roblox.sh",
             "modules/desktop/hyprland/scripts/50_session.sh",
             "modules/system/security/sudo/scripts/50_sudo.sh",
+            "modules/media/tools/video/scripts/50_video-tools.sh",
             "modules/dev/editors/vscode/scripts/50_vscode.sh",
             "modules/system/boot/scripts/90_boot.sh",
             "modules/desktop/hyprland/scripts/90_cleanup.sh",
@@ -2735,7 +2959,6 @@
         "wl-clipboard",
         "libnotify",
         "quickshell",
-        "mugshot",
         "accountsservice",
         "zenity",
         "adwaita-icon-theme",
@@ -2747,6 +2970,8 @@
         "slurp",
         "v4l-utils",
         "cliphist",
+        "pyside6",
+        "python-gobject",
         "sqlite",
         "sqlitebrowser",
         "kate",
@@ -2764,7 +2989,6 @@
         "uv",
         "ruff",
         "ty",
-        "python-gobject",
         "rust",
         "lldb",
         "bat",
@@ -2788,6 +3012,8 @@
         "shfmt",
         "dolphin",
         "kio-admin",
+        "kio-extras",
+        "rdfind",
         "dosbox",
         "gamescope",
         "switcheroo-control",
@@ -2828,6 +3054,7 @@
         "whois",
         "bind",
         "network-manager-applet",
+        "nmap",
         "evtest",
         "chaotic-aur/logiops",
         "solaar",
@@ -2853,18 +3080,30 @@
         "plasma-integration",
         "plasma5-integration",
         "koko",
+        "inkscape",
         "fooyin",
         "ffmpeg",
         "imagemagick",
+        "perl-image-exiftool",
         "mkvtoolnix-gui",
+        "gimagereader-qt",
+        "tesseract",
+        "tesseract-data-eng",
+        "tesseract-data-bul",
+        "tesseract-data-vie",
         "ghostscript",
+        "qpdf",
+        "python-pikepdf",
+        "poppler",
+        "qt6-webengine",
+        "qt6-svg",
+        "chaotic-aur/ocrmypdf",
         "subtitlecomposer",
         "mpv",
         "mpv-shim-default-shaders",
         "chaotic-aur/mpv-uosc",
         "chaotic-aur/mpv-thumbfast-git",
         "syncplay",
-        "pyside6",
         "vlc",
         "vlc-plugins-all",
         "yt-dlp",

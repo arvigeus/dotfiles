@@ -1,6 +1,7 @@
 {
     "packages": [
         "dolphin",
-        "kio-admin"
+        "kio-admin",
+        "kio-extras"
     ]
 }

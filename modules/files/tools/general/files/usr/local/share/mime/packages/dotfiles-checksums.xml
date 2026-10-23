@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="text/x-dotfiles-md5">
+    <comment>MD5 checksums</comment>
+    <sub-class-of type="text/plain"/>
+    <glob priority="60" pattern="*.md5"/>
+    <glob priority="60" pattern="*.md5sum"/>
+    <glob priority="60" pattern="md5sum.txt"/>
+    <glob priority="60" pattern="MD5SUMS"/>
+  </mime-type>
+  <mime-type type="text/x-dotfiles-sha1">
+    <comment>SHA1 checksums</comment>
+    <sub-class-of type="text/plain"/>
+    <glob priority="60" pattern="*.sha1"/>
+    <glob priority="60" pattern="*.sha1sum"/>
+    <glob priority="60" pattern="sha1sum.txt"/>
+    <glob priority="60" pattern="SHA1SUMS"/>
+  </mime-type>
+  <mime-type type="text/x-dotfiles-sha256">
+    <comment>SHA256 checksums</comment>
+    <sub-class-of type="text/plain"/>
+    <glob priority="60" pattern="*.sha256"/>
+    <glob priority="60" pattern="*.sha256sum"/>
+    <glob priority="60" pattern="sha256sum.txt"/>
+    <glob priority="60" pattern="SHA256SUMS"/>
+  </mime-type>
+  <mime-type type="text/x-dotfiles-sha512">
+    <comment>SHA512 checksums</comment>
+    <sub-class-of type="text/plain"/>
+    <glob priority="60" pattern="*.sha512"/>
+    <glob priority="60" pattern="*.sha512sum"/>
+    <glob priority="60" pattern="sha512sum.txt"/>
+    <glob priority="60" pattern="SHA512SUMS"/>
+  </mime-type>
+</mime-info>

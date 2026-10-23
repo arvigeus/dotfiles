@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Apply user-configuration.json's custom part: assets, AUR/Flatpak packages,
+# Apply user-configuration.json's custom part: assets, AUR/Cargo/Flatpak packages,
 # module hooks and the staged home. --check and --pre run only those hooks.
 # CONFIG_MODE=install (default, inside archinstall's target) or live.
 set -Eeuo pipefail

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Account tools
+Comment=Edit your profile and view account details and groups
+Icon=user-info
+Exec=/usr/local/bin/account-tools
+Categories=Settings;DesktopSettings;
+Terminal=false

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Encryption tools
+Comment=Encrypt, sign, decrypt and verify files with GnuPG
+Icon=document-encrypt
+Exec=/usr/local/bin/encryption-tools %F
+MimeType=application/octet-stream;inode/directory;application/pgp;application/pgp-encrypted;application/pgp-signature;application/pgp-keys;
+Categories=Utility;
+Terminal=false

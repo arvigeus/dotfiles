@@ -1,7 +1,6 @@
 {
     "packages": [
         "quickshell",
-        "mugshot",
         "accountsservice",
         "zenity",
         "adwaita-icon-theme",
@@ -13,6 +12,28 @@
         "slurp",
         "v4l-utils",
         "cliphist",
-        "wl-clipboard"
-    ]
+        "wl-clipboard",
+        "pyside6",
+        "python-gobject"
+    ],
+    "extra": {
+        "private": {
+            "files": [
+                "home/.config/hypr/displays.lua",
+                "home/.config/quickshell/input-language.json",
+                "home/.config/quickshell/desktop/audio.ini",
+                "home/.config/quickshell/desktop/calendar.json",
+                "home/.config/quickshell/desktop/integrations/nextcloud-app-password",
+                "home/.config/quickshell/desktop/integrations/nextcloud.json",
+                "home/.config/quickshell/desktop/launcher.ini",
+                "home/.config/quickshell/desktop/network.ini",
+                "home/.config/quickshell/desktop/recording.json",
+                "home/.config/quickshell/desktop/screenshot-editor",
+                "home/.config/quickshell/desktop/screenshot-save",
+                "home/.config/quickshell/desktop/theme-mode",
+                "home/.config/quickshell/desktop/weather-selection.json",
+                "home/.config/quickshell/desktop/weather.json"
+            ]
+        }
+    }
 }

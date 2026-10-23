@@ -1,5 +1,12 @@
 {
     "packages": [
         "openssh"
-    ]
+    ],
+    "extra": {
+        "private": {
+            "files": [
+                "home/.ssh"
+            ]
+        }
+    }
 }

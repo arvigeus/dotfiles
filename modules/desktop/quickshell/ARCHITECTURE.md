@@ -6,7 +6,8 @@ Provisioning and module conventions are in the [root architecture](../../../ARCH
 ## Package ownership
 
 This module owns Quickshell, Qt Multimedia, cliphist, wl-clipboard, capture tools,
-the iCalendar libraries and Mugshot/AccountsService. Hardware modules own audio,
+the iCalendar libraries, PySide6, Python GObject and AccountsService. Hardware
+modules own audio,
 Bluetooth, networking, storage, display tools and battery reporting. UPower is
 shared by hosts; `hardware/power` owns the Zephyrus power policy. Notifications
 activation belongs to `desktop/notifications`; GTK, Dolphin and terminal settings
@@ -70,9 +71,8 @@ controls and choices can share them.
 
 The space entries are placeholders. `spaces/profile.py` reads public
 AccountsService data, passwd GECOS and standard photo fallbacks on opening.
-Photos use an mtime URL suffix and no cache. `ProfileButton` launches Mugshot in
-its own unit. The managed Mugshot wrapper uses AccountsService and suppresses its
-obsolete sudo/chfn probes; the packaged executable remains unchanged.
+Photos use an mtime URL suffix and no cache. `ProfileButton` launches Account tools in
+its own unit. See [account editor](#account-editor) for its data and write boundaries.
 
 `SessionService` makes on-demand capability/status/action requests to
 `spaces/backend.py`. Systemd owns shutdown scheduling. Supported delays are
@@ -188,6 +188,28 @@ Openings are runtime IPv4 rich rules scoped to the current source subnet and
 local destination address. A network change makes mismatched rules inert; rules
 can apply again if the same address/subnet/zone returns. Reload/reboot removes
 them. Closing a rule does not terminate established connections.
+
+`DeviceDiscoveryService` starts when the collapsed Devices heading is clicked.
+The heading fills the available width with no separate refresh control. The body
+stays collapsed with a scanning summary until discovery finishes, then opens the
+results, empty-result message or error. The idle summary shows the discovered
+device count. A repeated click during scanning leaves the pending request intact;
+collapsing finished results and clicking again starts a fresh scan. Dismissal or
+an interface change discards pending expansion so late results cannot reopen it.
+`NetworkSection.toggle()` supplies the normal immediate toggle; Devices overrides
+it to defer expansion until the service has finished and published its result.
+Default section icons sit inside the heading button, sharing its hover highlight
+and click target.
+The separate `network/discovery.py` helper derives scope from the selected connected
+interface's private IPv4 address, limits a broad subnet to its local /24, and runs
+unprivileged Nmap host discovery without port scanning or reverse DNS. It retains
+reachable IPv4 addresses and reported response times. Device tooltips identify
+local addresses and the gateway from the selected interface's existing connection
+details, and show response time when available. Device rows are informational.
+Dismissal, route/interface changes and cancellation stop the owned scanner;
+no periodic discovery runs. Nmap belongs to
+`hardware/network`, not the shell or Dolphin. Public/unsupported networks fail
+without a scan. Results remain until refreshed or the connection context changes.
 
 ## Bluetooth
 
@@ -389,3 +411,32 @@ sourced fragments. After apply, verify installed links as well as repository
 sources, Hyprland config errors, service state and journal warnings. Hardware
 lock/suspend, hotplug, pairing, captures and a DRM/Steam round trip still need
 actual device interaction; isolated fixtures do not prove those paths.
+
+## Account editor
+
+`account-tools` is a PySide6 application installed with this module. Its desktop
+entry is available in the launcher and the Spaces profile button launches it.
+The old `/usr/local/bin/mugshot` wrapper is removed during apply; no package is
+automatically uninstalled.
+
+`account_core.py` reads only the current UID via passwd/NSS and AccountsService.
+Group membership comes from `getgrouplist`, including the primary group, rather
+than the launching process's possibly stale supplementary groups. UID/GID, home,
+shell, groups and available account/login flags are read-only. Full name, email,
+location and photo use the native SetRealName/SetEmail/SetLocation/SetIconFile
+methods with interactive PolicyKit authorization; no direct account-file writes,
+sudo, group administration or password handling is implemented. Email/location
+are profile metadata, not mail-client or session configuration.
+
+QProcess runs the helper outside the UI thread. Requests accept only the four
+editable string keys and always target the caller's UID. Writes are sequential;
+partial success is reported per field, and failed changes remain editable.
+Unavailable AccountsService still permits local account/group inspection.
+Photo selection normalizes a bounded image to a PNG no larger than 512×512;
+temporary images remain alive until the dialog closes so draft/discard cycles
+work, while AccountsService owns the saved copy. Saving prevents closing until
+the request finishes; refresh and close confirm discarding unsaved edits.
+
+`tests/test_account_tools.py` uses fake services and an offscreen dialog to cover
+current-user targeting, validation, partial failures, unavailable services,
+groups, drafts and asynchronous request dispatch. Tests never modify an account.

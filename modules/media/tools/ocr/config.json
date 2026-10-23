@@ -1,0 +1,9 @@
+{
+    "packages": [
+        "gimagereader-qt",
+        "tesseract",
+        "tesseract-data-eng",
+        "tesseract-data-bul",
+        "tesseract-data-vie"
+    ]
+}

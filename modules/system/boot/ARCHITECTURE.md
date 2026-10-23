@@ -4,10 +4,14 @@ The boot module uses a directly booted UKI. Archinstall owns the initramfs hooks
 and disk-unlock parameters; the module does not replace them or convert between
 BusyBox and systemd early userspace.
 
-The setup hook adjusts console verbosity while preserving root and encryption
-parameters. It validates UKI presets before replacing the command line, then
-rebuilds the images using the existing mkinitcpio configuration. Explicit preset
-configuration files remain supported; no mkinitcpio hook override is shipped.
+The setup hook adjusts console verbosity and sets `mitigations=off` to disable
+optional CPU vulnerability mitigations, while preserving root and encryption
+parameters. Existing `mitigations` values are replaced. It validates UKI presets
+before replacing the command line, then rebuilds the images using the existing
+mkinitcpio configuration. Explicit preset configuration files remain supported;
+no mkinitcpio hook override is shipped.
+The mitigation setting takes effect after rebooting into the rebuilt UKI; check
+`/proc/cmdline` and `/sys/devices/system/cpu/vulnerabilities/` to verify it.
 
 Archinstall enables mkinitcpio's stock `--splash` option embedding the Arch logo
 in the UKI. The setup hook clears an options assignment containing only that

@@ -2,7 +2,8 @@
     "packages": [
         "whois",
         "bind",
-        "network-manager-applet"
+        "network-manager-applet",
+        "nmap"
     ],
     "network_config": {
         "type": "nm_iwd"

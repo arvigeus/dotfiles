@@ -95,7 +95,7 @@ ShellRoot {
  function check(value,message){if(!value)throw new Error(message);}
  function click(item){input.mouseClick(item,item.width/2,item.height/2);}
  Timer {interval:200;running:true;onTriggered:{try{
-  const names=["apps","files","terminal","projects","movies","series","music","radio","pictures","games","books"];
+  const names=["movies","series","music","radio","pictures","games","books"];
   let last=-1;
   for(const name of names){
    const entry=find(drawer,"space:"+name);check(entry&&entry.enabled,"missing space "+name);

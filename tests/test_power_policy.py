@@ -83,12 +83,38 @@ class SourceSelection(unittest.TestCase):
         self.policy.observe()
         self.bus.select_profile.assert_not_called()
 
-    def test_initial_source_never_replaces_saved_mode(self):
-        for battery, mode in [(False, 'power-saver'), (True, 'balanced'), (True, 'performance')]:
-            self.battery, self.active = battery, mode
-            source.SourcePolicy(self.bus).observe()
-            self.assertEqual(self.active, mode)
+    def test_initial_source_reconciles_saved_daily_mode_without_a_signal(self):
+        for battery, saved, expected in [(False, 'power-saver', 'balanced'),
+                                         (True, 'balanced', 'power-saver'),
+                                         (False, 'balanced', 'balanced'),
+                                         (True, 'power-saver', 'power-saver')]:
+            with self.subTest(battery=battery, saved=saved):
+                self.battery, self.active = battery, saved
+                self.bus.select_profile.reset_mock()
+                policy = source.SourcePolicy(self.bus)
+                policy.observe()
+                self.assertEqual(self.active, expected)
+                self.assertEqual(self.bus.select_profile.call_count, int(saved != expected))
+                # A manual choice after startup survives repeated source reads.
+                self.active = saved
+                policy.observe()
+                self.assertEqual(self.active, saved)
+
+    def test_initial_source_preserves_performance_and_unknown_profiles(self):
+        for battery in (False, True):
+            for mode in ('performance', 'custom'):
+                self.battery, self.active = battery, mode
+                source.SourcePolicy(self.bus).observe()
+                self.assertEqual(self.active, mode)
         self.bus.select_profile.assert_not_called()
+
+    def test_initial_unconfirmed_switch_does_not_commit_source(self):
+        self.battery = True
+        self.bus.select_profile.side_effect = None
+        policy = source.SourcePolicy(self.bus)
+        with self.assertRaisesRegex(RuntimeError, 'did not confirm'):
+            policy.observe()
+        self.assertIsNone(policy.previous)
 
     def test_unknown_profile_and_invalid_source_never_select_a_mode(self):
         self.active = 'custom'

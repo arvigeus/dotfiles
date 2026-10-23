@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Audio tools
+Comment=Edit audio tags and convert with saved presets
+Icon=audio-x-generic
+Exec=/usr/local/bin/audio-tools %F
+MimeType=audio/mpeg;audio/flac;audio/ogg;audio/mp4;audio/x-wav;audio/x-matroska;audio/aac;audio/x-opus+ogg;audio/x-aiff;audio/x-ape;audio/x-wavpack;audio/x-ms-wma;audio/mp2;audio/webm;
+Categories=AudioVideo;Audio;AudioVideoEditing;
+Terminal=false

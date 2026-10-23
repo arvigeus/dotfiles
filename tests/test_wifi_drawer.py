@@ -317,6 +317,19 @@ FloatingWindow {
   function start() { starts++; running = true; }
   function cancel() { running = false; }
  }
+ QtObject {
+  id: discovery
+  property bool running: false
+  property bool loaded: false
+  property var hosts: []
+  property string subnet: ""
+  property string error: ""
+  property int starts: 0
+  property string interfaceName: ""
+  function start(name) { if (running) return; starts++; interfaceName = name; hosts = []; loaded = false; error = ""; running = true; }
+  function cancel() { running = false; }
+  function clear() { cancel(); hosts = []; subnet = ""; loaded = false; error = ""; }
+ }
  property var drawer: drawerLoader.item
  Item { id: preview; width: 480; height: 900
  Rectangle { anchors.fill: parent; color: UI.Theme.background }
@@ -336,7 +349,7 @@ FloatingWindow {
   width: 448; height: 900 - y - 16; x: 16; y: header.y + header.height + 33
   asynchronous: true
   sourceComponent: Component {
-   WifiDrawer { service: fake; networking: fakeNetworking; speedTest: speed; active: true; trafficRoot: Quickshell.env("WIFI_TRAFFIC_ROOT")
+   WifiDrawer { service: fake; networking: fakeNetworking; speedTest: speed; deviceDiscovery: discovery; active: true; trafficRoot: Quickshell.env("WIFI_TRAFFIC_ROOT")
     Rectangle { anchors.fill: parent; color: UI.Theme.background; z: -1 }
    }
   }
@@ -376,6 +389,18 @@ FloatingWindow {
     check(find(preview, "wifiInfo").iconName === "info", "connection information is not discoverable in header");
     check(find(window.contentItem, "wifiToggle") && !find(drawer, "wifiToggle"), "power did not move to header");
     check(wifi.scannerEnabled && fake.observing, "open drawer did not scan/observe");
+    const devicesHeading = find(drawer, "networkDevicesSectionHeading");
+    const devicesSection = find(drawer, "networkDevicesSection");
+    check(devicesHeading && !find(drawer, "networkDevicesScan") && discovery.starts === 0, "discovery should wait for expansion without a refresh button");
+    devicesHeading.clicked();
+    check(discovery.running && discovery.starts === 1 && discovery.interfaceName === "wlan0", "heading did not discover on the active interface");
+    check(!devicesSection.expanded && !devicesSection.showContents && devicesSection.summary === "Scanning…", "loading expanded an empty device list");
+    devicesHeading.clicked();
+    check(discovery.starts === 1 && !devicesSection.expanded, "pending expansion duplicated a running scan or showed an empty list");
+    discovery.hosts = [{address: "192.0.2.1", responseMs: 1.25}, {address: "192.0.2.2"}, {address: "192.0.2.3"}];
+    discovery.subnet = "192.0.2.0/24"; discovery.loaded = true;
+    check(!devicesSection.expanded, "results expanded before the scan finished");
+    discovery.running = false;
     check(drawer.networks.length === 4 && !find(drawer, "wifiNetwork:Away"), "out-of-range saved network listed");
     check(drawer.networks[0] === home && drawer.networks[1] === office, "connected and saved networks are not first");
     const row = find(drawer, "wifiNetwork:Home");
@@ -393,6 +418,19 @@ FloatingWindow {
     check(Math.abs(drawer.rates.down - 2048) < 300 && find(drawer, "downloadRate").text.endsWith("KiB/s"), "transfer statistics");
     capture(preview, "wifi-drawer-compact.png");
    } else if (window.stage === 1) {
+    const devicesSection = find(drawer, "networkDevicesSection");
+    const devicesHeading = find(drawer, "networkDevicesSectionHeading");
+    check(devicesSection.expanded && devicesSection.summary === "3 devices", "completed discovery did not expand with a device count");
+    check(devicesHeading.mapToItem(devicesSection, devicesHeading.width, 0).x >= devicesSection.width - 16, "device heading did not fill the available width");
+    check(find(drawer, "networkDevice:192.0.2.1").Accessible.description.includes("Network gateway")
+        && find(drawer, "networkDevice:192.0.2.1").Accessible.description.includes("1.3 ms"), "gateway tooltip lacks role or response time");
+    check(find(drawer, "networkDevice:192.0.2.2").Accessible.description.includes("This computer"), "local-device tooltip lacks role");
+    check(find(drawer, "networkDevice:192.0.2.3").Accessible.description === "192.0.2.3", "unknown device details were invented");
+    check(find(drawer, "networkDevice:192.0.2.1").parent.children.every(child => child.iconName !== "copy"), "device still has a copy button");
+    devicesHeading.clicked();
+    check(!devicesSection.expanded && discovery.starts === 1, "collapsing started another scan");
+    devicesHeading.clicked();
+    check(discovery.running && discovery.starts === 2 && !devicesSection.expanded, "refresh did not remain collapsed until results arrive");
     input.mouseClick(find(drawer, "wifiNetwork:<Cafe & guests>"), 80, 20);
     password = drawer.passwordField;
     password.forceActiveFocus(); input.keyClick(Qt.Key_A);
@@ -406,7 +444,9 @@ FloatingWindow {
     check(password.text === "retry-password" && find(drawer, "networkError").text === "Incorrect password", "failure discarded password");
     fake.busy = true;
     check(!find(drawer, "wifiSubmit").enabled, "duplicate action allowed");
-    drawer.active = false; check(!fake.observing && !wifi.scannerEnabled, "observation survived dismissal");
+    drawer.active = false; check(!fake.observing && !wifi.scannerEnabled && !discovery.running, "observation or discovery survived dismissal");
+    devicesHeading.clicked(); devicesHeading.clicked();
+    check(discovery.starts === 2, "inactive expansion started discovery");
     fake.completed("join", true); check(password.text === "", "success retained password");
     drawer.active = true; fake.busy = false; fake.error = "";
     check(wifi.scannerEnabled, "scanner did not resume");
@@ -550,6 +590,28 @@ FloatingWindow {
     speed.result = {download: 12345.67, upload: 98765.43, ping: 9999, jitter: 12, server: "Test", timestamp: "2026-10-15"};
     const button = find(drawer, "speedTestButton");
     check(button.width === 448 && button.height === 64, "resize or result left stale button geometry");
+   } else if (window.stage === 24) {
+    find(drawer, "networkDevicesSectionHeading").clicked();
+    check(discovery.running && !find(drawer, "networkDevicesSection").expanded, "empty-result scan opened early");
+    discovery.loaded = true; discovery.running = false;
+   } else if (window.stage === 25) {
+    const section = find(drawer, "networkDevicesSection");
+    check(section.expanded && section.summary === "0 devices", "empty discovery did not open its result");
+    find(drawer, "networkDevicesSectionHeading").clicked();
+    find(drawer, "networkDevicesSectionHeading").clicked();
+    discovery.loaded = true; discovery.error = "Device discovery failed."; discovery.running = false;
+   } else if (window.stage === 26) {
+    const section = find(drawer, "networkDevicesSection");
+    check(section.expanded && section.summary === "", "failed discovery did not open its error");
+    find(drawer, "networkDevicesSectionHeading").clicked();
+    find(drawer, "networkDevicesSectionHeading").clicked();
+    drawer.active = false;
+    discovery.hosts = [{address: "192.0.2.1"}]; discovery.loaded = true;
+   } else if (window.stage === 27) {
+    check(!find(drawer, "networkDevicesSection").expanded, "late results expanded a dismissed drawer");
+    check(find(drawer, "networkDevicesSection").summary === "1 device", "single device count is incorrect");
+    drawer.active = true;
+    check(!find(drawer, "networkDevicesSection").expanded, "reopening the drawer restored a pending expansion");
    } else {
     drawerLoader.active = false;
     check(!wifi.scannerEnabled, "destroyed drawer left scanning on");

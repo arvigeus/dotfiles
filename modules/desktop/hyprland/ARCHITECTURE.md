@@ -27,7 +27,9 @@ login banner.
 
 The supervisor runs one session at a time in an owned foreground process group:
 Hyprland via `uwsm start -e -D Hyprland hyprland.desktop`, or the DRM
-`gaming-session` launcher. It retains the PAM/controlling-terminal session and
+`gaming-session` launcher. Desktop starts set `UWSM_SILENT_START=1` to suppress
+UWSM's informational console output while preserving warnings and errors.
+It retains the PAM/controlling-terminal session and
 hands the foreground terminal to each child. It holds a lock on
 `$XDG_RUNTIME_DIR/session-mode/current`, which records the running mode and owner
 PID; `session-mode status` reports availability from that lock.

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Project tools
+Comment=Inspect a project and run local development tasks
+Icon=applications-development
+Exec=/usr/local/bin/project-tools %f
+MimeType=inode/directory;
+Categories=Development;
+Terminal=false

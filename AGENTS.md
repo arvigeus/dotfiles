@@ -1,5 +1,13 @@
 # Repository guidance
 
+## Configuration lifecycle
+
+- Treat the selected modules and generated configuration as the desired state,
+  not a transaction history. When a project-managed artifact is removed from the
+  configuration, remove that artifact from the live system as part of the same
+  change, then prune any one-off migration or cleanup hook from the repository.
+  Do not retain cleanup logic solely to support configurations from the past.
+
 ## Documentation
 
 - Keep `README.md` files concise and useful to people using the system: what a
