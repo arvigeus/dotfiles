@@ -10,6 +10,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 DESKTOP = REPO / 'modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop'
+PALETTE = REPO / 'modules/look-and-feel/palette/symlinks/etc/desktop-palette.json'
 QS = shutil.which('qs')
 
 
@@ -43,11 +44,22 @@ def state(rows):
     return dict(available=True, displays=copy.deepcopy(rows), token=backend.fingerprint(rows))
 
 
+def copy_theme_ui(root):
+    """Copy the UI with a private replacement for the global palette."""
+    shutil.copytree(DESKTOP / 'ui', root / 'ui')
+    palette = root / 'ui/palette.json'
+    shutil.copy(PALETTE, palette)
+    for name in ('Theme.qml', 'theme.py'):
+        path = root / 'ui' / name
+        path.write_text(path.read_text().replace('/etc/desktop-palette.json', str(palette)))
+
+
 def run_qml(test, body, setup=None):
     """Run body as shell.qml over a copy of the shell with private config/runtime dirs."""
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
-        for name in ('ui', 'icons', 'drawers'):
+        copy_theme_ui(root)
+        for name in ('icons', 'drawers'):
             shutil.copytree(DESKTOP / name, root / name)
         (root / 'runtime').mkdir(mode=0o700)
         config = root / 'config/quickshell/desktop'; config.mkdir(parents=True)

@@ -1,0 +1,19 @@
+{
+  "font": "Noto Sans",
+  "monospaceFont": "Noto Sans Mono",
+  "fontSize": 11.25,
+  "palettes": {
+    "dark": {
+      "background": "#1b2021", "surface": "#272d2e", "raised": "#343b3c",
+      "border": "#454c4e", "text": "#e4dadd", "muted": "#aba5a9",
+      "accent": "#ff465c", "accentText": "#ffffff", "danger": "#ff8090",
+      "warning": "#e6bb6c", "success": "#6ecc97", "visited": "#be91e0"
+    },
+    "light": {
+      "background": "#e4dde0", "surface": "#d8cfd3", "raised": "#cbc0c6",
+      "border": "#ab9ca4", "text": "#30272d", "muted": "#71636c",
+      "accent": "#c92240", "accentText": "#ffffff", "danger": "#bc2342",
+      "warning": "#946400", "success": "#167348", "visited": "#7951a7"
+    }
+  }
+}

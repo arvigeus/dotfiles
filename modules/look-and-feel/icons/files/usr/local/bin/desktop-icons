@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Build both system-wide Papirus variants from the global desktop palette."""
+import argparse
+import configparser
+import fcntl
+import json
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+PAPIRUS = Path('/usr/share/icons/Papirus')
+ICONS = Path('/usr/share/icons')
+PALETTE = Path('/etc/desktop-palette.json')
+
+
+def load_accents(path):
+    value = json.loads(path.read_text())
+    accents = {mode: value['palettes'][mode]['accent'].lower() for mode in ('dark', 'light')}
+    if any(not re.fullmatch(r'#[0-9a-f]{6}', color) for color in accents.values()):
+        raise ValueError('Palette accents must use #RRGGBB')
+    return accents
+
+
+def render(accents, icons):
+    """Override blue folders and their aliases; inherit all other Papirus icons."""
+    index = configparser.ConfigParser(interpolation=None)
+    index.optionxform = str
+    index.read_string((PAPIRUS / 'index.theme').read_text())
+    sources, directories, contents = {}, {}, {}
+    for directory in index['Icon Theme']['Directories'].split(',') + index['Icon Theme'].get('ScaledDirectories', '').split(','):
+        if not re.fullmatch(r'\d+x\d+(?:@\d+x)?/places', directory):
+            continue
+        for path in sorted((PAPIRUS / directory).glob('*.svg')):
+            target = path.resolve(strict=True)
+            if not re.match(r'^(folder|user)-blue(?:-|\.svg$)', target.name):
+                continue
+            if target not in contents:
+                contents[target] = target.read_text()
+            text = contents[target]
+            if '#5294e2' not in text.lower():
+                continue
+            sources[Path(directory) / path.name] = text
+            directories[directory] = dict(index[directory])
+    if not sources:
+        raise ValueError('Papirus has no supported blue folder icons')
+    output = {}
+    for mode, accent in accents.items():
+        def shade(factor):
+            return '#' + ''.join(f'{round(int(accent[i:i + 2], 16) * factor):02x}' for i in (1, 3, 5))
+        replacements = {'#5294e2': accent, '#4877b1': shade(0.78), '#1d344f': shade(0.35)}
+        root = icons / ('DotfilesPapirus' + mode.title())
+        for relative, text in sources.items():
+            output[root / relative] = re.sub(r'#[0-9a-fA-F]{6}\b',
+                lambda match: replacements.get(match[0].lower(), match[0]), text)
+        base = 'Papirus-Dark' if mode == 'dark' else 'Papirus-Light'
+        groups = {'Icon Theme': {'Name': 'DotfilesPapirus' + mode.title(), 'Comment': 'Papirus folders in the desktop accent',
+                  'Inherits': base, 'FollowsColorScheme': 'true', 'Example': 'folder',
+                  'Directories': ','.join(d for d in directories if '@' not in d),
+                  'ScaledDirectories': ','.join(d for d in directories if '@' in d)}}
+        output[root / 'index.theme'] = ''.join(
+            f'[{section}]\n' + ''.join(f'{key}={value}\n' for key, value in values.items()) + '\n'
+            for section, values in (groups | directories).items())
+    return output
+
+
+def generate(accents, icons=ICONS):
+    """Build both variants and their caches before replacing installed directories."""
+    icons.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.desktop-icons-', dir=icons) as directory:
+        staging = Path(directory)
+        for path, content in render(accents, staging).items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+        roots = [staging / ('DotfilesPapirus' + mode.title()) for mode in ('dark', 'light')]
+        for root in roots:
+            subprocess.run(['gtk-update-icon-cache', '--force', str(root)], check=True)
+        for root in roots:
+            target = icons / root.name
+            if target.is_symlink():
+                raise ValueError(f'Refusing to replace symlink: {target}')
+        for root in roots:
+            target = icons / root.name
+            if target.exists():
+                shutil.rmtree(target)
+            root.replace(target)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.parse_args()
+    if os.geteuid() != 0:
+        parser.exit(1, 'Run with sudo to update the system-wide icon themes.\n')
+    try:
+        with Path('/run/lock/desktop-icons.lock').open('w') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            generate(load_accents(PALETTE))
+        print('Updated DotfilesPapirusDark and DotfilesPapirusLight.')
+    except (OSError, ValueError, TypeError, AttributeError, KeyError, configparser.Error, subprocess.SubprocessError) as error:
+        parser.exit(1, f'{error}\n')
+
+
+if __name__ == '__main__':
+    main()

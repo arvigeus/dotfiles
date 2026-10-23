@@ -466,8 +466,12 @@
             "settings": {
                 "update.mode": "none",
                 "window.titleBarStyle": "custom",
-                "workbench.colorTheme": "One Dark Pro Mix",
-                "editor.fontFamily": "'FiraCode Nerd Font', 'FiraCode Nerd Font Mono', 'monospace', monospace",
+                "window.autoDetectColorScheme": true,
+                "workbench.colorTheme": "Dotfiles Dark",
+                "workbench.preferredDarkColorTheme": "Dotfiles Dark",
+                "workbench.preferredLightColorTheme": "Dotfiles Light",
+                "editor.fontFamily": "'Noto Sans Mono', monospace",
+                "editor.fontSize": 15,
                 "editor.inlineSuggest.enabled": true,
                 "git.autofetch": true,
                 "git.confirmSync": false,
@@ -523,7 +527,6 @@
                 "Anthropic.claude-code": {},
                 "openai.chatgpt": {},
                 "kilocode.Kilo-Code": {},
-                "zhuangtongfa.material-theme": {},
                 "docker.docker": {},
                 "oxc.oxc-vscode": {
                     "oxc.enable.oxlint": true,
@@ -778,6 +781,11 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/desktop/hyprland/files/etc/xdg/xdg-desktop-portal/hyprland-portals.conf",
+                "target": "/etc/xdg/xdg-desktop-portal/hyprland-portals.conf",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/desktop/hyprland/files/home/.config/hypr/hypridle.conf",
                 "target": "home/.config/hypr/hypridle.conf",
                 "mode": "0644"
@@ -846,6 +854,11 @@
                 "source": "modules/desktop/quickshell/files/home/.config/cliphist/config",
                 "target": "home/.config/cliphist/config",
                 "mode": "0644"
+            },
+            {
+                "source": "modules/desktop/quickshell/files/usr/local/bin/desktop-theme",
+                "target": "/usr/local/bin/desktop-theme",
+                "mode": "0755"
             },
             {
                 "source": "modules/desktop/quickshell/files/usr/local/bin/mugshot",
@@ -1165,6 +1178,21 @@
             {
                 "source": "modules/internet/cloudflare/files/etc/polkit-1/rules.d/50-desktop-warp.rules",
                 "target": "/etc/polkit-1/rules.d/50-desktop-warp.rules",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/look-and-feel/icons/files/etc/pacman.d/hooks/95-desktop-icons.hook",
+                "target": "/etc/pacman.d/hooks/95-desktop-icons.hook",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/look-and-feel/icons/files/usr/local/bin/desktop-icons",
+                "target": "/usr/local/bin/desktop-icons",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/look-and-feel/qt/files/etc/environment.d/qt.conf",
+                "target": "/etc/environment.d/qt.conf",
                 "mode": "0644"
             },
             {
@@ -2558,6 +2586,10 @@
                 "target": "home/.config/quickshell/desktop/ui/qmldir"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/theme.py",
+                "target": "home/.config/quickshell/desktop/ui/theme.py"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.local/share/applications/org.bluesabre.Mugshot.desktop",
                 "target": "home/.local/share/applications/org.bluesabre.Mugshot.desktop"
             },
@@ -2592,6 +2624,10 @@
             {
                 "source": "modules/hardware/peripherals/logitech/symlinks/home/.config/devices/keyboard/backends/logitech.py",
                 "target": "home/.config/devices/keyboard/backends/logitech.py"
+            },
+            {
+                "source": "modules/look-and-feel/palette/symlinks/etc/desktop-palette.json",
+                "target": "/etc/desktop-palette.json"
             }
         ],
         "checks": [
@@ -2613,6 +2649,7 @@
             "modules/ai/codex/scripts/50_codex.sh",
             "modules/browsers/firefox/scripts/50_firefox.sh",
             "modules/system/security/gnupg/scripts/50_gnupg.sh",
+            "modules/look-and-feel/icons/scripts/50_icons.sh",
             "modules/dev/tools/meld/scripts/50_meld.sh",
             "modules/media/video/mpv/scripts/50_mpv.sh",
             "modules/hardware/network/scripts/50_network.sh",
@@ -2803,6 +2840,18 @@
         "rclone",
         "ttf-firacode-nerd",
         "gtk3",
+        "gtk4",
+        "breeze-gtk",
+        "gsettings-desktop-schemas",
+        "dconf",
+        "papirus-icon-theme",
+        "gtk-update-icon-cache",
+        "union",
+        "breeze",
+        "breeze5",
+        "breeze-icons",
+        "plasma-integration",
+        "plasma5-integration",
         "koko",
         "fooyin",
         "ffmpeg",

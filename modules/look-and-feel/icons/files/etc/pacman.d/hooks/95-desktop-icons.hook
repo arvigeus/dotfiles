@@ -1,0 +1,12 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = papirus-icon-theme
+
+[Action]
+Description = Rebuilding desktop accent icons...
+When = PostTransaction
+Depends = python
+Depends = gtk-update-icon-cache
+Exec = /usr/local/bin/desktop-icons

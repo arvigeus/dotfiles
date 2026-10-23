@@ -1,5 +1,4 @@
 //@ pragma UseQApplication
-//@ pragma IconTheme Adwaita
 pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
@@ -31,7 +30,7 @@ ShellRoot {
     }
 
     // Session-wide services that must run before any drawer opens.
-    Component.onCompleted: { layoutRefresh.restart(); ComfortService.start(); DisplayService.start(); PowerSession.start(); ClipboardService.start(); CaptureService.start(); CalendarService.start(); NotificationCenter.start(); }
+    Component.onCompleted: { Theme.start(); layoutRefresh.restart(); ComfortService.start(); DisplayService.start(); PowerSession.start(); ClipboardService.start(); CaptureService.start(); CalendarService.start(); NotificationCenter.start(); }
 
     GlobalShortcut {
         appid: "desktop"; name: "record-region"

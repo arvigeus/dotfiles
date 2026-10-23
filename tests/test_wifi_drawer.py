@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
+from support import copy_theme_ui
 
 REPO = Path(__file__).resolve().parents[1]
 DESKTOP = REPO / 'modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop'
@@ -708,7 +709,7 @@ ShellRoot {
         with tempfile.TemporaryDirectory(prefix='wifi service ') as directory:
             root = Path(directory)
             shutil.copytree(DESKTOP / 'drawers/network', root / 'drawers/network')
-            shutil.copytree(DESKTOP / 'ui', root / 'ui')
+            copy_theme_ui(root)
             (root / 'ui/Apps.qml').write_text('''pragma Singleton
 import Quickshell
 Singleton {

@@ -54,6 +54,11 @@ ColumnLayout {
         }
     }
     ShellText {
+        visible: Theme.error !== "" || Theme.paletteError !== ""
+        text: Theme.paletteError || Theme.error; color: Theme.danger
+        Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText; font.pixelSize: Theme.smallFontSize
+    }
+    ShellText {
         visible: root.service.error !== ""; text: root.service.error; color: Theme.danger
         Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText; font.pixelSize: Theme.smallFontSize
     }

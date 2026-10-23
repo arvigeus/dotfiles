@@ -6,11 +6,6 @@ hl.config({
 
         border_size = 2,
 
-        col = {
-            active_border   = "rgba(ff465ccc)",
-            inactive_border = "rgba(454c4eff)",
-        },
-
         resize_on_border = true,
         extend_border_grab_area = 8,
     },
@@ -33,3 +28,6 @@ hl.config({
         disable_splash_rendering = true,
     },
 })
+
+-- Generated from the shared shell palette after the first shell start.
+pcall(require, "theme")

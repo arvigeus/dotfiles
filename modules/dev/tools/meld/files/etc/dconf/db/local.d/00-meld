@@ -3,5 +3,4 @@ filename-filters=[('Backups', true, '#*# .#* ~* *~ *.{orig,bak,swp}'),('OS-speci
 highlight-current-line=true
 indent-width=4
 show-line-numbers=true
-style-scheme='classic'
 wrap-mode='none'

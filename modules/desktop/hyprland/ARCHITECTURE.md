@@ -1,7 +1,8 @@
 # Desktop session implementation
 
-Desktop portals use GTK for file dialogs and Hyprland for screenshots and screen
-sharing. User-facing troubleshooting commands and session shortcuts are in
+Desktop portals use GTK for file dialogs and Settings, and Hyprland for screenshots
+and screen sharing. See [appearance integration](../../look-and-feel/ARCHITECTURE.md)
+for shared palette/mode propagation. Troubleshooting commands and shortcuts are in
 [README.md](README.md).
 
 ## Configuration loading

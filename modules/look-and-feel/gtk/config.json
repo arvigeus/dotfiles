@@ -1,5 +1,9 @@
 {
     "packages": [
-        "gtk3"
+        "gtk3",
+        "gtk4",
+        "breeze-gtk",
+        "gsettings-desktop-schemas",
+        "dconf"
     ]
 }

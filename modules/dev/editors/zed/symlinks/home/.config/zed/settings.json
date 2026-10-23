@@ -17,11 +17,13 @@
     "notify_when_agent_waiting": "primary_screen",
     "play_sound_when_agent_done": "when_hidden"
   },
-  "ui_font_size": 16,
-  "buffer_font_size": 14,
+  "ui_font_family": "Noto Sans",
+  "buffer_font_family": "Noto Sans Mono",
+  "ui_font_size": 15,
+  "buffer_font_size": 15,
   "theme": {
-    "dark": "One Dark",
-    "light": "One Light",
+    "dark": "Dotfiles Dark",
+    "light": "Dotfiles Light",
     "mode": "system"
   },
   "auto_install_extensions": {

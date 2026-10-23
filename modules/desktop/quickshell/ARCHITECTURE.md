@@ -44,8 +44,10 @@ applications in their own service units use the user manager's ordinary mask.
 
 ## Buttons and models
 
-`Theme` defines logical-pixel sizing and the light/dark palettes. Theme mode is a
-user preference in `theme-mode`, defaulting to dark; apply does not seed it.
+`Theme` defines logical-pixel sizing and reads the shared light/dark palette.
+Theme mode is a user preference in `theme-mode`, defaulting to dark; apply does
+not seed it. Production starts synchronization through `Theme.start()`;
+see [appearance integration](../../look-and-feel/ARCHITECTURE.md).
 `IconButton`, `ShellButton`, `ShellChoice` and `ShellMenuItem` share styling.
 `Card` centralizes static card appearance: the surface fill, one-pixel border
 and control corner radius. Battery/power, disks, displays, keyboard backlights,

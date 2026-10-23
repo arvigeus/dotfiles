@@ -89,7 +89,8 @@ return on redocking; undocking temporarily re-enables the panel when necessary.
 Brightness is not restored from the layout. Powersave normally caps the internal
 panel to 60 Hz; choosing another refresh overrides that until the next mode change.
 
-Dark mode affects the shell. Night light remembers its enabled state; edit
+Dark mode applies the [shared desktop appearance](../../look-and-feel/README.md).
+Night light remembers its enabled state; edit
 `~/.config/hypr/hyprsunset.conf` for warmth/times and restart `hyprsunset.service`.
 Keep awake is temporary, per display, and pauses automatic locking/suspend too.
 

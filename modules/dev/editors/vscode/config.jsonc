@@ -6,8 +6,12 @@
       "settings": {
         "update.mode": "none",
         "window.titleBarStyle": "custom",
-        "workbench.colorTheme": "One Dark Pro Mix",
-        "editor.fontFamily": "'FiraCode Nerd Font', 'FiraCode Nerd Font Mono', 'monospace', monospace",
+        "window.autoDetectColorScheme": true,
+        "workbench.colorTheme": "Dotfiles Dark",
+        "workbench.preferredDarkColorTheme": "Dotfiles Dark",
+        "workbench.preferredLightColorTheme": "Dotfiles Light",
+        "editor.fontFamily": "'Noto Sans Mono', monospace",
+        "editor.fontSize": 15,
         "editor.inlineSuggest.enabled": true,
         "git.autofetch": true,
         "git.confirmSync": false,
@@ -67,8 +71,6 @@
         "Anthropic.claude-code": {},
         "openai.chatgpt": {},
         "kilocode.Kilo-Code": {},
-        // Color schemes (workbench.colorTheme: "One Dark Pro Mix")
-        "zhuangtongfa.material-theme": {},
         // Docker (Podman)
         "docker.docker": {},
         // Vite Plus: project-local Oxlint/Oxfmt and automatic config discovery.

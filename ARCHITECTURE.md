@@ -11,6 +11,10 @@ Breaking changes require manual migration; compatibility layers are not maintain
 
 ## Modules
 
+For theming changes or Union/toolkit upgrades, follow the
+[appearance upgrade policy](modules/look-and-feel/ARCHITECTURE.md#union-upgrade-policy):
+adopt supported upstream features and retire the adapters they replace.
+
 Modules are discovered under `modules/`. A directory containing configuration,
 assets, or hooks is a module; discovery stops there. Configuration fragments are
 `config.json`, `config.jsonc` (comments and trailing commas allowed) and

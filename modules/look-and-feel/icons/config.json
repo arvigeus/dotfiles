@@ -1,0 +1,3 @@
+{
+    "packages": ["papirus-icon-theme", "gtk-update-icon-cache", "python"]
+}
