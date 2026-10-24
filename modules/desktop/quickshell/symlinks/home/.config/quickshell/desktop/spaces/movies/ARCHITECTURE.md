@@ -146,6 +146,12 @@ Examples are secret-free and do not get copied over user configuration. Keys rem
 QML sees provider labels and resolved playback targets. Worker stderr is reduced
 to a generic diagnostic rather than publishing provider exceptions or URLs.
 
+For the managed local qBittorrent client, `torrents.json` needs only
+`{"url":"http://127.0.0.1:8080"}` in each Space. The qBittorrent module enables
+loopback authentication bypass. Omit credentials for that connection: a nonempty
+`api_key` selects Bearer authentication even when loopback access is available,
+and a stale key is rejected. Remote clients need valid credentials for that server.
+
 `backup.sh` uses generated module selection, writes `modules/backup` in the private
 checkout, and refreshes its standalone restore engine. Private `apply.sh` restores
 copies, creates parents and preserves collisions beside the destination.

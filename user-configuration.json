@@ -957,6 +957,11 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/dev/languages/nodejs/files/etc/environment.d/pnpm.conf",
+                "target": "/etc/environment.d/pnpm.conf",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/dev/languages/python/files/etc/environment.d/python.conf",
                 "target": "/etc/environment.d/python.conf",
                 "mode": "0644"
