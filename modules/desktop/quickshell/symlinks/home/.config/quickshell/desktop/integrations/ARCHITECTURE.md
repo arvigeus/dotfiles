@@ -1,5 +1,7 @@
 # Shared provider accounts
 
+## Nextcloud
+
 `nextcloud.py` owns the Nextcloud account, its app password and the authenticated
 DAV transport. Consumers import it from the desktop root; feature configuration
 never holds account URLs or passwords. Runtime files live outside the checkout in
@@ -35,3 +37,25 @@ separately; feature configuration cannot override account identity or the passwo
 
 References: [Nextcloud app passwords](https://docs.nextcloud.com/server/latest/user_manual/en/session_management.html)
 and [CalDAV](https://docs.nextcloud.com/server/latest/user_manual/en/groupware/sync_kde.html).
+
+## qBittorrent
+
+Movies, TV Series and Games read one connection configuration from
+`$XDG_CONFIG_HOME/quickshell/desktop/integrations/torrents.json`. The quickshell
+module owns its single `extra.private.files` declaration. `backup.sh` stores
+one matching file under the private repository's generated `modules/backup`;
+standalone private restore recreates it with 0600 permissions and private parents.
+There are no per-Space copies or compatibility fallbacks. Each Space still owns
+its torrent worker, jobs, import records, tags and library database.
+
+The shared backend remains in `spaces/movies/torrent_backend.py`. Its
+`QUICKSHELL_MEDIA_SPACE` environment selects data and job identity, never account
+configuration. The JSON keys are `url`, optional `username`/`password`, and
+optional `api_key`; see [the secret-free example](torrents.example.json).
+Keys remain in Python and are not exposed to QML.
+
+The managed loopback client needs only `{"url":"http://127.0.0.1:8080"}`.
+The qBittorrent module enables localhost authentication bypass. Leave credentials
+empty for that connection: a nonempty `api_key` selects Bearer authentication,
+so a stale key fails even with localhost bypass. Remote clients need credentials
+valid for that server and matching local download mounts.

@@ -33,6 +33,8 @@ requesting attention. Apps must report urgency; unread browser tabs alone may no
 discovery, favorites, playback links and a local library with subtitles and downloads.
 [TV Series](symlinks/home/.config/quickshell/desktop/spaces/series/README.md) adds
 season and episode browsing in the same cinematic style.
+[Games](symlinks/home/.config/quickshell/desktop/spaces/games/README.md) combines
+Steam/Epic libraries, discovery, title artwork, ProtonDB and HowLongToBeat.
 
 Hold session actions for two seconds. Shutdown timers continue with the drawer
 closed. **Restart → Reload** closes applications and starts a fresh desktop.

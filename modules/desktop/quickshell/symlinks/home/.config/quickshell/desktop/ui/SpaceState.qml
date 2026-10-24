@@ -19,6 +19,12 @@ Singleton {
             name: qsTr("TV Series"),
             icon: "tv",
             source: "../spaces/series/Main.qml"
+        },
+        {
+            id: "games",
+            name: qsTr("Games"),
+            icon: "gamepad-2",
+            source: "../spaces/games/Main.qml"
         }
     ]
 

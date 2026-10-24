@@ -23,18 +23,24 @@ class MoviesPrivateTests(unittest.TestCase):
         module = json.loads((support.REPO / 'modules/desktop/quickshell/config.json').read_text())
         paths = [path for path in module['extra']['private']['files']
                  if f'/quickshell/desktop/spaces/{space}/' in path]
-        self.assertEqual(len(paths), 4)
+        self.assertEqual(len(paths), 3)
+        shared = 'home/.config/quickshell/desktop/integrations/torrents.json'
+        self.assertEqual(module['extra']['private']['files'].count(shared), 1)
+        paths.append(shared)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             live = root / 'live'
             config = live / f'.config/quickshell/desktop/spaces/{space}'
             config.mkdir(parents=True, mode=0o700)
             for name, contents in [('media.json', '{"tmdb_key":"fixture","providers":[]}'),
-                                   ('torrents.json', '{"password":"fixture"}'),
                                    ('media-ui.ini', '[catalogue]\ngrid=true\n')]:
                 path = config / name
                 path.write_text(contents)
                 path.chmod(0o600)
+            torrents = live / shared.removeprefix('home/')
+            torrents.parent.mkdir(parents=True, mode=0o700)
+            torrents.write_text('{"password":"fixture"}')
+            torrents.chmod(0o600)
             data = live / f'.local/share/quickshell/desktop/spaces/{space}'
             backend = Backend(config / 'media.json', data)
             movie = dict(id='tt001', imdbId='tt001', tmdbId=123, kind=kind, title='Fixture')

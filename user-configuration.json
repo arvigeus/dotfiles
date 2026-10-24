@@ -190,6 +190,7 @@
             "chatgpt-desktop",
             "pi-coding-agent",
             "arkenfox-user.js",
+            "legendary",
             "librespeed-cli-bin",
             "cloudflare-warp-nox-bin",
             "vlc-pause-click-plugin",
@@ -470,6 +471,7 @@
                 "home/.config/quickshell/desktop/calendar.json",
                 "home/.config/quickshell/desktop/integrations/nextcloud-app-password",
                 "home/.config/quickshell/desktop/integrations/nextcloud.json",
+                "home/.config/quickshell/desktop/integrations/torrents.json",
                 "home/.config/quickshell/desktop/launcher.ini",
                 "home/.config/quickshell/desktop/network.ini",
                 "home/.config/quickshell/desktop/recording.json",
@@ -479,13 +481,14 @@
                 "home/.config/quickshell/desktop/weather-selection.json",
                 "home/.config/quickshell/desktop/weather.json",
                 "home/.config/quickshell/desktop/spaces/movies/media.json",
-                "home/.config/quickshell/desktop/spaces/movies/torrents.json",
                 "home/.config/quickshell/desktop/spaces/movies/media-ui.ini",
                 "home/.local/share/quickshell/desktop/spaces/movies/library.sqlite",
                 "home/.config/quickshell/desktop/spaces/series/media.json",
-                "home/.config/quickshell/desktop/spaces/series/torrents.json",
                 "home/.config/quickshell/desktop/spaces/series/media-ui.ini",
                 "home/.local/share/quickshell/desktop/spaces/series/library.sqlite",
+                "home/.config/quickshell/desktop/spaces/games/games.json",
+                "home/.config/quickshell/desktop/spaces/games/games-ui.ini",
+                "home/.local/share/quickshell/desktop/spaces/games/library.sqlite",
                 "home/.config/npm/npmrc",
                 "home/.config/git/config",
                 "home/.config/rclone/rclone.conf",
@@ -2333,6 +2336,10 @@
                 "target": "home/.config/quickshell/desktop/icons/clipboard.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/clock.svg",
+                "target": "home/.config/quickshell/desktop/icons/clock.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/cloud-sun.svg",
                 "target": "home/.config/quickshell/desktop/icons/cloud-sun.svg"
             },
@@ -2713,6 +2720,10 @@
                 "target": "home/.config/quickshell/desktop/integrations/nextcloud.py"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/integrations/torrents.example.json",
+                "target": "home/.config/quickshell/desktop/integrations/torrents.example.json"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/launcher/Favorites.qml",
                 "target": "home/.config/quickshell/desktop/launcher/Favorites.qml"
             },
@@ -2733,8 +2744,104 @@
                 "target": "home/.config/quickshell/desktop/shell.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/ARCHITECTURE.md",
+                "target": "home/.config/quickshell/desktop/spaces/games/ARCHITECTURE.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/GameService.qml",
+                "target": "home/.config/quickshell/desktop/spaces/games/GameService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/GameStoreButton.qml",
+                "target": "home/.config/quickshell/desktop/spaces/games/GameStoreButton.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/Main.qml",
+                "target": "home/.config/quickshell/desktop/spaces/games/Main.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/README.md",
+                "target": "home/.config/quickshell/desktop/spaces/games/README.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/backend.py",
+                "target": "home/.config/quickshell/desktop/spaces/games/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/badges/igdb.svg",
+                "target": "home/.config/quickshell/desktop/spaces/games/badges/igdb.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/badges/protondb-borked.svg",
+                "target": "home/.config/quickshell/desktop/spaces/games/badges/protondb-borked.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/badges/protondb-bronze.svg",
+                "target": "home/.config/quickshell/desktop/spaces/games/badges/protondb-bronze.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/badges/protondb-gold.svg",
+                "target": "home/.config/quickshell/desktop/spaces/games/badges/protondb-gold.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/badges/protondb-native.svg",
+                "target": "home/.config/quickshell/desktop/spaces/games/badges/protondb-native.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/badges/protondb-platinum.svg",
+                "target": "home/.config/quickshell/desktop/spaces/games/badges/protondb-platinum.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/badges/protondb-silver.svg",
+                "target": "home/.config/quickshell/desktop/spaces/games/badges/protondb-silver.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/games.example.json",
+                "target": "home/.config/quickshell/desktop/spaces/games/games.example.json"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/gog.py",
+                "target": "home/.config/quickshell/desktop/spaces/games/gog.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/hltb.py",
+                "target": "home/.config/quickshell/desktop/spaces/games/hltb.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/igdb.py",
+                "target": "home/.config/quickshell/desktop/spaces/games/igdb.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/presentation.py",
+                "target": "home/.config/quickshell/desktop/spaces/games/presentation.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/qmldir",
+                "target": "home/.config/quickshell/desktop/spaces/games/qmldir"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/store_metadata.py",
+                "target": "home/.config/quickshell/desktop/spaces/games/store_metadata.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/stores/epicgames.svg",
+                "target": "home/.config/quickshell/desktop/spaces/games/stores/epicgames.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/stores/gog.svg",
+                "target": "home/.config/quickshell/desktop/spaces/games/stores/gog.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/stores/steam.svg",
+                "target": "home/.config/quickshell/desktop/spaces/games/stores/steam.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ARCHITECTURE.md",
                 "target": "home/.config/quickshell/desktop/spaces/movies/ARCHITECTURE.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ArtworkCache.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ArtworkCache.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ArtworkCard.qml",
@@ -2979,10 +3086,6 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/torrent_backend.py",
                 "target": "home/.config/quickshell/desktop/spaces/movies/torrent_backend.py"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/torrents.example.json",
-                "target": "home/.config/quickshell/desktop/spaces/movies/torrents.example.json"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/worker.py",
@@ -3372,6 +3475,7 @@
         "dosbox",
         "gamescope",
         "switcheroo-control",
+        "umu-launcher",
         "mangohud",
         "lib32-mangohud",
         "noto-fonts",

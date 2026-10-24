@@ -96,6 +96,7 @@ ShellRoot {
  function click(item){input.mouseClick(item,item.width/2,item.height/2);}
  Timer {interval:200;running:true;onTriggered:{try{
   const names=["movies","series","music","radio","pictures","games","books"];
+  check(!find(drawer,"space:desktop"),"Desktop remains in Spaces");
   let last=-1;
   for(const name of names){
    const entry=find(drawer,"space:"+name);check(entry&&entry.enabled,"missing space "+name);

@@ -1,0 +1,16 @@
+"libraryfolders"
+{
+	"0"
+	{
+		"path"		"/steam/default"
+		"apps"
+		{
+			"480"		"1024"
+		}
+	}
+	"1"
+	{
+		"path"		"/games/library with spaces"
+		"label"		"Extra"
+	}
+}

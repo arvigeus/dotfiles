@@ -2,7 +2,7 @@
 
 ## Scope and integration
 
-Movies and TV Series are registered. Other Spaces remain placeholders. `ui/SpaceState.qml`
+Movies, TV Series and Games are registered. Other Spaces remain placeholders. `ui/SpaceState.qml`
 owns the catalogue, running IDs and navigation; `SpaceHost.qml` owns asynchronous
 loaders and binds effective page activation. It uses the existing
 `InteractionState` / `InteractionWindow` layer surface with all four anchors,
@@ -10,7 +10,7 @@ Overlay stacking and ignored exclusion zones, covering the panel as well as the
 workspace. Qt applies per-output scale; the surface follows the output selected
 in Spaces. Unplugging its output hides it without destroying the instance.
 Opening a drawer or launcher hides the Space through shared input ownership.
-Desktop dismisses the drawer; hidden Spaces stay running. Explicit close unloads
+Hidden Spaces stay running. Explicit close unloads
 only the selected instance. A feature host captures its own ID so late callbacks
 cannot hide a different Space.
 
@@ -72,7 +72,10 @@ Only backdrops opt into this deadline. Logos reset immediately on source changes
 
 ## Artwork and response caches
 
-`ImageCache.qml` coalesces duplicate artwork requests and lazily owns a Python
+`ImageCache.qml` coalesces duplicate artwork requests through `ArtworkCache.qml`.
+Games uses an independent instance of this
+component with its own cache namespace. Movies and Series retain their existing
+shared artwork instance. The cache lazily owns a Python
 worker while image consumers exist. `image_cache.py` downloads to atomic files in
 `$XDG_CACHE_HOME/quickshell/desktop/spaces/movies/artwork/` (normally
 `~/.local/cache/quickshell/desktop/spaces/movies/artwork` in this configuration). SHA-256 filenames
@@ -138,7 +141,6 @@ XDG namespace. The owning quickshell module declares these portable paths in
 
 - `home/.config/quickshell/desktop/spaces/movies/media.json`: metadata API keys, named playback
   templates, region, player argv, optional anime adapters and OpenSubtitles account.
-- `home/.config/quickshell/desktop/spaces/movies/torrents.json`: qBittorrent endpoint and login/API key.
 - `home/.config/quickshell/desktop/spaces/movies/media-ui.ini`: view preferences.
 - `home/.local/share/quickshell/desktop/spaces/movies/library.sqlite`: personal/library state.
 
@@ -146,11 +148,11 @@ Examples are secret-free and do not get copied over user configuration. Keys rem
 QML sees provider labels and resolved playback targets. Worker stderr is reduced
 to a generic diagnostic rather than publishing provider exceptions or URLs.
 
-For the managed local qBittorrent client, `torrents.json` needs only
-`{"url":"http://127.0.0.1:8080"}` in each Space. The qBittorrent module enables
-loopback authentication bypass. Omit credentials for that connection: a nonempty
-`api_key` selects Bearer authentication even when loopback access is available,
-and a stale key is rejected. Remote clients need valid credentials for that server.
+All Spaces read one qBittorrent connection from
+`home/.config/quickshell/desktop/integrations/torrents.json`, declared once by the
+quickshell module. See [shared integration settings](../../integrations/ARCHITECTURE.md#qbittorrent)
+for authentication and backup ownership. Torrent jobs, libraries and worker
+lifetimes remain independent per Space.
 
 `backup.sh` uses generated module selection, writes `modules/backup` in the private
 checkout, and refreshes its standalone restore engine. Private `apply.sh` restores

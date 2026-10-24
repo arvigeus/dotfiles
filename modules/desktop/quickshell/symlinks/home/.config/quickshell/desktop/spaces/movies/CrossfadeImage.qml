@@ -4,6 +4,7 @@ import "../../ui"
 
 Item {
     id: root
+    property var cacheService: ImageCache
     property url source
     property int fillMode: Image.PreserveAspectCrop
     property int horizontalAlignment: Image.AlignHCenter
@@ -135,8 +136,8 @@ Item {
     // evaluating. Owned timers also cancel pending handlers when Movies closes.
     Timer { id: readyA; interval: 0; onTriggered: root.ready(a) }
     Timer { id: readyB; interval: 0; onTriggered: root.ready(b) }
-    CachedImage { id: a; objectName: "imageA"; anchors.fill: parent; asynchronous: true; opacity: 0; fillMode: root.fillMode; horizontalAlignment: root.horizontalAlignment; sourceSize.width: Math.min(root.imageWidth, Math.max(1, Math.ceil(root.width * Screen.devicePixelRatio))); onLoadStatusChanged: readyA.restart() }
-    CachedImage { id: b; objectName: "imageB"; anchors.fill: parent; asynchronous: true; opacity: 0; fillMode: root.fillMode; horizontalAlignment: root.horizontalAlignment; sourceSize.width: Math.min(root.imageWidth, Math.max(1, Math.ceil(root.width * Screen.devicePixelRatio))); onLoadStatusChanged: readyB.restart() }
+    CachedImage { cacheService: root.cacheService; id: a; objectName: "imageA"; anchors.fill: parent; asynchronous: true; opacity: 0; fillMode: root.fillMode; horizontalAlignment: root.horizontalAlignment; sourceSize.width: Math.min(root.imageWidth, Math.max(1, Math.ceil(root.width * Screen.devicePixelRatio))); onLoadStatusChanged: readyA.restart() }
+    CachedImage { cacheService: root.cacheService; id: b; objectName: "imageB"; anchors.fill: parent; asynchronous: true; opacity: 0; fillMode: root.fillMode; horizontalAlignment: root.horizontalAlignment; sourceSize.width: Math.min(root.imageWidth, Math.max(1, Math.ceil(root.width * Screen.devicePixelRatio))); onLoadStatusChanged: readyB.restart() }
     ParallelAnimation {
         id: fade
         NumberAnimation { target: root.incoming; property: "opacity"; to: root.incoming && root.incoming.remoteSource.toString() ? 1 : 0; duration: root.duration; easing.type: Easing.InOutQuad }

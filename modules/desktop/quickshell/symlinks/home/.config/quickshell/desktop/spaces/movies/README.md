@@ -9,8 +9,8 @@ optional search/detail fallback. Playback providers and OpenSubtitles are option
 Player/browser windows run independently.
 
 For downloads, enable qBittorrent’s Web UI and search plugins; configure its
-connection in `~/.config/quickshell/desktop/spaces/movies/torrents.json` using
-[torrents.example.json](torrents.example.json). Downloads use `Videos/Movies`
+shared connection in `~/.config/quickshell/desktop/integrations/torrents.json` using
+[torrents.example.json](../../integrations/torrents.example.json). Downloads use `Videos/Movies`
 (or your XDG Videos directory). **Local → Scan** can organize existing files;
 review uncertain matches before importing. Held deletion permanently removes the
 movie folder, or the associated torrent and all its downloaded files.

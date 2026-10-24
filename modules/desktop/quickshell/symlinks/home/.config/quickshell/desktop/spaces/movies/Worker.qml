@@ -8,6 +8,7 @@ Item {
     id: root
     visible: false
     required property string backend
+    property string backendDirectory: "spaces/movies"
     property string serviceName: "Module"
     property string spaceId: "movies"
     property int timeout: 90000
@@ -63,7 +64,7 @@ Item {
     }
     Process {
         id: worker
-        command: ["env", "QUICKSHELL_MEDIA_SPACE=" + root.spaceId, "python3", "-u", Quickshell.shellPath("spaces/movies/" + root.backend)]
+        command: ["env", "QUICKSHELL_MEDIA_SPACE=" + root.spaceId, "python3", "-u", Quickshell.shellPath(root.backendDirectory + "/" + root.backend)]
         running: !root.startOnDemand
         onStarted: {
             root.processReady = true;

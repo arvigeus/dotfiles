@@ -44,9 +44,9 @@ from spaces.movies.scanner import (
     sidecar_identity,
 )
 
-from spaces.movies.paths import CONFIG_DIR, DATA, SPACE
+from spaces.movies.paths import DATA, SPACE
 
-CONFIG = CONFIG_DIR / "torrents.json"
+CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "quickshell/desktop/integrations/torrents.json"
 
 
 

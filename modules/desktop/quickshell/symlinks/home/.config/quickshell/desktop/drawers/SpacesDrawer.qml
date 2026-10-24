@@ -33,18 +33,6 @@ DrawerPage {
             Layout.fillWidth: true
             Layout.fillHeight: true
             contentSpacing: 8
-            ShellButton {
-                objectName: "space:desktop"
-                Layout.fillWidth: true
-                Layout.preferredHeight: 52
-                text: qsTr("Desktop")
-                iconName: "monitor"
-                idleColor: "transparent"
-                onClicked: {
-                    SpaceState.hide();
-                    root.closeRequested();
-                }
-            }
             Repeater {
                 model: [
                     {

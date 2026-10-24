@@ -2,6 +2,7 @@ import QtQuick
 
 Image {
     id: root
+    property var cacheService: ImageCache
     property url remoteSource: ""
     property bool fetching: false
     property bool failed: false
@@ -23,7 +24,7 @@ Image {
         if (!/^https?:\/\//i.test(url)) { fetching = false; source = remoteSource; return; }
         fetching = true;
         source = "";
-        ticket = ImageCache.fetch(url, (file, error) => {
+        ticket = cacheService.fetch(url, (file, error) => {
             if (request !== generation) return;
             if (error) { failed = true; fetching = false; return; }
             source = file;
@@ -35,6 +36,6 @@ Image {
         retried = true;
         resolve(true);
     }
-    Component.onCompleted: { ImageCache.acquire(); initialized = true; resolve(false); }
-    Component.onDestruction: { generation++; if (ticket) ticket.callback = null; ImageCache.release(); }
+    Component.onCompleted: { cacheService.acquire(); initialized = true; resolve(false); }
+    Component.onDestruction: { generation++; if (ticket) ticket.callback = null; cacheService.release(); }
 }

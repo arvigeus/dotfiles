@@ -5,6 +5,7 @@ import QtQuick.Layouts
 
 Popup {
     id: root
+    property var cacheService: ImageCache
     objectName: "movieGallery"
     property var images: []
     property string title: "Images"
@@ -67,7 +68,7 @@ Popup {
                 contentWidth: Math.max(width, fullImage.width)
                 contentHeight: Math.max(height, fullImage.height)
                 boundsBehavior: Flickable.StopAtBounds
-                CachedImage {
+                CachedImage { cacheService: root.cacheService;
                     id: fullImage
                     objectName: "galleryImage"
                     remoteSource: root.visible ? root.imageSource : ""

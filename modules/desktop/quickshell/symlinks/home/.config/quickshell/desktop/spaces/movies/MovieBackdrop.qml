@@ -2,6 +2,7 @@ import QtQuick
 
 Rectangle {
     id: root
+    property var cacheService: ImageCache
     property url source: ""
     property string ownerKey: ""
     property url poster: ""
@@ -10,7 +11,7 @@ Rectangle {
     property bool gridMode: false
     property real readingEdge: 0.7
     color: MovieStyle.background
-    CrossfadeImage {
+    CrossfadeImage { cacheService: root.cacheService;
         id: posterImage
         objectName: "moviePosterBackdrop"
         anchors.fill: parent
@@ -22,7 +23,7 @@ Rectangle {
         opacity: root.usingPoster ? 0.9 : 0
         Behavior on opacity { NumberAnimation { duration: 240 } }
     }
-    CrossfadeImage {
+    CrossfadeImage { cacheService: root.cacheService;
         id: image
         ownerKey: root.ownerKey
         staleAfter: 1000

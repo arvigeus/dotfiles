@@ -10,6 +10,34 @@ import support
 
 
 class SeriesMediaTests(unittest.TestCase):
+    def test_torrent_connection_is_shared_while_jobs_and_libraries_remain_scoped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shared = root / 'config/quickshell/desktop/integrations/torrents.json'
+            shared.parent.mkdir(parents=True)
+            shared.write_text('{"url":"https://example.invalid","password":"fixture-shared"}')
+            script = '''
+import os
+from pathlib import Path
+from spaces.movies.torrent_backend import TorrentBackend
+backend = TorrentBackend()
+space = os.environ["QUICKSHELL_MEDIA_SPACE"]
+assert backend.config_path == Path(os.environ["XDG_CONFIG_HOME"]) / "quickshell/desktop/integrations/torrents.json"
+assert backend.config()["password"] == "fixture-shared"
+assert backend.data.name == space
+assert backend.job_tag("fixture") == space + "-job-fixture"
+'''
+            for space in ('movies', 'series', 'games'):
+                with self.subTest(space=space):
+                    obsolete = root / f'config/quickshell/desktop/spaces/{space}/torrents.json'
+                    obsolete.parent.mkdir(parents=True)
+                    obsolete.write_text('{"password":"fixture-unused"}')
+                    result = subprocess.run([sys.executable, '-c', script], cwd=support.DESKTOP,
+                        env={**os.environ, 'QUICKSHELL_MEDIA_SPACE':space,
+                             'XDG_CONFIG_HOME':str(root/'config'), 'XDG_DATA_HOME':str(root/'data')},
+                        capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_owned_workers_share_series_records_without_touching_movies(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -26,7 +54,7 @@ media, torrents, subtitles = Backend(), TorrentBackend(), SubtitleBackend()
 assert media.data == torrents.data == subtitles.data == DATA
 assert DATA.name == CONFIG_DIR.name == CACHE.name == "series"
 assert media.config_path == subtitles.config_path == CONFIG_DIR / "media.json"
-assert torrents.config_path == CONFIG_DIR / "torrents.json"
+assert torrents.config_path == CONFIG_DIR.parents[1] / "integrations/torrents.json"
 assert torrents.job_tag("fixture") == "series-job-fixture"
 media.config_path.write_text(json.dumps({"providers":[{"name":"Fixture","series_url":"https://example.invalid/{imdbId}/{season}/{episode}"}]}))
 show = dict(id="tt101",imdbId="tt101",kind="tv",title="Fixture series",season=2,episode=3)

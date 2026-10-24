@@ -28,7 +28,9 @@ reject superseded responses; clearing a title invalidates its episode catalogue.
 The shared `Worker` passes `QUICKSHELL_MEDIA_SPACE=series` to each Series metadata,
 torrent and subtitle process. `movies/paths.py` validates this namespace once per
 process. All three backends, including catalogue lookups inside the torrent
-backend, use the same Series config/data paths. Movies retains its existing paths.
+backend, use the same Series metadata config/data paths. All Spaces read the
+single qBittorrent connection in `integrations/torrents.json`; job records and
+tags remain scoped to their owning Space. Movies retains its existing paths.
 No worker changes process-global environment from a request. Closing one instance
 releases only its owned workers; the qBittorrent client and external players remain
 independent. Hidden idle job polling stops; active imports continue intentionally.
@@ -37,13 +39,15 @@ Portable private inputs declared by the quickshell module in `extra.private.file
 
 - `home/.config/quickshell/desktop/spaces/series/media.json`: API keys, region,
   playback providers/player, optional anime adapters and OpenSubtitles account.
-- `home/.config/quickshell/desktop/spaces/series/torrents.json`: qBittorrent connection.
 - `home/.config/quickshell/desktop/spaces/series/media-ui.ini`: layout preference.
 - `home/.local/share/quickshell/desktop/spaces/series/library.sqlite`: favorites,
   aliases, metadata cache, local-file inventory, subtitle records and import jobs.
 
 Metadata cache entries live in the Series database; OpenSubtitles login tokens
-stay in memory. Artwork intentionally uses the existing shared `ImageCache` singleton and bounded Movies
+stay in memory. The shared qBittorrent connection is declared once as
+`home/.config/quickshell/desktop/integrations/torrents.json`; see
+[integration ownership](../../integrations/ARCHITECTURE.md#qbittorrent).
+Artwork intentionally uses the existing shared `ImageCache` singleton and bounded Movies
 artwork directory: overlapping poster/gallery consumers share downloads, and closing
 one Space cannot stop the other’s artwork worker. It stops when the final consumer
 is destroyed. No credentials or personal records belong to this image cache.

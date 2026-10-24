@@ -4,6 +4,7 @@ import QtQuick.Controls
 
 ListView {
     id: root
+    property var cacheService: ImageCache
     property var images: []
     signal activated(int index)
     implicitHeight: 116
@@ -26,7 +27,7 @@ ListView {
         onClicked: { root.currentIndex = index; root.activated(index); }
         background: Rectangle {
             color: MovieStyle.surface
-            CrossfadeImage { anchors.fill: parent; anchors.margins: 2; imageWidth: 400; source: modelData.thumbnail || modelData.url || "" }
+            CrossfadeImage { cacheService: root.cacheService; anchors.fill: parent; anchors.margins: 2; imageWidth: 400; source: modelData.thumbnail || modelData.url || "" }
             Rectangle { anchors.fill: parent; color: "transparent"; border.width: 2; border.color: parent.parent.activeFocus || (root.activeFocus && root.currentIndex === index) ? MovieStyle.accent : "transparent" }
         }
     }

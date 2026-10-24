@@ -1,4 +1,5 @@
 ArtworkCard 1.0 ArtworkCard.qml
+ArtworkCache 1.0 ArtworkCache.qml
 singleton Browser 1.0 Browser.qml
 Collections 1.0 Collections.qml
 CrossfadeImage 1.0 CrossfadeImage.qml

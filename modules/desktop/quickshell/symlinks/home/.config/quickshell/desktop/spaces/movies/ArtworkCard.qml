@@ -4,6 +4,7 @@ import QtQuick.Layouts
 
 MovieButton {
     id: root
+    property var cacheService: ImageCache
     function fontSize(value) { return Math.round(value * MovieStyle.fontSize / 14); }
     property url imageSource: ""
     property string fallbackIcon: ""
@@ -26,7 +27,7 @@ MovieButton {
             color: "#80141117"
             radius: MovieStyle.controlRadius
             clip: true
-            CrossfadeImage {
+            CrossfadeImage { cacheService: root.cacheService;
                 id: artwork
                 anchors.fill: parent
                 source: root.imageSource

@@ -9,8 +9,8 @@ Configure `~/.config/quickshell/desktop/spaces/series/media.json` using the
 OMDb is an optional search/detail fallback. Playback templates use `series_url`
 and can include `{season}` and `{episode}`.
 
-For downloads, configure `~/.config/quickshell/desktop/spaces/series/torrents.json`
-using the [qBittorrent example](../movies/torrents.example.json). Enable its Web UI
+For downloads, configure the shared `~/.config/quickshell/desktop/integrations/torrents.json`
+using the [qBittorrent example](../../integrations/torrents.example.json). Enable its Web UI
 and search plugins. **Local → Scan** organizes existing episodes under
 `Videos/Series` (or your XDG Videos directory). Held local deletion removes the
 whole season folder; torrent deletion removes the associated torrent and all its
