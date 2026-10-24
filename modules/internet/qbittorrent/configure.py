@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge local Web UI settings into qBittorrent's Qt INI file."""
+"""Merge managed preferences into qBittorrent's Qt INI file."""
 from pathlib import Path
 import base64
 import hashlib
@@ -10,7 +10,21 @@ import tempfile
 
 
 SETTINGS = {
-    'Preferences': {r'Search\SearchEnabled': 'true'},
+    'Appearance': {'TrayIconStyle': 'Monochrome'},
+    'BitTorrent': {
+        'MergeTrackersEnabled': 'true',
+        r'Session\AlternativeGlobalDLSpeedLimit': '200',
+        r'Session\AlternativeGlobalUPSpeedLimit': '200',
+    },
+    'GUI': {
+        r'ConfirmActions\MergeTrackers': 'false',
+        r'TransferList\UseTorrentStatesColors': 'false',
+    },
+    'Preferences': {
+        r'Advanced\useSystemIconTheme': 'true',
+        r'General\PreventFromSuspendWhenDownloading': 'true',
+        r'Search\SearchEnabled': 'true',
+    },
     'WebUI': {
         'Enabled': 'true',
         'Address': '127.0.0.1',
