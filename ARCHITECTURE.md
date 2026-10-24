@@ -89,8 +89,16 @@ systemd user manager reads them, and `/etc/profile.d/environment.sh` exports the
 same result to login shells; graphical sessions inherit it from the login shell.
 Aliases and other interactive Bash settings go in `files/etc/bash.bashrc.d/*.sh`,
 which `/etc/bash.bashrc` sources. The managed `~/.bashrc` is empty so the
-system-wide settings take effect. Cache files use `~/.local/cache`; other XDG
-directories use their standard defaults.
+system-wide settings take effect. Cache files use `~/.local/cache`; the Codex
+desktop runtime installer still creates `~/.cache/codex-runtimes`. Codex,
+Cargo, Go, Pi, and Copilot CLI use `~/.local/share/{codex,cargo,go,pi,copilot}`.
+Go's build cache and npm use XDG cache paths; npm config uses XDG config. Claude
+Code stores its config under `~/.config/claude`; its separate `~/.claude.json`
+remains at home. GnuPG keeps its standard private `~/.gnupg` home. Code - OSS extensions use
+`$XDG_DATA_HOME/vscode-oss/extensions`, and shared state uses
+`$XDG_STATE_HOME/vscode-oss/shared-data`; the project launchers pass those
+paths to Code - OSS. Its product-specific `~/.vscode-oss/argv.json` remains at
+home.
 
 ## Boot and login
 

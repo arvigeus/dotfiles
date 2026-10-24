@@ -8,7 +8,7 @@ Type=exec
 ExecStartPre=/usr/local/libexec/btrust-browser-setup
 ExecStartPre=/usr/local/libexec/btrust-settings
 ExecStartPre=/usr/bin/systemctl --no-ask-password start btrust.target
-ExecStart=/opt/btrustbiss/bin/BISS --server.address=127.0.0.1
+ExecStart=/usr/local/libexec/btrust-launch --server.address=127.0.0.1
 ExecStartPost=/usr/local/libexec/btrust-bind-usb
 ExecStopPost=/usr/bin/systemctl --no-ask-password stop btrust.target
 KillMode=control-group

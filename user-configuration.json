@@ -482,7 +482,8 @@
                 "home/.config/git/config",
                 "home/.config/rclone/rclone.conf",
                 "home/.local/share/syntaxis-signing",
-                "home/.local/share/gnupg",
+                "home/AppData/Roaming/BISS/Settings.xml",
+                "home/.gnupg",
                 "home/.ssh"
             ]
         },
@@ -693,8 +694,23 @@
         "desktop": "hyprland",
         "files": [
             {
+                "source": "modules/ai/claude/files/etc/environment.d/claude.conf",
+                "target": "/etc/environment.d/claude.conf",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/ai/codex/files/etc/environment.d/codex.conf",
                 "target": "/etc/environment.d/codex.conf",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/ai/copilot/files/etc/environment.d/copilot.conf",
+                "target": "/etc/environment.d/copilot.conf",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/ai/pi/files/etc/environment.d/pi.conf",
+                "target": "/etc/environment.d/pi.conf",
                 "mode": "0644"
             },
             {
@@ -910,6 +926,21 @@
             {
                 "source": "modules/dev/editors/nano/files/etc/nanorc",
                 "target": "/etc/nanorc",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/dev/editors/vscode/files/usr/local/bin/code",
+                "target": "/usr/local/bin/code",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/dev/editors/vscode/files/usr/local/bin/code-oss",
+                "target": "/usr/local/bin/code-oss",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/dev/languages/go/files/etc/environment.d/go.conf",
+                "target": "/etc/environment.d/go.conf",
                 "mode": "0644"
             },
             {
@@ -1508,6 +1539,11 @@
                 "mode": "0755"
             },
             {
+                "source": "modules/office/btrust/files/usr/local/libexec/btrust-launch",
+                "target": "/usr/local/libexec/btrust-launch",
+                "mode": "0755"
+            },
+            {
                 "source": "modules/office/btrust/files/usr/local/libexec/btrust-maintain",
                 "target": "/usr/local/libexec/btrust-maintain",
                 "mode": "0755"
@@ -1591,11 +1627,6 @@
                 "source": "modules/system/security/firewall/files/usr/local/libexec/firewall-ports",
                 "target": "/usr/local/libexec/firewall-ports",
                 "mode": "0755"
-            },
-            {
-                "source": "modules/system/security/gnupg/files/etc/environment.d/gnupg.conf",
-                "target": "/etc/environment.d/gnupg.conf",
-                "mode": "0644"
             },
             {
                 "source": "modules/system/security/sudo/files/etc/bash.bashrc.d/sudo.sh",
@@ -2980,6 +3011,7 @@
         "nano-syntax-highlighting",
         "code",
         "zed",
+        "go",
         "extra/nodejs",
         "extra/npm",
         "bun",

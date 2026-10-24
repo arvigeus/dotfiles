@@ -140,7 +140,7 @@ remote control or process signaling. Its main config includes a generated
 monospace font fragment.
 
 Zed loads `zed/themes/dotfiles.json`. Code - OSS discovers a local declarative
-theme extension in `~/.vscode-oss/extensions/dotfiles.desktop-theme-1.0.0`.
+theme extension in `$XDG_DATA_HOME/vscode-oss/extensions/dotfiles.desktop-theme-1.0.0`.
 Both variants are generated together; their settings follow system mode. Editor
 fonts remain settings owned by the application after setup; provisioned defaults
 match the shell. Themes cover UI surfaces and common syntax roles using shared

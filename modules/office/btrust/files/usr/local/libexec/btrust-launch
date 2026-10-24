@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+cache_home=${XDG_CACHE_HOME:-${HOME:?HOME must be set}/.local/cache}
+export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Djavafx.cachedir=$cache_home/btrust/openjfx"
+exec /opt/btrustbiss/bin/BISS "$@"

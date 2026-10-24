@@ -307,7 +307,7 @@ def render(theme, mode, config, data, home):
         'version': '1.0', 'license': 'MIT', 'authors': ['dotfiles']})
     output[union / 'contents/css/style.css'] = union_css()
     zed_themes, code_themes = [], []
-    extension = home / '.vscode-oss/extensions/dotfiles.desktop-theme-1.0.0'
+    extension = data / 'vscode-oss/extensions/dotfiles.desktop-theme-1.0.0'
     for variant, colors in theme['palettes'].items():
         colors = dict(colors, accentText=selection_text(colors))
         label = 'Dotfiles ' + variant.title()

@@ -44,7 +44,8 @@
         },
         "private": {
             "files": [
-                "home/.local/share/syntaxis-signing"
+                "home/.local/share/syntaxis-signing",
+                "home/AppData/Roaming/BISS/Settings.xml"
             ]
         }
     }
