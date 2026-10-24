@@ -14,6 +14,7 @@ FocusScope {
     property var initialFocus: searchOpen ? search : gridMode ? grid : rail
     property var host
     property string kind: "movie"
+    readonly property string spaceId: kind === "tv" ? "series" : "movies"
     property url backgroundImage: ""
     property Item backdropTarget: null
     property Item toolbarTarget: null
@@ -102,10 +103,10 @@ FocusScope {
     readonly property bool busy: loading || titleLoading || tabLoading || playLoading || animeGenresLoading || localService.pendingDownloads > 0 || localService.pendingChanges > 0 || (scanOpen && (scanPanel.scanning || scanPanel.matching))
     readonly property string loadingHint: {
         if (loading) return "Loading catalogue…";
-        if (titleLoading) return "Loading movie…";
+        if (titleLoading) return kind === "tv" ? "Loading series…" : "Loading movie…";
         if (playLoading) return "Opening player…";
         if (scanOpen) return "Loading local library…";
-        return ({overview:"Loading movie details…",cast:"Loading cast…",collections:"Loading collections…",watch:"Loading viewing options…",spoilers:"Loading spoilers…",person:"Loading filmography…",episodes:"Loading episodes…",torrent:"Loading downloads…",subtitles:"Loading subtitles…"})[tab] || "Loading…";
+        return ({overview:kind === "tv" ? "Loading series details…" : "Loading movie details…",cast:"Loading cast…",collections:"Loading collections…",watch:"Loading viewing options…",spoilers:"Loading spoilers…",person:"Loading filmography…",episodes:"Loading episodes…",torrent:"Loading downloads…",subtitles:"Loading subtitles…"})[tab] || "Loading…";
     }
     property bool gridMode: false
     property int providerIndex: 0
@@ -118,11 +119,12 @@ FocusScope {
     readonly property var stars: cast.filter(p => p.department === "Acting" || (!p.department && !/director|writer|screenplay|creator/i.test(p.role || ""))).slice(0,6)
     Settings {
         id: preferences
-        location: "file://" + (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/quickshell/desktop/spaces/movies/media-ui.ini"
+        location: "file://" + (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/quickshell/desktop/spaces/" + root.spaceId + "/media-ui.ini"
     }
-    MediaService { id: service; onFailed: message => root.error = message }
+    MediaService { id: service; spaceId: root.spaceId; onFailed: message => root.error = message }
     TorrentService {
         id: localService
+        spaceId: root.spaceId
         objectName: "torrentService"
         monitorJobs: true
         foreground: root.active
@@ -193,6 +195,7 @@ FocusScope {
         ++selectionGeneration; selectionDelay.stop();
         selected = ({}); localFiles = []; backgroundImage = "";
         detailLoading = false; artworkLoading = false; seasonsLoading = false; personalLoading = false; filesLoading = false;
+        ++episodeGeneration; seasons = []; episodes = []; episodeCatalogue.clear(); episodeNext = ""; episodeLoading = false;
     }
     function uniquePeople(people) {
         const seen = new Set();
@@ -500,7 +503,7 @@ FocusScope {
         });
     }
     Component.onCompleted: {
-        service.fetch("init", {kind:kind}, (result, failure) => { if (failure) error = failure; else { standardProviders = result.providers; standardEpisodeProviders = result.episodeProviders || []; animeProviders = result.animeProviders || []; tmdbGenres = result.genres || []; providers = animeMode ? animeProviders : standardProviders; episodeProviders = animeMode ? animeProviders.map(() => true) : standardEpisodeProviders; gridMode = preferences.value("catalogue/grid", kind === "tv" ? true : preferences.value("movie/grid", false)); } });
+        service.fetch("init", {kind:kind}, (result, failure) => { if (failure) error = failure; else { standardProviders = result.providers; standardEpisodeProviders = result.episodeProviders || []; animeProviders = result.animeProviders || []; tmdbGenres = result.genres || []; providers = animeMode ? animeProviders : standardProviders; episodeProviders = animeMode ? animeProviders.map(() => true) : standardEpisodeProviders; gridMode = preferences.value("catalogue/grid", kind === "movie" ? preferences.value("movie/grid", false) : false); } });
         service.fetch("local_titles", {kind:kind}, (result, failure) => {
             if (linkedTitleId) return;
             localMode = !failure && !!result && result.items.length > 0;
@@ -568,7 +571,7 @@ FocusScope {
         }
         MovieIconButton { objectName: "searchButton"; Layout.minimumWidth: 42; Layout.maximumWidth: 42; highlighted: root.searchOpen; iconName: "search"; text: "Search " + (root.kind === "tv" ? "TV series" : "movies"); onClicked: { root.searchOpen = !root.searchOpen; if (root.searchOpen) search.forceActiveFocus(); else search.text = ""; } }
         MovieIconButton { objectName: "filtersButton"; Layout.minimumWidth: 42; Layout.maximumWidth: 42; iconName: "sliders-horizontal"; text: "Filters"; enabled: !root.favorites && !root.localMode; highlighted: root.filtersOpen; onClicked: root.filtersOpen = !root.filtersOpen }
-        MovieIconButton { Layout.minimumWidth: 42; Layout.maximumWidth: 42; iconName: root.gridMode ? "panels-top-left" : "layout-grid"; text: root.gridMode ? "Show poster rail" : "Show grid"; onClicked: { root.gridMode = !root.gridMode; preferences.setValue("catalogue/grid",root.gridMode); } }
+        MovieIconButton { objectName: "catalogueLayoutToggle"; Layout.minimumWidth: 42; Layout.maximumWidth: 42; iconName: root.gridMode ? "panels-top-left" : "layout-grid"; text: root.gridMode ? "Show poster rail" : "Show grid"; onClicked: { root.gridMode = !root.gridMode; preferences.setValue("catalogue/grid",root.gridMode); } }
     }
     ColumnLayout {
         anchors.fill: parent
@@ -643,7 +646,7 @@ FocusScope {
                     SplitButton { visible: root.trailers.length > 0; text: root.trailers.length === 1 ? "Trailer" : "Trailers"; options: root.trailers.map(t => t.title); currentIndex: root.trailerIndex; onTriggered: index => { root.trailerIndex=index; if (root.trailers[index]) root.openUrl(root.trailers[index].url); } }
                     MovieIconButton { iconName: root.personal.favorite ? "star-filled" : "star"; text: root.personal.favorite ? "Remove favorite" : "Add favorite"; onClicked: root.save({favorite:!root.personal.favorite}) }
                     MovieIconButton { iconName: "refresh-cw"; text: "Refresh title"; onClicked: root.refreshTitle() }
-                    HoldDelete { visible: root.kind === "movie" && root.localFiles.length > 0; torrent: root.localFiles.length > 0 && root.localFiles[0].torrent; onActivated: root.deleteLocal(root.localFiles[0].path) }
+                    HoldDelete { localHint: "Delete local movie folder"; visible: root.kind === "movie" && root.localFiles.length > 0; torrent: root.localFiles.length > 0 && root.localFiles[0].torrent; onActivated: root.deleteLocal(root.localFiles[0].path) }
                 }
                 Flow {
                     Layout.fillWidth: true; spacing: 4
@@ -718,6 +721,7 @@ FocusScope {
                 }
                 Subtitles {
                     id: subtitlePanel
+                    spaceId: root.spaceId
                     showLoading: false
                     host: root.host
                     objectName: "subtitleBrowser"
@@ -786,8 +790,8 @@ FocusScope {
                         Layout.fillWidth: true
                         Layout.fillHeight: false
                         Layout.preferredHeight: visible ? 42 : 0
-                        MovieChoice { id: seasonPicker; Layout.preferredWidth: 160; model: root.seasons.map(s => "Season " + s); onActivated: root.loadEpisodes(false); Accessible.name: "Season" }
-                        MovieIconButton { iconName: "file-search-corner"; text: "Find selected season"; onClicked: { root.torrentEpisode = ({season:root.seasons[Math.max(0,seasonPicker.currentIndex)]}); root.tab = "torrent"; } }
+                        MovieChoice { id: seasonPicker; objectName: "seasonPicker"; enabled: root.seasons.length > 0; Layout.preferredWidth: 160; model: root.seasons.map(s => "Season " + s); onActivated: root.loadEpisodes(false); Accessible.name: "Season" }
+                        MovieIconButton { iconName: "file-search-corner"; text: "Find selected season"; enabled: root.seasons.length > 0; onClicked: { root.torrentEpisode = ({season:root.seasons[Math.max(0,seasonPicker.currentIndex)]}); root.tab = "torrent"; } }
                     }
                     ListView {
                         id: episodeView; objectName: "episodeList"

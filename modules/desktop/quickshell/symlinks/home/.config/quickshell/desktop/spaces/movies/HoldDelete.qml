@@ -5,10 +5,11 @@ HoldButton {
     id: root
     property bool torrent: false
     property bool showLabel: false
+    property string localHint: "Delete local file"
     signal activated()
     iconName: "trash-2"
     text: showLabel ? "Delete" : ""
-    hint: torrent ? "Delete torrent and all its downloaded files" : "Delete local file"
+    hint: torrent ? "Delete torrent and all its downloaded files" : root.localHint
     implicitWidth: showLabel ? 100 : MovieStyle.controlHeight
     onConfirmed: activated()
     contentItem: RowLayout {

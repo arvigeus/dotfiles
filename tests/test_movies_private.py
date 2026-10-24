@@ -1,4 +1,4 @@
-"""Portable Movies configuration and personal records survive private restore."""
+"""Portable media Space configuration and personal records survive private restore."""
 import json
 import os
 from pathlib import Path
@@ -13,15 +13,21 @@ from spaces.movies.backend import Backend
 
 
 class MoviesPrivateTests(unittest.TestCase):
-    def test_selected_declarations_restore_credentials_preferences_and_favorites(self):
+    def test_movies_private_restore(self):
+        self.check_private_restore('movies', 'movie')
+
+    def test_series_private_restore(self):
+        self.check_private_restore('series', 'tv')
+
+    def check_private_restore(self, space, kind):
         module = json.loads((support.REPO / 'modules/desktop/quickshell/config.json').read_text())
         paths = [path for path in module['extra']['private']['files']
-                 if '/quickshell/desktop/spaces/movies/' in path]
+                 if f'/quickshell/desktop/spaces/{space}/' in path]
         self.assertEqual(len(paths), 4)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             live = root / 'live'
-            config = live / '.config/quickshell/desktop/spaces/movies'
+            config = live / f'.config/quickshell/desktop/spaces/{space}'
             config.mkdir(parents=True, mode=0o700)
             for name, contents in [('media.json', '{"tmdb_key":"fixture","providers":[]}'),
                                    ('torrents.json', '{"password":"fixture"}'),
@@ -29,9 +35,9 @@ class MoviesPrivateTests(unittest.TestCase):
                 path = config / name
                 path.write_text(contents)
                 path.chmod(0o600)
-            data = live / '.local/share/quickshell/desktop/spaces/movies'
+            data = live / f'.local/share/quickshell/desktop/spaces/{space}'
             backend = Backend(config / 'media.json', data)
-            movie = dict(id='tt001', imdbId='tt001', tmdbId=123, kind='movie', title='Fixture')
+            movie = dict(id='tt001', imdbId='tt001', tmdbId=123, kind=kind, title='Fixture')
             backend.save(dict(title=movie, values=dict(favorite=True)))
             private = root / 'private'
             declaration = root / 'selected.json'
@@ -57,8 +63,8 @@ class MoviesPrivateTests(unittest.TestCase):
             for path in paths:
                 relative = path.removeprefix('home/')
                 self.assertEqual((live / relative).read_bytes(), (restored / relative).read_bytes())
-            target = restored / '.config/quickshell/desktop/spaces/movies/media.json'
+            target = restored / f'.config/quickshell/desktop/spaces/{space}/media.json'
             self.assertEqual(target.stat().st_mode & 0o777, 0o600)
             self.assertEqual(target.parent.stat().st_mode & 0o777, 0o700)
-            restored_backend = Backend(target, restored / '.local/share/quickshell/desktop/spaces/movies')
-            self.assertTrue(restored_backend.personal('tmdb:movie:123')['favorite'])
+            restored_backend = Backend(target, restored / f'.local/share/quickshell/desktop/spaces/{space}')
+            self.assertTrue(restored_backend.personal(f'tmdb:{kind}:123')['favorite'])

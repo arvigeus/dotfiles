@@ -22,11 +22,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from spaces.movies.local import SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS, episode_numbers, library_root
 
-CONFIG = (
-    Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    / "quickshell/desktop/spaces/movies/media.json"
-)
-DATA = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "quickshell/desktop/spaces/movies"
+from spaces.movies.paths import CONFIG_DIR, DATA, SPACE
+
+CONFIG = CONFIG_DIR / "media.json"
+
 API = "https://api.opensubtitles.com/api/v1"
 LANGUAGE_ALIASES = {
     "bul": "bg",
@@ -585,7 +584,7 @@ class SubtitleBackend:
         if not CUE.search(content):
             raise SubtitleError("The subtitle file has no SRT cues.")
         with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=target.parent, prefix=".movies-sub-", delete=False
+            mode="w", encoding="utf-8", dir=target.parent, prefix="." + SPACE + "-sub-", delete=False
         ) as stream:
             temp = Path(stream.name)
             stream.write(content.replace("\r\n", "\n"))
@@ -660,7 +659,7 @@ class SubtitleBackend:
         temporary = None
         try:
             with tempfile.NamedTemporaryFile(
-                mode="w", encoding="utf-8", dir=source.parent, prefix=".movies-sub-", delete=False
+                mode="w", encoding="utf-8", dir=source.parent, prefix="." + SPACE + "-sub-", delete=False
             ) as stream:
                 temporary = Path(stream.name)
                 stream.write(result.replace("\r\n", "\n"))
@@ -700,7 +699,7 @@ class SubtitleBackend:
         code = selected["language"] if re.fullmatch(r"[a-z]{2,3}", selected["language"]) else "und"
         target = self.target(video, code, "embedded")
         with tempfile.NamedTemporaryFile(
-            dir=video.parent, suffix=".srt", prefix=".movies-sub-", delete=False
+            dir=video.parent, suffix=".srt", prefix="." + SPACE + "-sub-", delete=False
         ) as stream:
             temp = Path(stream.name)
         try:

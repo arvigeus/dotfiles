@@ -1,6 +1,5 @@
 import QtQuick
 import "../../ui"
-import QtQuick.Layouts
 import "RatingLinks.js" as RatingLinks
 
 Flow {
@@ -25,19 +24,20 @@ Flow {
             objectName: "rating:" + RatingLinks.source(modelData)
             text: modelData.source + ": " + modelData.value
             Accessible.name: text
-            implicitWidth: contentItem.implicitWidth + 12; implicitHeight: 36
+            implicitWidth: ratingContent.implicitWidth + leftPadding + rightPadding; implicitHeight: 36
             padding: 4
             onClicked: Browser.open(RatingLinks.page(modelData, root.title), root.title.kind === "tv" ? "series" : "movies", "", root.host)
-            contentItem: RowLayout {
+            contentItem: Row {
+                id: ratingContent
                 spacing: 6
                 Image {
                     objectName: "ratingArtwork"
                     source: Qt.resolvedUrl("ratings/rating_" + ratingButton.ratingIcon + (ratingButton.ratingIcon === "mal" ? ".svg" : ".png"))
-                    Layout.preferredWidth: 30; Layout.preferredHeight: 30
+                    width: 30; height: 30
                     sourceSize.width: 60; sourceSize.height: 60
                     fillMode: Image.PreserveAspectFit
                 }
-                MovieText { text: String(ratingButton.modelData.value); font.bold: true; font.pixelSize: MovieStyle.fontSize + 2 }
+                MovieText { anchors.verticalCenter: parent.verticalCenter; text: String(ratingButton.modelData.value); font.bold: true; font.pixelSize: MovieStyle.fontSize + 2 }
             }
         }
     }

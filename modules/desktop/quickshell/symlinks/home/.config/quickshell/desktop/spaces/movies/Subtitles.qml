@@ -8,6 +8,7 @@ ColumnLayout {
     id: root
     property bool showLoading: true
     function fontSize(value) { return Math.round(value * MovieStyle.fontSize / 14); }
+    property string spaceId: "movies"
     property var host
     function dismissTransient() {
         if (!visible) return false;
@@ -41,7 +42,7 @@ ColumnLayout {
     readonly property var shownResults: results.slice(0, resultDisplayLimit)
     spacing: 8
 
-    SubtitleService { id: service; onFailed: message => root.error = message }
+    SubtitleService { id: service; spaceId: root.spaceId; onFailed: message => root.error = message }
 
     function refresh() {
         if (!visible || !path) return;

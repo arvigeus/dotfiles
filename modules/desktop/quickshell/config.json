@@ -37,7 +37,11 @@
                 "home/.config/quickshell/desktop/spaces/movies/media.json",
                 "home/.config/quickshell/desktop/spaces/movies/torrents.json",
                 "home/.config/quickshell/desktop/spaces/movies/media-ui.ini",
-                "home/.local/share/quickshell/desktop/spaces/movies/library.sqlite"
+                "home/.local/share/quickshell/desktop/spaces/movies/library.sqlite",
+                "home/.config/quickshell/desktop/spaces/series/media.json",
+                "home/.config/quickshell/desktop/spaces/series/torrents.json",
+                "home/.config/quickshell/desktop/spaces/series/media-ui.ini",
+                "home/.local/share/quickshell/desktop/spaces/series/library.sqlite"
             ]
         }
     }

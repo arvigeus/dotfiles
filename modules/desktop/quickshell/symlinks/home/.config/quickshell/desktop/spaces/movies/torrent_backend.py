@@ -44,11 +44,10 @@ from spaces.movies.scanner import (
     sidecar_identity,
 )
 
-CONFIG = (
-    Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    / "quickshell/desktop/spaces/movies/torrents.json"
-)
-DATA = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "quickshell/desktop/spaces/movies"
+from spaces.movies.paths import CONFIG_DIR, DATA, SPACE
+
+CONFIG = CONFIG_DIR / "torrents.json"
+
 
 
 class TorrentError(Exception):
@@ -267,7 +266,7 @@ class TorrentBackend:
 
     @staticmethod
     def job_tag(job_id):
-        return "movies-job-" + job_id
+        return SPACE + "-job-" + job_id
 
     def find_job_torrent(self, job_id, torrent_hash, torrents):
         # A title folder is shared by season/episode downloads. Never use it as identity.
@@ -544,7 +543,7 @@ class TorrentBackend:
             for index, (source, target, _) in enumerate(planned + subtitle_planned):
                 # Music tracks can already be registered while the rest of an album is matched.
                 if index < len(planned) and target.exists() and target != source:
-                    backup = target.with_name(target.name + ".movies-backup-" + uuid.uuid4().hex)
+                    backup = target.with_name(target.name + "." + SPACE + "-backup-" + uuid.uuid4().hex)
                     target.rename(backup)
                     backups.append((target, backup))
                 old = str(source.relative_to(save))
@@ -860,7 +859,7 @@ class TorrentBackend:
                 "urls": url,
                 "savepath": str(save),
                 "autoTMM": "false",
-                "tags": "movies," + self.job_tag(job_id),
+                "tags": SPACE + "," + self.job_tag(job_id),
             }
             if priorities:
                 values["filePriorities"] = priorities

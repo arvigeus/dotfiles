@@ -2,7 +2,7 @@
 
 ## Scope and integration
 
-Only Movies is registered. Other Spaces remain placeholders. `ui/SpaceState.qml`
+Movies and TV Series are registered. Other Spaces remain placeholders. `ui/SpaceState.qml`
 owns the catalogue, running IDs and navigation; `SpaceHost.qml` owns asynchronous
 loaders and binds effective page activation. It uses the existing
 `InteractionState` / `InteractionWindow` layer surface with all four anchors,
@@ -23,9 +23,10 @@ panel-height allowance or compositor geometry commands.
 Movies retains the established catalogue/detail and rail/grid workflows.
 Browser targets
 use xdg-open through Apps/UWSM; custom old shell browser commands are not imported.
-No other Space, embedded player, or cross-Space TV navigation is enabled.
+TV Series reuses this browser and presentation with its own workers and storage;
+see [Series architecture](../series/ARCHITECTURE.md). There is no embedded player.
 The provider/library implementation retains legacy record formats and aliases;
-TV records can coexist in the same database without exposing a TV application.
+Provider IDs and record formats remain stable across both applications.
 
 ## Presentation contract
 
@@ -50,7 +51,8 @@ legibility. The moderate reading scrim follows the detail column: left in rail
 mode, right in grid mode; the artwork remains visible beneath it. `MovieText` adds a subtle dark shadow. Keep the artwork visible
 on the opposite side rather than flattening the whole background.
 Rating links use the bundled full-color service marks in `ratings/`, including
-score-dependent Rotten Tomatoes and audience marks. Preserve accessible service
+score-dependent Rotten Tomatoes and audience marks. Logo/score pairs use intrinsic
+row widths and a fixed six-pixel gap rather than a stretching layout. Preserve accessible service
 names and scores; do not replace the marks with text-only badges or tint them.
 
 One toolbar spinner covers catalogue loading, selected-movie metadata, personal

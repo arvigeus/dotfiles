@@ -9,6 +9,7 @@ Item {
     visible: false
     required property string backend
     property string serviceName: "Module"
+    property string spaceId: "movies"
     property int timeout: 90000
     property int serial: 0
     property var callbacks: ({})
@@ -62,7 +63,7 @@ Item {
     }
     Process {
         id: worker
-        command: ["python3", "-u", Quickshell.shellPath("spaces/movies/" + root.backend)]
+        command: ["env", "QUICKSHELL_MEDIA_SPACE=" + root.spaceId, "python3", "-u", Quickshell.shellPath("spaces/movies/" + root.backend)]
         running: !root.startOnDemand
         onStarted: {
             root.processReady = true;

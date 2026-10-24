@@ -12,6 +12,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
+from spaces.movies.paths import SPACE
+
 _transfers = set()
 _transfer_lock = threading.Lock()
 
@@ -30,7 +32,7 @@ def move_file(source, target):
     except FileExistsError:
         raise ValueError("A different file already exists at the library destination.") from None
     except OSError:
-        descriptor, name = tempfile.mkstemp(prefix=".movie-import-", dir=target.parent)
+        descriptor, name = tempfile.mkstemp(prefix="." + SPACE + "-import-", dir=target.parent)
         os.close(descriptor)
         temporary = Path(name)
         with _transfer_lock:
@@ -123,7 +125,7 @@ def fit(stem, suffix=""):
 
 def media_sidecar_path(path):
     path = Path(path)
-    return path.with_suffix(path.suffix + ".movies.json")
+    return path.with_suffix(path.suffix + "." + SPACE + ".json")
 
 
 def media_sidecar_paths(path):
@@ -334,10 +336,10 @@ def write_nfo(path, title, *, original_name="", release_name="", source=""):
                 if root.find(key) is None:
                     ET.SubElement(root, key).text = str(value)
     release = next((item for item in root if item.tag.lower().endswith("release")), None)
-    if release is None or release.tag != "moviesrelease":
+    if release is None or release.tag != SPACE + "release":
         if release is not None:
             root.remove(release)
-        release = ET.SubElement(root, "moviesrelease")
+        release = ET.SubElement(root, SPACE + "release")
     for key, value in (
         ("name", release_name or original_name),
         ("originalfilename", original_name),

@@ -120,10 +120,10 @@ InteractionWindow {
                         anchors.centerIn: parent
                         visible: instance.status === Loader.Error
                         ShellText {
-                            text: qsTr("Movies could not be opened.")
+                            text: qsTr("%1 could not be opened.").arg(instance.modelData.name)
                         }
                         ShellButton {
-                            text: qsTr("Close Movies")
+                            text: qsTr("Close %1").arg(instance.modelData.name)
                             onClicked: SpaceState.close(instance.modelData.id)
                         }
                     }

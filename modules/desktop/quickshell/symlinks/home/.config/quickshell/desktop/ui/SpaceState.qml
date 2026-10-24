@@ -13,6 +13,12 @@ Singleton {
             name: qsTr("Movies"),
             icon: "film",
             source: "../spaces/movies/MediaBrowser.qml"
+        },
+        {
+            id: "series",
+            name: qsTr("TV Series"),
+            icon: "tv",
+            source: "../spaces/series/Main.qml"
         }
     ]
 

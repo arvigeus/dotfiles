@@ -26,7 +26,7 @@ class MovieImportTests(unittest.TestCase):
                     local.move_file(source, target)
             self.assertEqual(source.read_bytes(), b'complete movie')
             self.assertFalse(target.exists())
-            self.assertFalse(list(root.glob('.movie-import-*')))
+            self.assertFalse(list(root.glob('.movies-import-*')))
 
     def test_destination_collision_preserves_both_files(self):
         with tempfile.TemporaryDirectory() as directory:

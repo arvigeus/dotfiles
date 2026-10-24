@@ -40,12 +40,10 @@ from spaces.movies.records import (
     tmdb_trailers,
 )
 
-CONFIG = (
-    Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    / "quickshell/desktop/spaces/movies/media.json"
-)
-DATA = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "quickshell/desktop/spaces/movies"
-CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "quickshell/desktop/spaces/movies"
+from spaces.movies.paths import CONFIG_DIR, DATA, CACHE, ROOT
+
+CONFIG = CONFIG_DIR / "media.json"
+
 TMDB = "https://api.themoviedb.org/3"
 OMDB = "https://www.omdbapi.com/"
 MAL = "https://api.myanimelist.net/v2"
@@ -223,7 +221,7 @@ def template_url(template, title, season=None, episode=None):
 
 class Backend:
     def __init__(self, config=None, data=None, cache=None):
-        config = config or Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "quickshell/desktop/spaces/movies/media.json"
+        config = config or Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / ROOT / "media.json"
         data = data or DATA
         self.config_path, self.data = config, data
         self.write_lock = threading.RLock()

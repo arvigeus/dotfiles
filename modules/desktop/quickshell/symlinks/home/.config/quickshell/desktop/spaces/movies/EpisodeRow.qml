@@ -26,6 +26,6 @@ MovieButton {
         }
         MovieIconButton { visible: root.findAvailable; iconName: "file-search-corner"; text: "Find episode " + root.episode.number; onClicked: root.findRequested() }
         MovieIconButton { visible: !!root.localFile.path; iconName: "file-text"; text: "Subtitles for episode " + root.episode.number; onClicked: root.subtitlesRequested() }
-        HoldDelete { visible: !!root.localFile.path; torrent: !!root.localFile.torrent; onActivated: root.deleteRequested(root.localFile.path) }
+        HoldDelete { localHint: "Delete local season folder"; visible: !!root.localFile.path; torrent: !!root.localFile.torrent; onActivated: root.deleteRequested(root.localFile.path) }
     }
 }

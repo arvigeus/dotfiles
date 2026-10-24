@@ -107,6 +107,7 @@ DrawerPage {
                         ShellButton {
                             id: entry
                             readonly property var modelData: row.modelData
+                            readonly property bool available: SpaceState.entries.some(space => space.id === modelData.id)
                             objectName: "space:" + modelData.id
                             Layout.fillWidth: true
                             Layout.preferredHeight: 52
@@ -116,8 +117,8 @@ DrawerPage {
                             enabled: root.active
                             text: modelData.name
                             iconName: modelData.icon
-                            Accessible.description: modelData.id === "movies" ? SpaceState.runningIds.includes(modelData.id) ? qsTr("Running") : qsTr("Open Movies") : qsTr("Not available yet")
-                            onClicked: if (modelData.id === "movies")
+                            Accessible.description: available ? SpaceState.runningIds.includes(modelData.id) ? qsTr("Running") : qsTr("Open %1").arg(modelData.name) : qsTr("Not available yet")
+                            onClicked: if (available)
                                 SpaceState.open(modelData.id, root.screen)
                             contentItem: RowLayout {
                                 spacing: 14
