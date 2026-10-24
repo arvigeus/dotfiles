@@ -23,6 +23,7 @@ ShellRoot {
     InteractionState { id: interactions }
     Launcher { id: launcher; interactionState: interactions }
     Drawers { id: drawers; interactionState: interactions }
+    SpaceHost { interactionState: interactions }
     NotificationPopups {}
     Binding {
         target: NotificationCenter; property: "drawerOpen"

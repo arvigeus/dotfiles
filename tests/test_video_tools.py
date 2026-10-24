@@ -91,7 +91,7 @@ from PySide6.QtCore import QProcess
 from PySide6.QtWidgets import QApplication
 import video_gui as gui
 source=Path(os.environ['VIDEO_TEST_SOURCE']); original=source.read_bytes()
-app=QApplication([]); w=gui.VideoTools([source],Path(os.environ['VIDEO_TEST_CONFIG']));w.show()
+app=QApplication([]); w=gui.VideoTools(source,Path(os.environ['VIDEO_TEST_CONFIG']));w.show()
 def wait_for(condition):
  deadline=time.monotonic()+15
  while not condition():
@@ -104,7 +104,10 @@ assert '128 × 72' in w.summary.text()
 assert '1 sec' in w.summary.text()
 for value, expected in [(0,'0 sec'), (9.5,'9.5 sec'), (59.96,'1 min 0 sec'), (596.5,'9 min 56.5 sec'), (3661,'1 hr 1 min 1 sec'), ('N/A','Unknown')]:
  assert gui.human_duration(value)==expected,(value,gui.human_duration(value))
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtWidgets import QListWidget, QPushButton, QSplitter
+assert not w.findChildren(QListWidget) and not w.findChildren(QSplitter)
+assert not any('Add file' in b.text() for b in w.findChildren(QPushButton))
+assert source.name in w.windowTitle()
 assert not any('VLC' in b.text() or 'presets' in b.text().lower() for b in w.findChildren(QPushButton))
 
 w.start_conversion(); wait_for(lambda:not w.active)

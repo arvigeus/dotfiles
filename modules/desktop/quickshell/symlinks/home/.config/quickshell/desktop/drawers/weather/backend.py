@@ -133,7 +133,7 @@ def set_current(selected):
 
 
 def daily_outlook(rows):
-    """One short model-based outlook, inspired by zephyrus-shell's daily summary."""
+    """One short model-based daily outlook."""
     daylight = [row for row in rows if row['day']]
     if len(rows) < 18 or not daylight:
         return ''

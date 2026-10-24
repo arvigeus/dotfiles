@@ -4,6 +4,9 @@ This module configures the desktop and its session. Edit the Lua files under
 `symlinks/home/.config/hypr/`; Hyprland reloads them automatically. Run
 `hyprctl configerrors` if a change does not work as expected.
 
+Alt+Tab focuses and centers the next column to the right, wrapping from the last
+column to the first. Win+Left/Right also wrap between columns.
+
 ## Desktop and gaming mode
 
 The desktop starts automatically on TTY1. Win+1 or Ctrl+Alt+Delete opens Spaces;

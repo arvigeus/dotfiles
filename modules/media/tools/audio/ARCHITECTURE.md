@@ -1,10 +1,17 @@
 # Audio tools
 
 The launcher imports `core.py` and `gui.py` from `/usr/local/lib/audio-tools`.
-The PySide6 dialog uses the system Qt style, with a multi-selection file list,
-Tags/artwork, Convert and File information tabs. The directory Project tools
-module remains independent. A normal desktop application entry registers audio
-MIME types and accepts file arguments. It appears in Open with and the launcher.
+The PySide6 dialog edits one file, with Tags/artwork, Convert and File
+information tabs. It inherits the native Qt style and palette through the KDE
+platform theme; `desktop-theme` supplies colors and live change notifications.
+The directory Project tools module remains independent. A normal desktop application entry registers audio
+MIME types and accepts a single file argument (`%f`). Launching without a path
+opens a single-file picker; cancelling exits without opening the dialog. It
+appears in Open with and the launcher.
+File information uses a Property/Value tree grouped into container, audio tracks
+and tags, with a summary and Copy information action matching Video tools.
+Durations use hours/minutes/seconds with tenths, including carry at rounding
+boundaries; missing or invalid durations display Unknown.
 The deployment hook refreshes the desktop application database.
 FFmpeg/ffprobe stay owned by `media/tools/ffmpeg`; PySide6 is declared here.
 No dedicated converter package or codec-library additions are needed.
@@ -35,29 +42,32 @@ restore quality already lost in the source.
 
 The inspector combines first-audio-stream tags with format tags, with the format
 value taking precedence. Album artist/year aliases are normalized for the form.
-Drafts are stored per file; changing the current file does not discard them.
+Drafts remain in memory until saved or discarded.
 Only edited keys are written, including explicit blank values for deletion.
-Batch save takes the current file's edited keys and cover change, confirms the
-selection, and applies those edits to each target. Existing tags and streams use
-FFmpeg's metadata/stream mapping; support for nonstandard tags follows the
-container and FFmpeg muxer. All tags are visible in File information. The cover preview and adjacent remove icon sit beside the file heading; clicking
-the preview opens the image picker. Covers can be added/removed in MP3, FLAC and M4A; other formats still support compatible tags.
+Existing tags and streams use FFmpeg's metadata/stream mapping; support for nonstandard tags follows the
+container and FFmpeg muxer. All tags are visible in File information. The cover
+preview and adjacent remove icon sit beside the file heading; clicking the
+preview opens the image picker. Covers can be added/removed in MP3, FLAC and M4A;
+other formats still support compatible tags.
 Tag edits remux without audio re-encoding, preserving streams and chapters.
+The tag form keeps fixed row spacing inside its scroll area. Conversion progress
+and cancellation live in Convert; tag saves expose a Cancel action beside Save
+tags. The shared footer starts blank and carries operation/error messages.
 
 FFmpeg writes a private temporary file in the destination filesystem. Successful
 tag jobs are probed to verify edited fields and cover state before replacement.
 The source inode/size/mtime must still match. Hard-linked sources are rejected.
-Backups use a unique adjacent `.tags-backup[-N]` hard link to the original inode;
-then atomic replace publishes the new file. Conversion uses an atomic hard link
+Backups are opt-in in the dialog and use a unique adjacent `.tags-backup[-N]`
+hard link to the original inode; then atomic replace publishes the new file.
+Conversion uses an atomic hard link
 to publish without overwriting even a concurrently created destination. Errors
-and cancellations remove temporary files. A completed earlier file in a batch
-stays completed if a later file fails or the user cancels.
+and cancellations remove temporary files.
 
-QProcess runs probes and serial FFmpeg jobs asynchronously. Progress follows
-FFmpeg's progress stream (per-file elapsed time, and percentage where duration is
+QProcess runs probes and the current FFmpeg job asynchronously. Progress follows
+FFmpeg's progress stream (elapsed time, and percentage where duration is
 known). Cancel terminates the owned process, escalating to kill after two seconds.
-The window stays open until cancellation finishes. Probes/cover reads stop on
-selection change or close. Diagnostics stay in the dialog; there is no background
+The window stays open until cancellation finishes. Probes/cover reads stop
+before a job or on close. Diagnostics stay in the dialog; there is no background
 service. Tag round-trip verification has a bounded synchronous probe after each
 completed remux; it never performs conversion on the UI thread.
 
@@ -67,3 +77,6 @@ completed remux; it never performs conversion on the UI thread.
 throwaway fixtures: all seven presets, Unicode and cleared tags, covers,
 unchanged audio, backups, source changes, output races, job errors/cancellation
 and the real offscreen dialog. Native application queries verify audio MIME registration.
+`python3 -m unittest tests.test_media_tools_gui` verifies single-file registration,
+picker cancellation and native dark/light palette changes in both dialogs. The
+live theme test uses an isolated D-Bus session and temporary XDG directories.

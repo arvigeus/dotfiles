@@ -14,7 +14,8 @@
         "cliphist",
         "wl-clipboard",
         "pyside6",
-        "python-gobject"
+        "python-gobject",
+        "python-guessit"
     ],
     "extra": {
         "private": {
@@ -32,7 +33,11 @@
                 "home/.config/quickshell/desktop/screenshot-save",
                 "home/.config/quickshell/desktop/theme-mode",
                 "home/.config/quickshell/desktop/weather-selection.json",
-                "home/.config/quickshell/desktop/weather.json"
+                "home/.config/quickshell/desktop/weather.json",
+                "home/.config/quickshell/desktop/spaces/movies/media.json",
+                "home/.config/quickshell/desktop/spaces/movies/torrents.json",
+                "home/.config/quickshell/desktop/spaces/movies/media-ui.ini",
+                "home/.local/share/quickshell/desktop/spaces/movies/library.sqlite"
             ]
         }
     }

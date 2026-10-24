@@ -28,7 +28,7 @@ source = root / 'song.flac'
 subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=duration=0.2', '-metadata', 'title=Original', str(source)], check=True)
 original = source.read_bytes()
 app = QApplication([])
-w = gui.AudioTools([source], Path(os.environ['AUDIO_TEST_CONFIG']))
+w = gui.AudioTools(source, Path(os.environ['AUDIO_TEST_CONFIG']))
 w.show()
 def wait_for(condition):
  deadline = time.monotonic() + 15
@@ -54,6 +54,7 @@ assert w.cover.geometry().top()<w.fields['title'].parentWidget().mapTo(w,w.field
 assert not any('presets' in b.text().lower() for b in w.findChildren(QPushButton))
 field = w.fields['title']
 field.setText('New title'); field.textEdited.emit('New title')
+w.backup.setChecked(True)
 w.save_tags()
 wait_for(lambda: not w.active and source in w.info)
 assert w.info[source]['tags']['title'] == 'New title'
@@ -108,21 +109,20 @@ assert not list(root.glob('.audio-tools-*'))
 w.stop_probe(); w.close()
 ''')
 
-    def test_batch_save_changes_only_edited_fields(self):
+    def test_single_file_save_changes_only_edited_fields(self):
         self.run_dialog('''
-second = root / 'second.flac'
-subprocess.run(['ffmpeg', '-v', 'error', '-i', str(source), '-c', 'copy', '-metadata', 'title=Second title', str(second)], check=True)
-w.append_files([second])
+from PySide6.QtWidgets import QListWidget, QPushButton, QSplitter
+assert not w.findChildren(QListWidget) and not w.findChildren(QSplitter)
+assert not any('Add file' in b.text() for b in w.findChildren(QPushButton))
+assert not hasattr(w, 'batch')
+assert source.name in w.windowTitle()
 field = w.fields['album']
-field.setText('Shared album'); field.textEdited.emit('Shared album')
-w.batch.setChecked(True)
-gui.QMessageBox.question = lambda *args: gui.QMessageBox.StandardButton.Yes
+field.setText('New album'); field.textEdited.emit('New album')
 w.save_tags()
-wait_for(lambda: not w.active)
-for path, title in [(source, 'Original'), (second, 'Second title')]:
- info = core.audio_info(subprocess.check_output(core.probe_command(path)))
- assert info['tags']['album'] == 'Shared album'
- assert info['tags']['title'] == title
+wait_for(lambda: not w.active and source in w.info)
+assert w.info[source]['tags']['album'] == 'New album'
+assert w.info[source]['tags']['title'] == 'Original'
+assert not list(root.glob('*.tags-backup*'))
 assert w.failures == 0, w.log.toPlainText()
 w.stop_probe(); w.close()
 ''')

@@ -1,0 +1,23 @@
+{
+  "tmdb_key": "",
+  "omdb_key": "",
+  "mdblist_key": "",
+  "watchmode_key": "",
+  "mal_client_id": "",
+  "region": "US",
+  "providers": [
+    {
+      "name": "My service",
+      "movie_url": "https://example.org/movie/{imdbId}",
+      "series_url": "https://example.org/series/{imdbId}/{season}/{episode}"
+    }
+  ],
+  "anime_sources": [],
+  "player": ["mpv"],
+  "opensubtitles": {
+    "api_key": "",
+    "username": "",
+    "password": "",
+    "languages": ["en"]
+  }
+}

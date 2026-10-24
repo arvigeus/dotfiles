@@ -69,7 +69,11 @@ controls and choices can share them.
 
 ## Spaces
 
-The space entries are placeholders. `spaces/profile.py` reads public
+Movies is implemented as a fullscreen, retained Space; the remaining entries are
+placeholders. Space modules use their own immersive presentation rather than
+the shell's gray controls or light/dark variants, and omit in-module Spaces links.
+See the presentation contract in [Movies architecture](symlinks/home/.config/quickshell/desktop/spaces/movies/ARCHITECTURE.md)
+for lifecycle, provider, worker and private restoration details. `spaces/profile.py` reads public
 AccountsService data, passwd GECOS and standard photo fallbacks on opening.
 Photos use an mtime URL suffix and no cache. `ProfileButton` launches Account tools in
 its own unit. See [account editor](#account-editor) for its data and write boundaries.

@@ -29,6 +29,9 @@ requesting attention. Apps must report urgency; unread browser tabs alone may no
 
 ## Spaces and session controls
 
+[Movies](symlinks/home/.config/quickshell/desktop/spaces/movies/README.md) offers fullscreen
+discovery, favorites, playback links and a local library with subtitles and downloads.
+
 Hold session actions for two seconds. Shutdown timers continue with the drawer
 closed. **Restart → Reload** closes applications and starts a fresh desktop.
 Sleep/locking pauses clear on shell reload/exit; screen blanking and manual

@@ -1,5 +1,6 @@
 """Desktop audio tools with asynchronous, cancellable FFmpeg jobs."""
 import argparse
+import math
 import os
 import subprocess
 import sys
@@ -17,26 +18,25 @@ from core import (
 from PySide6.QtCore import QProcess, QSize, Qt, QTimer
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QAbstractItemView,
     QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QScrollArea,
-    QSplitter,
     QTabWidget,
     QToolButton,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -44,56 +44,54 @@ from PySide6.QtWidgets import (
 CONFIG = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'audio-tools/presets.json'
 
 
+def human_duration(value):
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return 'Unknown'
+    if not math.isfinite(seconds) or seconds < 0:
+        return 'Unknown'
+    tenths = round(seconds * 10)
+    hours, remainder = divmod(tenths, 36000)
+    minutes, remainder = divmod(remainder, 600)
+    seconds = f'{remainder / 10:g}'
+    if hours:
+        return f'{hours} hr {minutes} min {seconds} sec'
+    if minutes:
+        return f'{minutes} min {seconds} sec'
+    return f'{seconds} sec'
+
+
 class AudioTools(QDialog):
-    def __init__(self, paths, config=CONFIG):
+    def __init__(self, path, config=CONFIG):
         super().__init__()
         self.config = Path(config)
         self.info = {}
         self.drafts = {}
         self.artwork = {}
         self.current = None
-        self.jobs = []
         self.operation = None
         self.cancelled = False
         self.active = False
         self.probe_path = None
         self.setWindowTitle('Audio tools')
         self.setWindowIcon(QIcon.fromTheme('audio-x-generic'))
-        self.resize(1000, 740)
-        self.setMinimumSize(760, 580)
+        self.resize(780, 740)
+        self.setMinimumSize(600, 580)
         layout = QVBoxLayout(self)
         header = QHBoxLayout()
         title = QLabel('Audio tools')
         font = title.font(); font.setPointSize(font.pointSize() + 6); font.setBold(True); title.setFont(font)
         header.addWidget(title); header.addStretch()
-        self.add_button = QPushButton(QIcon.fromTheme('list-add'), 'Add files…')
-        self.add_button.clicked.connect(self.add_files)
-        header.addWidget(self.add_button)
         layout.addLayout(header)
-        splitter = QSplitter()
-        self.files = QListWidget()
-        self.files.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.files.setMinimumWidth(230)
-        self.files.currentItemChanged.connect(self.file_changed)
-        self.files.itemSelectionChanged.connect(self.update_selection)
-        splitter.addWidget(self.files)
         self.tabs = QTabWidget()
         self.tabs.addTab(self.tags_tab(), 'Tags && artwork')
         self.tabs.addTab(self.convert_tab(), 'Convert')
-        self.details = QPlainTextEdit(); self.details.setReadOnly(True)
-        self.tabs.addTab(self.details, 'File information')
-        splitter.addWidget(self.tabs)
-        splitter.setStretchFactor(1, 3)
-        layout.addWidget(splitter, 1)
-        self.selection = QLabel()
-        layout.addWidget(self.selection)
-        self.status = QLabel('Ready'); self.status.setWordWrap(True)
-        layout.addWidget(self.status)
+        self.tabs.addTab(self.information_tab(), 'File information')
+        layout.addWidget(self.tabs, 1)
+        self.status = QLabel(); self.status.setWordWrap(True)
         row = QHBoxLayout()
-        self.progress = QProgressBar(); self.progress.setRange(0, 100); self.progress.setValue(0)
-        row.addWidget(self.progress, 1)
-        self.cancel = QPushButton('Cancel'); self.cancel.setEnabled(False); self.cancel.clicked.connect(self.cancel_jobs)
-        row.addWidget(self.cancel)
+        row.addWidget(self.status, 1)
         close = QPushButton('Close'); close.clicked.connect(self.close); row.addWidget(close)
         layout.addLayout(row)
         self.log = QPlainTextEdit(); self.log.setReadOnly(True); self.log.setMaximumHeight(105); self.log.hide()
@@ -109,11 +107,16 @@ class AudioTools(QDialog):
         self.cover_process = QProcess(self)
         self.cover_process.finished.connect(self.cover_loaded)
         self.load_presets()
-        self.append_files(paths)
+        self.current = Path(path).resolve()
+        self.setWindowTitle(self.current.name + ' — Audio tools')
+        self.inspect_file()
 
     def tags_tab(self):
         page = QWidget(); layout = QVBoxLayout(page)
-        self.tag_hint = QLabel('Select a file to inspect its tags. Edits stay in the form until saved.')
+        layout.setContentsMargins(16, 16, 16, 16); layout.setSpacing(12)
+        self.tag_options = QWidget(); options = QVBoxLayout(self.tag_options)
+        options.setContentsMargins(0, 0, 0, 0); options.setSpacing(12)
+        self.tag_hint = QLabel('Edit this file’s tags. Edits stay in the form until saved.')
         self.tag_hint.setWordWrap(True)
         heading = QHBoxLayout(); heading.addWidget(self.tag_hint, 1)
         self.cover = QToolButton(); self.cover.setFixedSize(96, 96); self.cover.setIconSize(QSize(88, 88))
@@ -124,85 +127,88 @@ class AudioTools(QDialog):
         self.cover_remove.setEnabled(False)
         self.cover_remove.setToolTip('Remove cover'); self.cover_remove.setAccessibleName('Remove cover')
         self.cover_remove.clicked.connect(self.remove_cover); heading.addWidget(self.cover_remove)
-        layout.addLayout(heading)
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        body = QWidget(); form = QFormLayout(body)
+        options.addLayout(heading)
+        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.Shape.NoFrame)
+        body = QWidget(); body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0); body_layout.setSpacing(0)
+        form = QFormLayout(); body_layout.addLayout(form); body_layout.addStretch(1)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setFormAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
+        form.setHorizontalSpacing(12); form.setVerticalSpacing(10)
         self.fields = {}
         for key, title in FIELDS.items():
             edit = QPlainTextEdit() if key == 'lyrics' else QLineEdit()
             if key == 'lyrics':
-                edit.setMaximumHeight(85)
+                edit.setFixedHeight(85)
+                edit.setStyleSheet('QPlainTextEdit { border: 1px solid palette(mid); border-radius: 5px; '
+                                  'padding: 4px; background: palette(base); } '
+                                  'QPlainTextEdit:focus { border-color: palette(highlight); }')
                 edit.textChanged.connect(lambda key=key: self.field_edited(key))
             else:
                 edit.textEdited.connect(lambda _text, key=key: self.field_edited(key))
             edit.setObjectName('tag_' + key)
             form.addRow(title, edit); self.fields[key] = edit
-        scroll.setWidget(body); layout.addWidget(scroll, 1)
-        self.batch = QCheckBox('Apply edited fields and cover changes to all selected files')
-        layout.addWidget(self.batch)
-        self.backup = QCheckBox('Keep a backup when saving tags'); self.backup.setChecked(True)
-        layout.addWidget(self.backup)
+        scroll.setWidget(body); options.addWidget(scroll, 1)
+        self.backup = QCheckBox('Keep a backup when saving tags')
+        options.addWidget(self.backup)
+        layout.addWidget(self.tag_options, 1)
         buttons = QHBoxLayout()
         self.revert = QPushButton('Discard edits'); self.revert.clicked.connect(self.discard_edits)
         self.save = QPushButton(QIcon.fromTheme('document-save'), 'Save tags'); self.save.clicked.connect(self.save_tags)
-        buttons.addWidget(self.revert); buttons.addStretch(); buttons.addWidget(self.save)
+        self.tag_cancel = QPushButton('Cancel'); self.tag_cancel.hide(); self.tag_cancel.clicked.connect(self.cancel_job)
+        buttons.addWidget(self.revert); buttons.addStretch(); buttons.addWidget(self.tag_cancel); buttons.addWidget(self.save)
         layout.addLayout(buttons)
+        return page
+
+    def information_tab(self):
+        page = QWidget(); layout = QVBoxLayout(page)
+        self.summary = QLabel(); self.summary.setWordWrap(True); layout.addWidget(self.summary)
+        self.tree = QTreeWidget(); self.tree.setHeaderLabels(['Property', 'Value'])
+        self.tree.setColumnWidth(0, 190); layout.addWidget(self.tree)
+        copy = QPushButton('Copy information'); copy.clicked.connect(self.copy_info); layout.addWidget(copy)
         return page
 
     def convert_tab(self):
         page = QWidget(); layout = QVBoxLayout(page)
-        heading = QLabel('Convert selected files'); font = heading.font(); font.setBold(True); heading.setFont(font)
-        layout.addWidget(heading)
+        layout.setContentsMargins(16, 16, 16, 16); layout.setSpacing(12)
+        self.convert_options = QWidget(); options = QVBoxLayout(self.convert_options)
+        options.setContentsMargins(0, 0, 0, 0); options.setSpacing(12)
+        heading = QLabel('Convert file'); font = heading.font(); font.setBold(True); heading.setFont(font)
+        options.addWidget(heading)
         self.presets = QComboBox(); self.presets.currentIndexChanged.connect(self.preset_changed)
-        layout.addWidget(self.presets)
-        self.description = QLabel(); self.description.setWordWrap(True); layout.addWidget(self.description)
+        options.addWidget(self.presets)
+        self.description = QLabel(); self.description.setWordWrap(True); options.addWidget(self.description)
         form = QFormLayout()
         output = QHBoxLayout()
-        self.output = QLineEdit(); self.output.setPlaceholderText('Beside each source file')
+        self.output = QLineEdit(); self.output.setPlaceholderText('Beside the source file')
         browse = QPushButton('Choose…'); browse.clicked.connect(self.choose_output)
         output.addWidget(self.output, 1); output.addWidget(browse); form.addRow('Output folder', output)
-        layout.addLayout(form)
+        options.addLayout(form)
         self.normalize = QCheckBox('Normalize loudness to −16 LUFS')
         self.normalize.setToolTip('One-pass EBU R128 loudness normalization; true peak −1.5 dB, loudness range 11 LU.')
-        layout.addWidget(self.normalize)
+        options.addWidget(self.normalize)
         note = QLabel('Outputs use “filename [preset-id].extension”. Existing files are never overwritten.\n'
                       'The first audio track is converted. Tags and supported cover art are copied. Sources are kept.')
-        note.setWordWrap(True); layout.addWidget(note)
+        note.setWordWrap(True); options.addWidget(note)
+        layout.addWidget(self.convert_options)
         layout.addStretch()
-        self.convert = QPushButton(QIcon.fromTheme('media-playback-start'), 'Convert selected files')
-        self.convert.clicked.connect(self.start_conversion); layout.addWidget(self.convert)
+        self.progress = QProgressBar(); self.progress.setRange(0, 100); self.progress.setValue(0)
+        layout.addWidget(self.progress)
+        buttons = QHBoxLayout(); buttons.addStretch()
+        self.cancel = QPushButton('Cancel'); self.cancel.setEnabled(False); self.cancel.clicked.connect(self.cancel_job)
+        buttons.addWidget(self.cancel)
+        self.convert = QPushButton(QIcon.fromTheme('media-playback-start'), 'Convert file')
+        self.convert.clicked.connect(self.start_conversion); buttons.addWidget(self.convert)
+        layout.addLayout(buttons)
         return page
 
-    def append_files(self, paths):
-        known = {self.files.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.files.count())}
-        for value in paths:
-            path = Path(value).resolve()
-            if not path.is_file() or path in known:
-                continue
-            item = QListWidgetItem(QIcon.fromTheme('audio-x-generic'), path.name)
-            item.setToolTip(str(path)); item.setData(Qt.ItemDataRole.UserRole, path)
-            self.files.addItem(item); known.add(path)
-        if self.files.count() and self.files.currentRow() < 0:
-            self.files.setCurrentRow(0)
-        self.files.selectAll()
-        self.update_selection()
-
-    def add_files(self):
-        paths, _ = QFileDialog.getOpenFileNames(self, 'Add audio files', str(Path.home() / 'Music'),
-                                               'Audio (*.mp3 *.flac *.m4a *.aac *.ogg *.opus *.wav *.aiff *.aif *.mka *.wma *.ape *.wv);;All files (*)')
-        self.append_files(paths)
-
-    def selected(self):
-        return [item.data(Qt.ItemDataRole.UserRole) for item in self.files.selectedItems()]
-
-    def update_selection(self):
-        self.selection.setText(f'{len(self.selected())} of {self.files.count()} files selected')
-
-    def file_changed(self, item, _previous):
+    def inspect_file(self):
         self.stop_probe()
-        self.current = item.data(Qt.ItemDataRole.UserRole) if item else None
         self.render_tags()
-        if self.current and self.current not in self.info:
+        if self.current not in self.info:
             self.probe_path = self.current
             command = probe_command(self.current)
             self.probe.start(command[0], command[1:])
@@ -243,7 +249,7 @@ class AudioTools(QDialog):
             else: edit.setText(value)
             edit.blockSignals(False)
             edit.setEnabled(info is not None)
-        self.tag_hint.setText(self.current.name if self.current else 'Add audio files to begin.')
+        self.tag_hint.setText(self.current.name)
         self.cover.setIcon(QIcon.fromTheme('image-x-generic')); self.cover.setText('')
         self.cover.setToolTip('Choose cover · No embedded artwork')
         self.cover.setEnabled(bool(info) and self.current.suffix.lower() in ART_FORMATS)
@@ -257,20 +263,45 @@ class AudioTools(QDialog):
             self.cover_process.start('ffmpeg', ['-v', 'error', '-nostdin', '-i', str(self.current), '-map', '0:v:0',
                                                 '-frames:v', '1', '-vf', 'scale=88:88:force_original_aspect_ratio=decrease',
                                                 '-f', 'image2pipe', '-c:v', 'png', 'pipe:1'])
-        if info:
-            fmt = info['format']
-            lines = [str(self.current), '', f'Duration: {float(fmt.get("duration", 0)):.1f} seconds',
-                     f'Size: {int(fmt.get("size", 0)) / 1024 / 1024:.2f} MiB',
-                     f'Container: {fmt.get("format_long_name", "Unknown")}', '']
-            for index, stream in enumerate(info['audio'], 1):
-                lines.extend([f'Audio track {index}: {stream.get("codec_long_name", stream.get("codec_name", ""))}',
-                              (f'  {stream.get("sample_rate", "?")} Hz · {stream.get("channels", "?")} channels · '
-                               f'{stream.get("channel_layout", "")}'),
-                              f'  Bitrate: {stream.get("bit_rate", "Unknown")} bit/s'])
-            lines.extend(['', 'All tags', *[f'{key}: {value}' for key, value in sorted(info['tags'].items())]])
-            self.details.setPlainText('\n'.join(lines))
-        else:
-            self.details.setPlainText('Reading audio information…')
+        self.render_info()
+
+    def render_info(self):
+        self.tree.clear()
+        info = self.info.get(self.current)
+        if not info:
+            self.summary.setText('Reading audio information…'); return
+        fmt = info['format']; audio = info['audio'][0]
+        duration = human_duration(fmt.get('duration', audio.get('duration')))
+        size = int(fmt.get('size', 0))
+        codec = audio.get('codec_name', 'Audio').upper()
+        self.summary.setText(f'{self.current.name}\n{codec} · {duration} · {size/1024/1024:.1f} MiB')
+
+        def group(title, values):
+            parent = QTreeWidgetItem([title]); self.tree.addTopLevelItem(parent)
+            for key, value in values:
+                if value not in (None, ''): QTreeWidgetItem(parent, [key, str(value)])
+
+        group('Container', [('Path', str(self.current)), ('Format', fmt.get('format_long_name')),
+                            ('Duration', duration), ('Bitrate', fmt.get('bit_rate')),
+                            ('Audio tracks', len(info['audio'])), ('Embedded covers', info['artwork'])])
+        for index, stream in enumerate(info['audio']):
+            tags = stream.get('tags', {})
+            group(f'Audio track {stream.get("index", index)}', [
+                ('Codec', stream.get('codec_long_name', stream.get('codec_name'))),
+                ('Profile', stream.get('profile')), ('Language', tags.get('language')), ('Title', tags.get('title')),
+                ('Sample rate', stream.get('sample_rate')), ('Channels', stream.get('channels')),
+                ('Layout', stream.get('channel_layout')), ('Sample format', stream.get('sample_fmt')),
+                ('Bit depth', stream.get('bits_per_raw_sample') or stream.get('bits_per_sample')),
+                ('Bitrate', stream.get('bit_rate')), ('Default', bool(stream.get('disposition', {}).get('default')))])
+        group('Tags', sorted(info['tags'].items()))
+        self.tree.expandAll()
+
+    def copy_info(self):
+        lines = []
+        for i in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(i); lines.append(item.text(0))
+            lines.extend('  ' + item.child(j).text(0) + ': ' + item.child(j).text(1) for j in range(item.childCount()))
+        QApplication.clipboard().setText('\n'.join(lines))
 
     def cover_loaded(self, code, _status):
         if not code:
@@ -297,7 +328,7 @@ class AudioTools(QDialog):
     def discard_edits(self):
         self.drafts.pop(self.current, None); self.artwork.pop(self.current, None)
         self.info.pop(self.current, None)
-        self.file_changed(self.files.currentItem(), None)
+        self.inspect_file()
 
     def load_presets(self):
         try:
@@ -319,49 +350,42 @@ class AudioTools(QDialog):
 
     def save_tags(self):
         if not self.current or self.current not in self.info: return
-        targets = self.selected() if self.batch.isChecked() else [self.current]
         changes = dict(self.drafts.get(self.current, {}))
         artwork = self.artwork.get(self.current)
-        if not targets or (not changes and artwork is None):
+        if not changes and artwork is None:
             self.status.setText('Edit a tag or choose a cover first. Only edited fields will be saved.')
             return
-        if self.batch.isChecked() and len(targets) > 1:
-            fields = ', '.join(FIELDS[key] for key in changes)
-            if artwork is not None: fields += ', cover art'
-            if QMessageBox.question(self, 'Apply tags to selected files',
-                                    f'Apply these edits to {len(targets)} files?\n{fields}') != QMessageBox.StandardButton.Yes:
-                return
-        self.begin([('tags', p, (changes, artwork, self.backup.isChecked())) for p in targets])
+        self.begin('tags', (changes, artwork, self.backup.isChecked()))
 
     def start_conversion(self):
-        targets = self.selected(); preset = self.presets.currentData()
-        if not targets or not preset: return
-        if any(self.drafts.get(p) or p in self.artwork for p in targets):
-            QMessageBox.information(self, 'Unsaved tags', 'Save or discard tag edits before converting these files.')
+        preset = self.presets.currentData()
+        if not preset: return
+        if self.drafts.get(self.current) or self.current in self.artwork:
+            QMessageBox.information(self, 'Unsaved tags', 'Save or discard tag edits before converting this file.')
             return
         folder = self.output.text().strip() or None
         if folder and not Path(folder).is_dir():
             QMessageBox.warning(self, 'Output folder', 'Choose an existing output folder.'); return
-        self.begin([('convert', p, (dict(preset), folder, self.normalize.isChecked())) for p in targets])
+        self.begin('convert', (dict(preset), folder, self.normalize.isChecked()))
 
-    def begin(self, jobs):
+    def begin(self, kind, arguments):
+        if self.active: return
         self.stop_probe()
-        self.jobs = jobs; self.total = len(jobs); self.completed = 0; self.failures = 0; self.cancelled = False
+        self.job = (kind, self.current, arguments)
+        self.failures = 0; self.cancelled = False
         self.log.clear(); self.log.hide(); self.active = True
-        self.files.setEnabled(False); self.tabs.setEnabled(False); self.add_button.setEnabled(False); self.cancel.setEnabled(True)
-        self.next_job()
-
-    def next_job(self):
-        if not self.jobs or self.cancelled:
-            self.end_jobs(); return
-        self.job = self.jobs.pop(0)
-        kind, source, arguments = self.job
+        self.tabs.setCurrentIndex(0 if kind == 'tags' else 1)
+        self.tabs.tabBar().setEnabled(False)
+        self.tag_options.setEnabled(False); self.revert.setEnabled(False); self.save.setEnabled(False)
+        self.convert_options.setEnabled(False); self.convert.setEnabled(False)
+        self.tag_cancel.setVisible(kind == 'tags'); self.cancel.setEnabled(kind == 'convert')
+        if kind == 'convert': self.progress.setValue(0)
         try:
-            self.operation = tag_edit(source, *arguments) if kind == 'tags' else conversion(source, *arguments)
+            self.operation = tag_edit(self.current, *arguments) if kind == 'tags' else conversion(self.current, *arguments)
         except (OSError, ValueError) as error:
-            self.report_error(f'{source.name}: {error}'); self.completed += 1
-            QTimer.singleShot(0, self.next_job); return
-        self.status.setText(f'{self.completed + 1}/{self.total} · {source.name}')
+            self.report_error(f'{self.current.name}: {error}')
+            self.end_job(); return
+        self.status.setText(self.current.name)
         self.buffer = ''; self.stderr = ''
         command = self.operation.command
         self.process.start(command[0], command[1:])
@@ -375,8 +399,8 @@ class AudioTools(QDialog):
                 except ValueError: continue
                 duration = float(self.info.get(self.job[1], {}).get('format', {}).get('duration', 0))
                 fraction = min(seconds / duration, 0.99) if duration else 0
-                self.progress.setValue(int(100 * (self.completed + fraction) / self.total))
-                self.status.setText(f'{self.completed + 1}/{self.total} · {self.job[1].name} · {seconds:.0f}s')
+                if self.job[0] == 'convert': self.progress.setValue(int(100 * fraction))
+                self.status.setText(f'{self.current.name} · {seconds:.0f}s')
 
     def job_error(self):
         self.stderr = (self.stderr + bytes(self.process.readAllStandardError()).decode(errors='replace'))[-16000:]
@@ -401,30 +425,32 @@ class AudioTools(QDialog):
                 self.log.appendPlainText(f'Saved: {self.operation.target}')
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             self.operation.abort(); self.report_error(f'{self.job[1].name}: {error}')
-        self.operation = None; self.completed += 1
-        self.progress.setValue(int(100 * self.completed / self.total))
-        QTimer.singleShot(0, self.next_job)
+        self.operation = None
+        if self.job[0] == 'convert' and not self.cancelled and not self.failures: self.progress.setValue(100)
+        self.end_job()
 
     def report_error(self, message):
         self.failures += 1; self.log.show(); self.log.appendPlainText(message)
 
-    def cancel_jobs(self):
+    def cancel_job(self):
         self.cancelled = True
         if self.process.state() != QProcess.ProcessState.NotRunning:
             operation = self.operation
             self.process.terminate()
             QTimer.singleShot(2000, lambda: self.process.kill() if self.operation is operation and self.operation else None)
 
-    def end_jobs(self):
+    def end_job(self):
         self.active = False; self.cancel.setEnabled(False)
-        self.files.setEnabled(True); self.tabs.setEnabled(True); self.add_button.setEnabled(True)
-        self.status.setText(('Cancelled' if self.cancelled else 'Finished') + f' · {self.completed} processed · {self.failures} failed')
+        self.tabs.tabBar().setEnabled(True)
+        self.tag_options.setEnabled(True); self.revert.setEnabled(True); self.save.setEnabled(True)
+        self.convert_options.setEnabled(True); self.convert.setEnabled(True); self.tag_cancel.hide()
+        self.status.setText('Cancelled' if self.cancelled else 'Failed' if self.failures else 'Finished')
         self.log.show()
-        self.file_changed(self.files.currentItem(), None)
+        self.inspect_file()
 
     def closeEvent(self, event):
         if self.active:
-            self.cancel_jobs(); self.status.setText('Stopping… Close again when the current operation has stopped.')
+            self.cancel_job(); self.status.setText('Stopping… Close again when the current operation has stopped.')
             event.ignore(); return
         if ((any(self.drafts.values()) or self.artwork)
                 and QMessageBox.question(self, 'Unsaved tags', 'Discard unsaved tag edits and close?') != QMessageBox.StandardButton.Yes):
@@ -438,9 +464,13 @@ class AudioTools(QDialog):
 
 def main():
     parser = argparse.ArgumentParser(description='Edit audio metadata and convert using saved presets.')
-    parser.add_argument('files', nargs='*'); options = parser.parse_args()
+    parser.add_argument('file', nargs='?'); options = parser.parse_args()
     app = QApplication(sys.argv[:1]); app.setApplicationName('Audio tools'); app.setDesktopFileName('audio-tools')
-    window = AudioTools(options.files)
-    if not options.files: QTimer.singleShot(0, window.add_files)
+    path = options.file
+    if not path:
+        path, _ = QFileDialog.getOpenFileName(None, 'Open audio file', str(Path.home() / 'Music'),
+            'Audio (*.mp3 *.flac *.m4a *.aac *.ogg *.opus *.wav *.aiff *.aif *.mka *.wma *.ape *.wv);;All files (*)')
+        if not path: return 0
+    window = AudioTools(path)
     window.show()
     return app.exec()

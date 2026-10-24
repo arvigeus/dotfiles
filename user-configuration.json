@@ -478,6 +478,10 @@
                 "home/.config/quickshell/desktop/theme-mode",
                 "home/.config/quickshell/desktop/weather-selection.json",
                 "home/.config/quickshell/desktop/weather.json",
+                "home/.config/quickshell/desktop/spaces/movies/media.json",
+                "home/.config/quickshell/desktop/spaces/movies/torrents.json",
+                "home/.config/quickshell/desktop/spaces/movies/media-ui.ini",
+                "home/.local/share/quickshell/desktop/spaces/movies/library.sqlite",
                 "home/.config/npm/npmrc",
                 "home/.config/git/config",
                 "home/.config/rclone/rclone.conf",
@@ -2232,6 +2236,10 @@
                 "target": "home/.config/quickshell/desktop/icons/arrow-down.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/arrow-left.svg",
+                "target": "home/.config/quickshell/desktop/icons/arrow-left.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/arrow-right.svg",
                 "target": "home/.config/quickshell/desktop/icons/arrow-right.svg"
             },
@@ -2364,6 +2372,14 @@
                 "target": "home/.config/quickshell/desktop/icons/fan.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/file-search-corner.svg",
+                "target": "home/.config/quickshell/desktop/icons/file-search-corner.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/file-text.svg",
+                "target": "home/.config/quickshell/desktop/icons/file-text.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/film.svg",
                 "target": "home/.config/quickshell/desktop/icons/film.svg"
             },
@@ -2390,6 +2406,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/gauge.svg",
                 "target": "home/.config/quickshell/desktop/icons/gauge.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/globe.svg",
+                "target": "home/.config/quickshell/desktop/icons/globe.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/hard-drive-download.svg",
@@ -2492,6 +2512,10 @@
                 "target": "home/.config/quickshell/desktop/icons/network.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/panels-top-left.svg",
+                "target": "home/.config/quickshell/desktop/icons/panels-top-left.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/pause.svg",
                 "target": "home/.config/quickshell/desktop/icons/pause.svg"
             },
@@ -2524,6 +2548,10 @@
                 "target": "home/.config/quickshell/desktop/icons/rotate-ccw.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/save.svg",
+                "target": "home/.config/quickshell/desktop/icons/save.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/search.svg",
                 "target": "home/.config/quickshell/desktop/icons/search.svg"
             },
@@ -2542,6 +2570,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/skip-forward.svg",
                 "target": "home/.config/quickshell/desktop/icons/skip-forward.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/sliders-horizontal.svg",
+                "target": "home/.config/quickshell/desktop/icons/sliders-horizontal.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/speaker.svg",
@@ -2570,6 +2602,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/thermometer.svg",
                 "target": "home/.config/quickshell/desktop/icons/thermometer.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/trash-2.svg",
+                "target": "home/.config/quickshell/desktop/icons/trash-2.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/trash.svg",
@@ -2686,6 +2722,258 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/shell.qml",
                 "target": "home/.config/quickshell/desktop/shell.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ARCHITECTURE.md",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ARCHITECTURE.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ArtworkCard.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ArtworkCard.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/Browser.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/Browser.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/CachedImage.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/CachedImage.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/Catalogue.js",
+                "target": "home/.config/quickshell/desktop/spaces/movies/Catalogue.js"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/Collections.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/Collections.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/Countries.js",
+                "target": "home/.config/quickshell/desktop/spaces/movies/Countries.js"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/CrossfadeImage.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/CrossfadeImage.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/EpisodeRow.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/EpisodeRow.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/External.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/External.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/HoldDelete.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/HoldDelete.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ImageCache.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ImageCache.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ImageGallery.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ImageGallery.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ImageStrip.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ImageStrip.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/LocalScan.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/LocalScan.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/MediaBrowser.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/MediaBrowser.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/MediaService.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/MediaService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/MovieBackdrop.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/MovieBackdrop.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/MovieButton.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/MovieButton.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/MovieChoice.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/MovieChoice.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/MovieIcon.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/MovieIcon.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/MovieIconButton.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/MovieIconButton.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/MovieInput.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/MovieInput.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/MovieScrollBar.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/MovieScrollBar.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/MovieSpinner.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/MovieSpinner.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/MovieStyle.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/MovieStyle.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/MovieTab.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/MovieTab.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/MovieText.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/MovieText.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/OperationCenter.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/OperationCenter.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/Poster.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/Poster.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/README.md",
+                "target": "home/.config/quickshell/desktop/spaces/movies/README.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/RatingLinks.js",
+                "target": "home/.config/quickshell/desktop/spaces/movies/RatingLinks.js"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/Ratings.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/Ratings.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ScrollArea.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ScrollArea.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/SplitButton.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/SplitButton.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/SubtitleService.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/SubtitleService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/Subtitles.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/Subtitles.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/TorrentSearch.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/TorrentSearch.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/TorrentService.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/TorrentService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/Worker.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/Worker.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/anime_sources.py",
+                "target": "home/.config/quickshell/desktop/spaces/movies/anime_sources.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/backend.py",
+                "target": "home/.config/quickshell/desktop/spaces/movies/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/image_cache.py",
+                "target": "home/.config/quickshell/desktop/spaces/movies/image_cache.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/local.py",
+                "target": "home/.config/quickshell/desktop/spaces/movies/local.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/media.example.json",
+                "target": "home/.config/quickshell/desktop/spaces/movies/media.example.json"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/qmldir",
+                "target": "home/.config/quickshell/desktop/spaces/movies/qmldir"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ratings/README.md",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ratings/README.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ratings/rating_imdb.png",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ratings/rating_imdb.png"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ratings/rating_mal.svg",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ratings/rating_mal.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ratings/rating_metacritic.png",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ratings/rating_metacritic.png"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ratings/rating_rt_audience_hot.png",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ratings/rating_rt_audience_hot.png"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ratings/rating_rt_audience_negative.png",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ratings/rating_rt_audience_negative.png"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ratings/rating_rt_audience_positive.png",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ratings/rating_rt_audience_positive.png"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ratings/rating_rt_certified.png",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ratings/rating_rt_certified.png"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ratings/rating_rt_fresh.png",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ratings/rating_rt_fresh.png"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ratings/rating_rt_rotten.png",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ratings/rating_rt_rotten.png"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ratings/rating_tmdb.png",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ratings/rating_tmdb.png"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/records.py",
+                "target": "home/.config/quickshell/desktop/spaces/movies/records.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/scanner.py",
+                "target": "home/.config/quickshell/desktop/spaces/movies/scanner.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/subtitle_backend.py",
+                "target": "home/.config/quickshell/desktop/spaces/movies/subtitle_backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/torrent_backend.py",
+                "target": "home/.config/quickshell/desktop/spaces/movies/torrent_backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/torrents.example.json",
+                "target": "home/.config/quickshell/desktop/spaces/movies/torrents.example.json"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/worker.py",
+                "target": "home/.config/quickshell/desktop/spaces/movies/worker.py"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/AppIcon.qml",
@@ -2816,6 +3104,14 @@
                 "target": "home/.config/quickshell/desktop/ui/ShellText.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/SpaceHost.qml",
+                "target": "home/.config/quickshell/desktop/ui/SpaceHost.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/SpaceState.qml",
+                "target": "home/.config/quickshell/desktop/ui/SpaceState.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/StatusBadge.qml",
                 "target": "home/.config/quickshell/desktop/ui/StatusBadge.qml"
             },
@@ -2909,6 +3205,7 @@
             "modules/hardware/power/scripts/50_power.sh",
             "modules/dev/tools/projects/scripts/50_project-tools.sh",
             "modules/dev/languages/python/scripts/50_python.sh",
+            "modules/internet/qbittorrent/scripts/50_qbittorrent.sh",
             "modules/desktop/quickshell/scripts/50_quickshell.sh",
             "modules/gaming/games/roblox/scripts/50_roblox.sh",
             "modules/desktop/hyprland/scripts/50_session.sh",
@@ -3003,6 +3300,7 @@
         "cliphist",
         "pyside6",
         "python-gobject",
+        "python-guessit",
         "sqlite",
         "sqlitebrowser",
         "kate",

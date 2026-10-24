@@ -1,0 +1,35 @@
+ArtworkCard 1.0 ArtworkCard.qml
+singleton Browser 1.0 Browser.qml
+Collections 1.0 Collections.qml
+CrossfadeImage 1.0 CrossfadeImage.qml
+EpisodeRow 1.0 EpisodeRow.qml
+singleton External 1.0 External.qml
+HoldDelete 1.0 HoldDelete.qml
+ImageGallery 1.0 ImageGallery.qml
+ImageStrip 1.0 ImageStrip.qml
+LocalScan 1.0 LocalScan.qml
+MediaBrowser 1.0 MediaBrowser.qml
+MediaService 1.0 MediaService.qml
+OperationCenter 1.0 OperationCenter.qml
+Poster 1.0 Poster.qml
+Ratings 1.0 Ratings.qml
+ScrollArea 1.0 ScrollArea.qml
+SplitButton 1.0 SplitButton.qml
+SubtitleService 1.0 SubtitleService.qml
+Subtitles 1.0 Subtitles.qml
+TorrentSearch 1.0 TorrentSearch.qml
+TorrentService 1.0 TorrentService.qml
+Worker 1.0 Worker.qml
+singleton MovieStyle 1.0 MovieStyle.qml
+MovieBackdrop 1.0 MovieBackdrop.qml
+MovieButton 1.0 MovieButton.qml
+MovieChoice 1.0 MovieChoice.qml
+MovieIcon 1.0 MovieIcon.qml
+MovieIconButton 1.0 MovieIconButton.qml
+MovieInput 1.0 MovieInput.qml
+MovieScrollBar 1.0 MovieScrollBar.qml
+MovieSpinner 1.0 MovieSpinner.qml
+MovieTab 1.0 MovieTab.qml
+MovieText 1.0 MovieText.qml
+CachedImage 1.0 CachedImage.qml
+singleton ImageCache 1.0 ImageCache.qml

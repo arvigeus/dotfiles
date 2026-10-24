@@ -17,7 +17,7 @@ Item {
         onPaint: {
             const ctx = getContext("2d");
             ctx.reset();
-            const radius = Math.min(width, height) / 2 - 2;
+            const radius = Math.max(0, Math.min(width, height) / 2 - 2);
             ctx.lineWidth = 2;
             ctx.strokeStyle = root.track;
             ctx.beginPath(); ctx.arc(width / 2, height / 2, radius, 0, Math.PI * 2); ctx.stroke();

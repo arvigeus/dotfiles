@@ -30,4 +30,6 @@ ShellChoice 1.0 ShellChoice.qml
 ShellMenuItem 1.0 ShellMenuItem.qml
 IconButton 1.0 IconButton.qml
 singleton Apps 1.0 Apps.qml
+singleton SpaceState 1.0 SpaceState.qml
+SpaceHost 1.0 SpaceHost.qml
 KeyedModel 1.0 KeyedModel.qml

@@ -59,7 +59,7 @@ def run_qml(test, body, setup=None):
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         copy_theme_ui(root)
-        for name in ('icons', 'drawers'):
+        for name in ('icons', 'drawers', 'spaces'):
             shutil.copytree(DESKTOP / name, root / name)
         (root / 'runtime').mkdir(mode=0o700)
         config = root / 'config/quickshell/desktop'; config.mkdir(parents=True)
@@ -69,7 +69,7 @@ def run_qml(test, body, setup=None):
         (root / 'shell.qml').write_text(body)
         env = {**os.environ, 'QT_QPA_PLATFORM': os.environ.get('DISPLAY_PREVIEW_PLATFORM', 'offscreen'),
                'XDG_CONFIG_HOME': str(root / 'config'), 'XDG_RUNTIME_DIR': str(root / 'runtime'),
-               'XDG_STATE_HOME': str(root / 'state'), 'PIPEWIRE_REMOTE': 'dotfiles-tests-unavailable'}
+               'XDG_STATE_HOME': str(root / 'state'), 'XDG_DATA_HOME': str(root / 'data'), 'XDG_CACHE_HOME': str(root / 'cache'), 'PIPEWIRE_REMOTE': 'dotfiles-tests-unavailable'}
         if env['QT_QPA_PLATFORM'] != 'offscreen': env['XDG_RUNTIME_DIR'] = os.environ['XDG_RUNTIME_DIR']
         env.pop('HYPRLAND_INSTANCE_SIGNATURE', None)
         if env['QT_QPA_PLATFORM'] == 'offscreen': env.pop('WAYLAND_DISPLAY', None)

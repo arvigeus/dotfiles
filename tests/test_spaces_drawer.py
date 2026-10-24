@@ -99,7 +99,7 @@ ShellRoot {
   let last=-1;
   for(const name of names){
    const entry=find(drawer,"space:"+name);check(entry&&entry.enabled,"missing space "+name);
-   check(entry.y>last,"space order changed");last=entry.y;entry.clicked();
+   const y=entry.mapToItem(drawer,0,0).y;check(y>last,"space order changed");last=y;entry.clicked();
    check(find(entry,entry.objectName+"Icon").status===Image.Ready,"missing space icon "+name);
   }
   check(!calls.length&&!closes,"placeholder navigated or closed drawer");

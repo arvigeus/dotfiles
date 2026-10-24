@@ -2,14 +2,19 @@
 
 `video-tools` launches the PySide6 dialog in `/usr/local/lib/video-tools`.
 The normal desktop entry registers video MIME types for Open with; defaults are
-not changed. FFmpeg/ffprobe stay owned by `media/tools/ffmpeg`; PySide6 is declared
-here.
+not changed. Each dialog handles one file, with `%f` desktop registration and an
+optional single CLI path. Without a path, a single-file picker opens first;
+cancelling exits. The dialog inherits the native Qt style and KDE palette,
+including `desktop-theme` change notifications. FFmpeg/ffprobe stay owned by
+`media/tools/ffmpeg`; PySide6 is declared here.
 
 ffprobe supplies container, stream and chapter JSON. The dialog renders codec,
 resolution, average frame rate, pixel format, color primaries/transfer/space,
 bit depth when available, audio channel layout/sample rate, language, tags and
-chapters. It rejects inputs without a non-cover video stream. Probes and serial
+chapters. It rejects inputs without a non-cover video stream. Probes and
 conversions use QProcess; no project/history/settings database is created.
+Progress and cancellation live in Convert, with its options disabled during a
+job. The shared footer starts blank and carries operation/error messages.
 
 ## Presets and output
 
@@ -44,10 +49,14 @@ Outputs are `stem [id].extension`, beside the source or in an existing chosen
 folder. FFmpeg writes private temporary files on that filesystem. Publication
 uses an atomic hard link, refusing collisions even if a destination appears
 during encoding. Sources are never modified. Errors and cancellation remove
-partial files; completed earlier batch items stay completed. Cancellation sends
-terminate and then kills the owned process after two seconds if necessary.
+partial files. Cancellation sends terminate and then kills the owned process
+after two seconds if necessary.
 Escape/close also use that path, keeping the dialog open until it finishes.
 
 `tests/test_video_tools.py` exercises all seven presets (including actual 10-bit AV1 encoding) on generated video with
 subtitles, audio, tags and chapters; no upscaling, source retention, publication
 races and the actual offscreen dialog's conversion/cancellation.
+
+`tests/test_media_tools_gui.py` also checks single-file launch behavior and native
+dark/light palette changes in both media dialogs, using an isolated D-Bus session
+and temporary XDG directories.

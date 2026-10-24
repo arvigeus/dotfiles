@@ -49,6 +49,11 @@ hl.bind(mainMod .. " + SHIFT + left",  layoutAction(hl.dsp.layout("swapcol l")))
 hl.bind(mainMod .. " + SHIFT + right", layoutAction(hl.dsp.layout("swapcol r")))
 
 -- Move focus with mainMod + arrow keys
+hl.bind("ALT + TAB", function()
+    hl.dispatch(hl.dsp.layout("focus r"))
+    hl.dispatch(hl.dsp.layout("center"))
+    hl.dispatch(hl.dsp.event("desktop-layout-changed"))
+end)
 hl.bind(mainMod .. " + left",  hl.dsp.layout("focus l"))
 hl.bind(mainMod .. " + right", hl.dsp.layout("focus r"))
 hl.bind(mainMod .. " + up",    hl.dsp.focus({ direction = "up" }))

@@ -1,6 +1,6 @@
 # Video tools
 
-Use **Open with → Video tools**, the application launcher, or `video-tools FILE…`.
+Use **Open with → Video tools**, the application launcher, or `video-tools FILE`.
 
 The information view shows container details, resolution, frame rate, codecs,
 color information, audio layouts, subtitles, chapters and tags. Information can
@@ -18,7 +18,7 @@ presets use 10-bit video and Opus audio. Keep H.264 for older-device compatibili
 
 Conversions keep the source and never overwrite existing outputs. Encoding
 presets use the first video and all audio tracks, omitting subtitles; MKV remuxing
-copies all supported tracks. HDR tone mapping is not provided. Progress and
-cancellation work across selected files.
+copies all supported tracks. HDR tone mapping is not provided. Conversions show
+progress and support cancellation.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for format handling and the preset schema.

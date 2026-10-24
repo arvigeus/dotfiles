@@ -6,10 +6,9 @@ import sys
 from fractions import Fraction
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, Qt, QTimer
+from PySide6.QtCore import QProcess, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
-    QAbstractItemView,
     QApplication,
     QComboBox,
     QDialog,
@@ -17,12 +16,9 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
-    QSplitter,
     QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
@@ -54,41 +50,43 @@ def human_duration(value):
 
 
 class VideoTools(QDialog):
-    def __init__(self, paths, config=CONFIG):
+    def __init__(self, path, config=CONFIG):
         super().__init__()
         self.config = Path(config); self.info = {}; self.current = None; self.active = False
         self.operation = None; self.cancelled = False; self.probe_path = None
         self.setWindowTitle('Video tools'); self.setWindowIcon(QIcon.fromTheme('video-x-generic'))
-        self.resize(1050, 760); self.setMinimumSize(780, 580)
+        self.resize(830, 760); self.setMinimumSize(600, 580)
         layout = QVBoxLayout(self)
         header = QHBoxLayout()
         title = QLabel('Video tools'); font = title.font(); font.setPointSize(font.pointSize()+6); font.setBold(True); title.setFont(font)
         header.addWidget(title); header.addStretch()
-        self.add = QPushButton(QIcon.fromTheme('list-add'), 'Add files…'); self.add.clicked.connect(self.add_files); header.addWidget(self.add)
         layout.addLayout(header)
-        splitter = QSplitter(); self.files = QListWidget(); self.files.setMinimumWidth(220)
-        self.files.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.files.currentItemChanged.connect(self.file_changed)
-        splitter.addWidget(self.files); self.tabs = QTabWidget(); splitter.addWidget(self.tabs); splitter.setStretchFactor(1, 3)
+        self.tabs = QTabWidget()
         page = QWidget(); page_layout = QVBoxLayout(page)
-        self.summary = QLabel('Add video files to begin.'); self.summary.setWordWrap(True); page_layout.addWidget(self.summary)
+        self.summary = QLabel(); self.summary.setWordWrap(True); page_layout.addWidget(self.summary)
         self.tree = QTreeWidget(); self.tree.setHeaderLabels(['Property', 'Value']); self.tree.setColumnWidth(0, 190); page_layout.addWidget(self.tree)
         copy = QPushButton('Copy information'); copy.clicked.connect(self.copy_info); page_layout.addWidget(copy)
         self.tabs.addTab(page, 'Information')
         page = QWidget(); convert_layout = QVBoxLayout(page)
-        convert_layout.addWidget(QLabel('Convert selected files'))
-        self.presets = QComboBox(); self.presets.currentIndexChanged.connect(self.preset_changed); convert_layout.addWidget(self.presets)
-        self.description = QLabel(); self.description.setWordWrap(True); convert_layout.addWidget(self.description)
+        convert_layout.setContentsMargins(16, 16, 16, 16); convert_layout.setSpacing(12)
+        self.convert_options = QWidget(); options = QVBoxLayout(self.convert_options)
+        options.setContentsMargins(0, 0, 0, 0); options.setSpacing(12)
+        options.addWidget(QLabel('Convert file'))
+        self.presets = QComboBox(); self.presets.currentIndexChanged.connect(self.preset_changed); options.addWidget(self.presets)
+        self.description = QLabel(); self.description.setWordWrap(True); options.addWidget(self.description)
         output = QHBoxLayout(); output.addWidget(QLabel('Output folder'))
-        self.output = QLineEdit(); self.output.setPlaceholderText('Beside each source file'); output.addWidget(self.output, 1)
-        choose = QPushButton('Choose…'); choose.clicked.connect(self.choose_output); output.addWidget(choose); convert_layout.addLayout(output)
+        self.output = QLineEdit(); self.output.setPlaceholderText('Beside the source file'); output.addWidget(self.output, 1)
+        choose = QPushButton('Choose…'); choose.clicked.connect(self.choose_output); output.addWidget(choose); options.addLayout(output)
         note = QLabel('Outputs use “filename [preset-id].extension”. Sources are kept and existing files are never overwritten.')
-        note.setWordWrap(True); convert_layout.addWidget(note); convert_layout.addStretch()
-        run = QPushButton(QIcon.fromTheme('media-playback-start'), 'Convert selected files'); run.clicked.connect(self.start_conversion); convert_layout.addWidget(run)
-        self.tabs.addTab(page, 'Convert'); layout.addWidget(splitter, 1)
-        self.status = QLabel('Ready'); self.status.setWordWrap(True); layout.addWidget(self.status)
-        footer = QHBoxLayout(); self.progress = QProgressBar(); self.progress.setValue(0); footer.addWidget(self.progress, 1)
-        self.cancel = QPushButton('Cancel'); self.cancel.setEnabled(False); self.cancel.clicked.connect(self.cancel_jobs); footer.addWidget(self.cancel)
+        note.setWordWrap(True); options.addWidget(note); convert_layout.addWidget(self.convert_options); convert_layout.addStretch()
+        self.progress = QProgressBar(); self.progress.setValue(0); convert_layout.addWidget(self.progress)
+        buttons = QHBoxLayout(); buttons.addStretch()
+        self.cancel = QPushButton('Cancel'); self.cancel.setEnabled(False); self.cancel.clicked.connect(self.cancel_job); buttons.addWidget(self.cancel)
+        self.convert = QPushButton(QIcon.fromTheme('media-playback-start'), 'Convert file'); self.convert.clicked.connect(self.start_conversion); buttons.addWidget(self.convert)
+        convert_layout.addLayout(buttons)
+        self.tabs.addTab(page, 'Convert'); layout.addWidget(self.tabs, 1)
+        self.status = QLabel(); self.status.setWordWrap(True)
+        footer = QHBoxLayout(); footer.addWidget(self.status, 1)
         close = QPushButton('Close'); close.clicked.connect(self.close); footer.addWidget(close); layout.addLayout(footer)
         self.log = QPlainTextEdit(); self.log.setReadOnly(True); self.log.setMaximumHeight(110); self.log.hide(); layout.addWidget(self.log)
         self.probe = QProcess(self); self.probe.finished.connect(self.probed)
@@ -96,30 +94,18 @@ class VideoTools(QDialog):
         self.process = QProcess(self); self.process.readyReadStandardOutput.connect(self.job_progress)
         self.process.readyReadStandardError.connect(self.job_error); self.process.finished.connect(self.job_finished)
         self.process.errorOccurred.connect(self.process_error)
-        self.load_presets(); self.append_files(paths)
-
-    def append_files(self, paths):
-        known = {self.files.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.files.count())}
-        for value in paths:
-            path = Path(value).resolve()
-            if not path.is_file() or path in known: continue
-            item = QListWidgetItem(QIcon.fromTheme('video-x-generic'), path.name)
-            item.setData(Qt.ItemDataRole.UserRole, path); item.setToolTip(str(path)); self.files.addItem(item); known.add(path)
-        if self.files.count() and self.files.currentRow() < 0: self.files.setCurrentRow(0)
-        self.files.selectAll()
-
-    def add_files(self):
-        paths, _ = QFileDialog.getOpenFileNames(self, 'Add video files', str(Path.home()/'Videos'),
-            'Video (*.mp4 *.mkv *.webm *.mov *.avi *.mpeg *.mpg *.m4v *.ts *.ogv *.flv *.wmv *.3gp);;All files (*)')
-        self.append_files(paths)
+        self.load_presets()
+        self.current = Path(path).resolve()
+        self.setWindowTitle(self.current.name + ' — Video tools')
+        self.inspect_file()
 
     def stop_probe(self):
         self.probe_path = None
         if self.probe.state() != QProcess.ProcessState.NotRunning:
             self.probe.kill(); self.probe.waitForFinished(1000)
 
-    def file_changed(self, item, _previous):
-        self.stop_probe(); self.current = item.data(Qt.ItemDataRole.UserRole) if item else None
+    def inspect_file(self):
+        self.stop_probe()
         self.tree.clear()
         if self.current in self.info: self.render_info()
         elif self.current:
@@ -190,26 +176,29 @@ class VideoTools(QDialog):
         if directory: self.output.setText(directory)
 
     def start_conversion(self):
-        self.jobs = [item.data(Qt.ItemDataRole.UserRole) for item in self.files.selectedItems()]
+        if self.active: return
         self.preset = self.presets.currentData()
-        if not self.jobs or not self.preset: return
+        if not self.preset: return
         self.folder = self.output.text().strip() or None
         if self.folder and not Path(self.folder).is_dir(): self.status.setText('Choose an existing output folder.'); return
-        self.stop_probe(); self.total = len(self.jobs); self.completed = 0; self.failures = 0; self.cancelled = False; self.active = True
-        self.log.clear(); self.log.hide(); self.files.setEnabled(False); self.tabs.setEnabled(False); self.add.setEnabled(False); self.cancel.setEnabled(True)
-        self.next_job()
-
-    def next_job(self):
-        if self.cancelled or not self.jobs:
-            self.active = False; self.cancel.setEnabled(False); self.files.setEnabled(True); self.tabs.setEnabled(True); self.add.setEnabled(True)
-            self.status.setText(('Cancelled' if self.cancelled else 'Finished')+f' · {self.completed} processed · {self.failures} failed'); self.log.show(); return
-        self.source = self.jobs.pop(0)
+        self.stop_probe(); self.failures = 0; self.cancelled = False; self.active = True
+        self.log.clear(); self.log.hide(); self.tabs.setCurrentIndex(1); self.tabs.tabBar().setEnabled(False)
+        self.convert_options.setEnabled(False); self.convert.setEnabled(False); self.cancel.setEnabled(True)
+        self.progress.setValue(0)
+        self.source = self.current
         try: self.operation = conversion(self.source, self.preset, self.folder)
         except (OSError, ValueError) as error:
-            self.failures += 1; self.log.show(); self.log.appendPlainText(f'{self.source.name}: {error}'); self.completed += 1
-            QTimer.singleShot(0, self.next_job); return
-        self.buffer = ''; self.stderr = ''; self.status.setText(f'{self.completed+1}/{self.total} · {self.source.name}')
+            self.failures += 1; self.log.appendPlainText(f'{self.source.name}: {error}')
+            self.end_job(); return
+        self.buffer = ''; self.stderr = ''; self.status.setText(self.source.name)
         command = self.operation.command; self.process.start(command[0], command[1:])
+
+    def end_job(self):
+        self.active = False; self.cancel.setEnabled(False); self.tabs.tabBar().setEnabled(True)
+        self.convert_options.setEnabled(True); self.convert.setEnabled(True)
+        self.status.setText('Cancelled' if self.cancelled else 'Failed' if self.failures else 'Finished')
+        self.log.show()
+        self.inspect_file()
 
     def job_progress(self):
         self.buffer += bytes(self.process.readAllStandardOutput()).decode(errors='replace')
@@ -220,8 +209,8 @@ class VideoTools(QDialog):
             except ValueError: continue
             duration = float(self.info.get(self.source, {}).get('format', {}).get('duration', 0))
             fraction = min(seconds/duration, 0.99) if duration else 0
-            self.progress.setValue(int(100*(self.completed+fraction)/self.total))
-            self.status.setText(f'{self.completed+1}/{self.total} · {self.source.name} · {seconds:.0f}s')
+            self.progress.setValue(int(100*fraction))
+            self.status.setText(f'{self.source.name} · {seconds:.0f}s')
 
     def job_error(self):
         self.stderr = (self.stderr + bytes(self.process.readAllStandardError()).decode(errors='replace'))[-16000:]
@@ -239,9 +228,11 @@ class VideoTools(QDialog):
             else: self.operation.finish(); self.log.appendPlainText('Saved: '+str(self.operation.target))
         except (OSError, ValueError) as error:
             self.operation.abort(); self.failures += 1; self.log.show(); self.log.appendPlainText(f'{self.source.name}: {error}')
-        self.operation = None; self.completed += 1; self.progress.setValue(int(100*self.completed/self.total)); QTimer.singleShot(0,self.next_job)
+        self.operation = None
+        if not self.cancelled and not self.failures: self.progress.setValue(100)
+        self.end_job()
 
-    def cancel_jobs(self):
+    def cancel_job(self):
         self.cancelled = True
         if self.process.state() != QProcess.ProcessState.NotRunning:
             operation = self.operation; self.process.terminate()
@@ -249,15 +240,19 @@ class VideoTools(QDialog):
 
     def closeEvent(self, event):
         if self.active:
-            self.cancel_jobs(); self.status.setText('Stopping the current conversion…'); event.ignore(); return
+            self.cancel_job(); self.status.setText('Stopping the current conversion…'); event.ignore(); return
         self.stop_probe(); event.accept()
 
     def reject(self): self.close()
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Inspect video and convert using saved presets.'); parser.add_argument('files', nargs='*'); options = parser.parse_args()
+    parser = argparse.ArgumentParser(description='Inspect video and convert using saved presets.'); parser.add_argument('file', nargs='?'); options = parser.parse_args()
     app = QApplication(sys.argv[:1]); app.setApplicationName('Video tools'); app.setDesktopFileName('video-tools')
-    window = VideoTools(options.files)
-    if not options.files: QTimer.singleShot(0,window.add_files)
+    path = options.file
+    if not path:
+        path, _ = QFileDialog.getOpenFileName(None, 'Open video file', str(Path.home() / 'Videos'),
+            'Video (*.mp4 *.mkv *.webm *.mov *.avi *.mpeg *.mpg *.m4v *.ts *.ogv *.flv *.wmv *.3gp);;All files (*)')
+        if not path: return 0
+    window = VideoTools(path)
     window.show(); return app.exec()
