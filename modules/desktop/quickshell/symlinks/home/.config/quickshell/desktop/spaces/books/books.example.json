@@ -1,0 +1,16 @@
+{
+  "contact": "reader@example.org",
+  "providers": [
+    {
+      "name": "Personal provider",
+      "command": ["python3", "/absolute/path/to/book-command.py"],
+      "env": {}
+    },
+    {
+      "name": "Packaged provider",
+      "plugin": "/absolute/path/to/provider-plugin",
+      "env_file": "settings.env",
+      "env": {}
+    }
+  ]
+}

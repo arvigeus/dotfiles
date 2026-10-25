@@ -37,6 +37,8 @@ season and episode browsing in the same cinematic style.
 Steam/Epic libraries, discovery, title artwork, ProtonDB and HowLongToBeat.
 [Pictures](symlinks/home/.config/quickshell/desktop/spaces/pictures/README.md) browses
 wallpapers and applies them to the desktop and lock screen.
+[Books](symlinks/home/.config/quickshell/desktop/spaces/books/README.md) offers Open Library
+discovery, favorites, author/edition details and local ebook reading.
 
 Hold session actions for two seconds. Shutdown timers continue with the drawer
 closed. **Restart → Reload** closes applications and starts a fresh desktop.

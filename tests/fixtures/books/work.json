@@ -1,0 +1,14 @@
+{
+  "key": "/works/OL100W",
+  "title": "The Example Book",
+  "description": {
+    "type": "/type/text",
+    "value": "A short fixture synopsis for the selected work."
+  },
+  "first_sentence": ["A work begins with a sentence."],
+  "subjects": ["Computing", "History", "Letters"],
+  "authors": [
+    {"author": {"key": "/authors/OL1A"}, "type": {"key": "/type/author_role"}}
+  ],
+  "covers": [1200]
+}

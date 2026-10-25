@@ -1346,6 +1346,19 @@ class TorrentBackend:
         if item["kind"] == "music":
             raise TorrentError("Music is not available in Movies.")
 
+        if item["kind"] == "book":
+            from spaces.books.backend import BooksBackend, BooksError
+            catalogue = BooksBackend(data=self.data)
+            try:
+                matches = catalogue.browse({"query": query})["items"]
+                return [book | {"kind": "book", "year": book.get("firstPublishYear"),
+                    "author": next((author["name"] for author in book.get("authors", []) if author.get("name")), "")}
+                    for book in matches]
+            except BooksError as error:
+                raise TorrentError(str(error)) from None
+            finally:
+                catalogue.downloads.stop()
+                catalogue.commands.close()
         if item["kind"] not in ("movie", "tv"):
             return []
         from spaces.movies.backend import Backend

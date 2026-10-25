@@ -1,0 +1,11 @@
+{
+  "key": "/authors/OL1A",
+  "name": "Ada Lovelace",
+  "bio": {
+    "type": "/type/text",
+    "value": "English mathematician and writer."
+  },
+  "birth_date": "10 December 1815",
+  "death_date": "27 November 1852",
+  "photos": [76]
+}

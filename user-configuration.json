@@ -495,6 +495,10 @@
                 "home/.config/quickshell/desktop/spaces/pictures/wallpaper.json",
                 "home/.config/quickshell/desktop/spaces/pictures/providers",
                 "home/.local/share/quickshell/desktop/spaces/pictures/favorites.json",
+                "home/.config/quickshell/desktop/spaces/books/books.json",
+                "home/.config/quickshell/desktop/spaces/books/books-ui.ini",
+                "home/.config/quickshell/desktop/spaces/books/providers",
+                "home/.local/share/quickshell/desktop/spaces/books/library.sqlite",
                 "home/.config/npm/npmrc",
                 "home/.config/git/config",
                 "home/.config/rclone/rclone.conf",
@@ -2754,6 +2758,46 @@
                 "target": "home/.config/quickshell/desktop/shell.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/books/ARCHITECTURE.md",
+                "target": "home/.config/quickshell/desktop/spaces/books/ARCHITECTURE.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/books/BookCard.qml",
+                "target": "home/.config/quickshell/desktop/spaces/books/BookCard.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/books/BooksService.qml",
+                "target": "home/.config/quickshell/desktop/spaces/books/BooksService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/books/Main.qml",
+                "target": "home/.config/quickshell/desktop/spaces/books/Main.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/books/README.md",
+                "target": "home/.config/quickshell/desktop/spaces/books/README.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/books/backend.py",
+                "target": "home/.config/quickshell/desktop/spaces/books/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/books/books.example.json",
+                "target": "home/.config/quickshell/desktop/spaces/books/books.example.json"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/books/jobs.py",
+                "target": "home/.config/quickshell/desktop/spaces/books/jobs.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/books/providers.py",
+                "target": "home/.config/quickshell/desktop/spaces/books/providers.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/books/qmldir",
+                "target": "home/.config/quickshell/desktop/spaces/books/qmldir"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/ARCHITECTURE.md",
                 "target": "home/.config/quickshell/desktop/spaces/games/ARCHITECTURE.md"
             },
@@ -3526,6 +3570,7 @@
         "mpvpaper",
         "python",
         "ffmpeg",
+        "python-requests",
         "sqlite",
         "sqlitebrowser",
         "kate",

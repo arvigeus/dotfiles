@@ -1,0 +1,29 @@
+{
+  "num_found": 3,
+  "docs": [
+    {
+      "key": "/works/OL100W",
+      "title": "The Example Book",
+      "author_name": ["Ada Lovelace"],
+      "author_key": ["OL1A"],
+      "first_publish_year": 1843,
+      "cover_i": 1200,
+      "edition_count": 8,
+      "subject": ["Computing", "History", "Biography", "Mathematics", "Letters", "Women", "Science", "Technology", "English", "Fiction", "Libraries", "London", "Analysis", "Notes"],
+      "ratings_average": 4.25,
+      "ratings_count": 12,
+      "language": ["eng", "fre"],
+      "ebook_access": "public",
+      "has_fulltext": true
+    },
+    {
+      "key": "OL101W",
+      "title": "A Work with Missing Fields"
+    },
+    {
+      "key": "/books/OL100M",
+      "title": "Edition records must not become catalogue works",
+      "author_name": ["Duplicate Author"]
+    }
+  ]
+}

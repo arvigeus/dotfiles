@@ -18,7 +18,8 @@
         "python-guessit",
         "mpvpaper",
         "python",
-        "ffmpeg"
+        "ffmpeg",
+        "python-requests"
     ],
     "extra": {
         "private": {
@@ -51,7 +52,11 @@
                 "home/.config/quickshell/desktop/spaces/pictures/pictures-ui.json",
                 "home/.config/quickshell/desktop/spaces/pictures/wallpaper.json",
                 "home/.config/quickshell/desktop/spaces/pictures/providers",
-                "home/.local/share/quickshell/desktop/spaces/pictures/favorites.json"
+                "home/.local/share/quickshell/desktop/spaces/pictures/favorites.json",
+                "home/.config/quickshell/desktop/spaces/books/books.json",
+                "home/.config/quickshell/desktop/spaces/books/books-ui.ini",
+                "home/.config/quickshell/desktop/spaces/books/providers",
+                "home/.local/share/quickshell/desktop/spaces/books/library.sqlite"
             ]
         },
         "aur_packages": [

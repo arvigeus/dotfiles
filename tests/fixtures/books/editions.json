@@ -1,0 +1,17 @@
+{
+  "size": 25,
+  "entries": [
+    {
+      "key": "/books/OL100M",
+      "title": "The Example Book",
+      "publish_date": "2001, revised printing",
+      "languages": [{"key": "/languages/eng"}],
+      "publishers": ["Example Press"],
+      "isbn_13": ["9780000000001"],
+      "isbn_10": ["0000000000"],
+      "physical_format": "Hardcover",
+      "number_of_pages": 312,
+      "covers": [1201]
+    }
+  ]
+}
