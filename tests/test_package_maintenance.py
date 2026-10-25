@@ -152,7 +152,9 @@ raise SystemExit(int(os.environ['FAKE_PACDIFF_STATUS']))
     def test_topgrade_replaces_native_root_editor_without_enabling_cleanup(self):
         path = REPO / 'modules/system/package/topgrade/files/home/.config/topgrade.d/maintenance.toml'
         config = tomllib.loads(path.read_text())
-        self.assertEqual(config['misc']['disable'], ['config_update'])
+        self.assertEqual(config['misc']['disable'], ['config_update', 'claude_code', 'pi'])
+        self.assertEqual(config['commands']['Pi extensions'],
+                         'if command -v pi >/dev/null 2>&1; then pi update --extensions; fi')
         self.assertFalse(config['misc']['cleanup'])
         self.assertTrue(config['linux']['show_arch_news'])
         self.assertEqual(list(config['post_commands'].values()), ['package-maintenance'])

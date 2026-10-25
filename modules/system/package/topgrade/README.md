@@ -7,6 +7,9 @@ restart selected services using replaced files. Run `package-maintenance` to
 repeat this review independently. Login/session services are left for logout or
 reboot.
 
+Claude Code and Pi update through the system package manager; their plugins and
+extensions update separately through Topgrade.
+
 Pacnew review uses Meld. `pacnew-review` also runs it independently, using
 sudoedit for protected files. Without a terminal or graphical session, it only
 lists unresolved files. The default scan follows installed package backup entries;

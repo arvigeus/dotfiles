@@ -2,7 +2,11 @@
 # Disks owns manual cleanup; retain package caches for rollback and pacdiff.
 cleanup = false
 # Use pacdiff's sudoedit support so Meld runs as the desktop user.
-disable = ["config_update"]
+# Claude and Pi executables are updated by pacman/AUR.
+disable = ["config_update", "claude_code", "pi"]
+
+[commands]
+"Pi extensions" = "if command -v pi >/dev/null 2>&1; then pi update --extensions; fi"
 
 [linux]
 show_arch_news = true

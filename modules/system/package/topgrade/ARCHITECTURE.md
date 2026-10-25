@@ -11,6 +11,22 @@ selection to Topgrade and disables cleanup. Topgrade updates native/AUR packages
 Flatpaks and supported development tools. Disks remains the explicit cache-cleanup
 entry point; package caches can also supply pacdiff merge bases.
 
+Claude Code and Pi executables are managed by pacman/AUR. Disable their built-in
+steps because they invoke executable self-updates. Claude's package launcher
+sets `DISABLE_UPDATES=1`; Pi's step otherwise invokes `pi update --self` before
+updating extensions. Keep `claude_code_plugins` enabled and update Pi extensions
+with a custom `pi update --extensions` command, guarded for installations without
+Pi. The separate qBittorrent search-plugin command remains enabled.
+
+Topgrade 17.14.1 already skips packaged Bun, Deno, Codex and Zed self-updates by
+installation path. OpenCode skips executable updates outside its script-install
+directory while retaining plugin updates. uv handles externally managed builds
+and still updates its tools/Python installations; mise checks `mise doctor` for
+self-update availability (false for the installed Arch build). pip3 respects
+Python's externally managed marker. Keep these steps and npm/pnpm/Cargo/plugin
+updates enabled rather than disabling everything whose launcher belongs to
+pacman. Topgrade's installed build has no self-update feature enabled.
+
 Topgrade's built-in `config_update` launches pacdiff as root and preserves
 DIFFPROG, but does not use pacdiff's sudoedit mode. This fragment disables that
 step and replaces it with one post-command, `package-maintenance`. That command
