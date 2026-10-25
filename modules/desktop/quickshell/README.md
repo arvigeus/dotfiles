@@ -33,6 +33,8 @@ requesting attention. Apps must report urgency; unread browser tabs alone may no
 discovery, favorites, playback links and a local library with subtitles and downloads.
 [TV Series](symlinks/home/.config/quickshell/desktop/spaces/series/README.md) adds
 season and episode browsing in the same cinematic style.
+[Television](symlinks/home/.config/quickshell/desktop/spaces/television/README.md)
+browses live IPTV channels with local favorites and playback in your normal mpv.
 [Games](symlinks/home/.config/quickshell/desktop/spaces/games/README.md) combines
 Steam/Epic libraries, discovery, title artwork, ProtonDB and HowLongToBeat.
 [Pictures](symlinks/home/.config/quickshell/desktop/spaces/pictures/README.md) browses

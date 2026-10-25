@@ -56,6 +56,11 @@ DrawerPage {
                         icon: "boom-box"
                     },
                     {
+                        id: "television",
+                        name: qsTr("Television"),
+                        icon: "antenna"
+                    },
+                    {
                         id: "pictures",
                         name: qsTr("Pictures"),
                         icon: "image"

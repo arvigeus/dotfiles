@@ -503,6 +503,8 @@
                 "home/.config/quickshell/desktop/spaces/radio/radio-ui.json",
                 "home/.local/share/quickshell/desktop/spaces/radio/favorites.json",
                 "home/.local/share/quickshell/desktop/spaces/radio/sync.json",
+                "home/.config/quickshell/desktop/spaces/television/television-ui.json",
+                "home/.local/share/quickshell/desktop/spaces/television/favorites.json",
                 "home/.config/npm/npmrc",
                 "home/.config/git/config",
                 "home/.config/rclone/rclone.conf",
@@ -2258,6 +2260,10 @@
                 "target": "home/.config/quickshell/desktop/icons/alarm-clock.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/antenna.svg",
+                "target": "home/.config/quickshell/desktop/icons/antenna.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/arrow-down.svg",
                 "target": "home/.config/quickshell/desktop/icons/arrow-down.svg"
             },
@@ -3296,6 +3302,38 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/series/README.md",
                 "target": "home/.config/quickshell/desktop/spaces/series/README.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/television/ARCHITECTURE.md",
+                "target": "home/.config/quickshell/desktop/spaces/television/ARCHITECTURE.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/television/Main.qml",
+                "target": "home/.config/quickshell/desktop/spaces/television/Main.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/television/README.md",
+                "target": "home/.config/quickshell/desktop/spaces/television/README.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/television/backend.py",
+                "target": "home/.config/quickshell/desktop/spaces/television/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/television/catalogue.py",
+                "target": "home/.config/quickshell/desktop/spaces/television/catalogue.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/television/player.py",
+                "target": "home/.config/quickshell/desktop/spaces/television/player.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/television/qmldir",
+                "target": "home/.config/quickshell/desktop/spaces/television/qmldir"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/television/storage.py",
+                "target": "home/.config/quickshell/desktop/spaces/television/storage.py"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/AppIcon.qml",

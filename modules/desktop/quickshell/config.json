@@ -62,7 +62,9 @@
                 "home/.local/share/quickshell/desktop/spaces/books/library.sqlite",
                 "home/.config/quickshell/desktop/spaces/radio/radio-ui.json",
                 "home/.local/share/quickshell/desktop/spaces/radio/favorites.json",
-                "home/.local/share/quickshell/desktop/spaces/radio/sync.json"
+                "home/.local/share/quickshell/desktop/spaces/radio/sync.json",
+                "home/.config/quickshell/desktop/spaces/television/television-ui.json",
+                "home/.local/share/quickshell/desktop/spaces/television/favorites.json"
             ]
         },
         "aur_packages": [
