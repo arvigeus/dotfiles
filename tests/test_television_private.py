@@ -48,4 +48,4 @@ class TelevisionPrivateTests(unittest.TestCase):
             result=fresh.init()
             self.assertEqual(result['settings']['streams'][channel['id']],selected)
             self.assertEqual(result['favorites'][0]['streams'][1]['user_agent'],'Fixture player')
-            self.assertEqual(len(fresh.handle(dict(op='browse',favorites=True))['items']),1)
+            self.assertEqual(len(fresh.handle(dict(op='browse'))['items']),1)

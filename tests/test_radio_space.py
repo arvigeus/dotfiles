@@ -21,7 +21,7 @@ def setup(root):
             time.sleep(.2)
             return dict(url=fixture_station['url'])
         offset=int((params or {}).get('offset',0))
-        return [dict(fixture_station,stationuuid="11111111-1111-1111-1111-"+str(i+1).zfill(12),name="Station "+str(i),homepage="https://station"+str(i)+".example.invalid",bitrate=128 if i%2 else 256) for i in range(offset,min(offset+100,110))]
+        return [dict(fixture_station,stationuuid="11111111-1111-1111-1111-"+str(i+1).zfill(12),name="Station "+str(i),homepage="https://station"+str(i)+".example.invalid",url="https://stream"+str(i)+".example.invalid/live",url_resolved="https://stream"+str(i)+".example.invalid/live",bitrate=128 if i%2 else 256) for i in range(offset,min(offset+100,110))]
     api.api_get = fixture_api
     shutil.which = lambda name: PLAYER_LITERAL
 '''.replace('STATION_LITERAL',repr(STATION)).replace('PLAYER_LITERAL',repr(str(player)))
@@ -58,8 +58,10 @@ ShellRoot {
    check(page.rows.length===100,"station catalogue missing: "+page.error);
    const toolbar=find(host.contentItem,"radioToolbar"),hide=find(host.contentItem,"hideSpace");
    check(toolbar.parent===page.toolbarTarget,"toolbar outside shared header");
+   check(find(toolbar,"radioStationHeading").parent===toolbar&&find(toolbar,"radioStationCount").text==="100","station heading/count not in top toolbar");
    check(Math.abs(toolbar.mapToItem(host.contentItem,0,0).y+toolbar.height/2-hide.mapToItem(host.contentItem,0,0).y-hide.height/2)<1,"controls not at top beside X");
    check(find(host.contentItem,"radioBackground").color.toString()==="#000000","background is not black");
+   check(!find(host.contentItem,"radioDiscover")&&!find(host.contentItem,"radioFavorites"),"browse tabs still visible");
    const list=find(page,"radioStationList");check(list.height>500&&list.count===100,"scrolling list missing");
    const variant=Object.assign({},page.results[0],{stationuuid:"22222222-2222-2222-2222-222222222222",bitrate:64});
    page.results=page.results.concat([variant]);page.displayRows(true);
@@ -77,11 +79,11 @@ ShellRoot {
    page.searchOpen=true;find(host.contentItem,"radioSearch").text="Station";
    host.escapeHandler();check(host.opened&&page.searchOpen&&find(host.contentItem,"radioSearch").text==="","search clear priority wrong");
    host.escapeHandler();check(host.opened&&!page.searchOpen,"search close priority wrong");
-   page.toggleFavorite(page.rows[0]);root.step++;return;
+   page.toggleFavorite(page.rows[1]);root.step++;return;
   }
   if(root.step===3){
    check(page.favorites.length===1,"favorite not saved");
-   click(find(host.contentItem,"radioFavorites"));check(page.rows.length===1,"favorites mode failed");
+   check(page.rows.length>1&&page.favorite(page.rows[0].groupKey)&&page.rows[0].name==="Station 1","favorite was not pinned above discovery");
    page.play(page.rows[0]);root.step++;return;
   }
   if(root.step===4){
@@ -110,7 +112,7 @@ ShellRoot {
    if(!host.currentPage||SpaceState.currentId!=="books")return;
    check(root.retained.playback.playing&&!root.retained.active,"navigation stopped Radio");
    SpaceState.open("radio",Quickshell.screens[0]);check(host.currentPage===root.retained,"restore recreated Radio");
-   check(host.currentPage.favoritesOnly,"browse state lost on restore");
+   check(host.currentPage.favorite(host.currentPage.rows[0].groupKey),"favorite pin lost on restore");
    host.currentPage.play(host.currentPage.rows[0]);host.currentPage.playerCommand("stop");root.ticks=0;root.step++;return;
   }
   if(root.step===10){

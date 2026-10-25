@@ -50,11 +50,12 @@ ShellRoot {
    check(find(host.contentItem,"televisionBackground").color.toString()==="#000000","background is not black");
    const toolbar=find(host.contentItem,"televisionToolbar"),hide=find(host.contentItem,"hideSpace");
    check(toolbar.parent===page.toolbarTarget&&Math.abs(toolbar.mapToItem(host.contentItem,0,0).y+toolbar.height/2-hide.mapToItem(host.contentItem,0,0).y-hide.height/2)<1,"toolbar not in top row");
+   check(find(toolbar,"televisionChannelHeading").parent===toolbar&&find(toolbar,"televisionChannelCount").text==="110","channel heading/count not in top toolbar");
    check(!find(page,"radioNowPlaying")&&!find(page,"televisionNowPlaying"),"Radio playback heading carried over");
    const list=find(page,"televisionChannelList");check(list.height>650&&list.count===100,"list did not use space freed by heading");
    const first=find(page,"televisionStream:0"),second=find(page,"televisionStream:1");
    check(Math.abs(first.mapToItem(page,0,0).x-second.mapToItem(page,0,0).x)<1,"missing website shifts stream selector");
-   check(find(host.contentItem,"televisionDiscoverIcon").status===Image.Ready,"antenna icon missing");
+   check(!find(host.contentItem,"televisionDiscover")&&!find(host.contentItem,"televisionFavorites"),"browse tabs still visible");
    Theme.setMode("light");input.wait(30);check(list.currentItem.children.length>0,"light theme broke channel list");
    page.browse(true);root.step++;return;
   }
@@ -70,10 +71,10 @@ ShellRoot {
   }
   if(root.step===3){
    check(page.favorites.length===1,"favorite was not saved");
-   click(find(host.contentItem,"televisionFavorites"));root.step++;return;
+   check(page.channels.length===100&&page.isFavorite(page.channels[0]),"favorite was not pinned above discovery");root.step++;return;
   }
   if(root.step===4){
-   check(page.channels.length===1&&page.channels[0].streams.length===2,"favorite lost stream variants");
+   check(page.channels[0].streams.length===2,"favorite lost stream variants");
    page.chooseStream(page.channels[0],1);root.retained=page;page.play(page.channels[0]);root.step++;return;
   }
   if(root.step===5){
@@ -85,7 +86,7 @@ ShellRoot {
   }
   if(root.step===6){
    if(root.retained.statusPending)return;
-   check(host.currentPage===root.retained&&host.currentPage.favoritesOnly,"restore lost browse state");
+   check(host.currentPage===root.retained&&host.currentPage.isFavorite(host.currentPage.channels[0]),"restore lost browse state");
    host.currentPage.playerCommand("pause");root.step++;return;
   }
   if(root.step===7){

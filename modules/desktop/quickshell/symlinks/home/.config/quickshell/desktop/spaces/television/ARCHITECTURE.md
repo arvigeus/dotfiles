@@ -6,9 +6,9 @@ Television is a new `television` entry in the existing `SpaceState`/`SpaceHost`
 contract, independent of TV Series and Radio. Spaces uses Lucide's `antenna.svg`,
 covered by the existing icons license. The browser shares Movies' immersive
 palette, typography, controls and scrolling, and Radio's filter popup component.
-It has a black background, search/filters in the shared top row, and a virtualized
-vertical channel list. There is no Radio-style large now-playing heading and no
-Nextcloud integration. Channel rows show country, feed languages, categories,
+It has a black background, the Channels label/count and search/filters in the
+shared top row, and a virtualized vertical channel list. There is no Radio-style
+large now-playing heading and no Nextcloud integration. Channel rows show country, feed languages, categories,
 numbered alternate streams/qualities, optional website and favorite actions.
 Missing websites reserve the same space so stream selectors stay aligned.
 
@@ -44,9 +44,10 @@ channels is performed and a listed stream is not a playback guarantee.
 
 Search covers names/aliases, countries, languages and categories. Country,
 language and category filters combine; results use finite 100-channel pages.
-Unfiltered discovery pins local favorites. Favorites use current provider data
-when present and retain their last complete stream snapshot if the directory is
-offline or a channel disappears. Private records are validated before replacement;
+One discovery list pins local favorites without separate browse tabs. Favorites
+use current provider data when present and retain their last complete stream
+snapshot if the directory is offline or a channel disappears. Private records
+are validated before replacement;
 invalid records are reported without erasing their file. Anonymous public streams
 may lack a country, language or category and consequently do not match those
 specific filters. Logos and EPG data are not fetched.
@@ -96,7 +97,7 @@ The quickshell module owns these `extra.private.files` declarations:
   favorite channel/stream snapshots, including public provider headers.
 
 Files use atomic 0600 replacement and their leaf directories use 0700. Search
-text, visible mode and active playback remain in the retained instance. The
+text and active playback remain in the retained instance. The
 regenerable catalogue is under `$XDG_CACHE_HOME/quickshell/desktop/spaces/television/`;
 mpv sockets are under the owner-only `quickshell-television-UID` runtime directory.
 Caches, sockets and streamed video are excluded from private backups. Television

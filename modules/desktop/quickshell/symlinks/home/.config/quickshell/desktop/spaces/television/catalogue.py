@@ -141,10 +141,7 @@ class Catalogue:
         rows = snapshot.get("channels", [])
         by_id = {row["id"]: row for row in rows}
         favorite_ids = {row["id"] for row in favorites}
-        if request.get("favorites"):
-            rows = [by_id.get(row["id"], row) for row in favorites]
-        else:
-            rows = sorted(rows, key=lambda row: row["id"] not in favorite_ids)
+        rows = [by_id.get(row["id"], row) for row in favorites] + [row for row in rows if row["id"] not in favorite_ids]
         query = text(request.get("query")).casefold()
         country, language, category = (text(request.get(key)) for key in ("country", "language", "category"))
         def matches(row):

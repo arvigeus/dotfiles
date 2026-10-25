@@ -25,7 +25,6 @@ Item {
     property bool statusPending: false
     property bool searchOpen: false
     property bool filtersOpen: false
-    property bool favoritesOnly: false
     property string country: ""
     property string language: ""
     property string category: ""
@@ -43,7 +42,6 @@ Item {
     property string playbackError: ""
     property string notice: ""
     readonly property bool busy: loading || refreshing || saving || commandPending
-    readonly property bool hasFilters: !!country || !!language || !!category || !!search.text.trim()
 
     Worker {
         id: service; objectName: "televisionService"
@@ -86,7 +84,7 @@ Item {
         const generation = ++browseGeneration;
         const offset = append ? nextOffset : 0;
         loading = true;
-        service.request("browse", {query:search.text.trim(),country:country,language:language,category:category,favorites:favoritesOnly,offset:offset}, (result, failure) => {
+        service.request("browse", {query:search.text.trim(),country:country,language:language,category:category,offset:offset}, (result, failure) => {
             if (generation !== browseGeneration) return;
             loading = false;
             if (failure) { error = failure; return; }
@@ -114,7 +112,7 @@ Item {
         saving = true;
         service.request("favorite", {channel:channel,value:!isFavorite(channel)}, (result, failure) => {
             saving = false; saveError = failure || "";
-            if (!failure) { favorites = result; if (favoritesOnly) browse(false); }
+            if (!failure) { favorites = result; browse(false); }
         });
     }
     function streamIndex(channel) {
@@ -204,8 +202,8 @@ Item {
     RowLayout {
         objectName: "televisionToolbar"; parent: root.toolbarTarget || root
         width: parent.width; height: root.toolbarHeight; visible: root.active; spacing: 8
-        MovieButton { objectName: "televisionDiscover"; iconName: "antenna"; text: "Discover"; highlighted: !root.favoritesOnly; onClicked: { root.favoritesOnly = false; root.browse(false); } }
-        MovieButton { objectName: "televisionFavorites"; iconName: "star"; text: "Favorites"; highlighted: root.favoritesOnly; onClicked: { root.favoritesOnly = true; root.browse(false); } }
+        MovieText { objectName: "televisionChannelHeading"; text: "Channels"; font.bold: true }
+        MovieText { objectName: "televisionChannelCount"; text: root.total.toLocaleString(); color: MovieStyle.muted }
         Item { Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredWidth: 0 }
         Flickable {
             id: inlineFilters; visible: root.filtersOpen
@@ -274,12 +272,6 @@ Item {
             MovieText { Layout.fillWidth: true; wrapMode: Text.Wrap; text: [root.error,root.saveError,root.playbackError,root.notice].filter(Boolean).join("\n"); color: root.error || root.saveError || root.playbackError ? MovieStyle.danger : MovieStyle.muted }
             MovieButton { text: "Retry"; visible: !!root.error; enabled: !root.refreshing; onClicked: root.initialized ? root.refresh() : root.initialize() }
         }
-        RowLayout {
-            Layout.fillWidth: true
-            MovieText { text: root.favoritesOnly ? "Favorite channels" : "Channels"; font.bold: true }
-            MovieText { text: root.total.toLocaleString(); color: MovieStyle.muted }
-            Item { Layout.fillWidth: true }
-        }
         Rectangle { Layout.fillWidth: true; height: 1; color: MovieStyle.border }
         Item {
             Layout.fillWidth: true; Layout.fillHeight: true
@@ -329,7 +321,7 @@ Item {
             MovieText {
                 anchors.centerIn: parent; width: Math.min(480, parent.width - 40); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                 visible: !root.channels.length; color: MovieStyle.muted
-                text: root.loading || root.refreshing ? "Loading channels…" : root.error ? "" : root.favoritesOnly ? root.hasFilters ? "No favorite channels match these filters." : "No favorite channels yet." : "No channels match these filters."
+                text: root.loading || root.refreshing ? "Loading channels…" : root.error ? "" : "No channels match these filters."
             }
         }
     }

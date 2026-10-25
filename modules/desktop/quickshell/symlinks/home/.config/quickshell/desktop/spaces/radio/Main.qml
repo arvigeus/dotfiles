@@ -24,7 +24,6 @@ Item {
     property bool syncing: false
     property bool syncEnabled: false
     property string syncError: ""
-    property bool favoritesOnly: false
     property bool searchOpen: false
     property bool filtersOpen: false
     property string country: ""
@@ -50,7 +49,6 @@ Item {
     property int browseGeneration: 0
     property int playGeneration: 0
     property var playback: ({playing:false,station:{},title:"",paused:false})
-    readonly property bool hasFilters: !!search.text.trim() || !!country || genres.length > 0
     readonly property bool busy: loading || resolving || commandPending || favoriteSaving || syncing || countriesLoading || genresLoading
 
     RadioService { id: service; onFailed: message => root.error = message }
@@ -99,18 +97,11 @@ Item {
     function displayRows(preserve) {
         const selected = stationList.currentIndex >= 0 ? stationModel.get(stationList.currentIndex)?.key : "";
         const scroll = stationList.contentY;
-        let next;
-        if (favoritesOnly) {
-            const query = search.text.trim().toLowerCase();
-            next = favorites.filter(item => (!query || [item.name,item.country,item.tags,item.language].join(" ").toLowerCase().includes(query))
-                && (!country || item.country === country)
-                && genres.every(tag => item.tags.split(",").some(value => Stations.genreKey(value) === Stations.genreKey(tag))));
-        } else {
-            next = Stations.groupStations(results);
-            if (!hasFilters) {
-                next = favorites.concat(next.filter(item => !favorites.some(saved => Stations.sameFavorite(saved, item))));
-            }
-        }
+        const query = search.text.trim().toLowerCase();
+        const pinned = favorites.filter(item => (!query || [item.name,item.country,item.tags,item.language].join(" ").toLowerCase().includes(query))
+            && (!country || item.country === country)
+            && genres.every(tag => item.tags.split(",").some(value => Stations.genreKey(value) === Stations.genreKey(tag))));
+        const next = pinned.concat(Stations.groupStations(results).filter(item => !pinned.some(saved => Stations.sameFavorite(saved, item))));
         rows = next;
         const indexed = {};
         for (const item of next) indexed[item.groupKey] = item;
@@ -137,7 +128,6 @@ Item {
         const generation = ++browseGeneration;
         searchDelay.stop();
         error = ""; notice = "";
-        if (favoritesOnly) { loading = false; nextOffset = -1; displayRows(false); return; }
         const offset = append ? nextOffset : 0;
         loading = true;
         if (!append) { nextOffset = -1; results = []; displayRows(false); }
@@ -288,8 +278,8 @@ Item {
         parent: root.toolbarTarget || root
         width: parent.width; height: root.toolbarHeight
         visible: root.active; spacing: 8
-        MovieButton { objectName: "radioDiscover"; iconName: "globe"; text: "Discover"; highlighted: !root.favoritesOnly; onClicked: { root.favoritesOnly = false; root.browse(false); } }
-        MovieButton { objectName: "radioFavorites"; iconName: "star"; text: "Favorites"; highlighted: root.favoritesOnly; onClicked: { root.favoritesOnly = true; root.browse(false); } }
+        MovieText { objectName: "radioStationHeading"; text: "Stations"; font.bold: true }
+        MovieText { objectName: "radioStationCount"; text: root.rows.length.toLocaleString(); color: MovieStyle.muted }
         Item { Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredWidth: 0 }
         Flickable {
             id: inlineFilters; objectName: "radioFilters"
@@ -371,12 +361,6 @@ Item {
             MovieButton { visible: !!root.country; text: root.country + "  ×"; Accessible.name: "Clear country filter"; onClicked: { root.country = ""; root.persist(); root.browse(false); } }
             Repeater { model: root.genres; MovieButton { required property string modelData; text: modelData + "  ×"; Accessible.name: "Remove genre " + modelData; onClicked: root.toggleGenre(modelData) } }
         }
-        RowLayout {
-            Layout.fillWidth: true
-            MovieText { text: root.favoritesOnly ? "Favorite stations" : "Stations"; font.bold: true }
-            MovieText { text: root.rows.length.toLocaleString(); color: MovieStyle.muted }
-            Item { Layout.fillWidth: true }
-        }
         Rectangle { Layout.fillWidth: true; height: 1; color: MovieStyle.border }
         Item {
             Layout.fillWidth: true; Layout.fillHeight: true
@@ -436,7 +420,7 @@ Item {
             MovieText {
                 anchors.centerIn: parent; width: Math.min(parent.width - 40, 480); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                 visible: !root.rows.length; color: MovieStyle.muted
-                text: root.loading ? "Finding stations…" : root.error ? "" : root.favoritesOnly ? root.hasFilters ? "No favorites match these filters." : "No favorite stations yet." : "No stations match these filters."
+                text: root.loading ? "Finding stations…" : root.error ? "" : "No stations match these filters."
             }
         }
     }

@@ -4,14 +4,14 @@
 
 Radio registers with the existing `ui/SpaceState` and retained fullscreen host.
 It uses Movies' typography, controls, palette, scrollbar and wheel handling on
-a solid black background in both desktop theme modes. Discovery, favorites,
+a solid black background in both desktop theme modes. The Stations label/count,
 search and inline filters share the host's top row beside its hide X. The
 vertical station list replaces artwork views; rows show country, language,
 genres, quality choices, playback, favorites and an optional website action.
 Rows reserve the website action's width even when no website is available, keeping
 quality selectors aligned. The playback heading remains above the list.
-Unfiltered discovery pins saved favorites; Favorites applies search/country/genre
-filters locally.
+One discovery list pins saved favorites without separate browse tabs. Saved
+favorites apply search/country/genre filters locally and remain available offline.
 
 Open lazily creates an instance. Hide preserves list position, search/filter
 drafts, selected quality and playback. It stops metadata polling, search debounce,

@@ -53,13 +53,14 @@ class TelevisionTests(unittest.TestCase):
         self.assertEqual(len(self.backend.handle(dict(op='browse',offset=first['nextOffset']))['items']),10)
         self.assertEqual(len(self.backend.handle(dict(op='browse',query='alias 5',country='US',language='eng',category='news'))['items']),11)
         self.assertEqual(self.backend.handle(dict(op='browse',language='fra'))['items'],[])
-        channel=first['items'][0];self.backend.handle(dict(op='favorite',channel=channel,value=True))
-        self.assertEqual(len(self.backend.handle(dict(op='browse',favorites=True))['items']),1)
+        channel=first['items'][10];self.backend.handle(dict(op='favorite',channel=channel,value=True))
+        pinned=self.backend.handle(dict(op='browse'))
+        self.assertEqual(pinned['items'][0]['id'],channel['id']);self.assertEqual(pinned['total'],110)
         self.backend.catalogue.fetch=lambda _:(_ for _ in ()).throw(TelevisionError('Offline'))
         self.assertIn('Offline',self.backend.handle(dict(op='refresh'))['warning'])
         self.assertEqual(self.backend.catalogue.summary()['total'],110)
         self.backend.catalogue.snapshot={}
-        self.assertEqual(len(self.backend.handle(dict(op='browse',favorites=True))['items']),1)
+        self.assertEqual(len(self.backend.handle(dict(op='browse'))['items']),1)
     def test_private_preferences_modes_and_corruption_preservation(self):
         self.backend.init()
         self.backend.handle(dict(op='settings-save',settings=dict(country='US',language='eng',category='news',streams={'Fixture0.us':'choice'})))
