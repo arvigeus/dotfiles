@@ -11,7 +11,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-CACHE = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'quickshell/desktop/spaces/movies/artwork'
+SPACE = os.environ.get('QUICKSHELL_MEDIA_SPACE', 'movies')
+if SPACE not in ('movies', 'series', 'games', 'pictures'):
+    raise ValueError('Unknown artwork Space.')
+CACHE = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.local/cache')) / 'quickshell/desktop/spaces' / SPACE / 'artwork'
 RETENTION = 30 * 86400
 MAX_BYTES = 256 * 1024 * 1024
 MAX_FILES = 2000

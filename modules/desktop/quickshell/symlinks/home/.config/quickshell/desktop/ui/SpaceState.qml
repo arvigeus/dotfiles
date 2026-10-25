@@ -8,6 +8,7 @@ Singleton {
     property string currentId: ""
     property var runningIds: []
     readonly property var entries: [
+        { id: "pictures", name: qsTr("Pictures"), icon: "image", source: "../spaces/pictures/Main.qml" },
         {
             id: "movies",
             name: qsTr("Movies"),

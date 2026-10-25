@@ -3,10 +3,14 @@
 Sources live under [desktop/](symlinks/home/.config/quickshell/desktop/).
 Provisioning and module conventions are in the [root architecture](../../../ARCHITECTURE.md).
 
+Pictures owns session wallpaper surfaces, animated playback and the Displays
+random action; see [Pictures architecture](symlinks/home/.config/quickshell/desktop/spaces/pictures/ARCHITECTURE.md).
+
 ## Package ownership
 
 This module owns Quickshell, Qt Multimedia, cliphist, wl-clipboard, capture tools,
-the iCalendar libraries, PySide6, Python GObject and AccountsService. Hardware
+the iCalendar libraries, PySide6, Python GObject, AccountsService, mpvpaper and
+the Wallpiper Hyprland portal. Hardware
 modules own audio,
 Bluetooth, networking, storage, display tools and battery reporting. UPower is
 shared by hosts; `hardware/power` owns the Zephyrus power policy. Notifications

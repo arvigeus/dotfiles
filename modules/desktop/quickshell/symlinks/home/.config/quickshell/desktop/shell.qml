@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Services.SystemTray
 import "ui"
+import "spaces/pictures"
 import "bar"
 import "launcher"
 import "drawers"
@@ -24,6 +25,15 @@ ShellRoot {
     Launcher { id: launcher; interactionState: interactions }
     Drawers { id: drawers; interactionState: interactions }
     SpaceHost { interactionState: interactions }
+    WallpaperRuntime { id: wallpaperRuntime }
+    Variants {
+        model: Quickshell.screens
+        WallpaperBackground {
+            required property ShellScreen modelData
+            output: modelData
+            external: wallpaperRuntime.externalScreens.includes(modelData.name)
+        }
+    }
     NotificationPopups {}
     Binding {
         target: NotificationCenter; property: "drawerOpen"

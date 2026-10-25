@@ -29,8 +29,9 @@ def own_process_group(cleanup=None):
         signal.signal(signal.SIGALRM, terminate_group)
         signal.alarm(2)
         try:
-            from spaces.movies.local import cleanup_transfers
-            cleanup_transfers()
+            if os.environ.get("QUICKSHELL_MEDIA_SPACE", "movies") in ("movies", "series", "games"):
+                from spaces.movies.local import cleanup_transfers
+                cleanup_transfers()
             if cleanup:
                 cleanup()
         finally:

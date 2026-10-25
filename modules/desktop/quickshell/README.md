@@ -35,6 +35,8 @@ discovery, favorites, playback links and a local library with subtitles and down
 season and episode browsing in the same cinematic style.
 [Games](symlinks/home/.config/quickshell/desktop/spaces/games/README.md) combines
 Steam/Epic libraries, discovery, title artwork, ProtonDB and HowLongToBeat.
+[Pictures](symlinks/home/.config/quickshell/desktop/spaces/pictures/README.md) browses
+wallpapers and applies them to the desktop and lock screen.
 
 Hold session actions for two seconds. Shutdown timers continue with the drawer
 closed. **Restart → Reload** closes applications and starts a fresh desktop.
@@ -96,6 +98,9 @@ Use **Save current layout** after arranging displays in wdisplays. Dock-only pan
 return on redocking; undocking temporarily re-enables the panel when necessary.
 Brightness is not restored from the layout. Powersave normally caps the internal
 panel to 60 Hz; choosing another refresh overrides that until the next mode change.
+
+**Random Wallhaven wallpaper** applies a random SFW image to every display and
+the lock screen. Pictures owns wallpaper settings and playback.
 
 Dark mode applies the [shared desktop appearance](../../look-and-feel/README.md).
 Night light remembers its enabled state; edit

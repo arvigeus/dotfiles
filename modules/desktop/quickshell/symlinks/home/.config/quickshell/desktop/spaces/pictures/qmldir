@@ -1,0 +1,6 @@
+singleton WallpaperService 1.0 WallpaperService.qml
+WallpaperBackground 1.0 WallpaperBackground.qml
+WallpaperRuntime 1.0 WallpaperRuntime.qml
+Main 1.0 Main.qml
+PicturesTagPicker 1.0 PicturesTagPicker.qml
+WallpaperTile 1.0 WallpaperTile.qml

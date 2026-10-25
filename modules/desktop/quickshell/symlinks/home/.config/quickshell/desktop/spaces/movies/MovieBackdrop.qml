@@ -6,33 +6,23 @@ Rectangle {
     property url source: ""
     property string ownerKey: ""
     property url poster: ""
-    readonly property bool usingPoster: !image.hasImage && posterImage.hasImage
-    readonly property bool loading: image.loading || (!image.hasImage && posterImage.loading)
+    readonly property bool usingPoster: artwork.usingPreview
+    readonly property bool loading: artwork.loading
     property bool gridMode: false
     property real readingEdge: 0.7
     color: MovieStyle.background
-    CrossfadeImage { cacheService: root.cacheService;
-        id: posterImage
-        objectName: "moviePosterBackdrop"
+    ProgressiveImage {
+        id: artwork
         anchors.fill: parent
-        source: root.visible ? root.poster : ""
-        resetOnSourceChange: true
-        imageWidth: Math.max(1920, Math.ceil(root.width * 1.5))
-        // Decode a current-movie fallback during the grace period. Crop zooms
-        // its portrait artwork to fill the screen, without showing an old poster.
-        opacity: root.usingPoster ? 0.9 : 0
-        Behavior on opacity { NumberAnimation { duration: 240 } }
-    }
-    CrossfadeImage { cacheService: root.cacheService;
-        id: image
-        ownerKey: root.ownerKey
-        staleAfter: 1000
-        objectName: "movieBackdropImage"
-        anchors.fill: parent
+        cacheService: root.cacheService
         source: root.source
+        previewSource: root.poster
+        ownerKey: root.ownerKey
+        retainPreviousFor: 1000
         imageWidth: Math.max(1920, Math.ceil(root.width * 1.5))
-        opacity: image.hasImage ? 0.9 : 0
-        Behavior on opacity { NumberAnimation { duration: 240 } }
+        fullImageObjectName: "movieBackdropImage"
+        previewImageObjectName: "moviePosterBackdrop"
+        opacity: 0.9
     }
     Rectangle {
         anchors.fill: parent

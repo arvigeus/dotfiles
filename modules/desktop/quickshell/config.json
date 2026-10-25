@@ -15,7 +15,10 @@
         "wl-clipboard",
         "pyside6",
         "python-gobject",
-        "python-guessit"
+        "python-guessit",
+        "mpvpaper",
+        "python",
+        "ffmpeg"
     ],
     "extra": {
         "private": {
@@ -43,8 +46,16 @@
                 "home/.local/share/quickshell/desktop/spaces/series/library.sqlite",
                 "home/.config/quickshell/desktop/spaces/games/games.json",
                 "home/.config/quickshell/desktop/spaces/games/games-ui.ini",
-                "home/.local/share/quickshell/desktop/spaces/games/library.sqlite"
+                "home/.local/share/quickshell/desktop/spaces/games/library.sqlite",
+                "home/.config/quickshell/desktop/spaces/pictures/pictures.json",
+                "home/.config/quickshell/desktop/spaces/pictures/pictures-ui.json",
+                "home/.config/quickshell/desktop/spaces/pictures/wallpaper.json",
+                "home/.config/quickshell/desktop/spaces/pictures/providers",
+                "home/.local/share/quickshell/desktop/spaces/pictures/favorites.json"
             ]
-        }
+        },
+        "aur_packages": [
+            "wallpiper-hyprland"
+        ]
     }
 }

@@ -69,6 +69,10 @@ movie's poster, cropped to fill the screen. Poster decoding starts during that
 grace period, and its buffer resets on URL changes to prevent stale poster reuse.
 The real backdrop replaces the poster when ready; failures retain the poster.
 Only backdrops opt into this deadline. Logos reset immediately on source changes.
+`ProgressiveImage.qml` owns the two cached image layers and preview/full-source
+handoff shared by backdrops and the Pictures detail preview. Pictures clears the
+previous original immediately on source changes; backdrops retain their bounded
+grace period. Both layers decode for the physical surface size.
 
 ## Artwork and response caches
 

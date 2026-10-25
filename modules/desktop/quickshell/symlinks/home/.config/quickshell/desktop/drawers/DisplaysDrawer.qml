@@ -7,9 +7,11 @@ import Quickshell
 import "../ui"
 import "../ui/Models.js" as Models
 import "displays"
+import "../spaces/pictures"
 
 DrawerPage {
     id: root
+    property var wallpaperService: WallpaperService
     property var service: DisplayService
     property var displayTests: DisplayTestService
     property var comfortService: ComfortService
@@ -56,6 +58,30 @@ DrawerPage {
     Component.onDestruction: { service.observe(root, false); comfortService.observe(root, false); }
     headerActions: RowLayout {
         spacing: 4
+        IconButton {
+            id: randomWallpaperButton
+            objectName: "displayRandomWallpaper"
+            iconName: "image"; text: qsTr("Random Wallhaven wallpaper")
+            hint: qsTr("Apply a random SFW wallpaper to every display and the lock screen.")
+            enabled: !root.wallpaperService.busy
+            onClicked: root.wallpaperService.randomWallhaven()
+            contentItem: Item {
+                readonly property color tint: randomWallpaperButton.hovered || randomWallpaperButton.visualFocus ? Theme.accent : randomWallpaperButton.iconColor
+                Icon {
+                    objectName: "displayRandomWallpaperIcon"
+                    anchors.fill: parent
+                    name: "image"; color: parent.tint
+                }
+                Rectangle {
+                    objectName: "displayWallpaperShuffleBadge"
+                    anchors.right: parent.right; anchors.bottom: parent.bottom
+                    anchors.rightMargin: -4; anchors.bottomMargin: -3
+                    width: 14; height: 14; radius: 3
+                    color: Theme.background
+                    Icon { anchors.fill: parent; anchors.margins: 1; name: "shuffle"; color: parent.parent.tint }
+                }
+            }
+        }
         IconButton {
             objectName: "displaySave"; iconName: "hard-drive-download"; text: qsTr("Save current layout")
             hint: qsTr("Keep the current arrangement, including wdisplays changes, for these displays.")
@@ -282,6 +308,9 @@ DrawerPage {
             Note { visible: root.service.loaded && !displaysModel.count; text: qsTr("No connected displays available.") }
             Repeater { model: displaysModel; delegate: DisplayCard {} }
             ComfortControls { service: root.comfortService; active: root.active }
+            Note { visible: root.wallpaperService.busy; text: qsTr("Changing wallpaper…") }
+            Note { visible: !!root.wallpaperService.error; text: root.wallpaperService.error; color: Theme.danger }
+            Note { visible: !!root.wallpaperService.message; text: root.wallpaperService.message }
         }
         Button {
             id: identifyButton

@@ -23,6 +23,10 @@ Item {
     property string failedSource: ""
     property int retryCount: 0
     readonly property bool hasImage: !!displayedSource.toString()
+    readonly property real sourceAspectRatio: {
+        const current = frontIsA ? a : b;
+        return hasImage && current.implicitHeight > 0 ? current.implicitWidth / current.implicitHeight : 0;
+    }
     property var incoming: null
     property var expiredBuffer: null
     onOwnerKeyChanged: if (staleAfter > 0) staleGuard.restart()

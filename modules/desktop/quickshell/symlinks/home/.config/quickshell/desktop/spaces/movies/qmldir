@@ -34,3 +34,4 @@ MovieTab 1.0 MovieTab.qml
 MovieText 1.0 MovieText.qml
 CachedImage 1.0 CachedImage.qml
 singleton ImageCache 1.0 ImageCache.qml
+ProgressiveImage 1.0 ProgressiveImage.qml

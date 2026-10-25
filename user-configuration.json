@@ -190,6 +190,7 @@
             "chatgpt-desktop",
             "pi-coding-agent",
             "arkenfox-user.js",
+            "wallpiper-hyprland",
             "legendary",
             "librespeed-cli-bin",
             "cloudflare-warp-nox-bin",
@@ -489,6 +490,11 @@
                 "home/.config/quickshell/desktop/spaces/games/games.json",
                 "home/.config/quickshell/desktop/spaces/games/games-ui.ini",
                 "home/.local/share/quickshell/desktop/spaces/games/library.sqlite",
+                "home/.config/quickshell/desktop/spaces/pictures/pictures.json",
+                "home/.config/quickshell/desktop/spaces/pictures/pictures-ui.json",
+                "home/.config/quickshell/desktop/spaces/pictures/wallpaper.json",
+                "home/.config/quickshell/desktop/spaces/pictures/providers",
+                "home/.local/share/quickshell/desktop/spaces/pictures/favorites.json",
                 "home/.config/npm/npmrc",
                 "home/.config/git/config",
                 "home/.config/rclone/rclone.conf",
@@ -2580,6 +2586,10 @@
                 "target": "home/.config/quickshell/desktop/icons/shield-lock.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/shuffle.svg",
+                "target": "home/.config/quickshell/desktop/icons/shuffle.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/skip-back.svg",
                 "target": "home/.config/quickshell/desktop/icons/skip-back.svg"
             },
@@ -2960,6 +2970,10 @@
                 "target": "home/.config/quickshell/desktop/spaces/movies/Poster.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ProgressiveImage.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ProgressiveImage.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/README.md",
                 "target": "home/.config/quickshell/desktop/spaces/movies/README.md"
             },
@@ -3090,6 +3104,86 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/worker.py",
                 "target": "home/.config/quickshell/desktop/spaces/movies/worker.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/ARCHITECTURE.md",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/ARCHITECTURE.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/Main.qml",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/Main.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/PicturesTagPicker.qml",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/PicturesTagPicker.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/README.md",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/README.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/WallpaperBackground.qml",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/WallpaperBackground.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/WallpaperRuntime.qml",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/WallpaperRuntime.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/WallpaperService.qml",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/WallpaperService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/WallpaperTile.qml",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/WallpaperTile.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/backend.py",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/command_provider.py",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/command_provider.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/mpv.py",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/mpv.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/pictures.example.json",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/pictures.example.json"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/provider_plugins.py",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/provider_plugins.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/providers.py",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/providers.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/qmldir",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/qmldir"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/storage.py",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/storage.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/video_wallpaper.py",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/video_wallpaper.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/wallpaper.py",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/wallpaper.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/wallpaper_engine.py",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/wallpaper_engine.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/workshop.py",
+                "target": "home/.config/quickshell/desktop/spaces/pictures/workshop.py"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/series/ARCHITECTURE.md",
@@ -3429,6 +3523,9 @@
         "pyside6",
         "python-gobject",
         "python-guessit",
+        "mpvpaper",
+        "python",
+        "ffmpeg",
         "sqlite",
         "sqlitebrowser",
         "kate",
@@ -3442,7 +3539,6 @@
         "extra/npm",
         "bun",
         "pnpm",
-        "python",
         "python-pip",
         "uv",
         "ruff",
@@ -3541,7 +3637,6 @@
         "koko",
         "inkscape",
         "fooyin",
-        "ffmpeg",
         "imagemagick",
         "perl-image-exiftool",
         "mkvtoolnix-gui",
