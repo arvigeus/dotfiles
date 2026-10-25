@@ -10,6 +10,9 @@ never holds account URLs or passwords. Runtime files live outside the checkout i
 - `nextcloud.json`: `{"url": …, "username": …}`. `url` is the HTTPS instance root,
   including any installation subdirectory. Other keys are ignored.
 - `nextcloud-app-password`: one line holding a Nextcloud app password.
+- `nextcloud-music-api-key`: one line holding the API key generated in Nextcloud
+  Music settings for Subsonic access. Music uses this key rather than the DAV app
+  password, with the same account URL and username.
 
 Create both with private permissions, for example:
 
@@ -34,6 +37,15 @@ Python, never in QML, process arguments, snapshots or logs.
 
 The calendar backend reads its collection selections from `calendar.json`
 separately; feature configuration cannot override account identity or the password.
+
+Radio's `spaces/radio/music.py` uses `load_account()` and `music_api_key()` from
+this integration. The Music key uses the same ownership, 0600 and no-symlink rules
+as the DAV secret. It is declared once in the quickshell module's `extra.private`
+and restored alongside the existing account/password through `backup.sh` and the
+private checkout's standalone apply. No Radio-specific credential copy is used.
+The client scopes requests to `index.php/apps/music/subsonic/rest/` beneath the
+HTTPS instance root, sends credentials only in POST form bodies, rejects redirects
+and redacts provider errors. See [Radio sync](../spaces/radio/ARCHITECTURE.md).
 
 References: [Nextcloud app passwords](https://docs.nextcloud.com/server/latest/user_manual/en/session_management.html)
 and [CalDAV](https://docs.nextcloud.com/server/latest/user_manual/en/groupware/sync_kde.html).

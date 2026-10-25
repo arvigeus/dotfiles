@@ -19,6 +19,8 @@
         "mpvpaper",
         "python",
         "ffmpeg",
+        "mpv",
+        "mpv-mpris",
         "python-requests"
     ],
     "extra": {
@@ -29,6 +31,7 @@
                 "home/.config/quickshell/desktop/audio.ini",
                 "home/.config/quickshell/desktop/calendar.json",
                 "home/.config/quickshell/desktop/integrations/nextcloud-app-password",
+                "home/.config/quickshell/desktop/integrations/nextcloud-music-api-key",
                 "home/.config/quickshell/desktop/integrations/nextcloud.json",
                 "home/.config/quickshell/desktop/integrations/torrents.json",
                 "home/.config/quickshell/desktop/launcher.ini",
@@ -56,7 +59,10 @@
                 "home/.config/quickshell/desktop/spaces/books/books.json",
                 "home/.config/quickshell/desktop/spaces/books/books-ui.ini",
                 "home/.config/quickshell/desktop/spaces/books/providers",
-                "home/.local/share/quickshell/desktop/spaces/books/library.sqlite"
+                "home/.local/share/quickshell/desktop/spaces/books/library.sqlite",
+                "home/.config/quickshell/desktop/spaces/radio/radio-ui.json",
+                "home/.local/share/quickshell/desktop/spaces/radio/favorites.json",
+                "home/.local/share/quickshell/desktop/spaces/radio/sync.json"
             ]
         },
         "aur_packages": [

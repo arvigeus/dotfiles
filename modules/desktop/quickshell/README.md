@@ -39,6 +39,8 @@ Steam/Epic libraries, discovery, title artwork, ProtonDB and HowLongToBeat.
 wallpapers and applies them to the desktop and lock screen.
 [Books](symlinks/home/.config/quickshell/desktop/spaces/books/README.md) offers Open Library
 discovery, favorites, author/edition details and local ebook reading.
+[Radio](symlinks/home/.config/quickshell/desktop/spaces/radio/README.md) offers station
+search, country/genre filters, favorites and background listening.
 
 Hold session actions for two seconds. Shutdown timers continue with the drawer
 closed. **Restart → Reload** closes applications and starts a fresh desktop.

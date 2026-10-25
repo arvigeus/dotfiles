@@ -24,13 +24,21 @@ DrawerPage {
     readonly property var playerAssignments: {
         const streams = root.streams;
         const matches = players.map(player => {
-            const candidates = streams.filter(stream => playerMatchesStream(player, stream));
+            let candidates = streams.filter(stream => playerMatchesStream(player, stream));
+            if (candidates.length > 1) {
+                const identity = normalizeIdentity(player.identity);
+                const named = candidates.filter(stream => identity && identity === normalizeIdentity(stream.label));
+                if (named.length === 1) candidates = named;
+            }
             return {player, key: candidates.length === 1 ? candidates[0].key : ""};
         });
         return matches.map(match => ({player: match.player, key: match.key && matches.filter(other => other.key === match.key).length === 1 ? match.key : ""}));
     }
+    function normalizeIdentity(value): string {
+        return String(value ?? "").trim().toLowerCase().replace(/\.desktop$/, "");
+    }
     function playerMatchesStream(player, stream): bool {
-        const normalize = value => String(value ?? "").trim().toLowerCase().replace(/\.desktop$/, "");
+        const normalize = root.normalizeIdentity;
         const desktop = normalize(player.desktopEntry);
         if (desktop) {
             if (stream.applicationId) return desktop === normalize(stream.applicationId);

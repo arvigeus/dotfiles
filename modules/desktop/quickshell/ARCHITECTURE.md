@@ -245,7 +245,10 @@ volume, mute, default devices, routing display and app streams. `PwObjectTracker
 binds detailed objects only while a drawer observes. Levels use the loudest
 channel; changing level preserves channel balance. Link state distinguishes
 recording from paused capture. MPRIS controls associate only with uniquely
-matching application streams.
+matching application streams. When several streams match the same desktop
+application, a unique media identity/application label pair can distinguish them
+(for example Radio and a separate mpv player); otherwise controls stay in the
+Playback section.
 
 `audio/backend.py watch` supplies labels, cards, ports, profiles and input
 availability. It subscribes to Pulse card/sink/source events, debounces reads and

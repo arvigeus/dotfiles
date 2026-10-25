@@ -77,12 +77,21 @@ def load_account(root=None):
 
 def app_password(root=None):
     """Read nextcloud-app-password: a regular file owned by you, mode 0600, not a symlink."""
+    return _secret(password_path(root), "app password")
+
+
+def music_api_key(root=None):
+    """Music's Subsonic key belongs to the same shared account as DAV."""
+    return _secret((root or config_root()) / "nextcloud-music-api-key", "Music API key")
+
+
+def _secret(path, label):
     try:
-        descriptor = os.open(password_path(root), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError as error:
-        raise CredentialMissing("Save the Nextcloud app password with mode 0600.") from error
+        raise CredentialMissing("Save the Nextcloud " + label + " with mode 0600.") from error
     except OSError as error:
-        raise NextcloudError("Cannot open the Nextcloud app password file.") from error
+        raise NextcloudError("Cannot open the Nextcloud " + label + " file.") from error
     with os.fdopen(descriptor) as source:
         info = os.fstat(source.fileno())
         if (
@@ -90,13 +99,13 @@ def app_password(root=None):
             or stat.S_IMODE(info.st_mode) != 0o600
             or info.st_uid != os.getuid()
         ):
-            raise NextcloudError("The Nextcloud app password file must be owned by you with mode 0600.")
+            raise NextcloudError("The Nextcloud " + label + " file must be owned by you with mode 0600.")
         try:
             secret = source.read(65537).strip()
         except (OSError, UnicodeError) as error:
-            raise NextcloudError("Cannot read the Nextcloud app password.") from error
+            raise NextcloudError("Cannot read the Nextcloud " + label + ".") from error
     if not secret or len(secret) > 65536 or "\n" in secret or "\r" in secret:
-        raise NextcloudError("The Nextcloud app password is empty or invalid.")
+        raise NextcloudError("The Nextcloud " + label + " is empty or invalid.")
     return secret
 
 

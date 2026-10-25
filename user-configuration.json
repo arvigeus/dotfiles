@@ -471,6 +471,7 @@
                 "home/.config/quickshell/desktop/audio.ini",
                 "home/.config/quickshell/desktop/calendar.json",
                 "home/.config/quickshell/desktop/integrations/nextcloud-app-password",
+                "home/.config/quickshell/desktop/integrations/nextcloud-music-api-key",
                 "home/.config/quickshell/desktop/integrations/nextcloud.json",
                 "home/.config/quickshell/desktop/integrations/torrents.json",
                 "home/.config/quickshell/desktop/launcher.ini",
@@ -499,6 +500,9 @@
                 "home/.config/quickshell/desktop/spaces/books/books-ui.ini",
                 "home/.config/quickshell/desktop/spaces/books/providers",
                 "home/.local/share/quickshell/desktop/spaces/books/library.sqlite",
+                "home/.config/quickshell/desktop/spaces/radio/radio-ui.json",
+                "home/.local/share/quickshell/desktop/spaces/radio/favorites.json",
+                "home/.local/share/quickshell/desktop/spaces/radio/sync.json",
                 "home/.config/npm/npmrc",
                 "home/.config/git/config",
                 "home/.config/rclone/rclone.conf",
@@ -3230,6 +3234,58 @@
                 "target": "home/.config/quickshell/desktop/spaces/pictures/workshop.py"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/radio/ARCHITECTURE.md",
+                "target": "home/.config/quickshell/desktop/spaces/radio/ARCHITECTURE.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/radio/FilterMenu.qml",
+                "target": "home/.config/quickshell/desktop/spaces/radio/FilterMenu.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/radio/Main.qml",
+                "target": "home/.config/quickshell/desktop/spaces/radio/Main.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/radio/README.md",
+                "target": "home/.config/quickshell/desktop/spaces/radio/README.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/radio/RadioService.qml",
+                "target": "home/.config/quickshell/desktop/spaces/radio/RadioService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/radio/Stations.js",
+                "target": "home/.config/quickshell/desktop/spaces/radio/Stations.js"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/radio/api.py",
+                "target": "home/.config/quickshell/desktop/spaces/radio/api.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/radio/backend.py",
+                "target": "home/.config/quickshell/desktop/spaces/radio/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/radio/favorites.py",
+                "target": "home/.config/quickshell/desktop/spaces/radio/favorites.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/radio/matching.py",
+                "target": "home/.config/quickshell/desktop/spaces/radio/matching.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/radio/music.py",
+                "target": "home/.config/quickshell/desktop/spaces/radio/music.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/radio/qmldir",
+                "target": "home/.config/quickshell/desktop/spaces/radio/qmldir"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/radio/storage.py",
+                "target": "home/.config/quickshell/desktop/spaces/radio/storage.py"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/series/ARCHITECTURE.md",
                 "target": "home/.config/quickshell/desktop/spaces/series/ARCHITECTURE.md"
             },
@@ -3570,6 +3626,8 @@
         "mpvpaper",
         "python",
         "ffmpeg",
+        "mpv",
+        "mpv-mpris",
         "python-requests",
         "sqlite",
         "sqlitebrowser",
@@ -3698,7 +3756,6 @@
         "qt6-svg",
         "chaotic-aur/ocrmypdf",
         "subtitlecomposer",
-        "mpv",
         "mpv-shim-default-shaders",
         "chaotic-aur/mpv-uosc",
         "chaotic-aur/mpv-thumbfast-git",
