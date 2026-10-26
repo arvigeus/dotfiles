@@ -84,7 +84,7 @@ DrawerPage {
         }
         IconButton {
             objectName: "displaySave"; iconName: "hard-drive-download"; text: qsTr("Save current layout")
-            hint: qsTr("Keep the current arrangement, including wdisplays changes, for these displays.")
+            hint: qsTr("Save the current arrangement and scale. Save applied wdisplays changes before closing the editor.")
             enabled: root.canEdit
             onClicked: root.service.save()
         }

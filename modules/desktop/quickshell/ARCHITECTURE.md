@@ -298,7 +298,10 @@ Confirmed changes persist as native `hl.monitor` rules in the user-owned
 `~/.config/hypr/displays.lua`, loaded after host defaults. Descriptions are used
 only when they uniquely identify a connected output; ambiguous descriptions fall
 back to connector names. Atomic writes preserve unrelated/disconnected rules.
-Hyprland owns reload/hotplug matching. External-tool changes require Save layout.
+Hyprland owns reload/hotplug matching. External-tool changes require Save layout
+while the editor is still open: Hyprland 0.56.2 stores wlr-output-management
+overrides on the client's output manager, so closing wdisplays removes that
+override and subsequent monitor-rule evaluation uses the configured layout.
 If undocking leaves only disabled outputs, the helper temporarily enables one,
 preferring the internal panel; it does not persist that emergency fallback.
 On redocking, a saved panel-disable rule returns only after verifying a usable

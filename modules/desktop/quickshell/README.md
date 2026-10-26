@@ -102,8 +102,9 @@ connections active. See [firewall access](../../system/security/firewall/README.
 ## Displays and keyboard
 
 Display changes apply immediately and persist in `~/.config/hypr/displays.lua`.
-Use **Save current layout** after arranging displays in wdisplays. Dock-only panel choices
-return on redocking; undocking temporarily re-enables the panel when necessary.
+After applying changes in wdisplays, leave it open and choose **Save current
+layout** in Displays before closing the editor. Dock-only panel choices return
+on redocking; undocking temporarily re-enables the panel when necessary.
 Brightness is not restored from the layout. Powersave normally caps the internal
 panel to 60 Hz; choosing another refresh overrides that until the next mode change.
 
