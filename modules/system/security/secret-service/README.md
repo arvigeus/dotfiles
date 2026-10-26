@@ -1,17 +1,17 @@
 # Desktop credentials
 
-GNOME Keyring provides Secret Service password storage and unlocks automatically
-at login, including autologin. KDE applications use their compatibility service
-with the same store.
+GNOME Keyring provides Secret Service password storage. KDE applications access
+it through their standard compatibility service.
 
-Automatic unlocking uses `~/.config/secret-service/unlock-key`, readable only by
-your user. Disk encryption protects this key at rest. The key and encrypted
-`~/.local/share/keyrings/` data are backed up together in `dotfiles-private`;
-restore both together on a new machine.
+With an empty keyring password, autologin needs no unlock prompt. The keyring is
+then unencrypted and relies on disk encryption and user-only file permissions.
+With a nonempty password, unlock it when first needed each session.
+
+Keyring data is backed up in `dotfiles-private`. A nonempty keyring password
+must be remembered when restoring on another machine.
 
 ```sh
-systemctl --user status secret-service-unlock.service
-systemctl --user restart gnome-keyring-daemon.service
+systemctl --user status gnome-keyring-daemon.service
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for service ordering and credential storage.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for configuration ownership.
