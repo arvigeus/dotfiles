@@ -56,6 +56,10 @@ records their modes, since Git does not preserve private permission bits or empt
 directories. Empty directories are reconstructed from those records on restore.
 Do not put handwritten assets or hooks in this generated module.
 
+Snapshots omit sockets and entries named `*.lock` or `.#lk*`, including their
+permission metadata. The private checkout's ignore rules exclude these lock
+names throughout the repository.
+
 Other modules install assets automatically: `files/home/` copies into the user's
 home and `symlinks/home/` links there. Other paths beneath these asset directories
 target `/`. Handwritten assets default to owner-only access, retaining the
@@ -118,8 +122,16 @@ def check_parents(path, boundary):
             raise ValueError(f'Refusing to write through directory symlink: {parent}')
 
 
+def is_lock(path):
+    return path.name.endswith('.lock') or path.name.startswith('.#lk')
+
+
 def snapshot(source, destination, ancestors=(), forbidden=None):
-    """Materialize links; socket files are runtime state, never backup assets."""
+    """Materialize links, omitting runtime locks and sockets."""
+    # Lock files can disappear while their parent directory is being copied.
+    if is_lock(source):
+        print(f'Skip lock: {source}', file=sys.stderr)
+        return
     info = source.stat()
     if stat.S_ISSOCK(info.st_mode):
         print(f'Skip socket: {source}', file=sys.stderr)
@@ -241,7 +253,7 @@ def backup(args, config, entries, home, repo):
             write_atomic(repo / 'README.md', README)
         write_atomic(repo / 'ARCHITECTURE.md', ARCHITECTURE)
         if not (repo / '.gitignore').exists():
-            write_atomic(repo / '.gitignore', '__pycache__/\n.backup-*/\n')
+            write_atomic(repo / '.gitignore', '__pycache__/\n.backup-*/\n*.lock\n.#lk*\n')
         manifest = {'extra': {'private': saved}, 'permissions': modes, 'directories': sorted(directories)}
         payload.mkdir(parents=True, exist_ok=True, mode=0o700)
         write_atomic(payload / 'config.json', json.dumps(manifest, indent=4) + '\n')

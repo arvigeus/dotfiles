@@ -77,7 +77,10 @@ validation, path conflicts, and unsupported file types fail backup/restore;
 overrides the generated public configuration. `--dry-run` lists planned actions
 without copying data or creating a repo. The destination must be outside the
 public checkout and cannot be contained in a declared source directory. Backup
-materializes source symlinks, rejects cycles and broken links, and skips sockets.
+materializes source symlinks, rejects cycles and broken links, and skips sockets
+and entries named `*.lock` or `.#lk*` before inspecting them. These runtime locks
+are omitted from both payloads and permission metadata. New private repositories
+also ignore these names throughout the checkout.
 All available sources are staged before any snapshots are replaced. Existing
 snapshots are retained for missing sources. Successful refresh replaces complete
 directory snapshots, dropping children deleted from the live directory. Omitted

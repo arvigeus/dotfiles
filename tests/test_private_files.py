@@ -192,6 +192,52 @@ echo {name} >> "$HOME/hook-order"
         self.assertIn('cycle', result.stderr)
         self.assertEqual((snapshot / 'key').read_text(), 'old')
 
+    def test_locks_are_omitted_from_refreshed_snapshot_manifest_and_clone(self):
+        self.configure(['home/.gnupg', 'home/.config/app'])
+        self.asset('.gnupg/private-keys-v1.d/example.key', 'private-key')
+        self.asset('.gnupg/public-keys.d/pubring.db', 'public-keys')
+        self.asset('.config/app/settings.json', '{}')
+        self.backup()
+        payload = self.private / 'modules/backup'
+        # A refresh must remove locks captured by an earlier backup engine.
+        old_lock = payload / 'files/home/.gnupg/public-keys.d/pubring.db.lock'
+        old_lock.write_text('old lock')
+        manifest = json.loads((payload / 'config.json').read_text())
+        manifest['permissions'][str(old_lock.relative_to(payload))] = 0o600
+        (payload / 'config.json').write_text(json.dumps(manifest))
+        for name in ['.gnupg/public-keys.d/pubring.db.lock',
+                     '.gnupg/public-keys.d/.#lk0x123.host.456',
+                     '.config/app/settings.lock']:
+            self.asset(name, 'runtime lock')
+        # Skip before stat: a lock may already be gone or link to a missing file.
+        (self.home / '.gnupg/.#lk-vanished').symlink_to(self.home / 'absent')
+        result = self.backup()
+        self.assertIn('Skip lock:', result.stderr)
+        manifest = json.loads((payload / 'config.json').read_text())
+        self.assertFalse(any(name.endswith('.lock') or '/.#lk' in name
+                             for name in manifest['permissions']))
+        self.assertEqual((payload / 'files/home/.gnupg/public-keys.d/pubring.db').read_text(),
+                         'public-keys')
+        self.assertFalse(old_lock.exists())
+        # Ignore rules also protect handwritten modules and newly created locks.
+        ignored = ['root.lock', 'modules/custom/files/home/nested.lock',
+                   'modules/custom/files/home/.#lk0x789.host.123']
+        for name in ignored:
+            self.run_script('git', '-C', str(self.private), 'check-ignore', '-q', name)
+        self.run_script('git', '-C', str(self.private), 'add', '.')
+        self.run_script('git', '-C', str(self.private), '-c', 'user.name=Fixture',
+                        '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'Fixture')
+        clone = self.root / 'clone'
+        self.run_script('git', 'clone', '--quiet', '--no-hardlinks', str(self.private), str(clone))
+        self.private = clone
+        restored = self.root / 'restored'
+        restored.mkdir()
+        self.apply(home=restored)
+        self.assertEqual((restored / '.gnupg/private-keys-v1.d/example.key').read_text(),
+                         'private-key')
+        self.assertFalse(list(restored.rglob('*.lock')))
+        self.assertFalse(list(restored.rglob('.#lk*')))
+
     def test_restore_rejects_symlink_parent_and_conflict_before_installing(self):
         self.configure(['home/.ssh/key', 'home/token'])
         self.asset('.ssh/key')
