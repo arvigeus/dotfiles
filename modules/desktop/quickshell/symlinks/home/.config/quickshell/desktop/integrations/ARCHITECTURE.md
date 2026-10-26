@@ -8,7 +8,9 @@ never holds account URLs or passwords. Runtime files live outside the checkout i
 `$XDG_CONFIG_HOME/quickshell/desktop/integrations/`:
 
 - `nextcloud.json`: `{"url": …, "username": …}`. `url` is the HTTPS instance root,
-  including any installation subdirectory. Other keys are ignored.
+  including any installation subdirectory. Other keys are ignored by this
+  transport. Dolphin's private setup additionally records `http_auth_realm` here
+  from the server's authentication challenge for unattended KDE authentication.
 - `nextcloud-app-password`: one line holding a Nextcloud app password.
 - `nextcloud-music-api-key`: one line holding the API key generated in Nextcloud
   Music settings for Subsonic access. Music uses this key rather than the DAV app

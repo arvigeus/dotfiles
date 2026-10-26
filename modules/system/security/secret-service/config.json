@@ -1,0 +1,16 @@
+{
+    "packages": [
+        "gnome-keyring",
+        "libsecret",
+        "python-gobject",
+        "kconfig"
+    ],
+    "extra": {
+        "private": {
+            "files": [
+                "home/.config/secret-service/unlock-key",
+                "home/.local/share/keyrings"
+            ]
+        }
+    }
+}

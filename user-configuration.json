@@ -515,6 +515,8 @@
                 "home/.local/share/syntaxis-signing",
                 "home/AppData/Roaming/BISS/Settings.xml",
                 "home/.gnupg",
+                "home/.config/secret-service/unlock-key",
+                "home/.local/share/keyrings",
                 "home/.ssh"
             ]
         },
@@ -1667,6 +1669,21 @@
             {
                 "source": "modules/system/security/firewall/files/usr/local/libexec/firewall-ports",
                 "target": "/usr/local/libexec/firewall-ports",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/system/security/secret-service/files/etc/systemd/user/gnome-keyring-daemon.service.d/autologin.conf",
+                "target": "/etc/systemd/user/gnome-keyring-daemon.service.d/autologin.conf",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/system/security/secret-service/files/etc/systemd/user/secret-service-unlock.service",
+                "target": "/etc/systemd/user/secret-service-unlock.service",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/system/security/secret-service/files/usr/local/libexec/secret-service-unlock",
+                "target": "/usr/local/libexec/secret-service-unlock",
                 "mode": "0755"
             },
             {
@@ -3677,6 +3694,7 @@
             "modules/internet/qbittorrent/scripts/50_qbittorrent.sh",
             "modules/desktop/quickshell/scripts/50_quickshell.sh",
             "modules/gaming/games/roblox/scripts/50_roblox.sh",
+            "modules/system/security/secret-service/scripts/50_secret-service.sh",
             "modules/desktop/hyprland/scripts/50_session.sh",
             "modules/system/security/sudo/scripts/50_sudo.sh",
             "modules/media/tools/video/scripts/50_video-tools.sh",
@@ -3937,6 +3955,9 @@
         "vulkan-tools",
         "gnupg",
         "polkit",
+        "gnome-keyring",
+        "libsecret",
+        "kconfig",
         "openssh",
         "sudo",
         "virt-manager",
