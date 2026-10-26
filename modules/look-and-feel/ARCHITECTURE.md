@@ -109,8 +109,16 @@ userChrome CSS, which this setup does not install.
 GTK 3/4 named `DotfilesDark`/`DotfilesLight` themes import packaged Breeze CSS,
 then override named colors, retaining geometry and assets. Switching theme names
 through GNOME interface settings loads the correct palette. GTK settings.ini
-files supply startup defaults. Meld leaves its source style scheme at the
-application default instead of forcing the light Classic scheme.
+files supply startup defaults. GTK 3 top-level CSD shadow extents and resize
+margins are disabled; Hyprland supplies the window shadow and border resizing.
+This keeps window drawing and pointer coordinates aligned when changing display
+scale, including in wdisplays. The rule is generated in both `gtk.css` and
+`gtk-dark.css` for each named theme; GTK's dark preference can select the latter
+independently of the theme name. Popup decorations and GTK 4 are unchanged.
+Hyprland 0.56.2 has related
+[nonzero window-geometry rendering issues](https://github.com/hyprwm/Hyprland/discussions/15870).
+Meld leaves its source style scheme at the application default instead of forcing
+the light Classic scheme.
 
 Libadwaita does not load arbitrary GTK themes. Its documented color variables
 are supplied through GTK 4 user CSS containing **both** palettes in

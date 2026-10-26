@@ -142,7 +142,7 @@ class ThemeTests(unittest.TestCase):
                                   (config / f'kitty/{mode}-theme.auto.conf').read_text())
                 family = json.loads((config / 'zed/themes/dotfiles.json').read_text())
                 self.assertEqual({t['appearance'] for t in family['themes']}, {'light', 'dark'})
-                extension = home / '.vscode-oss/extensions/dotfiles.desktop-theme-1.0.0'
+                extension = data / 'vscode-oss/extensions/dotfiles.desktop-theme-1.0.0'
                 manifest = json.loads((extension / 'package.json').read_text())
                 self.assertEqual(len(manifest['contributes']['themes']), 2)
                 union = data / 'union/styles/dotfiles'

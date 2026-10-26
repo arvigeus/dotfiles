@@ -216,6 +216,11 @@ def gtk_css(c, version):
         'destructive_bg_color': 'danger', 'destructive_fg_color': 'accentText',
     }
     result += ''.join(f'@define-color {name} {c[token]};\n' for name, token in variables.items())
+    if version == 3:
+        # Hyprland draws top-level shadows. GTK shadow extents can leave drawing
+        # and pointer coordinates out of sync after an output scale change.
+        result += ('window.csd:not(.popup):not(.tooltip) > decoration '
+                   '{ box-shadow: none; margin: 0; }\n')
     if version == 4:
         result += ':root {\n' + ''.join(f'  --{name.replace("_", "-")}: {c[token]};\n'
                                       for name, token in variables.items()) + '}\n'
