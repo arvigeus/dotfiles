@@ -71,12 +71,43 @@ before a job or on close. Diagnostics stay in the dialog; there is no background
 service. Tag round-trip verification has a bounded synchronous probe after each
 completed remux; it never performs conversion on the UI thread.
 
+## Lyrics
+
+`audio_lyrics.py` is shared with the Music space, which imports it from
+`/usr/local/lib/audio-tools`. Both read
+`$XDG_CONFIG_HOME/audio-tools/lyrics.json` on each provider lookup. The file is
+private and declared in this module's `extra.private.files`; it is preserved by
+the standalone backup/restore workflow. A missing file uses LRCLIB, and invalid
+settings are reported without replacing them.
+
+The schema is `{"version":1,"providers":[...]}` with up to eight providers.
+An empty list disables online lookup. Each provider supports `name`, `base_url`
+(LRCLIB-compatible `/get` endpoint), optional `headers`, `api_key`,
+`api_key_header` (default `Authorization`), and `api_key_prefix` (default
+`Bearer `). The built-in base URL is `https://lrclib.net/api`. Lookups send title,
+artist, optional album and duration in seconds. Plain lyrics take precedence;
+synced lyrics have timestamps removed. Requests have a 16-second timeout, a
+1 MiB response limit and a 200,000-character lyrics limit. Provider failures
+permit trying the next provider. HTTP 429 applies a per-process host cooldown;
+redirects across origins are rejected so credentials stay with their provider.
+
+Audio tools runs the helper in an owned QProcess. JSON input carries song
+metadata; credentials are read in the helper, never placed in process arguments.
+Fetch and Cancel fetch share a button beside the Lyrics heading. Success updates
+only the draft; Save tags uses the existing atomic remux. Replacing nonempty
+lyrics requires the dialog's confirmation. Editing song identity or lyrics,
+discarding drafts, starting a file job, or closing cancels the lookup. Completion
+also checks the original song details and lyrics before applying a response.
+MP3's language-qualified ID3 lyrics are normalized for display and verification.
+
 ## Validation
 
-`python3 -m unittest tests.test_audio_tools tests.test_audio_tools_gui` uses
+`python3 -m unittest tests.test_audio_tools tests.test_audio_tools_gui tests.test_audio_lyrics` uses
 throwaway fixtures: all seven presets, Unicode and cleared tags, covers,
 unchanged audio, backups, source changes, output races, job errors/cancellation
 and the real offscreen dialog. Native application queries verify audio MIME registration.
+Lyrics fixtures check shared settings, authenticated requests, cancellation,
+stale drafts, MP3/FLAC saving, provider failures and private backup/restore.
 `python3 -m unittest tests.test_media_tools_gui` verifies single-file registration,
 picker cancellation and native dark/light palette changes in both dialogs. The
 live theme test uses an isolated D-Bus session and temporary XDG directories.

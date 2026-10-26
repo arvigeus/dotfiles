@@ -1,5 +1,12 @@
 {
     "packages": [
         "pyside6"
-    ]
+    ],
+    "extra": {
+        "private": {
+            "files": [
+                "home/.config/audio-tools/lyrics.json"
+            ]
+        }
+    }
 }

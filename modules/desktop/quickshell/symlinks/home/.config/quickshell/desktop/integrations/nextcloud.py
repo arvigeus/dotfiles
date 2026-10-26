@@ -164,6 +164,7 @@ class DAVClient:
                     raise NextcloudError("The Nextcloud response is too large. Select fewer collections.")
                 return data, response.headers
         except HTTPError as error:
+            error.close()
             if error.code in (401, 403):
                 raise NextcloudError(
                     "Nextcloud rejected the app password or account access."

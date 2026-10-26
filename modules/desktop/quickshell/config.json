@@ -21,7 +21,8 @@
         "ffmpeg",
         "mpv",
         "mpv-mpris",
-        "python-requests"
+        "python-requests",
+        "rclone"
     ],
     "extra": {
         "private": {
@@ -64,7 +65,10 @@
                 "home/.local/share/quickshell/desktop/spaces/radio/favorites.json",
                 "home/.local/share/quickshell/desktop/spaces/radio/sync.json",
                 "home/.config/quickshell/desktop/spaces/television/television-ui.json",
-                "home/.local/share/quickshell/desktop/spaces/television/favorites.json"
+                "home/.local/share/quickshell/desktop/spaces/television/favorites.json",
+                "home/.config/quickshell/desktop/spaces/music/music.json",
+                "home/.config/quickshell/desktop/spaces/music/music-ui.json",
+                "home/.local/share/quickshell/desktop/spaces/music/library.sqlite"
             ]
         },
         "aur_packages": [

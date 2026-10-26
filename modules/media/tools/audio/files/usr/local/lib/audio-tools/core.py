@@ -56,6 +56,8 @@ def audio_info(document):
     tags.update({k.lower(): str(v) for k, v in data.get('format', {}).get('tags', {}).items()})
     tags['album_artist'] = tags.get('album_artist', tags.get('albumartist', ''))
     tags['date'] = tags.get('date', tags.get('year', ''))
+    # FFmpeg exposes MP3 lyrics as a language-qualified ID3 tag.
+    tags['lyrics'] = tags.get('lyrics', next((v for k, v in tags.items() if k.startswith('lyrics-')), ''))
     return {'tags': tags, 'audio': audio, 'format': data.get('format', {}),
             'artwork': sum(bool(s.get('disposition', {}).get('attached_pic')) for s in data.get('streams', []))}
 

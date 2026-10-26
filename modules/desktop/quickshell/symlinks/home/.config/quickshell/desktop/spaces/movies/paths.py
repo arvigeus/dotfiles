@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 SPACE = os.environ.get("QUICKSHELL_MEDIA_SPACE", "movies")
-if SPACE not in ("movies", "series", "games", "books"):
+if SPACE not in ("movies", "series", "games", "books", "music"):
     raise ValueError("Unknown media Space.")
 ROOT = "quickshell/desktop/spaces/" + SPACE
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / ROOT

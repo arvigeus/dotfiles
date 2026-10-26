@@ -38,14 +38,16 @@ Python, never in QML, process arguments, snapshots or logs.
 The calendar backend reads its collection selections from `calendar.json`
 separately; feature configuration cannot override account identity or the password.
 
-Radio's `spaces/radio/music.py` uses `load_account()` and `music_api_key()` from
+`subsonic.py` owns the shared Music transport. Radio's station adapter and
+Music's library/stream clients use `load_account()` and `music_api_key()` from
 this integration. The Music key uses the same ownership, 0600 and no-symlink rules
 as the DAV secret. It is declared once in the quickshell module's `extra.private`
 and restored alongside the existing account/password through `backup.sh` and the
-private checkout's standalone apply. No Radio-specific credential copy is used.
+private checkout's standalone apply. No per-Space credential copy is used.
 The client scopes requests to `index.php/apps/music/subsonic/rest/` beneath the
 HTTPS instance root, sends credentials only in POST form bodies, rejects redirects
-and redacts provider errors. See [Radio sync](../spaces/radio/ARCHITECTURE.md).
+and redacts provider errors. See [Radio sync](../spaces/radio/ARCHITECTURE.md) and
+[Music library/streaming](../spaces/music/ARCHITECTURE.md).
 
 References: [Nextcloud app passwords](https://docs.nextcloud.com/server/latest/user_manual/en/session_management.html)
 and [CalDAV](https://docs.nextcloud.com/server/latest/user_manual/en/groupware/sync_kde.html).

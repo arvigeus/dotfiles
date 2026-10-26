@@ -1,0 +1,8 @@
+Main 1.0 Main.qml
+MusicPlayback 1.0 MusicPlayback.qml
+MusicService 1.0 MusicService.qml
+MusicSlider 1.0 MusicSlider.qml
+MusicLink 1.0 MusicLink.qml
+MusicInfo 1.0 MusicInfo.qml
+MusicPicker 1.0 MusicPicker.qml
+MusicCover 1.0 MusicCover.qml

@@ -6,6 +6,10 @@
 - Conversion with progress, cancellation and optional loudness normalization.
 - Audio stream details and the complete tag list.
 
+**Fetch lyrics** fills the lyrics draft; **Save tags** writes it to the file.
+Lyrics providers share `~/.config/audio-tools/lyrics.json` with the Music space
+(LRCLIB by default). Private settings are included by `backup.sh`.
+
 Seven presets cover AAC/M4A 320 kbps, MP3 192/320, FLAC, Opus 192, Vorbis quality
 6 and WAV PCM 16-bit. Presets live in `~/.config/audio-tools/presets.json`.
 The managed copy is [presets.json](files/home/.config/audio-tools/presets.json).

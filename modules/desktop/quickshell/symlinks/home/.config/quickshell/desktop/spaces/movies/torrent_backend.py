@@ -1344,7 +1344,11 @@ class TorrentBackend:
         if len(query) < 2:
             return []
         if item["kind"] == "music":
-            raise TorrentError("Music is not available in Movies.")
+            from spaces.music.backend import search_page, MusicError
+            try:
+                return [dict(song, kind="music") for song in search_page({"query":query,"category":"songs"})["items"]]
+            except MusicError as error:
+                raise TorrentError(str(error)) from None
 
         if item["kind"] == "book":
             from spaces.books.backend import BooksBackend, BooksError

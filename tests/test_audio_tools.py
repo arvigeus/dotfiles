@@ -126,6 +126,15 @@ class AudioToolsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'hard-linked'):
             core.tag_edit(self.source, {'title': 'No'})
 
+    def test_lyrics_roundtrip_in_mp3_and_flac(self):
+        conversion = core.conversion(self.source, core.read_presets(PRESETS)[1])
+        self.complete(conversion)
+        for source in (self.source, conversion.target):
+            with self.subTest(extension=source.suffix):
+                text = 'Line one\n千本桜 · Second line'
+                self.complete(core.tag_edit(source, {'lyrics': text}, backup=False))
+                self.assertEqual(self.info(source)['tags']['lyrics'], text)
+
 
 if __name__ == '__main__':
     unittest.main()

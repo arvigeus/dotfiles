@@ -505,9 +505,13 @@
                 "home/.local/share/quickshell/desktop/spaces/radio/sync.json",
                 "home/.config/quickshell/desktop/spaces/television/television-ui.json",
                 "home/.local/share/quickshell/desktop/spaces/television/favorites.json",
+                "home/.config/quickshell/desktop/spaces/music/music.json",
+                "home/.config/quickshell/desktop/spaces/music/music-ui.json",
+                "home/.local/share/quickshell/desktop/spaces/music/library.sqlite",
                 "home/.config/npm/npmrc",
                 "home/.config/git/config",
                 "home/.config/rclone/rclone.conf",
+                "home/.config/audio-tools/lyrics.json",
                 "home/.local/share/syntaxis-signing",
                 "home/AppData/Roaming/BISS/Settings.xml",
                 "home/.gnupg",
@@ -1414,6 +1418,11 @@
                 "source": "modules/media/tools/audio/files/usr/local/bin/audio-tools",
                 "target": "/usr/local/bin/audio-tools",
                 "mode": "0755"
+            },
+            {
+                "source": "modules/media/tools/audio/files/usr/local/lib/audio-tools/audio_lyrics.py",
+                "target": "/usr/local/lib/audio-tools/audio_lyrics.py",
+                "mode": "0644"
             },
             {
                 "source": "modules/media/tools/audio/files/usr/local/lib/audio-tools/core.py",
@@ -2660,6 +2669,10 @@
                 "target": "home/.config/quickshell/desktop/icons/tv.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/upload.svg",
+                "target": "home/.config/quickshell/desktop/icons/upload.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/user-round.svg",
                 "target": "home/.config/quickshell/desktop/icons/user-round.svg"
             },
@@ -2742,6 +2755,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/integrations/nextcloud.py",
                 "target": "home/.config/quickshell/desktop/integrations/nextcloud.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/integrations/subsonic.py",
+                "target": "home/.config/quickshell/desktop/integrations/subsonic.py"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/integrations/torrents.example.json",
@@ -3158,6 +3175,98 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/worker.py",
                 "target": "home/.config/quickshell/desktop/spaces/movies/worker.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/ARCHITECTURE.md",
+                "target": "home/.config/quickshell/desktop/spaces/music/ARCHITECTURE.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/Main.qml",
+                "target": "home/.config/quickshell/desktop/spaces/music/Main.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/MusicCover.qml",
+                "target": "home/.config/quickshell/desktop/spaces/music/MusicCover.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/MusicInfo.qml",
+                "target": "home/.config/quickshell/desktop/spaces/music/MusicInfo.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/MusicLink.qml",
+                "target": "home/.config/quickshell/desktop/spaces/music/MusicLink.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/MusicPicker.qml",
+                "target": "home/.config/quickshell/desktop/spaces/music/MusicPicker.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/MusicPlayback.qml",
+                "target": "home/.config/quickshell/desktop/spaces/music/MusicPlayback.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/MusicService.qml",
+                "target": "home/.config/quickshell/desktop/spaces/music/MusicService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/MusicSlider.qml",
+                "target": "home/.config/quickshell/desktop/spaces/music/MusicSlider.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/README.md",
+                "target": "home/.config/quickshell/desktop/spaces/music/README.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/artwork.py",
+                "target": "home/.config/quickshell/desktop/spaces/music/artwork.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/backend.py",
+                "target": "home/.config/quickshell/desktop/spaces/music/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/cache.py",
+                "target": "home/.config/quickshell/desktop/spaces/music/cache.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/cloud.py",
+                "target": "home/.config/quickshell/desktop/spaces/music/cloud.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/cloud_index.py",
+                "target": "home/.config/quickshell/desktop/spaces/music/cloud_index.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/cloud_stream.py",
+                "target": "home/.config/quickshell/desktop/spaces/music/cloud_stream.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/inventory.py",
+                "target": "home/.config/quickshell/desktop/spaces/music/inventory.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/local_files.py",
+                "target": "home/.config/quickshell/desktop/spaces/music/local_files.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/qmldir",
+                "target": "home/.config/quickshell/desktop/spaces/music/qmldir"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/records.py",
+                "target": "home/.config/quickshell/desktop/spaces/music/records.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/remote_files.py",
+                "target": "home/.config/quickshell/desktop/spaces/music/remote_files.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/storage.py",
+                "target": "home/.config/quickshell/desktop/spaces/music/storage.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/tags.py",
+                "target": "home/.config/quickshell/desktop/spaces/music/tags.py"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/pictures/ARCHITECTURE.md",
@@ -3667,6 +3776,7 @@
         "mpv",
         "mpv-mpris",
         "python-requests",
+        "rclone",
         "sqlite",
         "sqlitebrowser",
         "kate",
@@ -3760,7 +3870,6 @@
         "wireless-regdb",
         "wavemon",
         "qbittorrent",
-        "rclone",
         "ttf-firacode-nerd",
         "gtk3",
         "gtk4",

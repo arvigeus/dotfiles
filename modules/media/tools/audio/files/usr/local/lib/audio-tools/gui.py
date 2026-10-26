@@ -1,11 +1,13 @@
 """Desktop audio tools with asynchronous, cancellable FFmpeg jobs."""
 import argparse
+import json
 import math
 import os
 import subprocess
 import sys
 from pathlib import Path
 
+import audio_lyrics
 from core import (
     ART_FORMATS,
     FIELDS,
@@ -74,6 +76,7 @@ class AudioTools(QDialog):
         self.cancelled = False
         self.active = False
         self.probe_path = None
+        self.lyrics_request = None
         self.setWindowTitle('Audio tools')
         self.setWindowIcon(QIcon.fromTheme('audio-x-generic'))
         self.resize(780, 740)
@@ -106,6 +109,9 @@ class AudioTools(QDialog):
         self.probe.errorOccurred.connect(self.probe_error)
         self.cover_process = QProcess(self)
         self.cover_process.finished.connect(self.cover_loaded)
+        self.lyrics_process = QProcess(self)
+        self.lyrics_process.finished.connect(self.lyrics_finished)
+        self.lyrics_process.errorOccurred.connect(self.lyrics_error)
         self.load_presets()
         self.current = Path(path).resolve()
         self.setWindowTitle(self.current.name + ' — Audio tools')
@@ -150,7 +156,17 @@ class AudioTools(QDialog):
             else:
                 edit.textEdited.connect(lambda _text, key=key: self.field_edited(key))
             edit.setObjectName('tag_' + key)
-            form.addRow(title, edit); self.fields[key] = edit
+            if key == 'lyrics':
+                section = QWidget(); lyrics_layout = QVBoxLayout(section)
+                lyrics_layout.setContentsMargins(0, 0, 0, 0); lyrics_layout.setSpacing(4)
+                heading = QHBoxLayout(); heading.addWidget(QLabel(title)); heading.addStretch()
+                self.lyrics_fetch = QPushButton(QIcon.fromTheme('view-refresh'), 'Fetch lyrics')
+                self.lyrics_fetch.setEnabled(False); self.lyrics_fetch.clicked.connect(self.lookup_lyrics)
+                heading.addWidget(self.lyrics_fetch); lyrics_layout.addLayout(heading); lyrics_layout.addWidget(edit)
+                form.addRow(section)
+            else:
+                form.addRow(title, edit)
+            self.fields[key] = edit
         scroll.setWidget(body); options.addWidget(scroll, 1)
         self.backup = QCheckBox('Keep a backup when saving tags')
         options.addWidget(self.backup)
@@ -264,6 +280,7 @@ class AudioTools(QDialog):
                                                 '-frames:v', '1', '-vf', 'scale=88:88:force_original_aspect_ratio=decrease',
                                                 '-f', 'image2pipe', '-c:v', 'png', 'pipe:1'])
         self.render_info()
+        self.update_lyrics_button()
 
     def render_info(self):
         self.tree.clear()
@@ -314,8 +331,71 @@ class AudioTools(QDialog):
 
     def field_edited(self, key):
         if not self.current: return
+        if key in ('title', 'artist', 'album', 'lyrics') and self.lyrics_request:
+            self.stop_lyrics()
+            self.status.setText('Lyrics lookup cancelled because the song details or lyrics changed.')
         edit = self.fields[key]
         self.drafts.setdefault(self.current, {})[key] = edit.toPlainText() if isinstance(edit, QPlainTextEdit) else edit.text()
+        self.update_lyrics_button()
+
+    def update_lyrics_button(self):
+        self.lyrics_fetch.setText('Cancel fetch' if self.lyrics_request else 'Fetch lyrics')
+        ready = self.current in self.info and all(self.fields[key].text().strip() for key in ('title', 'artist'))
+        self.lyrics_fetch.setEnabled(not self.active and bool(self.lyrics_request or ready))
+        self.lyrics_fetch.setToolTip('' if ready else 'Set the title and artist first.')
+
+    def lookup_lyrics(self):
+        if self.lyrics_request:
+            self.stop_lyrics(); self.status.setText('Lyrics lookup cancelled.'); return
+        if self.active or self.current not in self.info: return
+        song = {key: self.fields[key].text().strip() for key in ('title', 'artist', 'album')}
+        if not song['title'] or not song['artist']:
+            self.status.setText('Set the title and artist before fetching lyrics.'); return
+        previous = self.fields['lyrics'].toPlainText()
+        if previous.strip() and QMessageBox.question(self, 'Replace lyrics?',
+                'Replace the lyrics in the form with a fetched version?') != QMessageBox.StandardButton.Yes:
+            return
+        info = self.info[self.current]
+        song['duration'] = info['format'].get('duration') or info['audio'][0].get('duration') or 0
+        self.lyrics_request = (self.current, song, previous)
+        self.update_lyrics_button(); self.status.setText('Fetching lyrics…')
+        self.lyrics_process.start(sys.executable, [str(Path(audio_lyrics.__file__).resolve())])
+        self.lyrics_process.write(json.dumps(song).encode())
+        self.lyrics_process.closeWriteChannel()
+
+    def stop_lyrics(self):
+        self.lyrics_request = None
+        if self.lyrics_process.state() != QProcess.ProcessState.NotRunning:
+            self.lyrics_process.kill(); self.lyrics_process.waitForFinished(1000)
+        self.update_lyrics_button()
+
+    def lyrics_error(self, error):
+        if error == QProcess.ProcessError.FailedToStart and self.lyrics_request:
+            self.lyrics_request = None; self.update_lyrics_button()
+            self.status.setText('Could not start the lyrics lookup.')
+
+    def lyrics_finished(self, code, _status):
+        request = self.lyrics_request
+        self.lyrics_request = None; self.update_lyrics_button()
+        if not request: return
+        path, song, previous = request
+        if (path != self.current or self.active or self.fields['lyrics'].toPlainText() != previous
+                or any(self.fields[key].text().strip() != song[key] for key in ('title', 'artist', 'album'))):
+            self.status.setText('Lyrics lookup discarded because the song details or lyrics changed.'); return
+        try:
+            result = json.loads(bytes(self.lyrics_process.readAllStandardOutput()))
+            if not isinstance(result, dict): raise ValueError()
+            if code or result.get('error'):
+                self.status.setText(result.get('error') or 'The lyrics lookup failed.'); return
+            if not result.get('available'):
+                self.status.setText('No matching lyrics found.'); return
+            text = result.get('lyrics')
+            if not isinstance(text, str) or len(text) > audio_lyrics.MAX_LYRICS or '\0' in text:
+                raise ValueError()
+        except (ValueError, TypeError):
+            self.status.setText('The lyrics lookup returned an invalid response.'); return
+        self.fields['lyrics'].setPlainText(text)
+        self.status.setText('Lyrics loaded. Save tags to keep them in the file.')
 
     def choose_cover(self):
         filename, _ = QFileDialog.getOpenFileName(self, 'Choose cover', '', 'Images (*.jpg *.jpeg *.png)')
@@ -326,6 +406,7 @@ class AudioTools(QDialog):
         self.artwork[self.current] = ''; self.render_tags()
 
     def discard_edits(self):
+        self.stop_lyrics()
         self.drafts.pop(self.current, None); self.artwork.pop(self.current, None)
         self.info.pop(self.current, None)
         self.inspect_file()
@@ -370,10 +451,12 @@ class AudioTools(QDialog):
 
     def begin(self, kind, arguments):
         if self.active: return
+        self.stop_lyrics()
         self.stop_probe()
         self.job = (kind, self.current, arguments)
         self.failures = 0; self.cancelled = False
         self.log.clear(); self.log.hide(); self.active = True
+        self.update_lyrics_button()
         self.tabs.setCurrentIndex(0 if kind == 'tags' else 1)
         self.tabs.tabBar().setEnabled(False)
         self.tag_options.setEnabled(False); self.revert.setEnabled(False); self.save.setEnabled(False)
@@ -456,6 +539,7 @@ class AudioTools(QDialog):
                 and QMessageBox.question(self, 'Unsaved tags', 'Discard unsaved tag edits and close?') != QMessageBox.StandardButton.Yes):
             event.ignore(); return
         self.stop_probe(); event.accept()
+        self.stop_lyrics()
 
     def reject(self):
         # Route Escape through the same job and draft handling as the close button.

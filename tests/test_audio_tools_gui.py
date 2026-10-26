@@ -15,7 +15,7 @@ class AudioDialogTests(unittest.TestCase):
     def run_dialog(self, script):
         with tempfile.TemporaryDirectory() as folder:
             env = dict(os.environ, QT_QPA_PLATFORM='offscreen', AUDIO_TEST_DIR=folder,
-                       AUDIO_TEST_CONFIG=str(CONFIG), PYTHONPATH=str(LIB))
+                       AUDIO_TEST_CONFIG=str(CONFIG), PYTHONPATH=str(LIB), XDG_CONFIG_HOME=str(Path(folder) / 'config'))
             setup = '''
 import os, subprocess, time
 from pathlib import Path
@@ -125,6 +125,88 @@ assert w.info[source]['tags']['title'] == 'Original'
 assert not list(root.glob('*.tags-backup*'))
 assert w.failures == 0, w.log.toPlainText()
 w.stop_probe(); w.close()
+''')
+
+    def test_fetch_lyrics_uses_shared_config_keeps_drafts_and_saves_without_changing_audio(self):
+        self.run_dialog('''
+import json, threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest.mock import patch
+import audio_lyrics
+requests = []
+class Handler(BaseHTTPRequestHandler):
+ def log_message(self, *_): pass
+ def do_GET(self):
+  requests.append((self.path, self.headers.get('Authorization')))
+  body = json.dumps(dict(plainLyrics='Fetched line one\\nFetched line two')).encode()
+  self.send_response(200); self.end_headers(); self.wfile.write(body)
+server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+settings = audio_lyrics.config_path(); settings.parent.mkdir(parents=True)
+settings.write_text(json.dumps(dict(version=1, providers=[dict(name='Fixture',base_url=f'http://127.0.0.1:{server.server_port}/api',api_key='private-fixture-token')])))
+artist = w.fields['artist']; artist.setText('Fixture artist'); artist.textEdited.emit(artist.text())
+assert w.lyrics_fetch.isEnabled()
+before = subprocess.check_output(['ffmpeg','-v','error','-i',str(source),'-f','md5','-'])
+w.lyrics_fetch.click()
+assert w.lyrics_request and w.lyrics_fetch.text() == 'Cancel fetch'
+# Qt stays responsive during the lookup, and fetched text remains a draft.
+wait_for(lambda: w.lyrics_request is None)
+assert w.fields['lyrics'].toPlainText() == 'Fetched line one\\nFetched line two', w.status.text()
+assert requests[0][1] == 'Bearer private-fixture-token'
+assert 'track_name=Original' in requests[0][0] and 'artist_name=Fixture+artist' in requests[0][0]
+assert source.read_bytes() == original
+assert w.drafts[source]['lyrics'] == w.fields['lyrics'].toPlainText()
+w.save_tags(); wait_for(lambda: not w.active and source in w.info)
+assert w.failures == 0, w.log.toPlainText()
+assert w.info[source]['tags']['lyrics'] == 'Fetched line one\\nFetched line two'
+assert subprocess.check_output(['ffmpeg','-v','error','-i',str(source),'-f','md5','-']) == before
+# Refusing to replace existing lyrics leaves the draft untouched.
+with patch.object(gui.QMessageBox, 'question', return_value=gui.QMessageBox.StandardButton.No):
+ w.lyrics_fetch.click()
+assert not w.lyrics_request and len(requests) == 1
+server.shutdown(); server.server_close(); w.stop_probe(); w.close()
+''')
+
+    def test_lyrics_errors_cancellation_and_edits_do_not_replace_the_draft(self):
+        self.run_dialog('''
+import json, threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest.mock import patch
+import audio_lyrics
+mode = {'status': 503, 'delay': 0}
+class Handler(BaseHTTPRequestHandler):
+ def log_message(self, *_): pass
+ def do_GET(self):
+  time.sleep(mode['delay'])
+  self.send_response(mode['status']); self.end_headers()
+  try: self.wfile.write(json.dumps(dict(plainLyrics='Late lyrics')).encode())
+  except BrokenPipeError: pass
+server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+settings = audio_lyrics.config_path(); settings.parent.mkdir(parents=True)
+settings.write_text(json.dumps(dict(version=1,providers=[dict(base_url=f'http://127.0.0.1:{server.server_port}')])))
+artist = w.fields['artist']; artist.setText('Artist'); artist.textEdited.emit(artist.text())
+w.lyrics_fetch.click(); wait_for(lambda: not w.lyrics_request)
+assert 'unavailable' in w.status.text() and not w.fields['lyrics'].toPlainText()
+mode.update(status=200, delay=1)
+w.lyrics_fetch.click(); wait_for(lambda: w.lyrics_process.state() == QProcess.ProcessState.Running)
+w.lyrics_fetch.click()
+assert not w.lyrics_request and w.lyrics_fetch.text() == 'Fetch lyrics'
+w.lyrics_fetch.click(); wait_for(lambda: w.lyrics_process.state() == QProcess.ProcessState.Running)
+w.fields['lyrics'].setPlainText('User edited lyrics')
+assert not w.lyrics_request and w.fields['lyrics'].toPlainText() == 'User edited lyrics'
+# Discard cancels the request before reloading tags; a closed window owns no helper.
+w.discard_edits(); wait_for(lambda: source in w.info)
+artist.setText('Artist'); artist.textEdited.emit('Artist')
+w.lyrics_fetch.click(); wait_for(lambda: w.lyrics_process.state() == QProcess.ProcessState.Running)
+w.discard_edits(); wait_for(lambda: source in w.info)
+assert not w.lyrics_request and not w.fields['lyrics'].toPlainText()
+artist.setText('Artist'); artist.textEdited.emit('Artist')
+w.lyrics_fetch.click(); wait_for(lambda: w.lyrics_process.state() == QProcess.ProcessState.Running)
+with patch.object(gui.QMessageBox, 'question', return_value=gui.QMessageBox.StandardButton.Yes): w.close()
+assert w.lyrics_process.state() == QProcess.ProcessState.NotRunning
+assert source.read_bytes() == original
+server.shutdown(); server.server_close()
 ''')
 
 

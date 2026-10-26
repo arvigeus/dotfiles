@@ -53,7 +53,7 @@ def move_file(source, target):
 
 VIDEO_EXTENSIONS = {".mkv", ".mp4", ".webm", ".avi", ".mov", ".m4v"}
 SUBTITLE_EXTENSIONS = {".srt", ".ass", ".ssa", ".vtt", ".sub", ".idx"}
-AUDIO_EXTENSIONS = {".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav"}
+AUDIO_EXTENSIONS = {".mka", ".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav"}
 BOOK_EXTENSIONS = {".epub", ".pdf", ".mobi", ".azw3", ".cbz", ".cbr"}
 GAME_EXTENSIONS = {
     ".zip",

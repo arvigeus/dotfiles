@@ -8,6 +8,8 @@ Popup {
     id: root
     function fontSize(value) { return Math.round(value * MovieStyle.fontSize / 14); }
     property var jobs: []
+    property string heading: "Activity"
+    property string iconName: activeCount ? "download" : "bell"
     property string notificationTitle: "Movies"
     property var dismissedJobs: []
     readonly property var shownJobs: jobs.filter(job => !dismissedJobs.includes(String(job.job_id)))
@@ -76,8 +78,8 @@ Popup {
         spacing: 10
         RowLayout {
             Layout.fillWidth: true
-            MovieIcon { name: root.activeCount ? "download" : "bell"; Layout.preferredWidth: 18; Layout.preferredHeight: 18 }
-            MovieText { text: root.activeCount ? "Activity · " + root.activeCount + " active" : "Activity"; Layout.fillWidth: true; font.weight: Font.DemiBold }
+            MovieIcon { name: root.iconName; Layout.preferredWidth: 18; Layout.preferredHeight: 18 }
+            MovieText { text: root.heading + (root.activeCount ? " · " + root.activeCount + " active" : ""); Layout.fillWidth: true; font.weight: Font.DemiBold }
             MovieIconButton { objectName: "dismissFinishedActivity"; visible: root.hasFinishedJobs; iconName: "trash-2"; text: "Dismiss finished activity"; implicitWidth: 30; implicitHeight: 30; onClicked: root.dismissFinished() }
             MovieIconButton { iconName: "x"; text: "Hide activity"; implicitWidth: 30; implicitHeight: 30; onClicked: root.close() }
         }

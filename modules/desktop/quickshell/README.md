@@ -41,6 +41,8 @@ Steam/Epic libraries, discovery, title artwork, ProtonDB and HowLongToBeat.
 wallpapers and applies them to the desktop and lock screen.
 [Books](symlinks/home/.config/quickshell/desktop/spaces/books/README.md) offers Open Library
 discovery, favorites, author/edition details and local ebook reading.
+[Music](symlinks/home/.config/quickshell/desktop/spaces/music/README.md) offers songs,
+artists, albums, local music and background queue playback.
 [Radio](symlinks/home/.config/quickshell/desktop/spaces/radio/README.md) offers station
 search, country/genre filters, favorites and background listening.
 

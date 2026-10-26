@@ -73,7 +73,7 @@ controls and choices can share them.
 
 ## Spaces
 
-Movies, TV Series, Games, Pictures and Books are fullscreen, retained Spaces;
+Movies, TV Series, Games, Pictures, Books, Radio, Television and Music are fullscreen, retained Spaces;
 remaining entries are placeholders. Space modules use their own immersive
 presentation rather than the shell's gray controls or light/dark variants, and omit in-module Spaces links.
 See the presentation contract in [Movies architecture](symlinks/home/.config/quickshell/desktop/spaces/movies/ARCHITECTURE.md)
@@ -82,6 +82,8 @@ For Games providers, artwork and beat times, see the
 [Games architecture](symlinks/home/.config/quickshell/desktop/spaces/games/ARCHITECTURE.md).
 For Books metadata, private providers and local reading, see the
 [Books architecture](symlinks/home/.config/quickshell/desktop/spaces/books/ARCHITECTURE.md).
+For Music catalogue/providers, queue playback and private restoration, see
+[Music architecture](symlinks/home/.config/quickshell/desktop/spaces/music/ARCHITECTURE.md).
 `spaces/profile.py` reads public
 AccountsService data, passwd GECOS and standard photo fallbacks on opening.
 Photos use an mtime URL suffix and no cache. `ProfileButton` launches Account tools in

@@ -10,6 +10,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 DESKTOP = REPO / 'modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop'
+AUDIO_LIB = REPO / 'modules/media/tools/audio/files/usr/local/lib/audio-tools'
+sys.path.insert(0, str(AUDIO_LIB))
 PALETTE = REPO / 'modules/look-and-feel/palette/symlinks/etc/desktop-palette.json'
 QS = shutil.which('qs')
 
@@ -69,7 +71,8 @@ def run_qml(test, body, setup=None):
         (root / 'shell.qml').write_text(body)
         env = {**os.environ, 'QT_QPA_PLATFORM': os.environ.get('DISPLAY_PREVIEW_PLATFORM', 'offscreen'),
                'XDG_CONFIG_HOME': str(root / 'config'), 'XDG_RUNTIME_DIR': str(root / 'runtime'),
-               'XDG_STATE_HOME': str(root / 'state'), 'XDG_DATA_HOME': str(root / 'data'), 'XDG_CACHE_HOME': str(root / 'cache'), 'PIPEWIRE_REMOTE': 'dotfiles-tests-unavailable'}
+               'XDG_STATE_HOME': str(root / 'state'), 'XDG_DATA_HOME': str(root / 'data'), 'XDG_CACHE_HOME': str(root / 'cache'), 'PIPEWIRE_REMOTE': 'dotfiles-tests-unavailable',
+               'PYTHONPATH': os.pathsep.join(filter(None, (str(AUDIO_LIB), os.environ.get('PYTHONPATH'))))}
         if env['QT_QPA_PLATFORM'] != 'offscreen': env['XDG_RUNTIME_DIR'] = os.environ['XDG_RUNTIME_DIR']
         env.pop('HYPRLAND_INSTANCE_SIGNATURE', None)
         if env['QT_QPA_PLATFORM'] == 'offscreen': env.pop('WAYLAND_DISPLAY', None)
