@@ -6,6 +6,7 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     property bool showLoading: true
+    property bool showStatus: true
     required property string kind
     property string error: ""
     property string info: ""
@@ -86,7 +87,7 @@ ColumnLayout {
         MovieSpinner { running: root.scanning; visible: root.showLoading && running; Layout.preferredWidth: 26; Layout.preferredHeight: 26 }
     }
     MovieText { visible: !!root.error; Layout.fillWidth: true; text: root.error; color: MovieStyle.danger; wrapMode: Text.Wrap }
-    MovieText { visible: !!root.info; Layout.fillWidth: true; text: root.info; color: MovieStyle.muted; wrapMode: Text.Wrap }
+    MovieText { visible: root.showStatus && !!root.info; Layout.fillWidth: true; text: root.info; color: MovieStyle.muted; wrapMode: Text.Wrap }
     RowLayout {
         visible: !!root.current.token; Layout.fillWidth: true
         MovieButton { iconName: "arrow-left"; text: "All scan results"; onClicked: { ++root.lookupGeneration; root.current = ({}); root.matches = []; root.matching = false; } }

@@ -10,7 +10,7 @@ column to the first. Win+Left/Right also wrap between columns.
 ## Desktop and gaming mode
 
 The desktop starts automatically on TTY1. Win+1 or Ctrl+Alt+Delete opens Spaces;
-hold its **Go to gaming mode** button for two seconds to enter Steam's dedicated
+hold its **Switch to gaming mode** button for two seconds to enter Steam's dedicated
 gaming session. Steam's **Go to Desktop** or **Exit Steam** returns to the
 desktop. Rebooting always starts Hyprland.
 

@@ -1,6 +1,7 @@
 {
     "packages": [
-        "yt-dlp"
+        "yt-dlp",
+        "deno"
     ],
     "extra": {
         "flatpak": {

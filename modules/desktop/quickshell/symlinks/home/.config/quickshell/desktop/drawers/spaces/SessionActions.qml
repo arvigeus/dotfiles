@@ -111,7 +111,7 @@ ColumnLayout {
         Layout.fillWidth: true; spacing: 8
         SessionControl {
             id: gamingControl
-            action: "gaming"; label: restoring ? qsTr("Enable automatic locking") : qsTr("Go to gaming mode")
+            action: "gaming"; label: restoring ? qsTr("Enable automatic locking") : qsTr("Switch to gaming mode")
             restoring: !!root.service.lockingPaused
             iconName: restoring ? "lock-open" : "log-out"
             hasOptions: true; optionsEnabled: !!root.service.pausesAvailable

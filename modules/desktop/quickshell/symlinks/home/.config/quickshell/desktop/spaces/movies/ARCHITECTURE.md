@@ -2,7 +2,7 @@
 
 ## Scope and integration
 
-Movies, TV Series and Games are registered. Other Spaces remain placeholders. `ui/SpaceState.qml`
+Space registrations live in `ui/SpaceState.qml`, which
 owns the catalogue, running IDs and navigation; `SpaceHost.qml` owns asynchronous
 loaders and binds effective page activation. It uses the existing
 `InteractionState` / `InteractionWindow` layer surface with all four anchors,
@@ -55,13 +55,38 @@ score-dependent Rotten Tomatoes and audience marks. Logo/score pairs use intrins
 row widths and a fixed six-pixel gap rather than a stretching layout. Preserve accessible service
 names and scores; do not replace the marks with text-only badges or tint them.
 
-One toolbar spinner covers catalogue loading, selected-movie metadata, personal
-state, local-file inventory, backdrop/logo decoding and the visible tab's requests.
-Embedded panels suppress their own indicators; the image gallery uses its own
-spinner while hiding the toolbar indicator. Loading descriptions appear only in
-the indicator's tooltip and accessible name. An extra-request generation prevents
+`ActivityIndicator.qml` provides the toolbar activity control shared by every
+Space. Pages supply keyed pending tasks and their job snapshots; simultaneous
+work appears on separate tooltip lines, including job phase and progress. The
+red ring animates only while work is pending and the page is active. The
+indicator and tooltip disappear completely when idle or hidden; there is no
+completion marker or retained last-action text. Completed, failed, cancelled
+and reviewable jobs remain in the existing notification/activity panels.
+The cached ring repaints after canvas allocation, sizing or visibility changes,
+including asynchronous page creation and retained-page restoration.
+
+Progress derives directly from pending tasks and job snapshots; the indicator
+does not collect operation history. Errors, validation and actions requiring
+intervention stay beside their controls.
+Music's metadata dialog retains failed/partial saves and unsaved-edit warnings
+inline. Embedded download, scan and subtitle panels use `showStatus: false`
+instead of rendering a second routine status line. Their standalone presentation
+remains self-contained.
+Explicit transfer/review panels retain their detailed controls and job rows.
+
+Movies covers catalogue loading, selected-movie metadata, personal state,
+local-file inventory, backdrop/logo decoding and the visible tab's requests.
+The image gallery uses its own spinner while hiding the toolbar animation.
+Activity descriptions appear in the tooltip and accessible name. An extra-request generation prevents
 an earlier tab's response from clearing a later tab's loading state or replacing
 its content. Selection generations protect personal state and file inventory too.
+
+`tests/test_space_activity.py` exercises concurrent tasks/jobs, live tooltip
+updates, progress, hidden/idle disappearance and rendered spinner contrast against
+the native UI. The Series integration test captures the actual toolbar ring
+during a delayed episode request and after hide/restore, checking red pixels
+rather than only its loading flags. Space integration tests cover each toolbar
+and verify routine notices no longer consume content rows.
 
 Backdrops allow the previous movie's image a 1 second grace period. A ready
 replacement crossfades directly; otherwise the old image yields to the current

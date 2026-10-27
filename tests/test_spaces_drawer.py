@@ -95,7 +95,7 @@ ShellRoot {
  function check(value,message){if(!value)throw new Error(message);}
  function click(item){input.mouseClick(item,item.width/2,item.height/2);}
  Timer {interval:200;running:true;onTriggered:{try{
-  const names=["movies","series","music","radio","television","pictures","games","books"];
+  const names=["movies","series","music","streaming","radio","television","pictures","games","books"];
   check(!find(drawer,"space:desktop"),"Desktop remains in Spaces");
   let last=-1;
   for(const name of names){
@@ -107,7 +107,7 @@ ShellRoot {
   const sleep=find(drawer,"session-action-suspend");
   check(sleep.holdDuration===2000,"two-second hold missing");
   check(sleep.contentItem.children.length===1,"action retained labels");
-  check(find(drawer,"session-action-gaming").text==="Go to gaming mode","gaming action not named correctly");
+  check(find(drawer,"session-action-gaming").text==="Switch to gaming mode","gaming action not named correctly");
   check(sleep.data.some(value=>value.target===sleep&&value.text?.includes("Sleep")),"action tooltip missing");
   click(sleep);check(!calls.length,"click executed session action");
   input.mousePress(sleep,sleep.width/2,sleep.height/2);input.wait(200);input.mouseRelease(sleep,sleep.width/2,sleep.height/2);

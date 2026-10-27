@@ -256,7 +256,15 @@ Item {
             MovieIconButton { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: 36; height: 36; visible: !!search.text; iconName: "x"; text: "Clear channel search"; onClicked: { search.clear(); search.forceActiveFocus(); } }
         }
         Item { Layout.minimumWidth: 28; Layout.maximumWidth: 28; Layout.preferredHeight: 28
-            MovieSpinner { objectName: "televisionLoadingIndicator"; anchors.fill: parent; running: root.active && root.busy; visible: running }
+            ActivityIndicator {
+                anchors.fill: parent; active: root.active; spinnerName: "televisionLoadingIndicator"
+                tasks: [
+                    task(root.loading, "browse", "Loading channels…"),
+                    task(root.refreshing, "refresh", "Refreshing channel directory…"),
+                    task(root.saving, "favorites", "Saving favorites…"),
+                    task(root.commandPending, "player", "Updating playback…")
+                ]
+            }
         }
         MovieIconButton { objectName: "televisionPause"; visible: root.playback.playing; enabled: !root.commandPending; iconName: root.playback.paused ? "play" : "pause"; text: root.playback.paused ? "Resume Television" : "Pause Television"; onClicked: root.playerCommand("pause") }
         MovieIconButton { objectName: "televisionStop"; visible: root.playback.playing || root.commandPending; iconName: "square"; text: "Stop Television"; onClicked: root.playerCommand("stop") }
@@ -268,8 +276,8 @@ Item {
     ColumnLayout {
         anchors.fill: parent; spacing: 12
         RowLayout {
-            visible: !!root.error || !!root.saveError || !!root.playbackError || !!root.notice; Layout.fillWidth: true
-            MovieText { Layout.fillWidth: true; wrapMode: Text.Wrap; text: [root.error,root.saveError,root.playbackError,root.notice].filter(Boolean).join("\n"); color: root.error || root.saveError || root.playbackError ? MovieStyle.danger : MovieStyle.muted }
+            visible: !!root.error || !!root.saveError || !!root.playbackError; Layout.fillWidth: true
+            MovieText { Layout.fillWidth: true; wrapMode: Text.Wrap; text: [root.error,root.saveError,root.playbackError].filter(Boolean).join("\n"); color: MovieStyle.danger }
             MovieButton { text: "Retry"; visible: !!root.error; enabled: !root.refreshing; onClicked: root.initialized ? root.refresh() : root.initialize() }
         }
         Rectangle { Layout.fillWidth: true; height: 1; color: MovieStyle.border }

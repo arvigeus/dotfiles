@@ -84,17 +84,27 @@ end)
 
 @unittest.skipUnless(shutil.which('jq'), 'jq is required by mpv provisioning')
 class MpvGeneration(unittest.TestCase):
-    def test_platform_filter_applies_to_profiles_and_menu(self):
+    def test_platform_filter_and_profile_switching(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             pack = root / 'pack.json'
-            pack.write_text(json.dumps({'setting-groups': {'windows': {'settings': [
-                ['gpu_api', 'd3d11'], ['vf', 'd3d11vpp']]}}, 'profiles': {
-                'generic-high': {'displayname': 'High', 'shaders': ['hq.glsl']},
+            pack.write_text(json.dumps({'profiles': {
+                'generic-high': {'displayname': 'High', 'shaders': ['hq.glsl'],
+                                 'setting-groups': ['neural']},
+                'AMD FidelityFX Super Resolution': {'displayname': 'FSR', 'shaders': ['fsr.glsl']},
+                'AMD FidelityFX Contrast Adaptive Sharpening': {'shaders': ['cas.glsl']},
                 'windows-only': {'displayname': 'Windows', 'platforms': ['windows'], 'setting-groups': ['windows']},
-                'linux-only': {'displayname': 'Linux', 'platforms': ['linux'], 'shaders': ['linux.glsl']}}}))
+                'linux-only': {'displayname': 'Linux', 'platforms': ['linux'], 'shaders': ['linux.glsl']}},
+                'setting-groups': {
+                    'windows': {'settings': [['gpu_api', 'd3d11'], ['vf', 'd3d11vpp']]},
+                    'neural': {'settings': [['scale', 'ewa_lanczos'], ['cscale', 'mitchell'],
+                                           ['dscale', 'mitchell'], ['linear_downscaling', False]]}}}))
             env = dict(os.environ, DOTFILES_REPO=str(REPO), MPV_CONF_DIR=str(root / 'config'),
                        MPV_SHADER_PACK=str(pack), MPV_SHADERS_DIR=str(root))
+            (root / 'config').mkdir()
+            for filename in ('mpv.conf', 'input.conf'):
+                shutil.copyfile(REPO / 'modules/media/video/mpv/files/home/.config/mpv' / filename,
+                                root / 'config' / filename)
             result = subprocess.run(['bash', str(REPO / 'modules/media/video/mpv/scripts/50_mpv.sh')],
                                     env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -104,7 +114,55 @@ class MpvGeneration(unittest.TestCase):
             self.assertNotIn('windows-only', menu)
             self.assertIn('[linux-only]', config)
             self.assertIn('linux-only', menu)
-            self.assertIn('profile=generic-high', config)
+            self.assertIn('Profiles > Standard', menu)
+            self.assertIn('Profiles > FSR', menu)
+            self.assertNotIn('Profiles > AMD FidelityFX', menu)
+            self.assertNotIn('fsr-cas', config + menu)
+            default = config.rsplit('[default]', 1)[1]
+            self.assertIn('profile=standard', default)
+            self.assertNotIn('profile=generic-high', default)
+            self.assertNotIn('profile=AMD FidelityFX Super Resolution', default)
+            self.assertIn('[generic-high]', config)
+            if not shutil.which('mpv'):
+                return
+            wrapper = root / 'switch.lua'
+            wrapper.write_text('''local mp = require('mp')
+local function check(name, expected)
+    local actual = mp.get_property_native('options/' .. name)
+    assert(actual == expected, name .. ': expected ' .. tostring(expected) .. ', got ' .. tostring(actual))
+end
+local function standard()
+    check('scale', 'lanczos')
+    check('cscale', 'lanczos')
+    check('dscale', 'hermite')
+    check('linear-downscaling', true)
+end
+mp.add_timeout(0, function()
+    local ok, err = pcall(function()
+        standard()
+        assert(#mp.get_property_native('options/glsl-shaders') == 0)
+        mp.commandv('apply-profile', 'generic-high')
+        check('scale', 'ewa_lanczos')
+        check('linear-downscaling', false)
+        mp.commandv('apply-profile', 'fsr')
+        standard()
+        local shaders = mp.get_property_native('options/glsl-shaders')
+        assert(#shaders == 1 and shaders[1]:match('/fsr.glsl$'))
+        mp.commandv('apply-profile', 'generic-high')
+        mp.commandv('apply-profile', 'standard')
+        standard()
+        assert(#mp.get_property_native('options/glsl-shaders') == 0)
+    end)
+    print(ok and 'MPV_PASS' or ('MPV_FAIL ' .. tostring(err)))
+    mp.commandv('quit', ok and 0 or 1)
+end)
+''')
+            result = subprocess.run(['mpv', '--no-config', '--include=' + str(root / 'config/mpv.conf'),
+                '--load-scripts=no', '--idle=yes', '--vo=null', '--ao=null', '--terminal=yes',
+                '--script-opts=dotfiles-power-enabled=no', '--script=' + str(wrapper)],
+                capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('MPV_PASS', result.stdout + result.stderr)
 
 
 if __name__ == '__main__':

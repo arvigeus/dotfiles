@@ -14,6 +14,12 @@ Item {
     Canvas {
         id: ring
         anchors.fill: parent
+        // Retained/asynchronously loaded pages can first expose a zero-size
+        // canvas. Paint once it has a surface and whenever that surface returns.
+        onAvailableChanged: if (available) requestPaint()
+        onWidthChanged: requestPaint()
+        onHeightChanged: requestPaint()
+        onVisibleChanged: if (visible) requestPaint()
         onPaint: {
             const ctx = getContext("2d");
             ctx.reset();

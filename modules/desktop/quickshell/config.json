@@ -22,6 +22,7 @@
         "mpv",
         "mpv-mpris",
         "python-requests",
+        "python-mutagen",
         "rclone"
     ],
     "extra": {
@@ -35,6 +36,7 @@
                 "home/.config/quickshell/desktop/integrations/nextcloud-app-password",
                 "home/.config/quickshell/desktop/integrations/nextcloud-music-api-key",
                 "home/.config/quickshell/desktop/integrations/nextcloud.json",
+                "home/.config/quickshell/desktop/integrations/gemini-api-key",
                 "home/.config/quickshell/desktop/integrations/torrents.json",
                 "home/.config/quickshell/desktop/launcher.ini",
                 "home/.config/quickshell/desktop/network.ini",
@@ -45,6 +47,9 @@
                 "home/.config/quickshell/desktop/weather-selection.json",
                 "home/.config/quickshell/desktop/weather.json",
                 "home/.config/quickshell/desktop/spaces/movies/media.json",
+                "home/.config/quickshell/desktop/spaces/streaming/streaming.json",
+                "home/.local/share/quickshell/desktop/spaces/streaming/library.json",
+                "home/.local/share/quickshell/desktop/spaces/streaming/resume",
                 "home/.config/quickshell/desktop/spaces/movies/media-ui.ini",
                 "home/.local/share/quickshell/desktop/spaces/movies/library.sqlite",
                 "home/.config/quickshell/desktop/spaces/series/media.json",

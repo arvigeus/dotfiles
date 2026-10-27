@@ -10,6 +10,8 @@ Item {
     required property var controller
     property bool active: false
     property string playMessage: ""
+    property bool preparing: false
+    property bool playFailed: false
     property string ipcPath: ""
     property string currentTrackKey: ""
     property var currentTrack: null
@@ -50,7 +52,7 @@ Item {
         if (!ipcPath) return;
         playerPaused = !playerPaused;
         service.request("player-command", {ipcPath: ipcPath, action: "pause", value: playerPaused}, (result, failure) => {
-            if (failure) playMessage = failure;
+            if (failure) { playFailed = true; playMessage = failure; }
         });
     }
 
@@ -87,6 +89,7 @@ Item {
         position = 0;
         duration = Number(track.duration) || 0;
         playerPaused = false;
+        preparing = true; playFailed = false;
         playMessage = "Loading " + (track.title || "song") + "…";
         service.request("play", {track: track, volume: volume}, (result, failure) => {
             if (generation !== root.playGeneration) {
@@ -95,12 +98,14 @@ Item {
                 return;
             }
             if (failure || !result || !Array.isArray(result.command)) {
+                preparing = false; playFailed = true;
                 playerPaused = true;
                 playMessage = failure || "Could not resolve this song's stream.";
                 return;
             }
             const process = playerComponent.createObject(root, {playerCommand: result.command});
             if (!process) {
+                preparing = false; playFailed = true;
                 playerPaused = true;
                 playMessage = "Could not start the audio player.";
                 service.request("player-cleanup", {ipcPath: result.ipcPath || ""}, () => {});
@@ -108,6 +113,7 @@ Item {
             }
             ipcPath = result.ipcPath || "";
             playerProcess = process;
+            preparing = false;
             playMessage = "Playing";
         });
     }
@@ -121,6 +127,7 @@ Item {
         process.destroy();
         if (socketPath) service.request("player-cleanup", {ipcPath: socketPath}, () => {});
         playerPaused = true;
+        playFailed = false;
         position = 0;
         if (code === 0 && completedTrack && queueSongs.length > 0) {
             const hasUnplayedNext = shuffleEnabled
@@ -133,6 +140,7 @@ Item {
             playMessage = "Queue finished.";
             return;
         }
+        playFailed = code !== 0;
         playMessage = code === 0 ? "Playback ended." : "The stream ended or could not be played.";
     }
 
@@ -208,6 +216,7 @@ Item {
         queueScopeKey = "";
         shuffleHistory = [];
         playHistory = [];
+        preparing = false; playFailed = false;
         playMessage = "Playback stopped.";
     }
 

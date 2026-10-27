@@ -330,7 +330,18 @@ Item {
         }
         Item {
             Layout.minimumWidth: 28; Layout.maximumWidth: 28; Layout.preferredHeight: 28
-            MovieSpinner { objectName: "radioLoadingIndicator"; anchors.fill: parent; running: root.active && root.busy; visible: running }
+            ActivityIndicator {
+                anchors.fill: parent; active: root.active; spinnerName: "radioLoadingIndicator"
+                tasks: [
+                    task(root.loading, "browse", "Loading stations…"),
+                    task(root.resolving, "resolve", "Connecting to station…"),
+                    task(root.commandPending, "player", "Updating playback…"),
+                    task(root.favoriteSaving, "favorites", "Saving favorites…"),
+                    task(root.syncing, "sync", "Syncing favorites…"),
+                    task(root.countriesLoading, "countries", "Loading countries…"),
+                    task(root.genresLoading, "genres", "Loading genres…")
+                ]
+            }
         }
         MovieIconButton { objectName: "radioSearchButton"; iconName: "search"; text: "Search stations"; highlighted: root.searchOpen; onClicked: { root.searchOpen = !root.searchOpen; if (root.searchOpen) search.forceActiveFocus(); else search.clear(); } }
         MovieIconButton { objectName: "radioFiltersButton"; iconName: "sliders-horizontal"; text: "Station filters"; highlighted: root.filtersOpen || !!root.country || root.genres.length > 0; onClicked: root.filtersOpen = !root.filtersOpen }
@@ -351,8 +362,8 @@ Item {
             MovieIconButton { objectName: "radioStop"; visible: root.playback.playing || root.resolving || root.commandPending; iconName: "square"; text: "Stop Radio playback"; onClicked: root.playerCommand("stop") }
         }
         RowLayout {
-            Layout.fillWidth: true; visible: !!root.error || !!root.saveError || !!root.syncError || !!root.playbackError || !!root.notice
-            MovieText { Layout.fillWidth: true; text: [root.error,root.saveError,root.syncError,root.playbackError,root.notice].filter(Boolean).join("\n"); color: root.error || root.saveError || root.syncError || root.playbackError ? MovieStyle.danger : MovieStyle.muted; wrapMode: Text.Wrap }
+            Layout.fillWidth: true; visible: !!root.error || !!root.saveError || !!root.syncError || !!root.playbackError
+            MovieText { Layout.fillWidth: true; text: [root.error,root.saveError,root.syncError,root.playbackError].filter(Boolean).join("\n"); color: MovieStyle.danger; wrapMode: Text.Wrap }
             MovieButton { visible: !!root.error; text: "Retry"; onClicked: root.browse(false) }
             MovieButton { visible: !!root.syncError; text: "Retry sync"; enabled: !root.syncing; onClicked: root.syncFavorites() }
         }

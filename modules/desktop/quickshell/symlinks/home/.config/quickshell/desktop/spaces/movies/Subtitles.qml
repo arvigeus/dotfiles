@@ -7,6 +7,7 @@ import Quickshell
 ColumnLayout {
     id: root
     property bool showLoading: true
+    property bool showStatus: true
     function fontSize(value) { return Math.round(value * MovieStyle.fontSize / 14); }
     property string spaceId: "movies"
     property var host
@@ -202,7 +203,7 @@ ColumnLayout {
         MovieButton { iconName: "refresh-cw"; text: "Refresh"; enabled: !!root.path && !root.loading; onClicked: root.refresh() }
     }
     MovieText { visible: !!root.error; text: root.error; color: MovieStyle.danger; Layout.fillWidth: true; wrapMode: Text.Wrap }
-    MovieText { visible: !!root.info; text: root.info; color: MovieStyle.muted; Layout.fillWidth: true; wrapMode: Text.Wrap }
+    MovieText { visible: root.showStatus && !!root.info; text: root.info; color: MovieStyle.muted; Layout.fillWidth: true; wrapMode: Text.Wrap }
     ScrollArea {
         id: subtitleScroll
         objectName: "subtitleScroll"

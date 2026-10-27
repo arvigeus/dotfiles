@@ -1,6 +1,7 @@
 {
     "packages": [
-        "pyside6"
+        "pyside6",
+        "python-mutagen"
     ],
     "extra": {
         "private": {

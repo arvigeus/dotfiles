@@ -46,6 +46,7 @@ HEADER
     # The shared pack contains Windows-only D3D11 profiles; mpv validates
     # even inactive profiles and reports unsupported options at every launch.
     "[\($n)]",
+    "profile=standard",
     ($settings[] |
         "\(.[0] | gsub("_"; "-"))=\(
             if .[1] == true then "yes"
@@ -72,34 +73,37 @@ profile=AMD FidelityFX Contrast Adaptive Sharpening
 
 EOF
 
-	# Custom combo profile (not in upstream shader pack)
-	file_append "${MPV_CONF_DIR}/mpv.conf" <<EOF
-[fsr-cas]
-glsl-shaders=${SHADERS_DIR}/FSR.glsl
-glsl-shaders-append=${SHADERS_DIR}/CAS-scaled.glsl
-EOF
-
-	# generic-high is the default; the other profiles stay selectable.
-	jq -e '.profiles | has("generic-high")' "$PACK_JSON" >/dev/null || {
-		printf 'Shader pack is missing the requested generic-high profile.\n' >&2
-		return 1
-	}
+	# Resume global options after the generated profile sections.
 	file_append "${MPV_CONF_DIR}/mpv.conf" <<'EOF'
 
 [default]
-profile=generic-high
+profile=standard
 
 EOF
 
 	# Generate input.conf menu entries for profiles without manual keybindings
-	BOUND_PROFILES="fsr-cas generic-high nnedi-very-high anime4k-high-a anime4k-high-b anime4k-high-c anime4k-high-aa anime4k-high-bb anime4k-high-ca"
+	BOUND_PROFILES="AMD FidelityFX Super Resolution|generic-high|nnedi-very-high|anime4k-high-a|anime4k-high-b|anime4k-high-c|anime4k-high-aa|anime4k-high-bb|anime4k-high-ca"
 	# shellcheck disable=SC2016 # jq owns the variables in its program.
 	file_append "${MPV_CONF_DIR}/input.conf" jq -r --arg skip "$BOUND_PROFILES" '
-    ($skip | split(" ")) as $skip_list |
+    def menu_name:
+        if .key == "AMD FidelityFX Contrast Adaptive Sharpening" then "Sharpen"
+        elif .key == "nvscaler" then "Other > Nvidia"
+        elif .key | startswith("anime4k-") then
+            (.key | split("-")[2]) as $mode |
+            "Anime > Fast > " + ({a: "Blurry", b: "Ringing", c: "Sharp",
+                aa: "Blurry+", bb: "Ringing+", ca: "Sharp+"}[$mode] // $mode)
+        elif .key == "generic" then "Neural > FSRCNNX"
+        elif .key == "artcnn-sharp" then "Neural > ArtCNN Sharp"
+        elif .key == "artcnn-high" then "Neural > ArtCNN High"
+        elif .key == "nnedi-high" then "Neural > NNEDI"
+        elif .key == "artcnn" then "Neural > ArtCNN"
+        else .value.displayname // .key end;
+    ($skip | split("|")) as $skip_list |
     .profiles | to_entries[] |
     select((.value.platforms // ["linux"]) | index("linux")) |
     select(.key as $k | $skip_list | index($k) | not) |
-    "# apply-profile \"\(.key)\"; show-text \"Profile: \(.value.displayname // .key)\" #! Profiles > \(.value.displayname // .key)"
+    menu_name as $label |
+    "# apply-profile \"\(.key)\"; show-text \"\($label | split(" > ") | last)\" #! Profiles > \($label)"
 ' "${PACK_JSON}"
 }
 

@@ -127,7 +127,8 @@ identify the same account root as DAV. Missing local files never trigger remote
 deletion or synchronization, and missing unuploaded files cannot adopt unrelated
 server files with colliding names.
 
-`tags.py` belongs to Music and uses the existing FFmpeg/FFprobe dependencies.
+`tags.py` belongs to Music and uses FFmpeg/FFprobe and Mutagen. Opus edits use
+Mutagen to preserve Vorbis picture comments and the original audio packets.
 Edits stream-copy audio, preserve other streams/metadata, verify requested tags
 and source signature, then atomically replace the cache file. MP3/FLAC/M4A cover replacement removes only existing attached-picture streams,
 embeds the selected image, verifies its presence and checks both source versions.

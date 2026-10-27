@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import "../spaces/movies" as Movies
 
 InteractionWindow {
     id: root
@@ -111,8 +112,9 @@ InteractionWindow {
                         root.deliverPending(instance);
                         root.focusInitial();
                     }
-                    BusySpinner {
+                    Movies.MovieSpinner {
                         anchors.centerIn: parent
+                        width: 28; height: 28
                         visible: instance.status === Loader.Loading
                         running: visible && root.opened
                     }

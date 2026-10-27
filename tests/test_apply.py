@@ -61,7 +61,9 @@ class HomeTests(unittest.TestCase):
             root = Path(directory)
             pack = root / 'pack.json'
             pack.write_text(json.dumps({'setting-groups': {'quality': {'settings': [['scale', 'ewa_lanczos']], 'shaders': ['FSR.glsl']}},
-                                       'profiles': {'generic-high': {'setting-groups': ['quality']}, 'example': {'shaders': ['CAS.glsl']}}}))
+                                       'profiles': {'generic-high': {'setting-groups': ['quality']},
+                                                    'AMD FidelityFX Super Resolution': {'shaders': ['FSR.glsl']},
+                                                    'example': {'shaders': ['CAS.glsl']}}}))
             env = dict(os.environ, HOME=str(root / 'home'), DOTFILES_REPO=str(REPO), MPV_SHADER_PACK=str(pack))
             hook = REPO / 'modules/media/video/mpv/scripts/50_mpv.sh'
             for filename in ('mpv.conf', 'input.conf'):
@@ -73,8 +75,8 @@ class HomeTests(unittest.TestCase):
             config = root / 'home/.config/mpv/mpv.conf'
             initial = config.read_text()
             self.assertEqual(initial.count('[generic-high]'), 1)
-            self.assertIn('profile=generic-high', initial)
-            self.assertIn('scale=ewa_lanczos', initial)
+            self.assertIn('profile=standard', initial.rsplit('[default]', 1)[1])
+            self.assertIn('scale=lanczos', initial)
             self.assertFalse(config.is_symlink())
             config.write_text('drift\n')
             for filename in ('mpv.conf', 'input.conf'):

@@ -122,8 +122,9 @@ Hypridle's existing wake hook turns displays on and notifies the display service
 which applies or restores the refresh rate then. No wake poller is added.
 
 mpv provisioning on GA402RK selects OpenGL and `hwdec=auto-safe`, retaining
-automatic codec/device discovery. The user-selected `generic-high` shader
-default and other profiles remain available. `power-profiles.conf` adds native
+automatic codec/device discovery. Standard built-in scaling and optional shader
+profiles belong to [mpv](../../media/video/mpv/ARCHITECTURE.md).
+`power-profiles.conf` adds native
 Powersave profile with `profile-restore=copy-equal`; both Balanced and Performance
 restore prior options instead of hard-coding over user customization. Only
 Powersave applies a quality overlay; its removal retains options manually edited

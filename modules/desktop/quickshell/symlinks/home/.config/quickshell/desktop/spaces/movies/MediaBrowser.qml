@@ -101,13 +101,6 @@ FocusScope {
         }
     }
     readonly property bool busy: loading || titleLoading || tabLoading || playLoading || animeGenresLoading || localService.pendingDownloads > 0 || localService.pendingChanges > 0 || (scanOpen && (scanPanel.scanning || scanPanel.matching))
-    readonly property string loadingHint: {
-        if (loading) return "Loading catalogue…";
-        if (titleLoading) return kind === "tv" ? "Loading series…" : "Loading movie…";
-        if (playLoading) return "Opening player…";
-        if (scanOpen) return "Loading local library…";
-        return ({overview:kind === "tv" ? "Loading series details…" : "Loading movie details…",cast:"Loading cast…",collections:"Loading collections…",watch:"Loading viewing options…",spoilers:"Loading spoilers…",person:"Loading filmography…",episodes:"Loading episodes…",torrent:"Loading downloads…",subtitles:"Loading subtitles…"})[tab] || "Loading…";
-    }
     property bool gridMode: false
     property int providerIndex: 0
     property int trailerIndex: 0
@@ -559,14 +552,27 @@ FocusScope {
         }
         Item {
             Layout.minimumWidth: 28; Layout.maximumWidth: 28; Layout.preferredHeight: 28
-            MovieSpinner {
-                id: loadingIndicator
-                objectName: "movieLoadingIndicator"
-                anchors.fill: parent
-                visible: running
-                running: root.active && root.busy && !gallery.visible
-                Accessible.name: root.loadingHint
-                PassiveToolTip { target: loadingIndicator; text: root.loadingHint }
+            ActivityIndicator {
+                anchors.fill: parent; active: root.active && !gallery.visible; spinnerName: "movieLoadingIndicator"
+                jobs: localService.jobs
+                tasks: [
+                    task(root.loading, "browse", "Loading catalogue…"),
+                    task(root.detailLoading, "details", root.kind === "tv" ? "Loading series details…" : "Loading movie details…"),
+                    task(root.artworkLoading || logo.loading || backdrop.loading, "artwork", "Loading artwork…"),
+                    task(root.seasonsLoading || root.episodeLoading, "episodes", "Loading episodes…"),
+                    task(root.personalLoading, "personal", "Loading saved details…"),
+                    task(root.filesLoading, "files", "Checking local files…"),
+                    task(root.relatedLoading, "related", "Loading related titles…"),
+                    task(root.tab === "collections" && root.collectionsLoading, "collections", "Loading collections…"),
+                    task(root.extraLoading && ["watch", "spoilers", "person"].includes(root.tab), "extra", ({watch:"Loading viewing options…",spoilers:"Loading spoilers…",person:"Loading filmography…"})[root.tab]),
+                    task(root.playLoading, "player", "Opening player…"),
+                    task(root.animeGenresLoading, "genres", "Loading anime genres…"),
+                    task(root.tab === "torrent" && root.tabLoading, "find", "Loading downloads…"),
+                    task(root.tab === "subtitles" && root.tabLoading, "subtitles", "Loading subtitles…"),
+                    task(localService.pendingDownloads > 0, "download", "Downloading media…"),
+                    task(localService.pendingChanges > 0, "library", "Updating local library…"),
+                    task(root.scanOpen && (scanPanel.scanning || scanPanel.matching), "scan", "Scanning local library…")
+                ]
             }
         }
         MovieIconButton { objectName: "searchButton"; Layout.minimumWidth: 42; Layout.maximumWidth: 42; highlighted: root.searchOpen; iconName: "search"; text: "Search " + (root.kind === "tv" ? "TV series" : "movies"); onClicked: { root.searchOpen = !root.searchOpen; if (root.searchOpen) search.forceActiveFocus(); else search.text = ""; } }
@@ -585,6 +591,7 @@ FocusScope {
         Item {
             Layout.fillWidth: true; Layout.fillHeight: true
             LocalScan {
+                showStatus: false
                 id: scanPanel
                 showLoading: false
                 service: localService
@@ -709,6 +716,7 @@ FocusScope {
                     onActivated: title => root.animeMode ? root.openRelated(title) : root.selectTitle(title)
                 }
                 TorrentSearch {
+                    showStatus: false
                     id: torrentPanel
                     showLoading: false
                     service: localService
@@ -720,6 +728,7 @@ FocusScope {
                     onImported: root.refreshLocalLibrary()
                 }
                 Subtitles {
+                    showStatus: false
                     id: subtitlePanel
                     spaceId: root.spaceId
                     showLoading: false

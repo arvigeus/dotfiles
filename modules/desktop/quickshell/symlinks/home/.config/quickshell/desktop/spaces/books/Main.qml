@@ -461,12 +461,22 @@ Item {
             }
             Item {
                 Layout.minimumWidth: 28; Layout.maximumWidth: 28; Layout.preferredHeight: 28
-                MovieSpinner {
-                    objectName: "booksLoadingIndicator"
-                    anchors.fill: parent
-                    running: root.active && root.busy
-                    visible: running
-                    Accessible.name: "Loading Books"
+                ActivityIndicator {
+                        anchors.fill: parent; active: root.active; spinnerName: "booksLoadingIndicator"
+                    jobs: service.jobs.concat(localService.jobs)
+                    tasks: [
+                        task(root.loading, "browse", "Loading books…"),
+                        task(root.detailLoading, "details", "Loading book details…"),
+                        task(root.offersLoading || root.findOffersLoading, "offers", "Finding book offers…"),
+                        task(root.providerResolving, "provider", "Opening book provider…"),
+                        task(root.tab === "author" && root.authorLoading, "author", "Loading author…"),
+                        task(root.tab === "editions" && root.editionsLoading, "editions", "Loading editions…"),
+                        task(root.findLoading, "find", "Searching downloads…"),
+                        task(localService.pendingDownloads > 0, "download", "Downloading book…"),
+                        task(localService.pendingChanges > 0, "library", "Updating local library…"),
+                        task(service.startingJobs > 0, "queue", "Queuing download…"),
+                        task(root.tab === "scan" && (scanPanel.scanning || scanPanel.matching), "scan", "Scanning local books…")
+                    ]
                 }
             }
             MovieIconButton { objectName: "searchButton"; Layout.minimumWidth: 42; Layout.maximumWidth: 42; highlighted: root.searchOpen; iconName: "search"; text: root.searchOpen ? "Close book search" : "Search books"; onClicked: { root.searchOpen = !root.searchOpen; if (root.searchOpen) search.forceActiveFocus(); else search.text = ""; } }
@@ -608,6 +618,7 @@ Item {
                     }
                 }
                 TorrentSearch {
+                    showStatus: false
                     id: torrentFind; objectName: "booksFind"
                     service: localService; host: root.host; showLoading: false
                     visible: root.active && root.tab === "torrent"
@@ -722,6 +733,7 @@ Item {
                 visible: root.active && root.tab === "scan"
                 contentWidth: availableWidth
                 LocalScan {
+                    showStatus: false
                     width: parent.width
                     id: scanPanel
                     kind: "book"; service: localService; showLoading: false
@@ -752,7 +764,7 @@ Item {
             MovieText {
                 anchors.centerIn: parent; width: Math.min(420, parent.width - 56); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                 visible: !root.books.length && root.tab !== "scan"
-                text: root.loading ? "Loading books…" : root.error ? "" : root.localMode ? "No local books yet." : root.favorites ? "No saved favorites yet." : "No books match this search."
+                text: root.loading || root.error ? "" : root.localMode ? "No local books yet." : root.favorites ? "No saved favorites yet." : "No books match this search."
                 color: MovieStyle.muted
             }
         }

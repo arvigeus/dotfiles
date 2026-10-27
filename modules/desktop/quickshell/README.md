@@ -35,6 +35,8 @@ discovery, favorites, playback links and a local library with subtitles and down
 season and episode browsing in the same cinematic style.
 [Television](symlinks/home/.config/quickshell/desktop/spaces/television/README.md)
 browses live IPTV channels with local favorites and playback in your normal mpv.
+[Streaming](symlinks/home/.config/quickshell/desktop/spaces/streaming/README.md) offers
+YouTube feeds, native playback, Gemini summaries, offline video and Music downloads.
 [Games](symlinks/home/.config/quickshell/desktop/spaces/games/README.md) combines
 Steam/Epic libraries, discovery, title artwork, ProtonDB and HowLongToBeat.
 [Pictures](symlinks/home/.config/quickshell/desktop/spaces/pictures/README.md) browses

@@ -23,6 +23,7 @@ Popup {
     property string coverDraft: ""
     property string fetchedLyrics: ""
     property string message: ""
+    property bool importantMessage: false
     property string jobId: ""
     property string operation: ""
     property bool busy: false
@@ -70,19 +71,23 @@ Popup {
                 genre:(item.genreNames || []).join("; "), track:String(item.trackNumber || ""),
                 disc:String(item.discNumber || ""), composer:"", comment:"", lyrics:item.lyrics || ""};
     }
+    function setMessage(text, important) {
+        importantMessage = !!important;
+        message = text || "";
+    }
     function showSong(item) {
         if (busy || (song && song.id === item.id && song.source === item.source && (editing || reading || previewLoaded))) { open(); return; }
-        if (dirty) { message = "Save or cancel your edits before opening another song."; open(); return; }
+        if (dirty) { setMessage("Save or cancel your edits before opening another song.", true); open(); return; }
         const token = ++generation;
         song = item; lookingUp = false; editing = false; ready = false; reading = true; previewLoaded = false;
-        coverDraft = ""; fetchedLyrics = ""; fileSignature = []; message = "";
+        coverDraft = ""; fetchedLyrics = ""; fileSignature = []; setMessage("");
         original = previewTags(item); draft = Object.assign({}, original);
         originalPath = String(item.serverPath || "").replace(/^\/+/, ""); relativePath = originalPath;
         fileInfo = item.fileInfo || ""; open();
         catalogue.request("song-info", {song:item, lane:"info"}, (result, failure) => {
             if (token !== generation) return;
             reading = false;
-            if (failure) { message = failure; return; }
+            if (failure) { setMessage(failure, true); return; }
             previewLoaded = true;
             song = Object.assign({}, song, result.song || {});
             original = Object.assign({}, original, result.tags || {}); draft = Object.assign({}, original);
@@ -102,7 +107,7 @@ Popup {
         if (action === "move" && (editing || !originalPath || !pathDirty)) return;
         if (action === "info" && (editing || pathDirty || !originalPath)) return;
         ++generation; lookingUp = false; busy = true; jobId = ""; operation = action;
-        message = action === "info" ? "Preparing metadata editing…" : action === "move" ? "Moving…" : "Saving locally and on Nextcloud…";
+        setMessage(action === "info" ? "Preparing metadata editing…" : action === "move" ? "Moving…" : "Saving locally and on Nextcloud…");
         const changes = ({});
         if (action === "save") for (const key of Object.keys(draft)) if (draft[key] !== original[key]) changes[key] = draft[key];
         const args = {action:action, song:song, title:action === "info" ? "Prepare metadata editing" : action === "move" ? "Move song" : "Save metadata"};
@@ -116,7 +121,7 @@ Popup {
     function complete(result, failure) {
         const action = result.action || operation;
         busy = false; jobId = ""; operation = "";
-        if (failure) { message = failure; return; }
+        if (failure) { setMessage(failure, true); return; }
         if (action === "info") {
             original = Object.assign({}, previewTags(song), result.tags || {});
             draft = Object.assign({}, original);
@@ -124,7 +129,7 @@ Popup {
             fileSignature = result.signature || []; fileInfo = result.fileInfo || fileInfo;
             originalPath = result.relativePath || originalPath; relativePath = originalPath;
             song = Object.assign({}, song, {local:true, localPath:result.path, pendingUpload:result.pendingUpload});
-            ready = true; editing = true; message = "";
+            ready = true; editing = true; setMessage("");
             return;
         }
         const rel = result.relativePath || originalPath;
@@ -138,26 +143,26 @@ Popup {
             coverDraft = ""; fetchedLyrics = "";
             if (result.synced) { editing = false; ready = false; }
         }
-        message = result.error ? "Saved locally. " + result.error : action === "move" ? "Song moved." :
-            result.synced ? "Saved locally and on Nextcloud." : result.message || "Saved locally. The server file was not updated.";
+        setMessage(result.error ? "Saved locally. " + result.error : action === "move" ? "Song moved." :
+            result.synced ? "Saved locally and on Nextcloud." : result.message || "Saved locally. The server file was not updated.", !!result.error || (action !== "move" && !result.synced));
         saved(song, result);
     }
     function cancelEdits() {
         if (busy) return;
         ++generation; lookingUp = false; editing = false; ready = false;
-        coverDraft = ""; fetchedLyrics = ""; draft = Object.assign({}, original); message = "";
+        coverDraft = ""; fetchedLyrics = ""; draft = Object.assign({}, original); setMessage("");
     }
     function lookupLyrics() {
         if (!song || busy || reading || lookingUp) return;
         const token = ++generation, previous = String(draft.lyrics || "");
-        lookingUp = true; message = "Fetching lyrics…";
+        lookingUp = true; setMessage("Fetching lyrics…");
         catalogue.request("lyrics", {song:Object.assign({}, song, draft), refresh:true, lane:"info"}, (result, failure) => {
             if (token !== generation) return;
             lookingUp = false;
             if (String(draft.lyrics || "") !== previous) return;
-            if (failure || !result?.available) { message = failure || "No matching lyrics found."; return; }
+            if (failure || !result?.available) { setMessage(failure || "No matching lyrics found.", !!failure); return; }
             fetchedLyrics = result.lyrics; draft = Object.assign({}, draft, {lyrics:result.lyrics});
-            message = editing ? "Lyrics loaded. Save to keep them in the file and on Nextcloud." : "Lyrics loaded. Edit metadata to save them.";
+            setMessage(editing ? "Lyrics loaded. Save to keep them in the file and on Nextcloud." : "Lyrics loaded. Edit metadata to save them.");
         });
     }
     function restoreFocus() {
@@ -266,7 +271,7 @@ Popup {
                 }
             }
         }
-        MovieText { objectName:"musicInfoMessage"; Layout.fillWidth:true; visible:!!root.message; text:root.message; wrapMode:Text.Wrap; color:MovieStyle.muted }
+        MovieText { objectName:"musicInfoMessage"; Layout.fillWidth:true; visible:root.importantMessage && !!root.message; text:root.message; wrapMode:Text.Wrap; color:MovieStyle.danger }
         MovieText { text:"Path inside Music"; color:MovieStyle.muted }
         RowLayout {
             Layout.fillWidth:true

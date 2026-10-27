@@ -464,6 +464,7 @@
                 "home/.config/quickshell/desktop/integrations/nextcloud-app-password",
                 "home/.config/quickshell/desktop/integrations/nextcloud-music-api-key",
                 "home/.config/quickshell/desktop/integrations/nextcloud.json",
+                "home/.config/quickshell/desktop/integrations/gemini-api-key",
                 "home/.config/quickshell/desktop/integrations/torrents.json",
                 "home/.config/quickshell/desktop/launcher.ini",
                 "home/.config/quickshell/desktop/network.ini",
@@ -474,6 +475,9 @@
                 "home/.config/quickshell/desktop/weather-selection.json",
                 "home/.config/quickshell/desktop/weather.json",
                 "home/.config/quickshell/desktop/spaces/movies/media.json",
+                "home/.config/quickshell/desktop/spaces/streaming/streaming.json",
+                "home/.local/share/quickshell/desktop/spaces/streaming/library.json",
+                "home/.local/share/quickshell/desktop/spaces/streaming/resume",
                 "home/.config/quickshell/desktop/spaces/movies/media-ui.ini",
                 "home/.local/share/quickshell/desktop/spaces/movies/library.sqlite",
                 "home/.config/quickshell/desktop/spaces/series/media.json",
@@ -2917,6 +2921,10 @@
                 "target": "home/.config/quickshell/desktop/spaces/movies/ARCHITECTURE.md"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ActivityIndicator.qml",
+                "target": "home/.config/quickshell/desktop/spaces/movies/ActivityIndicator.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/movies/ArtworkCache.qml",
                 "target": "home/.config/quickshell/desktop/spaces/movies/ArtworkCache.qml"
             },
@@ -3409,6 +3417,62 @@
                 "target": "home/.config/quickshell/desktop/spaces/series/README.md"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/streaming/ARCHITECTURE.md",
+                "target": "home/.config/quickshell/desktop/spaces/streaming/ARCHITECTURE.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/streaming/Main.qml",
+                "target": "home/.config/quickshell/desktop/spaces/streaming/Main.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/streaming/PostsFeed.qml",
+                "target": "home/.config/quickshell/desktop/spaces/streaming/PostsFeed.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/streaming/README.md",
+                "target": "home/.config/quickshell/desktop/spaces/streaming/README.md"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/streaming/StreamingDetails.qml",
+                "target": "home/.config/quickshell/desktop/spaces/streaming/StreamingDetails.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/streaming/VideoCard.qml",
+                "target": "home/.config/quickshell/desktop/spaces/streaming/VideoCard.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/streaming/backend.py",
+                "target": "home/.config/quickshell/desktop/spaces/streaming/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/streaming/downloads.py",
+                "target": "home/.config/quickshell/desktop/spaces/streaming/downloads.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/streaming/insights.py",
+                "target": "home/.config/quickshell/desktop/spaces/streaming/insights.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/streaming/player.py",
+                "target": "home/.config/quickshell/desktop/spaces/streaming/player.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/streaming/posts.py",
+                "target": "home/.config/quickshell/desktop/spaces/streaming/posts.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/streaming/qmldir",
+                "target": "home/.config/quickshell/desktop/spaces/streaming/qmldir"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/streaming/storage.py",
+                "target": "home/.config/quickshell/desktop/spaces/streaming/storage.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/streaming/youtube.py",
+                "target": "home/.config/quickshell/desktop/spaces/streaming/youtube.py"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/television/ARCHITECTURE.md",
                 "target": "home/.config/quickshell/desktop/spaces/television/ARCHITECTURE.md"
             },
@@ -3773,6 +3837,7 @@
         "mpv",
         "mpv-mpris",
         "python-requests",
+        "python-mutagen",
         "rclone",
         "sqlite",
         "sqlitebrowser",
@@ -3915,6 +3980,7 @@
         "vlc",
         "vlc-plugins-all",
         "yt-dlp",
+        "deno",
         "pcsclite",
         "ccid",
         "nss",

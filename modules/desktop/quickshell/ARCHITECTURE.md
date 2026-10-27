@@ -73,17 +73,23 @@ controls and choices can share them.
 
 ## Spaces
 
-Movies, TV Series, Games, Pictures, Books, Radio, Television and Music are fullscreen, retained Spaces;
+Movies, TV Series, Games, Pictures, Books, Radio, Television, Streaming and Music are fullscreen, retained Spaces;
 remaining entries are placeholders. Space modules use their own immersive
 presentation rather than the shell's gray controls or light/dark variants, and omit in-module Spaces links.
 See the presentation contract in [Movies architecture](symlinks/home/.config/quickshell/desktop/spaces/movies/ARCHITECTURE.md)
 for lifecycle, provider, worker and private restoration details.
+All Space headers use the shared activity indicator for concurrent work and
+progress. The host's page-opening indicator uses the same red, 28-pixel movie
+spinner as the headers. Idle headers have no status marker or history tooltip; completed jobs
+remain in notification/activity panels. Actionable errors remain inline.
 For Games providers, artwork and beat times, see the
 [Games architecture](symlinks/home/.config/quickshell/desktop/spaces/games/ARCHITECTURE.md).
 For Books metadata, private providers and local reading, see the
 [Books architecture](symlinks/home/.config/quickshell/desktop/spaces/books/ARCHITECTURE.md).
 For Music catalogue/providers, queue playback and private restoration, see
 [Music architecture](symlinks/home/.config/quickshell/desktop/spaces/music/ARCHITECTURE.md).
+For YouTube feeds, native playback, Gemini analysis and downloads, see
+[Streaming architecture](symlinks/home/.config/quickshell/desktop/spaces/streaming/ARCHITECTURE.md).
 `spaces/profile.py` reads public
 AccountsService data, passwd GECOS and standard photo fallbacks on opening.
 Photos use an mtime URL suffix and no cache. `ProfileButton` launches Account tools in

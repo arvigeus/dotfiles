@@ -1,5 +1,6 @@
 """Real fixture conversions and tag editing never touch the user's audio library."""
 import importlib.util
+import base64
 import json
 import os
 import shutil
@@ -8,6 +9,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+from mutagen.flac import Picture
+from mutagen.oggopus import OggOpus
 
 REPO = Path(__file__).resolve().parents[1]
 MODULE = REPO / 'modules/media/tools/audio'
@@ -134,6 +138,73 @@ class AudioToolsTests(unittest.TestCase):
                 text = 'Line one\n千本桜 · Second line'
                 self.complete(core.tag_edit(source, {'lyrics': text}, backup=False))
                 self.assertEqual(self.info(source)['tags']['lyrics'], text)
+
+    def opus_with_cover(self):
+        operation = core.conversion(self.source, core.read_presets(PRESETS)[4])
+        self.complete(operation)
+        cover = self.root / 'cover.png'
+        self.run_command(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=80x80',
+                          '-frames:v', '1', str(cover)])
+        picture = Picture()
+        picture.type = 3; picture.mime = 'image/png'; picture.width = picture.height = 80
+        picture.data = cover.read_bytes()
+        audio = OggOpus(operation.target)
+        audio['metadata_block_picture'] = [base64.b64encode(picture.write()).decode('ascii')]
+        audio['custom-field'] = ['Keep this too']
+        audio['tracknumber'] = ['1/5']
+        audio['discnumber'] = ['1/1']
+        audio['year'] = ['2020']
+        audio.save()
+        return operation.target
+
+    def packets(self, path):
+        probe = json.loads(self.run_command(['ffprobe', '-v', 'error', '-select_streams', 'a:0',
+            '-show_packets', '-show_entries', 'packet=data_hash', '-show_data_hash', 'sha256', '-of', 'json', str(path)]).stdout)
+        return [packet['data_hash'] for packet in probe['packets']]
+
+    def test_opus_tags_preserve_cover_packets_aliases_and_large_lyrics(self):
+        source = self.opus_with_cover()
+        original = source.read_bytes()
+        before = self.packets(source)
+        cover = OggOpus(source)['metadata_block_picture']
+        changes = {'title': 'Smile · 千本桜', 'artist': '', 'album_artist': 'Glen Hansard',
+                   'track': '3/12', 'disc': '1/2', 'date': '2013-06-13',
+                   'lyrics': 'A line of lyrics\n' * 12000}
+        self.assertEqual(self.info(source)['tags']['track'], '1/5')
+        self.complete(core.tag_edit(source, changes))
+        info = self.info(source)
+        for key, value in changes.items():
+            self.assertEqual(info['tags'].get(key, ''), value)
+        audio = OggOpus(source)
+        self.assertNotIn('artist', audio)
+        self.assertNotIn('year', audio)
+        self.assertEqual(audio['custom-field'], ['Keep this too'])
+        self.assertEqual(audio['metadata_block_picture'], cover)
+        self.assertEqual(info['artwork'], 1)
+        self.assertTrue(before)
+        self.assertEqual(self.packets(source), before)
+        self.assertEqual(Path(str(source) + '.tags-backup').read_bytes(), original)
+        self.assertFalse(list(self.root.glob('.audio-tools-*')))
+        # Blank edits must not revive values through Vorbis aliases.
+        self.complete(core.tag_edit(source, {'album_artist': '', 'track': '', 'disc': '', 'date': ''}, backup=False))
+        self.assertTrue(all(not self.info(source)['tags'][key] for key in ('album_artist', 'track', 'disc', 'date')))
+        self.assertEqual(self.packets(source), before)
+
+    def test_opus_abort_and_source_conflict_clean_the_private_job_payload(self):
+        source = self.opus_with_cover()
+        original = source.read_bytes()
+        operation = core.tag_edit(source, {'title': 'Draft'}, backup=False)
+        self.assertEqual(operation.payload.stat().st_mode & 0o777, 0o600)
+        operation.abort()
+        self.assertEqual(source.read_bytes(), original)
+        self.assertFalse(list(self.root.glob('.audio-tools-*')))
+        operation = core.tag_edit(source, {'title': 'Draft'}, backup=False)
+        self.run_command(operation.command)
+        os.utime(source, ns=(1, 1))
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            operation.finish()
+        self.assertEqual(source.read_bytes(), original)
+        self.assertFalse(list(self.root.glob('.audio-tools-*')))
 
 
 if __name__ == '__main__':

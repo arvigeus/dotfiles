@@ -12,10 +12,11 @@ CONFIG = REPO / 'modules/media/tools/audio/files/home/.config/audio-tools/preset
 
 
 class AudioDialogTests(unittest.TestCase):
-    def run_dialog(self, script):
+    def run_dialog(self, script, source_suffix='.flac'):
         with tempfile.TemporaryDirectory() as folder:
             env = dict(os.environ, QT_QPA_PLATFORM='offscreen', AUDIO_TEST_DIR=folder,
-                       AUDIO_TEST_CONFIG=str(CONFIG), PYTHONPATH=str(LIB), XDG_CONFIG_HOME=str(Path(folder) / 'config'))
+                       AUDIO_TEST_CONFIG=str(CONFIG), AUDIO_TEST_SUFFIX=source_suffix,
+                       PYTHONPATH=str(LIB), XDG_CONFIG_HOME=str(Path(folder) / 'config'))
             setup = '''
 import os, subprocess, time
 from pathlib import Path
@@ -24,7 +25,7 @@ from PySide6.QtWidgets import QApplication
 import gui
 import core
 root = Path(os.environ['AUDIO_TEST_DIR'])
-source = root / 'song.flac'
+source = root / ('song' + os.environ['AUDIO_TEST_SUFFIX'])
 subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=duration=0.2', '-metadata', 'title=Original', str(source)], check=True)
 original = source.read_bytes()
 app = QApplication([])
@@ -108,6 +109,35 @@ assert not (root / 'song [aac-320].m4a').exists()
 assert not list(root.glob('.audio-tools-*'))
 w.stop_probe(); w.close()
 ''')
+
+    def test_opus_tags_with_existing_cover_save_in_the_real_dialog(self):
+        self.run_dialog('''
+import base64
+from mutagen.flac import Picture
+from mutagen.oggopus import OggOpus
+w.stop_probe()
+cover = root / 'cover.png'
+subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=blue:s=80x80','-frames:v','1',str(cover)],check=True)
+picture = Picture(); picture.type = 3; picture.mime = 'image/png'; picture.data = cover.read_bytes()
+audio = OggOpus(source)
+audio['metadata_block_picture'] = [base64.b64encode(picture.write()).decode('ascii')]
+audio.save()
+original_cover = audio['metadata_block_picture']
+w.info.clear(); w.inspect_file()
+wait_for(lambda: source in w.info)
+assert w.info[source]['artwork'] == 1
+for key,value in {'title':'Smile (Pearl Jam cover)','artist':'Glen Hansard'}.items():
+ w.fields[key].setText(value); w.fields[key].textEdited.emit(value)
+w.save_tags()
+wait_for(lambda: not w.active and source in w.info)
+assert w.failures == 0, w.log.toPlainText()
+assert w.info[source]['tags']['title'] == 'Smile (Pearl Jam cover)'
+assert w.info[source]['tags']['artist'] == 'Glen Hansard'
+assert w.info[source]['artwork'] == 1
+assert OggOpus(source)['metadata_block_picture'] == original_cover
+assert not list(root.glob('.audio-tools-*'))
+w.stop_probe(); w.close()
+''', source_suffix='.opus')
 
     def test_single_file_save_changes_only_edited_fields(self):
         self.run_dialog('''

@@ -1,12 +1,17 @@
-"""Audio probing, validated presets and atomic FFmpeg operations."""
+"""Audio probing, validated presets and atomic audio operations."""
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from mutagen import MutagenError
+from mutagen.oggopus import OggOpus
 
 FIELDS = {'title': 'Title', 'artist': 'Artist', 'album': 'Album', 'album_artist': 'Album artist',
           'date': 'Date', 'track': 'Track / total', 'disc': 'Disc / total', 'genre': 'Genre',
@@ -54,8 +59,9 @@ def audio_info(document):
         raise ValueError('This file contains no audio stream.')
     tags = {k.lower(): str(v) for s in audio[:1] for k, v in s.get('tags', {}).items()}
     tags.update({k.lower(): str(v) for k, v in data.get('format', {}).get('tags', {}).items()})
-    tags['album_artist'] = tags.get('album_artist', tags.get('albumartist', ''))
-    tags['date'] = tags.get('date', tags.get('year', ''))
+    for key, alias in [('album_artist', 'albumartist'), ('date', 'year'),
+                       ('track', 'tracknumber'), ('disc', 'discnumber')]:
+        tags[key] = tags.get(key, tags.get(alias, ''))
     # FFmpeg exposes MP3 lyrics as a language-qualified ID3 tag.
     tags['lyrics'] = tags.get('lyrics', next((v for k, v in tags.items() if k.startswith('lyrics-')), ''))
     return {'tags': tags, 'audio': audio, 'format': data.get('format', {}),
@@ -76,9 +82,12 @@ class Operation:
     backup: bool = False
     expected_tags: dict | None = None
     expected_artwork: bool | None = None
+    payload: Path | None = None
 
     def abort(self):
         self.temporary.unlink(missing_ok=True)
+        if self.payload is not None:
+            self.payload.unlink(missing_ok=True)
 
     def finish(self):
         try:
@@ -144,14 +153,30 @@ def tag_edit(source, changes, artwork=None, backup=True):
     source = Path(source).resolve(strict=True)
     if source.stat().st_nlink > 1:
         raise ValueError('Tag editing a hard-linked file is disabled. Make a separate copy first.')
-    if set(changes) - FIELDS.keys():
+    if not isinstance(changes, dict) or set(changes) - FIELDS.keys():
         raise ValueError('Unknown tag fields.')
+    if any(not isinstance(value, str) or '\0' in value for value in changes.values()):
+        raise ValueError('Tag values must be text without NUL characters.')
     if artwork is not None and source.suffix.lower() not in ART_FORMATS:
         raise ValueError('Cover editing supports MP3, FLAC and M4A files.')
     if artwork:
         artwork = str(Path(artwork).resolve(strict=True))
     original = signature(source)
     temporary = temporary_for(source)
+    if source.suffix.lower() == '.opus':
+        # Keep cover comments and encoded packets intact in an owned subprocess.
+        operation = Operation([], temporary, source, original, backup, changes)
+        try:
+            fd, name = tempfile.mkstemp(prefix='.audio-tools-', suffix='.json', dir=source.parent)
+            operation.payload = Path(name)
+            with os.fdopen(fd, 'w') as output:
+                json.dump(changes, output)
+            operation.command = [sys.executable, str(Path(__file__).resolve()), '--write-opus-tags',
+                                 str(source), str(temporary), str(operation.payload)]
+            return operation
+        except Exception:
+            operation.abort()
+            raise
     command = base_command(source)
     if artwork:
         command += ['-i', artwork]
@@ -168,3 +193,30 @@ def tag_edit(source, changes, artwork=None, backup=True):
     command += ['-progress', 'pipe:1', '-nostats', str(temporary)]
     return Operation(command, temporary, source, original, backup, changes,
                      None if artwork is None else bool(artwork))
+
+
+def write_opus_tags(source, temporary, changes):
+    shutil.copyfile(source, temporary)
+    audio = OggOpus(temporary)
+    names = {'album_artist': 'albumartist', 'track': 'tracknumber', 'disc': 'discnumber'}
+    for key, value in changes.items():
+        canonical = names.get(key, key)
+        aliases = {key, canonical}
+        if key == 'date':
+            aliases.add('year')
+        for name in aliases:
+            if name in audio:
+                del audio[name]
+        if value:
+            audio[canonical] = [value]
+    audio.save()
+
+
+if __name__ == '__main__':
+    try:
+        if len(sys.argv) != 5 or sys.argv[1] != '--write-opus-tags':
+            raise ValueError('Unsupported audio-tools helper command.')
+        write_opus_tags(Path(sys.argv[2]), Path(sys.argv[3]), json.loads(Path(sys.argv[4]).read_text()))
+    except (OSError, ValueError, MutagenError) as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)

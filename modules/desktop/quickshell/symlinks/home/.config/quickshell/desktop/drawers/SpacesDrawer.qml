@@ -51,6 +51,11 @@ DrawerPage {
                         icon: "music"
                     },
                     {
+                        id: "streaming",
+                        name: qsTr("Streaming"),
+                        icon: "video"
+                    },
+                    {
                         id: "radio",
                         name: qsTr("Radio"),
                         icon: "boom-box"

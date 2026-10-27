@@ -6,11 +6,14 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     property bool showLoading: true
+    property bool showStatus: true
     property var host
     property bool popupActivity: false
     onErrorChanged: { if (popupActivity && error) activity.notify(error, true); }
     onLookupErrorChanged: { if (popupActivity && lookupError) activity.notify(lookupError, true); }
-    onInfoChanged: { if (popupActivity && info) activity.notify(info, false); }
+    onInfoChanged: {
+        if (popupActivity && info) activity.notify(info, false);
+    }
     function showJobPanel() { jobPanel.open(); }
     function dismissTransient() {
         if (jobPanel.visible) { jobPanel.close(); return true; }
@@ -319,14 +322,14 @@ ColumnLayout {
         MovieSpinner { running: root.searching || root.extraSearching; visible: root.showLoading && running; Layout.preferredWidth: 26; Layout.preferredHeight: 26 }
     }
     MovieText { visible: !!root.extraError; Layout.fillWidth: true; text: root.extraError; color: MovieStyle.danger; wrapMode: Text.Wrap }
-    MovieText { visible: !!root.extraInfo && !root.extraSearching; Layout.fillWidth: true; text: root.extraInfo; color: MovieStyle.muted; wrapMode: Text.Wrap }
+    MovieText { visible: root.showStatus && !!root.extraInfo && !root.extraSearching; Layout.fillWidth: true; text: root.extraInfo; color: MovieStyle.muted; wrapMode: Text.Wrap }
     MovieText { visible: !root.popupActivity && !!root.error; Layout.fillWidth: true; text: root.error; color: MovieStyle.danger; wrapMode: Text.Wrap }
     RowLayout {
         visible: root.canStartQbittorrent || root.startLoading || root.launchPending
         MovieButton { iconName: "power"; text: "Start qBittorrent"; enabled: root.canStartQbittorrent && !root.startLoading && !root.launchPending; onClicked: root.startQbittorrent() }
         MovieSpinner { running: root.startLoading || root.launchPending; visible: root.showLoading && running; Layout.preferredWidth: 24; Layout.preferredHeight: 24 }
     }
-    MovieText { visible: !root.popupActivity && !!root.info; Layout.fillWidth: true; text: root.info; color: MovieStyle.muted; wrapMode: Text.Wrap }
+    MovieText { visible: root.showStatus && !root.popupActivity && !!root.info; Layout.fillWidth: true; text: root.info; color: MovieStyle.muted; wrapMode: Text.Wrap }
     ListView {
         id: resultList
         visible: !root.reviewJobId && !root.inspectRow.url

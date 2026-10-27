@@ -83,7 +83,9 @@ Item {
             root.observeFiles(true);
         }
     }
-    MusicPlayback { id: playback; service: service; controller: root; active: root.active }
+    MusicPlayback {
+        id: playback; service: service; controller: root; active: root.active
+    }
     Worker { id: covers; backendDirectory: "spaces/music"; backend: "artwork.py"; spaceId: "music"; serviceName: "Music artwork"; startOnDemand: true }
     property var deliverNotification: (title,body) => Quickshell.execDetached(["notify-send","--app-name=Music","--icon=audio-x-generic","--",title,String(body).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")])
     function visibleJob(job,owner) { return (owner.jobRequests[job.job_id]?.args.action || job.result?.action) !== "info"; }
@@ -376,7 +378,21 @@ Item {
         MovieButton { id: playlistPicker; objectName: "musicPlaylists"; visible: !root.entity && root.section === "library" && root.filtersOpen; text: "Playlists"; onClicked: { picker.parent = playlistPicker; picker.show("playlists"); } }
         MovieChoice { id: categoryChoice; objectName: "musicCategory"; enabled: root.entityReady; visible: root.entity?.kind === "artist"; Layout.preferredWidth: 120; model: ["Songs","Albums"]; currentIndex: root.category === "albums" ? 1 : 0; onActivated: index => root.changeCategory(index ? "albums" : "songs") }
         MovieInput { id: search; objectName: "musicSearch"; visible: root.searchOpen; Layout.preferredWidth: Math.min(280,root.width * 0.23); Layout.minimumWidth: 90; placeholderText: root.entity ? "Search this " + root.entity.kind + "…" : root.section === "library" ? "Search My Library…" : "Search Discover…"; Accessible.name: "Search music"; onTextChanged: if (root.initialized && !root.restoringView) { if (root.active) searchDelay.restart(); else root.needsBrowse = true; } onAccepted: root.browse(false) }
-        Item { Layout.preferredWidth: 28; Layout.preferredHeight: 28; MovieSpinner { objectName: "musicLoadingIndicator"; anchors.fill: parent; running: root.active && root.busy; visible: running } }
+        Item { Layout.preferredWidth: 28; Layout.preferredHeight: 28
+            ActivityIndicator {
+                anchors.fill: parent; active: root.active; spinnerName: "musicLoadingIndicator"
+                jobs: service.jobs.concat(cacheService.jobs)
+                tasks: [
+                    task(root.loading, "browse", "Loading music…"),
+                    task(root.section === "library" && root.libraryIndexing, "index", root.libraryIndexMessage || "Indexing music…"),
+                    task(root.genresLoading, "genres", "Loading genres…"),
+                    task(service.startingJobs + cacheService.startingJobs > 0, "queue", "Queuing operation…"),
+                    task(info.lookingUp, "lyrics", "Finding lyrics…"),
+                    task(info.reading, "song", "Loading song details…"),
+                    task(playback.preparing, "player", playback.playMessage || "Opening player…")
+                ]
+            }
+        }
         MovieIconButton { objectName: "musicSearchButton"; iconName: "search"; text: "Search music"; highlighted: root.searchOpen; onClicked: { root.searchOpen = !root.searchOpen; if (root.searchOpen) search.forceActiveFocus(); else search.clear(); } }
         MovieIconButton { objectName: "musicFilters"; visible: !root.entity && root.category !== "artists"; iconName: "sliders-horizontal"; text: "Music filters"; highlighted: root.filtersOpen || !!root.genreId; onClicked: { root.filtersOpen = !root.filtersOpen; if (root.filtersOpen) root.loadGenres(); } }
         MovieIconButton { objectName: "musicPendingFilter"; visible: root.section === "library" && !root.entity; iconName: "upload"; text: "Not uploaded"; highlighted: root.pendingOnly; onClicked: { root.pendingOnly = !root.pendingOnly; root.browse(false); } }
@@ -387,8 +403,8 @@ Item {
     ColumnLayout {
         anchors.fill: parent; spacing: 12
         RowLayout {
-            visible: !!root.error || !!root.saveError || !!root.notice || (root.section === "library" && !!root.libraryIndexMessage); Layout.fillWidth: true
-            MovieText { Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.error || root.saveError ? MovieStyle.danger : MovieStyle.muted; text: [root.error,root.saveError,root.notice,root.section === "library" ? root.libraryIndexMessage : ""].filter(Boolean).join("\n") }
+            visible: !!root.error || !!root.saveError; Layout.fillWidth: true
+            MovieText { Layout.fillWidth: true; wrapMode: Text.Wrap; color: MovieStyle.danger; text: [root.error,root.saveError].filter(Boolean).join("\n") }
             MovieButton { text: "Retry"; visible: !!root.error; enabled: !root.loading; onClicked: root.initialized ? root.browse(false,true) : root.initialize() }
         }
         RowLayout {
@@ -470,7 +486,7 @@ Item {
             ColumnLayout {
                 Layout.fillWidth: true; Layout.minimumWidth: 80; spacing: 4
                 MovieText { Layout.fillWidth: true; text: playback.currentTrack ? [playback.currentTrack.title,playback.currentTrack.artist].filter(Boolean).join(" · ") : "Choose a song to start listening."; elide: Text.ElideRight; font.bold: true }
-                MovieText { Layout.fillWidth: true; text: playback.playMessage; elide: Text.ElideRight; color: MovieStyle.muted }
+                MovieText { Layout.fillWidth: true; visible: playback.playFailed; text: playback.playMessage; elide: Text.ElideRight; color: MovieStyle.danger }
             }
             MovieText { text: root.timeLabel(playback.position) + " / " + root.timeLabel(playback.duration); color: MovieStyle.muted }
             MusicSlider { objectName: "musicSeek"; Layout.preferredWidth: Math.min(220,root.width * 0.17); from: 0; to: Math.max(1,playback.duration); value: playback.position; enabled: !!playback.playerProcess; onMoved: playback.seekTo(value); Accessible.name: "Playback position" }

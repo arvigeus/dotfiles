@@ -509,10 +509,17 @@ Item {
         }
         Item {
             Layout.minimumWidth: 28; Layout.maximumWidth: 28; Layout.preferredHeight: 28
-            MovieSpinner {
-                anchors.fill: parent
-                running: root.active && !gallery.visible && (root.loading || root.randomLoading || root.settingWallpaper || wallpaperPreview.loading || backdrop.loading)
-                visible: running
+            ActivityIndicator {
+                anchors.fill: parent; active: root.active && !gallery.visible
+                tasks: [
+                    task(root.loading, "browse", "Loading wallpapers…"),
+                    task(root.randomLoading, "random", "Finding a random wallpaper…"),
+                    task(root.settingWallpaper, "wallpaper", root.actionMessage || "Setting wallpaper…"),
+                    task(root.openingWorkshop, "workshop", "Opening Workshop…"),
+                    task(root.favoriteSaving, "favorites", "Saving favorites…"),
+                    task(root.searchingTagSuggestions, "tags", "Finding tags…"),
+                    task(wallpaperPreview.loading || backdrop.loading, "artwork", "Loading wallpaper preview…")
+                ]
             }
         }
         MovieIconButton {
@@ -616,7 +623,7 @@ Item {
                     MovieIconButton { objectName: "openWorkshopButton"; iconName: "globe"; text: root.engineSelected?(root.selected.installed?qsTr("Open in Steam"):qsTr("Download through Steam")):qsTr("Open source"); enabled: !!root.selected.url && !root.openingWorkshop; onClicked: {if(root.engineSelected)root.openSteamWorkshop();else Browser.open(root.selected.url,"pictures","",root.host);} }
                 }
                 MovieText { Layout.fillWidth: true; visible: !!root.engineSetupMessage && root.engineSelected && !root.settingWallpaper; text: root.engineSetupMessage; color: Theme.warning; wrapMode: Text.Wrap }
-                MovieText { Layout.fillWidth: true; visible: !!root.actionMessage; text: root.actionMessage; color: root.actionFailed ? MovieStyle.danger : MovieStyle.muted; wrapMode: Text.Wrap }
+                MovieText { Layout.fillWidth: true; visible: root.actionFailed && !!root.actionMessage; text: root.actionMessage; color: MovieStyle.danger; wrapMode: Text.Wrap }
                 ScrollArea {
                     id: overview
                     objectName: "pictureOverview"

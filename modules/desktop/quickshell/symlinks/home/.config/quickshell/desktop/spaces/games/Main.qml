@@ -347,7 +347,21 @@ Item {
             placeholderText: "Search games"; Accessible.name: "Search games"
             onTextChanged: searchDelay.restart()
         }
-        MovieSpinner { objectName: "gamesLoading"; running: root.active && root.busy && !gallery.visible; visible: running; Accessible.name: "Loading game information" }
+        ActivityIndicator {
+            Layout.preferredWidth: 28; Layout.preferredHeight: 28
+            active: root.active && !gallery.visible; spinnerName: "gamesLoading"
+            jobs: downloads.jobs
+            tasks: [
+                task(root.initializing, "init", "Opening Games…"),
+                task(root.loading, "browse", "Loading games…"),
+                task(root.detailLoading, "details", "Loading game details…"),
+                task(root.metadataBusy, "metadata", "Updating game metadata…"),
+                task(root.actionBusy, "action", "Updating game library…"),
+                task(service.pendingCount > 0 && !root.initializing && !root.loading && !root.detailLoading && !root.actionBusy && !root.metadataBusy, "information", "Loading game information…"),
+                task(backdrop.loading || logo.loading, "artwork", "Loading artwork…"),
+                task(root.tab === "torrent" && (downloads.searching || downloads.connectionLoading || downloads.inspectLoading || downloads.reviewLoading), "find", "Loading downloads…")
+            ]
+        }
         MovieIconButton { iconName: "search"; text: "Search games"; highlighted: root.searchOpen; onClicked: { root.searchOpen = !root.searchOpen; if (root.searchOpen) search.forceActiveFocus(); else search.clear(); } }
         MovieIconButton { iconName: "sliders-horizontal"; text: "Filters"; enabled: root.mode === "discover" && root.catalogState.configured; highlighted: root.filtersOpen; onClicked: { root.filtersOpen = !root.filtersOpen; if (root.filtersOpen) root.loadFilters(); } }
         MovieIconButton { iconName: "refresh-cw"; text: "Refresh libraries and game information"; enabled: !root.actionBusy; onClicked: root.refreshLibraries() }
@@ -373,7 +387,6 @@ Item {
             }
         }
         MovieText { Layout.fillWidth: true; visible: !!root.error; text: root.error; color: MovieStyle.danger; wrapMode: Text.Wrap }
-        MovieText { Layout.fillWidth: true; visible: !!root.notice; text: root.notice; color: MovieStyle.muted; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight }
         RowLayout {
             Layout.fillWidth: true; Layout.fillHeight: true; spacing: 30
             GridView {
@@ -532,6 +545,7 @@ Item {
                     }
                 }
                 TorrentSearch {
+                    showStatus: false
                     id: downloads
                     objectName: "gameFindContent"
                     Layout.fillWidth: true; Layout.fillHeight: true

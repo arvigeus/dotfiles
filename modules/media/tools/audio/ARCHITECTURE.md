@@ -13,7 +13,7 @@ and tags, with a summary and Copy information action matching Video tools.
 Durations use hours/minutes/seconds with tenths, including carry at rounding
 boundaries; missing or invalid durations display Unknown.
 The deployment hook refreshes the desktop application database.
-FFmpeg/ffprobe stay owned by `media/tools/ffmpeg`; PySide6 is declared here.
+FFmpeg/ffprobe stay owned by `media/tools/ffmpeg`; PySide6 and Mutagen are declared here.
 No dedicated converter package or codec-library additions are needed.
 
 ## Presets
@@ -49,12 +49,19 @@ container and FFmpeg muxer. All tags are visible in File information. The cover
 preview and adjacent remove icon sit beside the file heading; clicking the
 preview opens the image picker. Covers can be added/removed in MP3, FLAC and M4A;
 other formats still support compatible tags.
-Tag edits remux without audio re-encoding, preserving streams and chapters.
+Tag edits preserve encoded audio, streams and chapters. Most containers use an
+FFmpeg remux. Ogg Opus uses Mutagen on a private copy: its cover is a Vorbis
+picture comment, even though FFprobe exposes it as an attached video stream.
+Mapping that apparent stream into FFmpeg's Opus muxer is unsupported. Native
+edits preserve picture comments, unrelated tags and the original Opus packets.
+Album artist, track/disc number and year aliases are normalized for the form;
+editing or clearing a field removes its old aliases before saving the canonical
+Vorbis name.
 The tag form keeps fixed row spacing inside its scroll area. Conversion progress
 and cancellation live in Convert; tag saves expose a Cancel action beside Save
 tags. The shared footer starts blank and carries operation/error messages.
 
-FFmpeg writes a private temporary file in the destination filesystem. Successful
+File jobs write a private temporary file in the destination filesystem. Successful
 tag jobs are probed to verify edited fields and cover state before replacement.
 The source inode/size/mtime must still match. Hard-linked sources are rejected.
 Backups are opt-in in the dialog and use a unique adjacent `.tags-backup[-N]`
@@ -63,13 +70,18 @@ Conversion uses an atomic hard link
 to publish without overwriting even a concurrently created destination. Errors
 and cancellations remove temporary files.
 
-QProcess runs probes and the current FFmpeg job asynchronously. Progress follows
+QProcess runs probes and the current file job asynchronously. Opus edits invoke
+`core.py --write-opus-tags` in an owned Python process. Its changes are stored in
+a mode-0600 adjacent JSON payload, avoiding command-line limits for long lyrics;
+both payload and output are removed on abort or completion. The same verification,
+source-conflict and optional-backup boundary applies to both tag writers.
+Conversion progress follows
 FFmpeg's progress stream (elapsed time, and percentage where duration is
 known). Cancel terminates the owned process, escalating to kill after two seconds.
 The window stays open until cancellation finishes. Probes/cover reads stop
 before a job or on close. Diagnostics stay in the dialog; there is no background
 service. Tag round-trip verification has a bounded synchronous probe after each
-completed remux; it never performs conversion on the UI thread.
+completed edit; it never performs file copying or conversion on the UI thread.
 
 ## Lyrics
 

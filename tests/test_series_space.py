@@ -1,6 +1,8 @@
 """Series uses the Movies presentation with independent workers and lifecycle."""
 import json
+from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 import support
@@ -31,6 +33,101 @@ def setup(root):
 @unittest.skipUnless(support.QS, 'Quickshell is required')
 class SeriesSpaceTests(unittest.TestCase):
     run_qml = support.run_qml
+
+    def test_episode_spinner_paints_in_real_toolbar_and_after_restore(self):
+        from PySide6.QtGui import QImage
+
+        def delayed_setup(root):
+            setup(root)
+            (root / 'spaces/movies/backend.py').write_text('''import sys,time
+sys.path.insert(0,%r)
+from spaces.movies.backend import Backend
+from spaces.movies.worker import serve
+backend=Backend()
+def handle(request):
+ if request['op']=='episodes' and request.get('season') is not None:time.sleep(1.5)
+ return backend.handle(request)
+serve(handle,workers=8)
+''' % str(support.DESKTOP))
+
+        with tempfile.TemporaryDirectory() as directory:
+            pictures = [Path(directory) / name for name in ('loading.png', 'restored.png')]
+            self.run_qml('''import QtQuick
+import QtTest
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState{id:interactions}
+ SpaceHost{id:host;interactionState:interactions}
+ TestCase{id:input;when:false;parent:host.contentItem}
+ property int step:0
+ property var retained:null
+ property double started:0
+ property bool capturing:false
+ function check(v,m){if(!v)throw new Error(m);}
+ function find(item,name,seen){
+  if(!item)return null;seen=seen||new Set();if(seen.has(item))return null;seen.add(item);
+  if(item.objectName===name)return item;
+  for(const child of [...(item.children||[]),...(item.data||[])]){const found=find(child,name,seen);if(found)return found;}
+  return null;
+ }
+ function spinnerCount(item){
+  let count=item.visible&&item.running===true&&item.foreground!==undefined&&item.track!==undefined?1:0;
+  for(const child of item.children??[])count+=spinnerCount(child);
+  return count;
+ }
+ function capture(spinner,path){
+  capturing=true;
+  spinner.grabToImage(result=>{check(result.saveToFile(path),"could not capture spinner");capturing=false;step++;});
+ }
+ Timer{id:driver;interval:40;running:true;repeat:true;onTriggered:{driver.stop();try{
+  if(capturing)return;
+  if(step===0){SpaceState.open("series",Quickshell.screens[0]);step++;return;}
+  const page=host.currentPage;if(!page)return;
+  const activity=find(host.contentItem,"spaceActivityIndicator"),spinner=find(host.contentItem,"movieLoadingIndicator");
+  if(step===1){
+   if(page.busy)return;
+   retained=page;page.tab="episodes";page.loadEpisodes(false);started=Date.now();step++;return;
+  }
+  if(step===2){
+   if(Date.now()-started<150)return;
+   check(page.episodeLoading&&spinner.visible&&spinner.running,"episode request has no spinner");
+   check(spinner.width===28&&spinner.height===28,"toolbar ring has no size");
+   check(spinnerCount(host.contentItem)===1,"episode request has duplicate or missing page spinners");
+   check(activity.tooltipText==="Loading episodes…","tooltip does not describe current work");
+   input.mouseMove(activity,14,14);capture(spinner,LOADING_IMAGE);return;
+  }
+  if(step===3){
+   const tooltip=find(activity,"spaceActivityTooltip");if(!tooltip.visible)return;
+   check(tooltip.text==="Loading episodes…","hover tooltip lost current request");
+   SpaceState.hide();check(!spinner.visible&&!spinner.running&&!tooltip.visible&&!activity.tooltipText,"hidden page kept activity");
+   SpaceState.open("series",Quickshell.screens[0]);started=Date.now();step++;return;
+  }
+  if(step===4){
+   if(Date.now()-started<150)return;
+   check(page===retained&&page.episodeLoading,"restore lost pending episode request");
+   check(spinnerCount(host.contentItem)===1,"restore has duplicate or missing spinner");
+   capture(spinner,RESTORED_IMAGE);return;
+  }
+  if(step===5){
+   if(page.episodeLoading)return;
+   check(page.episodes.length===1&&!spinner.visible&&!spinner.running&&!activity.tooltipText,"completed episode request kept activity");
+   SpaceState.close("series");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(error){console.error("DISPLAY_FAIL",step,error.message);Qt.quit();}finally{driver.restart();}}}
+ Timer{interval:10000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",step);Qt.quit();}}
+}'''.replace('LOADING_IMAGE', json.dumps(str(pictures[0])))
+                 .replace('RESTORED_IMAGE', json.dumps(str(pictures[1]))), setup=delayed_setup)
+            for path in pictures:
+                image = QImage(str(path))
+                self.assertFalse(image.isNull(), path.name)
+                red = sum(image.pixelColor(x,y).alpha() > 128
+                          and image.pixelColor(x,y).red() > 150
+                          and image.pixelColor(x,y).green() < 80
+                          and image.pixelColor(x,y).blue() < 80
+                          for x in range(image.width()) for y in range(image.height()))
+                self.assertGreater(red, 30, f'{path.name}: visible/running spinner rendered blank')
 
     def test_seasons_ratings_and_independent_hide_restore_close(self):
         self.run_qml('''import QtQuick

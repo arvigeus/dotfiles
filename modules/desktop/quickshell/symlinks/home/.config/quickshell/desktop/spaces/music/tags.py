@@ -2,8 +2,12 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import tempfile
+
+from mutagen import MutagenError
+from mutagen.oggopus import OggOpus
 
 from spaces.music.records import MusicError
 
@@ -72,7 +76,17 @@ def write(path, changes, run, signature, register, unregister, artwork=None):
             command += ['-metadata',key+'='+value]
             if path.suffix.lower() in ('.mka','.mkv','.ogg','.opus'):
                 command += ['-metadata:s:a:0',key+'='+value]
-        if run(command+[str(temporary)])[0]: raise MusicError('This format could not save the tags. The original song was kept.')
+        if path.suffix.lower() == '.opus':
+            # Keep Ogg picture comments and audio packets intact when editing tags.
+            shutil.copyfile(path, temporary)
+            try:
+                audio = OggOpus(temporary)
+                for key, value in changes.items():
+                    audio[key] = value
+                audio.save()
+            except MutagenError:
+                raise MusicError('The Opus tags could not be saved. The original song was kept.') from None
+        elif run(command+[str(temporary)])[0]: raise MusicError('This format could not save the tags. The original song was kept.')
         checked=read(temporary,run)
         if image and (not checked['coverIndexes'] or signature(image)!=image_signature):raise MusicError('The cover could not be saved safely. The original song was kept.')
         actual = checked['tags']
