@@ -159,7 +159,8 @@ available only when the camera exposes it; other apps may change camera settings
 
 `system/backend.py` reads Arch/systemd information on demand: boot phases, slow
 units, failed services and timers. It does not use Debian's reboot-required flag.
-Actions launch `package-maintenance`, Topgrade and logs in independent terminal
+Actions launch `package-maintenance`, `system-update` (with a Topgrade fallback),
+and logs in independent terminal
 units. Package maintenance and signing repair belong to the package modules.
 
 ## Networking

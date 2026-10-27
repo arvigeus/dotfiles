@@ -157,7 +157,11 @@ raise SystemExit(int(os.environ['FAKE_PACDIFF_STATUS']))
                          'if command -v pi >/dev/null 2>&1; then pi update --extensions; fi')
         self.assertFalse(config['misc']['cleanup'])
         self.assertTrue(config['linux']['show_arch_news'])
-        self.assertEqual(list(config['post_commands'].values()), ['package-maintenance'])
+        self.assertEqual(list(config['pre_commands'].values()),
+                         ['if command -v system-agent >/dev/null 2>&1; then system-agent snapshot; fi'])
+        self.assertEqual(list(config['post_commands'].values()),
+                         ['package-maintenance',
+                          'if command -v system-agent >/dev/null 2>&1; then system-agent after-update; fi'])
 
 
 class InteractiveMaintenanceTests(unittest.TestCase):

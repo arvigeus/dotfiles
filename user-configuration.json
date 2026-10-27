@@ -505,6 +505,7 @@
                 "home/.config/audio-tools/lyrics.json",
                 "home/.local/share/syntaxis-signing",
                 "home/AppData/Roaming/BISS/Settings.xml",
+                "home/.local/share/system-agent",
                 "home/.gnupg",
                 "home/.local/share/keyrings",
                 "home/.ssh"
@@ -1637,6 +1638,11 @@
             {
                 "source": "modules/system/package/topgrade/files/usr/local/bin/package-maintenance",
                 "target": "/usr/local/bin/package-maintenance",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/system/package/topgrade/files/usr/local/bin/system-update",
+                "target": "/usr/local/bin/system-update",
                 "mode": "0755"
             },
             {

@@ -129,6 +129,11 @@ preparing access separately. Hooks can invoke sudo explicitly. Configuration
 validation, path conflicts, and unsupported file types fail backup/restore;
 `validate.sh` does not validate private declarations.
 
+When the optional private `system-agent` is installed, `backup.sh` delegates to
+its backup command. It holds the maintainer's operation lock while invoking the
+same private_files.py engine with unchanged arguments, preventing a snapshot
+during learned-tool or knowledge edits. No model runs during backup.
+
 `--destination PATH` overrides `~/Projects/dotfiles-private`; `--config PATH`
 overrides the generated public configuration. `--dry-run` lists planned actions
 without copying data or creating a repo. The destination must be outside the

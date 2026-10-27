@@ -77,6 +77,8 @@ class SystemBackendTests(unittest.TestCase):
         self.assertNotIn('unset.timer', [row['unit'] for row in state['timers']])
 
     def test_updates_are_interactive_and_journal_unit_is_literal(self):
+        with patch.object(backend.shutil, 'which', side_effect=lambda name: name if name in ('system-update', 'topgrade') else None):
+            self.assertEqual(backend.action_command('update'), ['system-update'])
         with patch.object(backend.shutil, 'which', side_effect=lambda name: name if name in ('topgrade', 'paru', 'sudo', 'pacman') else None):
             self.assertEqual(backend.action_command('update'), ['topgrade'])
         with patch.object(backend.shutil, 'which', side_effect=lambda name: name if name in ('sudo', 'pacman') else None):

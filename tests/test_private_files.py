@@ -30,7 +30,7 @@ class PrivateFilesTests(unittest.TestCase):
             'files': list(files), 'symlinks': list(symlinks)}}}))
 
     def run_script(self, *command, home=None, check=True):
-        result = subprocess.run(command, env=dict(os.environ, HOME=str(home or self.home),
+        result = subprocess.run(command, env=dict(os.environ, HOME=str(home or self.home), PATH=os.defpath,
                                 GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull),
                                 capture_output=True, text=True)
         if check:

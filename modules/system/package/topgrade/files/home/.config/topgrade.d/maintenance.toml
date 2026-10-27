@@ -11,5 +11,9 @@ disable = ["config_update", "claude_code", "pi"]
 [linux]
 show_arch_news = true
 
+[pre_commands]
+"Snapshot maintenance context" = "if command -v system-agent >/dev/null 2>&1; then system-agent snapshot; fi"
+
 [post_commands]
 "Review packages, configuration and services" = "package-maintenance"
+"Review system changes" = "if command -v system-agent >/dev/null 2>&1; then system-agent after-update; fi"

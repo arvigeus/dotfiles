@@ -22,6 +22,8 @@ def command(argv):
 
 
 def updater():
+    if shutil.which('system-update'):
+        return ['system-update']
     return ['topgrade'] if shutil.which('topgrade') else []
 
 
