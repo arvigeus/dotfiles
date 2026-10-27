@@ -38,6 +38,18 @@ preset specifies another rate. Otherwise sample rate and channel count
 follow FFmpeg defaults unless specified in the preset. Lossless encoding cannot
 restore quality already lost in the source.
 
+## File renaming
+
+The File information tab displays the filename once with a pen action. Activating
+it swaps the display for a filename field with Rename and Cancel actions. Rename
+changes the selected file in its existing directory. The requested name must be
+a single filename with the same extension (case-insensitive); renaming never
+edits tags or audio data. `core.rename_file`
+publishes the new directory entry with a hard link, which fails if the target
+already exists, then removes the old entry. The file inode and its contents are
+preserved. The dialog disables rename while tag or artwork drafts are pending
+and refreshes the probe and displayed path after a successful rename.
+
 ## Tag editing and jobs
 
 The inspector combines first-audio-stream tags with format tags, with the format

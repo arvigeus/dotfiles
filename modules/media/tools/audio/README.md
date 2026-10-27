@@ -4,7 +4,7 @@
 
 - Tags, lyrics and cover art.
 - Conversion with progress, cancellation and optional loudness normalization.
-- Audio stream details and the complete tag list.
+- Audio stream details, the complete tag list and same-folder file renaming.
 
 **Fetch lyrics** fills the lyrics draft; **Save tags** writes it to the file.
 Lyrics providers share `~/.config/audio-tools/lyrics.json` with the Music space
@@ -19,6 +19,7 @@ edits must be saved or discarded before conversion. Tags save without audio
 re-encoding, optionally keeping `filename.tags-backup`. Backups are off by default.
 Only edited fields change; an empty edited field removes that tag. Cover editing
 supports MP3, FLAC and M4A.
+File renaming keeps the current extension and never replaces an existing file.
 Unsupported tag edits fail without replacing the source. Hard-linked files must
 be copied before tag editing.
 

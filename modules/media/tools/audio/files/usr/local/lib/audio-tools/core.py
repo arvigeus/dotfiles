@@ -73,6 +73,29 @@ def signature(path):
     return s.st_ino, s.st_size, s.st_mtime_ns
 
 
+def rename_file(source, name):
+    source = Path(source).resolve(strict=True)
+    if (not isinstance(name, str) or not name or name in ('.', '..')
+            or any(char in name for char in ('/', '\\', '\0', '\n', '\r'))):
+        raise ValueError('Choose a filename without a folder path.')
+    target = source.with_name(name)
+    if target == source:
+        return target
+    if target.suffix.lower() != source.suffix.lower():
+        raise ValueError('Keep the existing audio file extension.')
+    if target.exists() or target.is_symlink():
+        raise FileExistsError(f'The file already exists: {target.name}')
+    os.link(source, target)
+    try:
+        # A hard link publishes the new name atomically without replacing a
+        # destination created concurrently. Unlinking keeps the original inode.
+        os.unlink(source)
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+    return target
+
+
 @dataclass
 class Operation:
     command: list

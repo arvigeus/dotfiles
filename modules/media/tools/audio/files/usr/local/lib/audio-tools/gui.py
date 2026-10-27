@@ -15,6 +15,7 @@ from core import (
     conversion,
     probe_command,
     read_presets,
+    rename_file,
     tag_edit,
 )
 from PySide6.QtCore import QProcess, QSize, Qt, QTimer
@@ -75,6 +76,7 @@ class AudioTools(QDialog):
         self.operation = None
         self.cancelled = False
         self.active = False
+        self.renaming = False
         self.probe_path = None
         self.lyrics_request = None
         self.setWindowTitle('Audio tools')
@@ -114,6 +116,7 @@ class AudioTools(QDialog):
         self.lyrics_process.errorOccurred.connect(self.lyrics_error)
         self.load_presets()
         self.current = Path(path).resolve()
+        self.filename.setText(self.current.name)
         self.setWindowTitle(self.current.name + ' — Audio tools')
         self.inspect_file()
 
@@ -181,6 +184,34 @@ class AudioTools(QDialog):
 
     def information_tab(self):
         page = QWidget(); layout = QVBoxLayout(page)
+        self.filename_view = QWidget()
+        name_row = QHBoxLayout(self.filename_view); name_row.setContentsMargins(0, 0, 0, 0)
+        self.filename_label = QLabel(); self.filename_label.setWordWrap(True)
+        self.filename_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.edit_filename = QToolButton(); self.edit_filename.setObjectName('audio_edit_filename')
+        self.edit_filename.setAutoRaise(True)
+        self.edit_filename.setAccessibleName('Edit file name')
+        self.edit_filename.setToolTip('Edit file name')
+        icon = QIcon.fromTheme('document-edit')
+        if icon.isNull(): icon = QIcon.fromTheme('edit-rename')
+        self.edit_filename.setIcon(icon)
+        if icon.isNull(): self.edit_filename.setText('✎')
+        self.edit_filename.clicked.connect(self.start_rename_edit)
+        name_row.addWidget(self.filename_label, 1); name_row.addWidget(self.edit_filename)
+        layout.addWidget(self.filename_view)
+
+        self.filename_editor = QWidget()
+        rename_row = QHBoxLayout(self.filename_editor); rename_row.setContentsMargins(0, 0, 0, 0)
+        self.filename = QLineEdit(); self.filename.setObjectName('audio_filename')
+        self.filename.setAccessibleName('Audio filename')
+        self.filename.setToolTip('Rename in the same folder. Keep the existing audio extension.')
+        self.filename.textEdited.connect(self.update_rename_controls)
+        self.rename_button = QPushButton('Rename'); self.rename_button.setObjectName('audio_rename')
+        self.rename_button.clicked.connect(self.rename_current_file)
+        self.cancel_rename = QPushButton('Cancel'); self.cancel_rename.clicked.connect(self.cancel_rename_edit)
+        rename_row.addWidget(self.filename, 1); rename_row.addWidget(self.rename_button); rename_row.addWidget(self.cancel_rename)
+        self.filename_editor.hide(); layout.addWidget(self.filename_editor)
+
         self.summary = QLabel(); self.summary.setWordWrap(True); layout.addWidget(self.summary)
         self.tree = QTreeWidget(); self.tree.setHeaderLabels(['Property', 'Value'])
         self.tree.setColumnWidth(0, 190); layout.addWidget(self.tree)
@@ -284,6 +315,8 @@ class AudioTools(QDialog):
 
     def render_info(self):
         self.tree.clear()
+        self.update_rename_controls()
+        self.filename_label.setText(self.current.name)
         info = self.info.get(self.current)
         if not info:
             self.summary.setText('Reading audio information…'); return
@@ -291,7 +324,7 @@ class AudioTools(QDialog):
         duration = human_duration(fmt.get('duration', audio.get('duration')))
         size = int(fmt.get('size', 0))
         codec = audio.get('codec_name', 'Audio').upper()
-        self.summary.setText(f'{self.current.name}\n{codec} · {duration} · {size/1024/1024:.1f} MiB')
+        self.summary.setText(f'{codec} · {duration} · {size/1024/1024:.1f} MiB')
 
         def group(title, values):
             parent = QTreeWidgetItem([title]); self.tree.addTopLevelItem(parent)
@@ -312,6 +345,60 @@ class AudioTools(QDialog):
                 ('Bitrate', stream.get('bit_rate')), ('Default', bool(stream.get('disposition', {}).get('default')))])
         group('Tags', sorted(info['tags'].items()))
         self.tree.expandAll()
+
+    def update_rename_controls(self, *_args):
+        pending = bool(self.drafts.get(self.current)) or self.current in self.artwork
+        available = not self.active and not pending and self.current in self.info and self.current.is_file()
+        self.filename_view.setVisible(not self.renaming)
+        self.filename_editor.setVisible(self.renaming)
+        self.edit_filename.setEnabled(available)
+        self.filename.setEnabled(available and self.renaming)
+        self.rename_button.setEnabled(available and self.renaming and self.filename.text() != self.current.name)
+        self.cancel_rename.setEnabled(self.renaming and not self.active)
+        hint = ('Save or discard tag edits before renaming.' if pending else
+                'Rename in the same folder. Keep the existing audio extension.')
+        self.filename.setToolTip(hint)
+        self.rename_button.setToolTip(hint)
+
+    def start_rename_edit(self):
+        if self.active or self.current not in self.info or self.drafts.get(self.current) or self.current in self.artwork:
+            return
+        self.renaming = True
+        self.filename.setText(self.current.name)
+        self.update_rename_controls()
+        self.filename.setFocus()
+        self.filename.selectAll()
+
+    def cancel_rename_edit(self):
+        self.renaming = False
+        self.filename.setText(self.current.name)
+        self.update_rename_controls()
+
+    def rename_current_file(self):
+        if self.active or not self.renaming or self.current not in self.info:
+            return
+        if self.drafts.get(self.current) or self.current in self.artwork:
+            self.status.setText('Save or discard tag edits before renaming this file.')
+            return
+        previous = self.current
+        self.stop_probe()
+        try:
+            target = rename_file(previous, self.filename.text())
+        except (OSError, ValueError) as error:
+            self.status.setText(f'Could not rename {previous.name}: {error}')
+            self.update_rename_controls()
+            return
+        if target == previous:
+            self.cancel_rename_edit()
+            return
+        self.renaming = False
+        self.info.pop(previous, None)
+        self.current = target
+        self.filename.setText(target.name)
+        self.filename_label.setText(target.name)
+        self.setWindowTitle(target.name + ' — Audio tools')
+        self.status.setText(f'Renamed to {target.name}.')
+        self.inspect_file()
 
     def copy_info(self):
         lines = []
@@ -336,6 +423,7 @@ class AudioTools(QDialog):
             self.status.setText('Lyrics lookup cancelled because the song details or lyrics changed.')
         edit = self.fields[key]
         self.drafts.setdefault(self.current, {})[key] = edit.toPlainText() if isinstance(edit, QPlainTextEdit) else edit.text()
+        self.update_rename_controls()
         self.update_lyrics_button()
 
     def update_lyrics_button(self):
@@ -456,6 +544,7 @@ class AudioTools(QDialog):
         self.job = (kind, self.current, arguments)
         self.failures = 0; self.cancelled = False
         self.log.clear(); self.log.hide(); self.active = True
+        self.update_rename_controls()
         self.update_lyrics_button()
         self.tabs.setCurrentIndex(0 if kind == 'tags' else 1)
         self.tabs.tabBar().setEnabled(False)
