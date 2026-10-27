@@ -120,7 +120,8 @@ Keep awake is temporary, per display, and pauses automatic locking/suspend too.
 
 The keyboard offers English, Bulgarian phonetic and Vietnamese Telex. Alt+Shift
 switches English and the selected secondary language. Lighting controls depend
-on hardware; the lowest brightness is off. See [Logitech backlighting](../../hardware/peripherals/logitech/README.md).
+on hardware; the lowest brightness is off. Its info menu shows language maps
+and current Hyprland shortcuts. See [Logitech backlighting](../../hardware/peripherals/logitech/README.md).
 
 ## Time, calendar and notifications
 

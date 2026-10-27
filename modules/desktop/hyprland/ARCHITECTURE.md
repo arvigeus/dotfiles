@@ -88,6 +88,12 @@ ID, resolved against `hl.get_monitors()`. `hl.get_monitor()` uses a monitor
 selector rather than a bare numeric ID. Regression coverage lives in
 `tests/test_desktop_workspaces.py` and mocks that native lookup contract.
 
+`bindings.lua` assigns descriptions to keybinds with `hl.bind`'s `description`
+flag. Hyprland exposes those labels in `hyprctl -j binds`, which feeds the
+Keyboard drawer's live shortcut reference. Keep descriptions concise and
+user-facing when adding or changing bindings; undocumented callbacks fall back
+to a generic action label.
+
 `DesktopWorkspaces.recover()` runs through a 150 ms native one-shot timer after
 `monitor.layout_changed`, and once after configuration load. Enabled independent
 outputs are recovery destinations; disabled/mirrored outputs and Hyprland's

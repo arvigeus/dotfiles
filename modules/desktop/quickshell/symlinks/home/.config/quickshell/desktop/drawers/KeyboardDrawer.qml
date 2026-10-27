@@ -4,6 +4,8 @@ import QtQuick.Controls
 import QtQuick.Templates as T
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Io
+import Quickshell.Hyprland
 import "../ui"
 import "keyboard"
 
@@ -15,13 +17,33 @@ DrawerPage {
     KeyedModel { id: backlightsModel; values: root.backlightService.values; keyField: "key" }
     readonly property alias referencePopup: reference
     property Popup openLighting: null
+    property Item referenceAnchor: null
     property bool focusAfterSelection: false
+    property var shortcutRows: []
+    property string shortcutError: ""
+    property bool shortcutsBusy: false
     readonly property var languages: [
         {code: "en", name: "English", flag: "", detail: ""},
         {code: "bg", name: "Български", flag: "🇧🇬", detail: qsTr("Phonetic")},
         {code: "vi", name: "Tiếng Việt", flag: "🇻🇳", detail: qsTr("Telex")}
     ]
     escapeHandler: openLighting ? (() => openLighting.close()) : reference.visible ? (() => reference.close()) : null
+    function toggleReference(anchor: Item): void {
+        if (openLighting) openLighting.close();
+        if (reference.visible) reference.close();
+        else { referenceAnchor = anchor; reference.open(); }
+    }
+    function refreshShortcuts(): void {
+        if (!active || !reference.visible || shortcutsWorker.running) return;
+        if (!Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE")) {
+            shortcutRows = [];
+            shortcutError = qsTr("Hyprland bindings are unavailable outside a Hyprland session.");
+            return;
+        }
+        shortcutError = "";
+        shortcutsBusy = true;
+        shortcutsWorker.running = true;
+    }
     onActiveChanged: {
         backlightService.observe(root, active);
         if (active) service.refresh();
@@ -33,10 +55,19 @@ DrawerPage {
     }
     Component.onCompleted: { backlightService.observe(root, active); if (active) service.refresh(); }
     Component.onDestruction: backlightService.observe(root, false)
-    headerActions: IconButton {
-        objectName: "keyboardSettings"
-        iconName: "pencil"; text: qsTr("Input method settings")
-        onClicked: { Apps.launch(["fcitx5-configtool"]); root.closeRequested(); }
+    headerActions: RowLayout {
+        spacing: Theme.gap
+        IconButton {
+            id: helpButton
+            objectName: "keyboardHelp"; iconName: "info"; text: qsTr("Language maps and keyboard shortcuts")
+            checked: reference.visible
+            onClicked: root.toggleReference(helpButton)
+        }
+        IconButton {
+            objectName: "keyboardSettings"
+            iconName: "pencil"; text: qsTr("Input method settings")
+            onClicked: { Apps.launch(["fcitx5-configtool"]); root.closeRequested(); }
+        }
     }
     Connections {
         target: root.service
@@ -49,6 +80,39 @@ DrawerPage {
     // Cold-started Fcitx needs a fresh text-input focus transition.
     Timer { id: refocus; interval: 100; onTriggered: if (root.active) testInput.forceActiveFocus() }
     Timer { interval: 5000; repeat: true; running: root.active; onTriggered: root.service.refresh() }
+    Timer {
+        interval: 5000; repeat: true; running: root.active && reference.visible
+        onTriggered: root.refreshShortcuts()
+    }
+    Process {
+        id: shortcutsWorker
+        command: ["python3", Quickshell.shellPath("drawers/keyboard/shortcuts.py")]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const result = JSON.parse(text);
+                    if (!Array.isArray(result.shortcuts)) throw new Error("Invalid shortcut list");
+                    root.shortcutRows = result.shortcuts;
+                    root.shortcutError = result.error || "";
+                } catch (_) {
+                    root.shortcutError = qsTr("Could not read Hyprland bindings.");
+                }
+            }
+        }
+        stderr: StdioCollector { onStreamFinished: if (text.trim()) root.shortcutError = text.trim() }
+        onExited: (exitCode, exitStatus) => {
+            root.shortcutsBusy = false;
+            if (exitCode !== 0 && !root.shortcutError)
+                root.shortcutError = qsTr("Could not read Hyprland bindings.");
+        }
+    }
+    Connections {
+        target: Hyprland
+        function onRawEvent(event): void {
+            if (event.name === "configreloaded" && reference.visible)
+                Qt.callLater(root.refreshShortcuts);
+        }
+    }
     component Note: ShellText {
         Layout.fillWidth: true; color: Theme.muted; font.pixelSize: Theme.smallFontSize
         wrapMode: Text.Wrap; textFormat: Text.PlainText
@@ -61,15 +125,6 @@ DrawerPage {
             RowLayout {
                 Layout.fillWidth: true
                 ShellText { text: qsTr("Languages"); font.weight: Font.DemiBold; Layout.fillWidth: true }
-                IconButton {
-                    id: helpButton
-                    objectName: "keyboardHelp"; iconName: "info"; text: qsTr("Language maps and keyboard shortcuts")
-                    checked: reference.visible
-                    onClicked: {
-                        if (root.openLighting) root.openLighting.close();
-                        reference.visible ? reference.close() : reference.open();
-                    }
-                }
             }
             Note {
                 visible: !root.service.loaded
@@ -217,14 +272,19 @@ DrawerPage {
         property alias currentTab: tabs.currentIndex
         objectName: "keyboardReference"
         popupType: Popup.Item
-        parent: helpButton
-        x: helpButton.width - width; y: helpButton.height + 4
+        parent: root.referenceAnchor ?? root
+        x: root.referenceAnchor ? root.mapToItem(parent, 0, 0).x : 0
+        y: root.referenceAnchor ? parent.height + 4 : 0
         width: root.width
         height: Math.max(0, Math.min(referenceScroll.contentHeight + tabs.implicitHeight + 36, 700,
             (Overlay.overlay?.height ?? root.height) - 16))
         padding: 12; margins: 8; focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-        onClosed: if (root.active) helpButton.forceActiveFocus()
+        onOpened: { tabs.currentIndex = 0; root.refreshShortcuts(); }
+        onClosed: {
+            if (root.active && root.referenceAnchor?.visible) root.referenceAnchor.forceActiveFocus();
+            root.referenceAnchor = null;
+        }
         background: Surface { color: Theme.background; radius: Theme.controlRadius }
         contentItem: ColumnLayout {
             spacing: 12
@@ -240,16 +300,16 @@ DrawerPage {
                     Repeater { model: tabs.contentModel }
                 }
                 onCurrentIndexChanged: if (referenceScroll.contentItem) referenceScroll.contentItem.contentY = 0
+                ReferenceTab { objectName: "keyboardShortcutsTab"; text: qsTr("Shortcuts") }
                 ReferenceTab { objectName: "keyboardTelexTab"; text: qsTr("Telex") }
                 ReferenceTab { objectName: "keyboardPhoneticTab"; text: qsTr("Phonetic"); Accessible.name: qsTr("Bulgarian phonetic map") }
-                ReferenceTab { objectName: "keyboardShortcutsTab"; text: qsTr("Shortcuts") }
             }
             DrawerColumn {
                 id: referenceScroll
                 objectName: "keyboardReferenceScroll"
                 Layout.fillWidth: true; Layout.fillHeight: true
                 ColumnLayout {
-                    visible: tabs.currentIndex === 0
+                    visible: tabs.currentIndex === 1
                     Layout.fillWidth: true; spacing: 16
                     ReferenceHeading { text: qsTr("Diacritics") }
                     GridLayout {
@@ -296,7 +356,7 @@ DrawerPage {
                     Note { text: qsTr("Repeat a modifier to type it literally: aaa → aa.") }
                 }
                 ColumnLayout {
-                    visible: tabs.currentIndex === 1
+                    visible: tabs.currentIndex === 2
                     Layout.fillWidth: true; spacing: 16
                     ReferenceHeading { text: qsTr("Български · Phonetic") }
                     GridLayout {
@@ -322,36 +382,26 @@ DrawerPage {
                     Note { text: qsTr("Traditional phonetic layout · Shift+X → ѝ") }
                 }
                 ColumnLayout {
-                    visible: tabs.currentIndex === 2
+                    visible: tabs.currentIndex === 0
                     Layout.fillWidth: true; spacing: 12
-                    Note { text: qsTr("Win is the Super key.") }
+                    ReferenceHeading { text: qsTr("Active Hyprland bindings") }
+                    Note { visible: root.shortcutsBusy && root.shortcutRows.length === 0; text: qsTr("Reading active bindings…") }
+                    Note { visible: root.shortcutError !== ""; text: root.shortcutError; color: Theme.danger }
+                    Note {
+                        visible: !root.shortcutsBusy && root.shortcutError === "" && root.shortcutRows.length === 0
+                        text: qsTr("No active keyboard bindings.")
+                    }
                     Repeater {
-                        model: [
-                            ["Alt+Shift", qsTr("Switch input language")],
-                            ["Win+R", qsTr("Application search")],
-                            ["Win+1 / Ctrl+Alt+Delete", qsTr("Spaces")], ["Win+Shift+P", qsTr("Performance")],
-                            ["Ctrl+D in search", qsTr("Toggle app favorite")],
-                            ["Win+T / F / B", qsTr("Terminal / files / browser")],
-                            ["Win+Arrow", qsTr("Focus window")],
-                            ["Ctrl+Win+↑ / ↓", qsTr("Previous / next workspace")],
-                            ["Ctrl+Win+Shift+↑ / ↓", qsTr("Move window and follow")],
-                            ["Win+Shift+← / →", qsTr("Move column")],
-                            ["Win+J", qsTr("Unstack window")], ["Win+[ / ]", qsTr("Resize column")],
-                            ["Win+.", qsTr("Center column")], ["Win+M / V", qsTr("Maximize / float")],
-                            ["Win+mouse wheel", qsTr("Scroll columns")],
-                            ["Win+left / right drag", qsTr("Move / resize window")],
-                            ["Win+Q / Alt+F4", qsTr("Close window")], ["Win+L", qsTr("Lock screen")],
-                            ["Print / Win+Shift+S", qsTr("Select screenshot area")], ["Win+Shift+R", qsTr("Record area / stop recording")]
-                        ]
+                        model: root.shortcutRows
                         delegate: RowLayout {
                             required property var modelData
                             Layout.fillWidth: true; spacing: 12
                             ShellText {
-                                text: modelData[0]; font.family: Theme.monospaceFamily; font.pixelSize: Theme.smallFontSize
-                                Layout.preferredWidth: Math.min(164, reference.availableWidth * 0.46)
+                                text: modelData.keys; font.family: Theme.monospaceFamily; font.pixelSize: Theme.smallFontSize
+                                Layout.preferredWidth: Math.min(164, Math.max(112, reference.availableWidth * 0.42))
                                 wrapMode: Text.Wrap; textFormat: Text.PlainText
                             }
-                            ShellText { text: modelData[1]; Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText }
+                            ShellText { text: modelData.description; Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText }
                         }
                     }
                 }

@@ -353,6 +353,15 @@ identity and serializes writes. Brightness zero means off, not disabled input.
 Colors/effects/modes appear only when supported. The Logitech backend owns its
 manual/automatic mode transitions and rollback; see the peripheral architecture.
 
+The Keyboard drawer's header info button sits beside input-method settings and
+opens the reference with Shortcuts first, followed by Telex and Phonetic maps.
+The shortcut tab reads `hyprctl -j binds` when opened, again every five seconds
+while visible, and after Hyprland config reloads. The helper excludes mouse
+binds, formats modifier masks and submaps, and uses each bind description or its
+dispatcher and arguments as a fallback. Lua callbacks without descriptions show
+as custom actions. This lists compositor binds; portal-assigned Quickshell global
+shortcuts are managed separately.
+
 ## Disks and system cleanup
 
 `DisksService` reads UDisks2, groups physical drives and exposes mount, unmount,
