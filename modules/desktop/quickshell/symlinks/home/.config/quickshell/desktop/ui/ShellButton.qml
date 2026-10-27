@@ -18,20 +18,27 @@ Button {
         implicitHeight: Math.max(label.implicitHeight, root.iconName ? Theme.iconSize : 0)
         Icon {
             objectName: root.objectName + "Icon"
-            anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-            name: root.iconName; visible: root.iconName !== ""
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            name: root.iconName
+            visible: root.iconName !== ""
             color: root.highlighted ? Theme.accent : Theme.text
         }
         ShellText {
             id: label
             objectName: root.objectName + "Label"
             anchors.fill: parent
-            anchors.leftMargin: root.iconSlot; anchors.rightMargin: root.iconSlot
-            text: root.text; elide: Text.ElideRight
-            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+            anchors.leftMargin: root.iconSlot
+            anchors.rightMargin: root.iconSlot
+            text: root.text
+            elide: Text.ElideRight
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
         }
     }
     background: ButtonBackground {
-        idleColor: root.idleColor; highlighted: root.highlighted; pressed: root.down
+        idleColor: root.idleColor
+        highlighted: root.highlighted
+        pressed: root.down
     }
 }

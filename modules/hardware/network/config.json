@@ -9,7 +9,9 @@
         "type": "nm_iwd"
     },
     "extra": {
-        "masked_user_services": ["app-nm\\x2dapplet@autostart.service"],
+        "masked_user_services": [
+            "app-nm\\x2dapplet@autostart.service"
+        ],
         "aur_packages": [
             "librespeed-cli-bin"
         ]

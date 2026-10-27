@@ -3,6 +3,7 @@
 As a CLI for hypridle (via desktop-idle) it exits 0 to allow, 1 to deny and
 2 when the helper itself failed, so callers can choose how to fail.
 """
+
 import fcntl
 import json
 import os
@@ -21,18 +22,30 @@ def session_directory(kind='desktop-keep-awake'):
     signature = os.environ.get('HYPRLAND_INSTANCE_SIGNATURE')
     if not signature:
         raise RuntimeError('Display controls require a Hyprland session.')
-    return Path(os.environ.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}') / 'hypr' / signature / kind
+    return (
+        Path(os.environ.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}')
+        / 'hypr'
+        / signature
+        / kind
+    )
 
 
 def systemctl(*args):
-    result = subprocess.run(['systemctl', '--user', *args], capture_output=True, text=True, timeout=8)
+    result = subprocess.run(
+        ['systemctl', '--user', *args], capture_output=True, text=True, timeout=8
+    )
     if result.returncode:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or 'Could not control hyprsunset.service.')
+        raise RuntimeError(
+            result.stderr.strip()
+            or result.stdout.strip()
+            or 'Could not control hyprsunset.service.'
+        )
     return result.stdout.strip()
 
 
 class Lease:
     """A lock proves liveness; an atomic JSON file describes protected hardware."""
+
     def __init__(self, kind='desktop-keep-awake'):
         self.kind = kind
         self.fd = None
@@ -46,7 +59,9 @@ class Lease:
         directory = session_directory(self.kind)
         directory.mkdir(parents=True, exist_ok=True)
         if self.fd is None:
-            self.fd, name = tempfile.mkstemp(dir=directory, prefix='lease-', suffix='.lock')
+            self.fd, name = tempfile.mkstemp(
+                dir=directory, prefix='lease-', suffix='.lock'
+            )
             self.lock = Path(name)
             self.path = self.lock.with_suffix('.json')
             fcntl.flock(self.fd, fcntl.LOCK_EX)
@@ -81,12 +96,18 @@ def live_leases(kind='desktop-keep-awake'):
 
 def protected(displays):
     live = {row['name']: row['identity'] for row in displays if row['enabled']}
-    return {name for values in live_leases() for name, identity in values.items()
-            if name in live and live[name] == identity}
+    return {
+        name
+        for values in live_leases()
+        for name, identity in values.items()
+        if name in live and live[name] == identity
+    }
 
 
 def paused(kind):
-    return any(values.get(kind) is True for values in live_leases('desktop-session-pauses'))
+    return any(
+        values.get(kind) is True for values in live_leases('desktop-session-pauses')
+    )
 
 
 def idle_action(op):
@@ -94,7 +115,9 @@ def idle_action(op):
         backend.command('dispatch', 'hl.dsp.dpms({action="on"})')
         backend.command('dispatch', 'hl.dsp.event("desktop-displays-changed")')
         return 0
-    if op in ('allow-lock', 'allow-sleep') and paused('locking' if op == 'allow-lock' else 'sleep'):
+    if op in ('allow-lock', 'allow-sleep') and paused(
+        'locking' if op == 'allow-lock' else 'sleep'
+    ):
         return 1
     displays = backend.snapshot()['displays']
     awake = protected(displays)
@@ -104,7 +127,12 @@ def idle_action(op):
         raise ValueError('Unknown idle action.')
     for row in displays:
         if row['enabled'] and row['name'] not in awake:
-            backend.command('dispatch', 'hl.dsp.dpms({action="off",monitor=' + backend.lua_string(row['name']) + '})')
+            backend.command(
+                'dispatch',
+                'hl.dsp.dpms({action="off",monitor='
+                + backend.lua_string(row['name'])
+                + '})',
+            )
     return 0
 
 
@@ -119,15 +147,23 @@ class Controller:
         self.error = ''
 
     def tick(self):
-        self.night_available = bool(os.environ.get('HYPRLAND_INSTANCE_SIGNATURE') and shutil.which('hyprsunset'))
+        self.night_available = bool(
+            os.environ.get('HYPRLAND_INSTANCE_SIGNATURE') and shutil.which('hyprsunset')
+        )
         if self.night_available:
-            self.night_enabled = systemctl('show', 'hyprsunset.service', '--property=ActiveState', '--value') in ('active', 'activating')
+            self.night_enabled = systemctl(
+                'show', 'hyprsunset.service', '--property=ActiveState', '--value'
+            ) in ('active', 'activating')
         else:
             self.night_enabled = False
         if self.awake:
             rows = backend.snapshot()['displays']
             live = {row['name']: row['identity'] for row in rows if row['enabled']}
-            next_awake = {name: identity for name, identity in self.awake.items() if live.get(name) == identity}
+            next_awake = {
+                name: identity
+                for name, identity in self.awake.items()
+                if live.get(name) == identity
+            }
             if next_awake != self.awake:
                 self.lease.publish(next_awake)
                 self.awake = next_awake
@@ -140,22 +176,44 @@ class Controller:
             enabled = request.get('enabled')
             if type(enabled) is not bool:
                 raise ValueError('Invalid night light switch.')
-            if not os.environ.get('HYPRLAND_INSTANCE_SIGNATURE') or not shutil.which('hyprsunset'):
+            if not os.environ.get('HYPRLAND_INSTANCE_SIGNATURE') or not shutil.which(
+                'hyprsunset'
+            ):
                 raise RuntimeError('Install hyprsunset to use Night light.')
             systemctl('enable' if enabled else 'disable', '--now', 'hyprsunset.service')
         elif op == 'awake':
-            name, identity, enabled = request.get('name'), request.get('identity'), request.get('enabled')
+            name, identity, enabled = (
+                request.get('name'),
+                request.get('identity'),
+                request.get('enabled'),
+            )
             if not isinstance(name, str) or type(enabled) is not bool:
                 raise ValueError('Invalid Keep awake switch.')
             rows = backend.snapshot()['displays']
-            row = next((row for row in rows if row['name'] == name and row['identity'] == identity and row['enabled']), None)
+            row = next(
+                (
+                    row
+                    for row in rows
+                    if row['name'] == name
+                    and row['identity'] == identity
+                    and row['enabled']
+                ),
+                None,
+            )
             if row is None:
-                raise ValueError('This display is no longer available. Refresh and try again.')
+                raise ValueError(
+                    'This display is no longer available. Refresh and try again.'
+                )
             values = dict(self.awake)
             if enabled:
                 values[name] = identity
                 if not row['dpms']:
-                    backend.command('dispatch', 'hl.dsp.dpms({action="on",monitor=' + backend.lua_string(name) + '})')
+                    backend.command(
+                        'dispatch',
+                        'hl.dsp.dpms({action="on",monitor='
+                        + backend.lua_string(name)
+                        + '})',
+                    )
             else:
                 values.pop(name, None)
             self.lease.publish(values)
@@ -180,9 +238,15 @@ class Controller:
         self.tick()
 
     def snapshot(self):
-        return dict(nightEnabled=self.night_enabled, nightAvailable=self.night_available, awake=self.awake, error=self.error,
-                    pausesAvailable=bool(os.environ.get('HYPRLAND_INSTANCE_SIGNATURE')),
-                    sleepPaused=bool(self.pauses.get('sleep')), lockingPaused=bool(self.pauses.get('locking')))
+        return dict(
+            nightEnabled=self.night_enabled,
+            nightAvailable=self.night_available,
+            awake=self.awake,
+            error=self.error,
+            pausesAvailable=bool(os.environ.get('HYPRLAND_INSTANCE_SIGNATURE')),
+            sleepPaused=bool(self.pauses.get('sleep')),
+            lockingPaused=bool(self.pauses.get('locking')),
+        )
 
     def close(self):
         self.lease.close()

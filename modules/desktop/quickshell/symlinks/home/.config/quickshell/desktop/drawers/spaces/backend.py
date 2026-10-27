@@ -1,4 +1,5 @@
 """On-demand session controls; systemd owns scheduled shutdowns."""
+
 import json
 import shutil
 import subprocess
@@ -11,14 +12,25 @@ DELAYS = (15, 30, 60, 90, 120, 180, 240, 300)
 def run(argv, *, check=True):
     result = subprocess.run(argv, capture_output=True, text=True, timeout=60)
     if check and result.returncode:
-        raise ValueError(result.stderr.strip() or result.stdout.strip() or 'Session command failed.')
+        raise ValueError(
+            result.stderr.strip() or result.stdout.strip() or 'Session command failed.'
+        )
     return result
 
 
 def can(method):
     try:
-        result = run(['busctl', '--system', 'call', 'org.freedesktop.login1',
-                      '/org/freedesktop/login1', 'org.freedesktop.login1.Manager', method])
+        result = run(
+            [
+                'busctl',
+                '--system',
+                'call',
+                'org.freedesktop.login1',
+                '/org/freedesktop/login1',
+                'org.freedesktop.login1.Manager',
+                method,
+            ]
+        )
         return result.stdout.strip() in ('s "yes"', 's "challenge"')
     except (OSError, subprocess.SubprocessError, ValueError):
         return False
@@ -37,9 +49,18 @@ def snapshot():
     scheduled = run(['systemctl', 'poweroff', '--when=show'], check=False)
     message = (scheduled.stdout or scheduled.stderr).strip()
     session = session_status()
-    return dict(capabilities=dict(gaming=bool(session.get('gaming')), reload=bool(session.get('available')), suspend=can('CanSuspend'),
-                                  reboot=can('CanReboot'), poweroff=can('CanPowerOff')),
-                scheduledShutdown=message if scheduled.returncode == 0 and 'No scheduled shutdown' not in message else '')
+    return dict(
+        capabilities=dict(
+            gaming=bool(session.get('gaming')),
+            reload=bool(session.get('available')),
+            suspend=can('CanSuspend'),
+            reboot=can('CanReboot'),
+            poweroff=can('CanPowerOff'),
+        ),
+        scheduledShutdown=message
+        if scheduled.returncode == 0 and 'No scheduled shutdown' not in message
+        else '',
+    )
 
 
 def handle(request):

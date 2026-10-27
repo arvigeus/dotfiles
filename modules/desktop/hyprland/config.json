@@ -1,20 +1,27 @@
 {
-  "packages": [
-    "hyprland",
-    "uwsm",
-    "hyprpolkitagent",
-    "hypridle",
-    "hyprsunset",
-    "hyprlock",
-    "satty",
-    "ksnip",
-    "grim",
-    "slurp",
-    "xdg-desktop-portal-hyprland",
-    "xdg-desktop-portal-gtk",
-    "playerctl",
-    "wl-clipboard"
-  ],
-  "services": ["getty@tty1.service"],
-  "extra": {"user_services": ["hyprpolkitagent.service", "hypridle.service"]}
+    "packages": [
+        "hyprland",
+        "uwsm",
+        "hyprpolkitagent",
+        "hypridle",
+        "hyprsunset",
+        "hyprlock",
+        "satty",
+        "ksnip",
+        "grim",
+        "slurp",
+        "xdg-desktop-portal-hyprland",
+        "xdg-desktop-portal-gtk",
+        "playerctl",
+        "wl-clipboard"
+    ],
+    "services": [
+        "getty@tty1.service"
+    ],
+    "extra": {
+        "user_services": [
+            "hyprpolkitagent.service",
+            "hypridle.service"
+        ]
+    }
 }

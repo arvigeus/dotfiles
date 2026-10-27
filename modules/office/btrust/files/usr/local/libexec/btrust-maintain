@@ -4,5 +4,5 @@ set -Eeuo pipefail
 systemctl disable pcscd.service pcscd.socket
 # Only a booted system can stop units; keep them during an active signing session.
 if [[ -d /run/systemd/system ]] && ! systemctl is-active --quiet btrust.target; then
-	systemctl stop pcscd.service pcscd.socket
+    systemctl stop pcscd.service pcscd.socket
 fi

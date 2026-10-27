@@ -1,4 +1,5 @@
 """Conditional DAV writes. Server versions are checked at the commit itself."""
+
 from pathlib import PurePosixPath
 from urllib.parse import quote
 import xml.etree.ElementTree as ET
@@ -21,7 +22,12 @@ class UploadBody:
         check_cancelled()
         data = self.stream.read(size)
         self.done += len(data)
-        progress(done=self.done, total=self.total, unit='bytes', detail='Uploading to Nextcloud…')
+        progress(
+            done=self.done,
+            total=self.total,
+            unit='bytes',
+            detail='Uploading to Nextcloud…',
+        )
         return data
 
 
@@ -31,7 +37,9 @@ class RemoteFiles:
         if not account:
             raise MusicError('Restore the shared Nextcloud account first.')
         self.dav = nextcloud.DAVClient(
-            account, scope='remote.php/dav/files/' + quote(account['username'], safe='') + '/')
+            account,
+            scope='remote.php/dav/files/' + quote(account['username'], safe='') + '/',
+        )
 
     def url(self, path):
         parts = PurePosixPath(path).parts
@@ -41,8 +49,12 @@ class RemoteFiles:
 
     def etag(self, rel):
         body = b'<d:propfind xmlns:d="DAV:"><d:prop><d:getetag/></d:prop></d:propfind>'
-        document, _ = self.dav.request('PROPFIND', self.url('Music/' + rel), body,
-                                       {'Depth': '0', 'Content-Type': 'application/xml'})
+        document, _ = self.dav.request(
+            'PROPFIND',
+            self.url('Music/' + rel),
+            body,
+            {'Depth': '0', 'Content-Type': 'application/xml'},
+        )
         value = ET.fromstring(document).findtext('.//{DAV:}getetag')
         if not value or value.startswith('W/') or any(c in value for c in '\r\n'):
             raise MusicError('The server did not provide a safe file version.')
@@ -66,13 +78,24 @@ class RemoteFiles:
             self.parents(backup)
             # COPY retains the source and its ETag. Moving it away before PUT
             # would make an If-Match precondition impossible to enforce.
-            self.dav.request('COPY', destination, headers={
-                'Destination': self.url(backup), 'Overwrite': 'F', 'If-Match': expected})
+            self.dav.request(
+                'COPY',
+                destination,
+                headers={
+                    'Destination': self.url(backup),
+                    'Overwrite': 'F',
+                    'If-Match': expected,
+                },
+            )
         check_cancelled()
-        headers = {'Content-Type': 'application/octet-stream',
-                   'Content-Length': str(path.stat().st_size),
-                   'X-OC-Mtime': str(int(path.stat().st_mtime))}
+        headers = {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': str(path.stat().st_size),
+            'X-OC-Mtime': str(int(path.stat().st_mtime)),
+        }
         headers.update({'If-Match': expected} if expected else {'If-None-Match': '*'})
         with path.open('rb') as stream:
-            _, response = self.dav.request('PUT', destination, UploadBody(stream), headers)
+            _, response = self.dav.request(
+                'PUT', destination, UploadBody(stream), headers
+            )
         return response.get('ETag') or response.get('Etag') or ''

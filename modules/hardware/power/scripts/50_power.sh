@@ -10,7 +10,7 @@ if [[ ${CONFIG_MODE:-install} == live ]] && systemctl is-active --quiet asusd.se
 elif [[ ! -f /etc/asusd/asusd.ron ]]; then
     install -Dm0644 /usr/local/share/dotfiles/power/asusd.ron /etc/asusd/asusd.ron
 else
-    python3 -I - <<'PY'
+    python3 -I - << 'PY'
 from pathlib import Path
 import os
 import re

@@ -1,8 +1,15 @@
 {
-  "packages": ["extra/nodejs", "extra/npm", "bun", "pnpm"],
-  "extra": {
-    "private": {
-      "files": ["home/.config/npm/npmrc"]
+    "packages": [
+        "extra/nodejs",
+        "extra/npm",
+        "bun",
+        "pnpm"
+    ],
+    "extra": {
+        "private": {
+            "files": [
+                "home/.config/npm/npmrc"
+            ]
+        }
     }
-  }
 }

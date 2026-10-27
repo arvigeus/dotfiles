@@ -47,7 +47,11 @@ InteractionWindow {
         anchors.fill: parent
         color: "#09090b"
     }
-    Item { id: backdropLayer; objectName: "spaceBackdropLayer"; anchors.fill: parent }
+    Item {
+        id: backdropLayer
+        objectName: "spaceBackdropLayer"
+        anchors.fill: parent
+    }
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.AllButtons
@@ -64,7 +68,10 @@ InteractionWindow {
                 iconName: "x"
                 text: qsTr("Hide %1").arg(root.currentEntry?.name ?? qsTr("space"))
                 iconColor: "#ffffff"
-                background: Rectangle { radius: 6; color: hideButton.hovered || hideButton.visualFocus ? "#60e50914" : "transparent" }
+                background: Rectangle {
+                    radius: 6
+                    color: hideButton.hovered || hideButton.visualFocus ? "#60e50914" : "transparent"
+                }
                 onClicked: root.dismiss()
             }
             Rectangle {
@@ -98,8 +105,10 @@ InteractionWindow {
                     source: Qt.resolvedUrl(modelData.source)
                     onLoaded: {
                         const owner = modelData.id;
-                        if ("backdropTarget" in item) item.backdropTarget = backdropLayer;
-                        if ("toolbarTarget" in item) item.toolbarTarget = toolbarLayer;
+                        if ("backdropTarget" in item)
+                            item.backdropTarget = backdropLayer;
+                        if ("toolbarTarget" in item)
+                            item.toolbarTarget = toolbarLayer;
                         item.host = {
                             hide: () => {
                                 if (SpaceState.currentId === owner)
@@ -114,7 +123,8 @@ InteractionWindow {
                     }
                     Movies.MovieSpinner {
                         anchors.centerIn: parent
-                        width: 28; height: 28
+                        width: 28
+                        height: 28
                         visible: instance.status === Loader.Loading
                         running: visible && root.opened
                     }

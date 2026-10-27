@@ -8,10 +8,14 @@ import "../ui"
 PanelWindow {
     id: bar
 
-    signal launcherRequested()
+    signal launcherRequested
     signal drawerRequested(string key)
 
-    anchors { top: true; left: true; right: true }
+    anchors {
+        top: true
+        left: true
+        right: true
+    }
     implicitHeight: Theme.pillHeight
     exclusiveZone: Theme.pillHeight
     color: "transparent"
@@ -22,18 +26,45 @@ PanelWindow {
     WlrLayershell.namespace: "desktop-bar"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     mask: Region {
-        Region { item: spacesButton.visible ? spacesButton : null; radius: Theme.pillRadius }
-        Region { item: workspaces.visible ? workspaces : null; radius: workspaces.radius }
-        Region { item: windows.visible ? windows : null; radius: windows.radius }
-        Region { item: launcherButton.visible ? launcherButton : null; radius: Theme.controlRadius }
         Region {
-            Region { item: status.trayIsland; radius: Theme.pillRadius }
-            Region { item: status.toolsIsland; radius: Theme.pillRadius }
-            Region { item: status.systemIsland; radius: Theme.pillRadius }
-            Region { item: status.notificationsIsland; radius: Theme.pillRadius }
+            item: spacesButton.visible ? spacesButton : null
+            radius: Theme.pillRadius
+        }
+        Region {
+            item: workspaces.visible ? workspaces : null
+            radius: workspaces.radius
+        }
+        Region {
+            item: windows.visible ? windows : null
+            radius: windows.radius
+        }
+        Region {
+            item: launcherButton.visible ? launcherButton : null
+            radius: Theme.controlRadius
+        }
+        Region {
+            Region {
+                item: status.trayIsland
+                radius: Theme.pillRadius
+            }
+            Region {
+                item: status.toolsIsland
+                radius: Theme.pillRadius
+            }
+            Region {
+                item: status.systemIsland
+                radius: Theme.pillRadius
+            }
+            Region {
+                item: status.notificationsIsland
+                radius: Theme.pillRadius
+            }
             // Intersect after combining: offscreen controls cannot steal input
             // from the window strip; gaps between the islands stay transparent.
-            Region { item: status; intersection: Intersection.Intersect }
+            Region {
+                item: status
+                intersection: Intersection.Intersect
+            }
         }
     }
 
@@ -42,8 +73,7 @@ PanelWindow {
         objectName: "spacesButton"
         x: Theme.barInset
         y: Theme.pillTopPadding
-        width: Math.min(contentItem.implicitWidth + Theme.gap * 2,
-            Math.max(0, bar.width - Theme.barInset * 2 - Theme.controlHeight - Theme.spacingMedium))
+        width: Math.min(contentItem.implicitWidth + Theme.gap * 2, Math.max(0, bar.width - Theme.barInset * 2 - Theme.controlHeight - Theme.spacingMedium))
         height: Theme.controlHeight
         padding: 0
         leftPadding: Theme.gap
@@ -78,8 +108,7 @@ PanelWindow {
         monitor: bar.monitor
         x: spacesButton.x + spacesButton.width + Theme.spacingMedium
         y: Theme.pillTopPadding
-        maximumWidth: Math.max(0, status.x - x
-            - launcherButton.width - Theme.spacingMedium * 2)
+        maximumWidth: Math.max(0, status.x - x - launcherButton.width - Theme.spacingMedium * 2)
     }
 
     WindowList {
@@ -87,8 +116,7 @@ PanelWindow {
         monitor: bar.monitor
         x: workspaces.x + (workspaces.visible ? workspaces.width + Theme.spacingMedium : 0)
         y: Theme.pillTopPadding
-        maximumWidth: Math.max(0, status.x - x
-            - launcherButton.width - Theme.spacingMedium * 2)
+        maximumWidth: Math.max(0, status.x - x - launcherButton.width - Theme.spacingMedium * 2)
     }
 
     StatusIslands {
@@ -98,8 +126,7 @@ PanelWindow {
         y: Theme.pillTopPadding
         // Reserve Spaces, workspace navigation, launcher and a minimum window
         // slot. Narrow outputs scroll the islands rather than lose destinations.
-        maximumWidth: Math.max(0, bar.width - Theme.barInset * 2 - spacesButton.width
-            - Theme.controlHeight * 3 - Theme.spacingMedium * 5)
+        maximumWidth: Math.max(0, bar.width - Theme.barInset * 2 - spacesButton.width - Theme.controlHeight * 3 - Theme.spacingMedium * 5)
         onDrawerRequested: key => bar.drawerRequested(key)
     }
 
@@ -113,13 +140,16 @@ PanelWindow {
         visible: width > 0
         padding: (Theme.controlHeight - Theme.iconSize) / 2
         text: qsTr("Open application")
-        PassiveToolTip { target: launcherButton }
+        PassiveToolTip {
+            target: launcherButton
+        }
         onClicked: bar.launcherRequested()
-        contentItem: Icon { name: "plus" }
+        contentItem: Icon {
+            name: "plus"
+        }
         background: ButtonBackground {
             pressed: launcherButton.down
             idleColor: launcherButton.hovered ? Theme.raised : Theme.surface
         }
     }
-
 }

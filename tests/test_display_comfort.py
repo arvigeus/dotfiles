@@ -1,4 +1,5 @@
 """Monitor-scoped idle policy and native night light; no host mutations."""
+
 import importlib.util
 import json
 import os
@@ -29,26 +30,44 @@ class ComfortTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        self.env = patch.dict(os.environ, XDG_RUNTIME_DIR=self.directory.name, HYPRLAND_INSTANCE_SIGNATURE='test')
-        self.env.start(); self.addCleanup(self.env.stop)
+        self.env = patch.dict(
+            os.environ,
+            XDG_RUNTIME_DIR=self.directory.name,
+            HYPRLAND_INSTANCE_SIGNATURE='test',
+        )
+        self.env.start()
+        self.addCleanup(self.env.stop)
         self.rows = [support.display(), support.display('DP-1')]
-        self.inventory = patch.object(comfort.backend, 'snapshot', side_effect=lambda: dict(displays=self.rows))
-        self.inventory.start(); self.addCleanup(self.inventory.stop)
-        self.binary = patch.object(comfort.shutil, 'which', return_value='/usr/bin/hyprsunset')
-        self.binary.start(); self.addCleanup(self.binary.stop)
+        self.inventory = patch.object(
+            comfort.backend, 'snapshot', side_effect=lambda: dict(displays=self.rows)
+        )
+        self.inventory.start()
+        self.addCleanup(self.inventory.stop)
+        self.binary = patch.object(
+            comfort.shutil, 'which', return_value='/usr/bin/hyprsunset'
+        )
+        self.binary.start()
+        self.addCleanup(self.binary.stop)
         self.unit = patch.object(comfort, 'systemctl', return_value='inactive')
-        self.systemctl = self.unit.start(); self.addCleanup(self.unit.stop)
+        self.systemctl = self.unit.start()
+        self.addCleanup(self.unit.stop)
         self.controller = comfort.Controller()
         self.addCleanup(self.controller.close)
 
     def awake(self, row=None, enabled=True):
         row = row or self.rows[0]
-        self.controller.action(dict(op='awake', name=row['name'], identity=row['identity'], enabled=enabled))
+        self.controller.action(
+            dict(
+                op='awake', name=row['name'], identity=row['identity'], enabled=enabled
+            )
+        )
 
     def test_lease_is_per_monitor_indefinite_and_released(self):
         self.awake()
         self.assertEqual(comfort.protected(self.rows), {'eDP-1'})
-        self.assertEqual(self.controller.snapshot()['awake'], {'eDP-1': self.rows[0]['identity']})
+        self.assertEqual(
+            self.controller.snapshot()['awake'], {'eDP-1': self.rows[0]['identity']}
+        )
         self.awake(self.rows[1])
         self.assertEqual(comfort.protected(self.rows), {'eDP-1', 'DP-1'})
         self.awake(enabled=False)
@@ -68,7 +87,11 @@ class ComfortTests(unittest.TestCase):
         self.assertEqual(comfort.protected(self.rows), set())
 
     def test_hotplug_disable_and_replacement_prune_checkmarks(self):
-        for replacement in ([], [support.display(enabled=False)], [support.display(identity=['replacement'])]):
+        for replacement in (
+            [],
+            [support.display(enabled=False)],
+            [support.display(identity=['replacement'])],
+        ):
             self.rows = [support.display()]
             self.awake()
             self.rows = replacement
@@ -77,7 +100,11 @@ class ComfortTests(unittest.TestCase):
             self.assertIsNone(self.controller.lease.fd)
 
     def test_stale_actions_and_invalid_switches_do_not_publish(self):
-        for values in [dict(name='missing', identity=[], enabled=True), dict(name='eDP-1', identity=['old'], enabled=True), dict(name='eDP-1', identity=self.rows[0]['identity'], enabled='yes')]:
+        for values in [
+            dict(name='missing', identity=[], enabled=True),
+            dict(name='eDP-1', identity=['old'], enabled=True),
+            dict(name='eDP-1', identity=self.rows[0]['identity'], enabled='yes'),
+        ]:
             with self.assertRaises(ValueError):
                 self.controller.action(dict(op='awake', **values))
         self.assertEqual(self.controller.awake, {})
@@ -87,19 +114,31 @@ class ComfortTests(unittest.TestCase):
         self.awake()
         with patch.object(comfort.backend, 'command') as command:
             self.assertEqual(comfort.idle_action('blank'), 0)
-        command.assert_called_once_with('dispatch', 'hl.dsp.dpms({action="off",monitor=' + comfort.backend.lua_string('DP-1') + '})')
+        command.assert_called_once_with(
+            'dispatch',
+            'hl.dsp.dpms({action="off",monitor='
+            + comfort.backend.lua_string('DP-1')
+            + '})',
+        )
         self.assertEqual(comfort.cli('allow-lock'), 1)
         self.awake(enabled=False)
         self.assertEqual(comfort.cli('allow-lock'), 0)
         self.assertEqual(comfort.cli('allow-session-idle'), comfort.HELPER_ERROR)
         # Guarded rules retry after unchecking, rather than losing their timeout.
-        config = Path(__file__).resolve().parents[1] / 'modules/desktop/hyprland/files/home/.config/hypr/hypridle.conf'
+        config = (
+            Path(__file__).resolve().parents[1]
+            / 'modules/desktop/hyprland/files/home/.config/hypr/hypridle.conf'
+        )
         self.assertEqual(config.read_text().count('condition_retry = 10'), 2)
         self.assertNotIn('ignore_inhibit', config.read_text())
 
     def test_helper_errors_are_distinct_from_denial(self):
         # desktop-idle fails open on 2 (helper error); 1 always means "deny".
-        with patch.object(comfort.backend, 'snapshot', side_effect=RuntimeError('Hyprland is unavailable.')):
+        with patch.object(
+            comfort.backend,
+            'snapshot',
+            side_effect=RuntimeError('Hyprland is unavailable.'),
+        ):
             for op in ('allow-lock', 'allow-sleep', 'blank'):
                 with self.subTest(op=op):
                     self.assertEqual(comfort.cli(op), comfort.HELPER_ERROR)
@@ -118,35 +157,58 @@ class ComfortTests(unittest.TestCase):
         self.rows = [support.display('DP-"quoted', dpms=False)]
         with patch.object(comfort.backend, 'command') as command:
             self.awake()
-        command.assert_called_once_with('dispatch', 'hl.dsp.dpms({action="on",monitor=' + comfort.backend.lua_string('DP-"quoted') + '})')
+        command.assert_called_once_with(
+            'dispatch',
+            'hl.dsp.dpms({action="on",monitor='
+            + comfort.backend.lua_string('DP-"quoted')
+            + '})',
+        )
 
     def test_idle_wake_notifies_the_existing_display_policy_after_dpms(self):
         with patch.object(comfort.backend, 'command') as command:
             self.assertEqual(comfort.idle_action('wake'), 0)
-        self.assertEqual(command.call_args_list, [
-            unittest.mock.call('dispatch', 'hl.dsp.dpms({action="on"})'),
-            unittest.mock.call('dispatch', 'hl.dsp.event("desktop-displays-changed")')])
+        self.assertEqual(
+            command.call_args_list,
+            [
+                unittest.mock.call('dispatch', 'hl.dsp.dpms({action="on"})'),
+                unittest.mock.call(
+                    'dispatch', 'hl.dsp.event("desktop-displays-changed")'
+                ),
+            ],
+        )
 
     def test_night_toggle_uses_packaged_service_and_reads_external_state(self):
         self.systemctl.return_value = 'active'
         self.controller.action(dict(op='night', enabled=True))
-        self.assertIn(unittest.mock.call('enable', '--now', 'hyprsunset.service'), self.systemctl.call_args_list)
+        self.assertIn(
+            unittest.mock.call('enable', '--now', 'hyprsunset.service'),
+            self.systemctl.call_args_list,
+        )
         self.assertTrue(self.controller.snapshot()['nightEnabled'])
         self.systemctl.return_value = 'inactive'
         self.controller.action(dict(op='night', enabled=False))
-        self.assertIn(unittest.mock.call('disable', '--now', 'hyprsunset.service'), self.systemctl.call_args_list)
+        self.assertIn(
+            unittest.mock.call('disable', '--now', 'hyprsunset.service'),
+            self.systemctl.call_args_list,
+        )
         self.assertFalse(self.controller.snapshot()['nightEnabled'])
         self.systemctl.return_value = 'active'
         self.controller.tick()
         self.assertTrue(self.controller.snapshot()['nightEnabled'])
-        with patch.object(comfort.shutil, 'which', return_value=None), self.assertRaises(RuntimeError):
+        with (
+            patch.object(comfort.shutil, 'which', return_value=None),
+            self.assertRaises(RuntimeError),
+        ):
             self.controller.action(dict(op='night', enabled=True))
         with self.assertRaises(ValueError):
             self.controller.action(dict(op='night', enabled=1))
 
     def test_publish_failure_keeps_previous_selection(self):
         self.awake()
-        with patch.object(comfort.os, 'replace', side_effect=OSError('disk full')), self.assertRaises(OSError):
+        with (
+            patch.object(comfort.os, 'replace', side_effect=OSError('disk full')),
+            self.assertRaises(OSError),
+        ):
             self.awake(self.rows[1])
         self.assertEqual(comfort.protected(self.rows), {'eDP-1'})
         self.assertEqual(set(self.controller.awake), {'eDP-1'})
@@ -166,7 +228,9 @@ class ComfortTests(unittest.TestCase):
         self.assertEqual(comfort.idle_action('allow-lock'), 1)
         self.controller.close()
         self.assertEqual(comfort.idle_action('allow-lock'), 0)
-        self.assertEqual(list(comfort.session_directory('desktop-session-pauses').iterdir()), [])
+        self.assertEqual(
+            list(comfort.session_directory('desktop-session-pauses').iterdir()), []
+        )
 
     def test_session_pauses_fail_closed_after_crash_and_validate_values(self):
         for enabled in (1, 'yes', None):
@@ -187,21 +251,40 @@ class ComfortTests(unittest.TestCase):
     def test_worker_eof_releases_monitor_lease(self):
         root = Path(self.directory.name)
         script = root / 'worker.py'
-        script.write_text(f'''import sys,importlib.util
+        script.write_text(f"""import sys,importlib.util
 sys.path.insert(0,{str(SOURCE.parent)!r})
 spec=importlib.util.spec_from_file_location('comfort',{str(SOURCE)!r})
 c=importlib.util.module_from_spec(spec);spec.loader.exec_module(c)
 c.backend.snapshot=lambda:dict(displays={self.rows!r})
 c.systemctl=lambda *args:'inactive'
 c.main()
-''')
-        request = dict(op='awake', name=self.rows[0]['name'], identity=self.rows[0]['identity'], enabled=True)
-        requests = [request, dict(op='pause-sleep', enabled=True), dict(op='pause-locking', enabled=True)]
-        result = subprocess.run([sys.executable, '-u', str(script)], input=''.join(json.dumps(value)+'\n' for value in requests), text=True, capture_output=True, timeout=5)
+""")
+        request = dict(
+            op='awake',
+            name=self.rows[0]['name'],
+            identity=self.rows[0]['identity'],
+            enabled=True,
+        )
+        requests = [
+            request,
+            dict(op='pause-sleep', enabled=True),
+            dict(op='pause-locking', enabled=True),
+        ]
+        result = subprocess.run(
+            [sys.executable, '-u', str(script)],
+            input=''.join(json.dumps(value) + '\n' for value in requests),
+            text=True,
+            capture_output=True,
+            timeout=5,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(json.loads(result.stdout.splitlines()[-1])['state']['awake'])
-        self.assertTrue(json.loads(result.stdout.splitlines()[-1])['state']['sleepPaused'])
-        self.assertTrue(json.loads(result.stdout.splitlines()[-1])['state']['lockingPaused'])
+        self.assertTrue(
+            json.loads(result.stdout.splitlines()[-1])['state']['sleepPaused']
+        )
+        self.assertTrue(
+            json.loads(result.stdout.splitlines()[-1])['state']['lockingPaused']
+        )
         self.assertEqual(comfort.protected(self.rows), set())
         self.assertFalse(comfort.paused('sleep'))
         self.assertFalse(comfort.paused('locking'))
@@ -213,12 +296,15 @@ class ComfortQmlTests(unittest.TestCase):
     def run_qml(self, body, setup=None):
         def prepare(root):
             shutil.copytree(support.DESKTOP / 'bar', root / 'bar')
-            if setup: setup(root)
+            if setup:
+                setup(root)
+
         return support.run_qml(self, body, prepare)
 
     def test_simple_toggle_cog_checkmark_and_per_screen_indicator(self):
         rows = json.dumps([support.display(), support.display('DP-1')])
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -287,11 +373,14 @@ ShellRoot {
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer {interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }
-'''.replace('ROWS', rows))
+""".replace('ROWS', rows)
+        )
 
-    def test_service_finishes_requests_after_dismissal_and_polls_only_while_observed(self):
+    def test_service_finishes_requests_after_dismissal_and_polls_only_while_observed(
+        self,
+    ):
         def setup(root):
-            (root / 'drawers/displays/comfort.py').write_text('''import json,sys,time
+            (root / 'drawers/displays/comfort.py').write_text("""import json,sys,time
 state=dict(nightEnabled=False,nightAvailable=True,awake={},error="",polls=0)
 print(json.dumps(dict(reply=False,state=state)),flush=True)
 for line in sys.stdin:
@@ -300,8 +389,10 @@ for line in sys.stdin:
  if r['op']=='night':state['nightEnabled']=r['enabled']
  if r['op']=='awake':state['awake'][r['name']]=r['identity']
  print(json.dumps(dict(reply=True,state=state)),flush=True)
-''')
-        self.run_qml('''import QtQuick
+""")
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "drawers/displays"
 ShellRoot {
@@ -334,7 +425,10 @@ ShellRoot {
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout stage "+stage);Qt.quit();}}
 }
-''', setup)
+""",
+            setup,
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,4 +1,5 @@
 """Production tray input, hot removal and layout; no real application actions."""
+
 import os
 import unittest
 import support
@@ -9,9 +10,18 @@ class TrayDrawerTests(unittest.TestCase):
     def test_blueman_menu_icons_with_native_theme(self):
         if os.environ.get('DISPLAY_PREVIEW_PLATFORM') != 'wayland':
             self.skipTest('System icon search paths require the native Wayland QPA')
-        startup = '\n'.join(line for line in (support.DESKTOP / 'shell.qml').read_text().splitlines()
-                            if line.startswith('//@ pragma ')) + '\n'
-        support.run_qml(self, startup + '''import QtQuick
+        startup = (
+            '\n'.join(
+                line
+                for line in (support.DESKTOP / 'shell.qml').read_text().splitlines()
+                if line.startswith('//@ pragma ')
+            )
+            + '\n'
+        )
+        support.run_qml(
+            self,
+            startup
+            + """import QtQuick
 import Quickshell
 ShellRoot {
  property var names:["bluetooth-disabled-symbolic","edit-find-symbolic","document-open-recent-symbolic","bluetooth-symbolic","document-properties-symbolic","application-x-addon-symbolic","help-about-symbolic","application-exit-symbolic"]
@@ -30,10 +40,13 @@ ShellRoot {
   if(destination)icons.grabToImage(result=>{result.saveToFile(destination+"/tray-menu-icons.png");console.log("DISPLAY_PASS");Qt.quit();});
   else{console.log("DISPLAY_PASS");Qt.quit();}
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
-}''')
+}""",
+        )
 
     def test_live_items_keyboard_mouse_scrolling_and_dismissal(self):
-        support.run_qml(self, '''import QtQuick
+        support.run_qml(
+            self,
+            """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -114,7 +127,8 @@ ShellRoot {
   }
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
-}''')
+}""",
+        )
 
     def test_native_registration_menu_tree_actions_status_and_removal(self):
         import shutil
@@ -122,6 +136,7 @@ ShellRoot {
         import sys
         from pathlib import Path
         from unittest.mock import patch
+
         if not shutil.which('dbus-run-session'):
             self.skipTest('Private D-Bus is required')
         try:
@@ -130,8 +145,13 @@ ShellRoot {
             self.skipTest('Python GObject bindings are required')
 
         def setup(root):
-            shutil.copyfile(Path(__file__).parent / 'fixtures/tray_service.py', root / 'tray_service.py')
+            shutil.copyfile(
+                Path(__file__).parent / 'fixtures/tray_service.py',
+                root / 'tray_service.py',
+            )
+
         run = subprocess.run
+
         def isolated(command, **kwargs):
             if command[0] == support.QS:
                 command = ['dbus-run-session', '--', *command]
@@ -142,11 +162,23 @@ ShellRoot {
             try:
                 return run(command, **kwargs)
             except subprocess.TimeoutExpired as error:
-                self.fail((error.stdout or b'').decode() + (error.stderr or b'').decode())
+                self.fail(
+                    (error.stdout or b'').decode() + (error.stderr or b'').decode()
+                )
+
         with patch.object(support.subprocess, 'run', side_effect=isolated):
-            startup = '\n'.join(line for line in (support.DESKTOP / 'shell.qml').read_text().splitlines()
-                                if line.startswith('//@ pragma ')) + '\n'
-            support.run_qml(self, startup + '''import QtQuick
+            startup = (
+                '\n'.join(
+                    line
+                    for line in (support.DESKTOP / 'shell.qml').read_text().splitlines()
+                    if line.startswith('//@ pragma ')
+                )
+                + '\n'
+            )
+            support.run_qml(
+                self,
+                startup
+                + """import QtQuick
 import QtTest
 import Quickshell
 import Quickshell.Io
@@ -225,13 +257,19 @@ ShellRoot {
   }
   stage++;attempts=0;
  }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
-}'''.replace('PYTHON', sys.executable), setup)
+}""".replace('PYTHON', sys.executable),
+                setup,
+            )
 
     def test_bar_count_attention_notification_fallback_and_acknowledgement(self):
         import shutil
+
         def setup(root):
             shutil.copytree(support.DESKTOP / 'bar', root / 'bar')
-        support.run_qml(self, '''import QtQuick
+
+        support.run_qml(
+            self,
+            """import QtQuick
 import Quickshell
 import Quickshell.Services.SystemTray
 import "ui"
@@ -298,4 +336,6 @@ ShellRoot {
   }
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
-}''', setup)
+}""",
+            setup,
+        )

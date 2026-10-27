@@ -12,30 +12,44 @@ ColumnLayout {
     visible: players.length > 0
     spacing: 8
 
-    ShellText { visible: root.showHeading; text: qsTr("Playback"); font.weight: Font.DemiBold; Layout.fillWidth: true }
+    ShellText {
+        visible: root.showHeading
+        text: qsTr("Playback")
+        font.weight: Font.DemiBold
+        Layout.fillWidth: true
+    }
     Repeater {
         model: root.players
         delegate: RowLayout {
             id: player
             required property var modelData
             objectName: "audioPlayer:" + modelData.dbusName
-            Layout.fillWidth: true; spacing: 4
+            Layout.fillWidth: true
+            spacing: 4
             ColumnLayout {
-                Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 1
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                spacing: 1
                 ShellText {
                     text: player.modelData.trackTitle || player.modelData.identity
-                    Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                    textFormat: Text.PlainText
                 }
                 ShellText {
                     text: [player.modelData.trackArtist, player.modelData.identity].filter(s => s).join(" · ")
                     visible: text !== "" && text !== (player.modelData.trackTitle || player.modelData.identity)
-                    color: Theme.muted; font.pixelSize: Theme.smallFontSize
-                    Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
+                    color: Theme.muted
+                    font.pixelSize: Theme.smallFontSize
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                    textFormat: Text.PlainText
                 }
             }
             IconButton {
                 objectName: player.objectName + ":previous"
-                iconName: "skip-back"; text: qsTr("Previous track")
+                iconName: "skip-back"
+                text: qsTr("Previous track")
                 enabled: root.active && player.modelData.canControl && player.modelData.canGoPrevious
                 onClicked: player.modelData.previous()
             }
@@ -48,7 +62,8 @@ ColumnLayout {
             }
             IconButton {
                 objectName: player.objectName + ":next"
-                iconName: "skip-forward"; text: qsTr("Next track")
+                iconName: "skip-forward"
+                text: qsTr("Next track")
                 enabled: root.active && player.modelData.canControl && player.modelData.canGoNext
                 onClicked: player.modelData.next()
             }

@@ -1,4 +1,5 @@
 """Check tooltip lifecycle and click/focus behavior with the real Quickshell helper."""
+
 import os
 from pathlib import Path
 import shutil
@@ -7,15 +8,18 @@ import tempfile
 import unittest
 
 
-UI = (Path(__file__).resolve().parents[1] / 'modules/desktop/quickshell'
-      / 'symlinks/home/.config/quickshell/desktop/ui')
+UI = (
+    Path(__file__).resolve().parents[1]
+    / 'modules/desktop/quickshell'
+    / 'symlinks/home/.config/quickshell/desktop/ui'
+)
 QS = shutil.which('qs')
 
 
 @unittest.skipUnless(QS, 'Quickshell is required')
 class PassiveToolTipTests(unittest.TestCase):
     def test_hover_click_focus_and_dismissal(self):
-        qml = '''import QtQuick
+        qml = """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -108,7 +112,7 @@ FloatingWindow {
         } catch (e) { console.error("PASSIVE_TOOLTIP_FAIL", stage, e.message); Qt.quit(); }
     } }
 }
-'''
+"""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copytree(UI, root / 'ui')
@@ -117,13 +121,21 @@ FloatingWindow {
             config.mkdir(parents=True)
             (config / 'theme-mode').write_text('dark\n')
             (root / 'runtime').mkdir(mode=0o700)
-            env = {**os.environ, 'QT_QPA_PLATFORM': 'offscreen',
-                   'XDG_CONFIG_HOME': str(root / 'config'), 'XDG_RUNTIME_DIR': str(root / 'runtime')}
+            env = {
+                **os.environ,
+                'QT_QPA_PLATFORM': 'offscreen',
+                'XDG_CONFIG_HOME': str(root / 'config'),
+                'XDG_RUNTIME_DIR': str(root / 'runtime'),
+            }
             for key in ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE'):
                 env.pop(key, None)
             result = subprocess.run(
-                [QS, '--no-color', '-p', str(root / 'shell.qml')], env=env,
-                text=True, capture_output=True, timeout=15)
+                [QS, '--no-color', '-p', str(root / 'shell.qml')],
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=15,
+            )
         log = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0, log)
         self.assertIn('PASSIVE_TOOLTIP_PASS', log)

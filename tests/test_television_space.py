@@ -1,5 +1,5 @@
 """Television uses the shared host, a list without a playback heading, and native mpv handoff."""
-import json
+
 import unittest
 import support
 from test_movies_space import setup as movies_setup
@@ -8,9 +8,10 @@ from test_television import datasets
 
 
 def setup(root):
-    movies_setup(root);player=fake_mpv(root)
-    path=root/'spaces/television/backend.py'
-    fixture='''    import time
+    movies_setup(root)
+    player = fake_mpv(root)
+    path = root / 'spaces/television/backend.py'
+    fixture = """    import time
     import spaces.television.player as player_module
     player_module.shutil.which = lambda name: PLAYER
     fixture_data = FIXTURE
@@ -18,15 +19,19 @@ def setup(root):
         time.sleep(.1)
         return fixture_data[name]
     backend = TelevisionBackend(fetch=fetch)
-'''.replace('PLAYER',repr(str(player))).replace('FIXTURE',repr(datasets()))
-    path.write_text(path.read_text().replace('    backend = TelevisionBackend()\n',fixture))
+""".replace('PLAYER', repr(str(player))).replace('FIXTURE', repr(datasets()))
+    path.write_text(
+        path.read_text().replace('    backend = TelevisionBackend()\n', fixture)
+    )
 
 
-@unittest.skipUnless(support.QS,'Quickshell is required')
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class TelevisionSpaceTests(unittest.TestCase):
-    run_qml=support.run_qml
+    run_qml = support.run_qml
+
     def test_list_toolbar_filters_favorites_player_handoff_and_retained_lifecycle(self):
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -114,4 +119,6 @@ ShellRoot {
   }
  }catch(error){console.error("DISPLAY_FAIL",error.message+" "+error.stack);Qt.quit();}finally{driver.restart();}}}
  Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at "+root.step);Qt.quit();}}
-}''',setup=setup)
+}""",
+            setup=setup,
+        )

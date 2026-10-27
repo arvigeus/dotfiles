@@ -4,7 +4,7 @@ set -euo pipefail
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
 saved="$repo_dir/user-configuration.json"
 if [[ ${1:-} != --configure && -f $saved ]] &&
-    jq -e '.hostname == "vm" and (.disk_config.device_modifications | length) == 1' "$saved" >/dev/null; then
+    jq -e '.hostname == "vm" and (.disk_config.device_modifications | length) == 1' "$saved" > /dev/null; then
     device=$(jq -r '.disk_config.device_modifications[0].device' "$saved")
     size=$(jq -r '.disk_config.device_modifications[0].partitions[1].size.value' "$saved")
 else
@@ -16,6 +16,6 @@ else
         exit 1
     fi
     # Reserve the shared 1 GiB ESP, initial alignment, and room for the backup GPT.
-    size=$((capacity * 1024**3 - 1074790400 - 1024**2))
+    size=$((capacity * 1024 ** 3 - 1074790400 - 1024 ** 2))
 fi
 bash "$repo_dir/scripts/storage-config.sh" "$device" "$size"

@@ -1,4 +1,5 @@
 """Exercise shared scrolling through Qt input delivery and native view geometry."""
+
 import os
 import shutil
 import subprocess
@@ -6,8 +7,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-UI = (Path(__file__).resolve().parents[1] / 'modules/desktop/quickshell'
-      / 'symlinks/home/.config/quickshell/desktop/ui')
+UI = (
+    Path(__file__).resolve().parents[1]
+    / 'modules/desktop/quickshell'
+    / 'symlinks/home/.config/quickshell/desktop/ui'
+)
 RUNNER = shutil.which('qmltestrunner6')
 if not RUNNER and Path('/usr/lib/qt6/bin/qmltestrunner').is_file():
     RUNNER = '/usr/lib/qt6/bin/qmltestrunner'
@@ -16,7 +20,7 @@ if not RUNNER and Path('/usr/lib/qt6/bin/qmltestrunner').is_file():
 @unittest.skipUnless(RUNNER, 'Qt 6 Quick Test is required')
 class WheelScrollTests(unittest.TestCase):
     def test_wheel_input_and_native_views(self):
-        qml = r'''
+        qml = r"""
 import QtQuick
 import QtQuick.Controls
 import QtTest
@@ -153,15 +157,20 @@ Item {
         }
     }
 }
-'''
+"""
         with tempfile.TemporaryDirectory() as directory:
             # Load the unchanged, Qt-only component without ui/qmldir's theme:
             # Quickshell's static plugins are registered only by the qs binary.
             for name in ('WheelScroll.qml', 'ScrollListView.qml'):
                 shutil.copyfile(UI / name, Path(directory, name))
             Path(directory, 'tst_wheel.qml').write_text(
-                qml.replace('UI_URL', Path(directory).as_uri()))
+                qml.replace('UI_URL', Path(directory).as_uri())
+            )
             result = subprocess.run(
-                [RUNNER, '-input', directory], text=True, capture_output=True,
-                env={**os.environ, 'QT_QPA_PLATFORM': 'offscreen'}, timeout=30)
+                [RUNNER, '-input', directory],
+                text=True,
+                capture_output=True,
+                env={**os.environ, 'QT_QPA_PLATFORM': 'offscreen'},
+                timeout=30,
+            )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

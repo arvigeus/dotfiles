@@ -19,28 +19,45 @@ Singleton {
     signal completed(string operation, bool success)
     function run(op: string, values = {}): void {
         if (operation !== "" || process.running || request) {
-            if (op !== "status" && !busy) queuedAction = {op, values};
+            if (op !== "status" && !busy)
+                queuedAction = {
+                    op,
+                    values
+                };
             return;
         }
-        operation = op; request = Object.assign({op}, values); received = false;
-        if (op !== "status") error = "";
+        operation = op;
+        request = Object.assign({
+            op
+        }, values);
+        received = false;
+        if (op !== "status")
+            error = "";
         process.running = true;
     }
-    function refresh(): void { run("status"); }
+    function refresh(): void {
+        run("status");
+    }
     function finish(): void {
-        if (operation === "") return;
+        if (operation === "")
+            return;
         if (!received) {
-            loaded = true; available = false;
+            loaded = true;
+            available = false;
             error = qsTr("Port helper unavailable. Install the firewall module.");
             completed(operation, false);
         }
-        operation = ""; request = null; process.stdinEnabled = true;
+        operation = "";
+        request = null;
+        process.stdinEnabled = true;
         if (queuedAction) {
-            const action = queuedAction; queuedAction = null;
+            const action = queuedAction;
+            queuedAction = null;
             run(action.op, action.values);
         }
     }
-    onObservingChanged: if (observing) refresh()
+    onObservingChanged: if (observing)
+        refresh()
     Process {
         id: process
         command: ["/usr/local/libexec/firewall-ports"]
@@ -49,22 +66,31 @@ Singleton {
             if (!running && root.request) {
                 const failedRequest = root.request;
                 Qt.callLater(() => {
-                    if (root.request === failedRequest && !running) root.finish();
+                    if (root.request === failedRequest && !running)
+                        root.finish();
                 });
             }
         }
-        onStarted: { write(JSON.stringify(root.request) + "\n"); root.request = null; stdinEnabled = false; }
+        onStarted: {
+            write(JSON.stringify(root.request) + "\n");
+            root.request = null;
+            stdinEnabled = false;
+        }
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
                     const response = JSON.parse(text);
-                    root.received = true; root.loaded = true;
+                    root.received = true;
+                    root.loaded = true;
                     if (response.ok) {
-                        if (JSON.stringify(root.ports) !== JSON.stringify(response.ports)) root.ports = response.ports;
-                        root.available = true; root.error = "";
+                        if (JSON.stringify(root.ports) !== JSON.stringify(response.ports))
+                            root.ports = response.ports;
+                        root.available = true;
+                        root.error = "";
                     } else {
                         root.error = response.error || qsTr("Could not change port access.");
-                        if (root.operation === "status") root.available = false;
+                        if (root.operation === "status")
+                            root.available = false;
                     }
                     root.completed(root.operation, !!response.ok);
                 } catch (_) {}
@@ -75,7 +101,9 @@ Singleton {
     }
     Timer {
         id: refreshTimer
-        interval: 5000; repeat: true; running: root.observing
+        interval: 5000
+        repeat: true
+        running: root.observing
         onTriggered: root.refresh()
     }
 }

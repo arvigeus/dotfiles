@@ -21,11 +21,23 @@ ShellRoot {
     // Register the tray host for the session, including while its drawer is closed.
     readonly property var systemTray: SystemTray
 
-    InteractionState { id: interactions }
-    Launcher { id: launcher; interactionState: interactions }
-    Drawers { id: drawers; interactionState: interactions }
-    SpaceHost { interactionState: interactions }
-    WallpaperRuntime { id: wallpaperRuntime }
+    InteractionState {
+        id: interactions
+    }
+    Launcher {
+        id: launcher
+        interactionState: interactions
+    }
+    Drawers {
+        id: drawers
+        interactionState: interactions
+    }
+    SpaceHost {
+        interactionState: interactions
+    }
+    WallpaperRuntime {
+        id: wallpaperRuntime
+    }
     Variants {
         model: Quickshell.screens
         WallpaperBackground {
@@ -36,27 +48,43 @@ ShellRoot {
     }
     NotificationPopups {}
     Binding {
-        target: NotificationCenter; property: "drawerOpen"
+        target: NotificationCenter
+        property: "drawerOpen"
         value: drawers.opened && drawers.currentDrawer?.key === "notifications"
     }
 
     // Session-wide services that must run before any drawer opens.
-    Component.onCompleted: { Theme.start(); layoutRefresh.restart(); ComfortService.start(); DisplayService.start(); PowerSession.start(); ClipboardService.start(); CaptureService.start(); CalendarService.start(); NotificationCenter.start(); }
+    Component.onCompleted: {
+        Theme.start();
+        layoutRefresh.restart();
+        ComfortService.start();
+        DisplayService.start();
+        PowerSession.start();
+        ClipboardService.start();
+        CaptureService.start();
+        CalendarService.start();
+        NotificationCenter.start();
+    }
 
     GlobalShortcut {
-        appid: "desktop"; name: "record-region"
+        appid: "desktop"
+        name: "record-region"
         description: qsTr("Record an area or stop the current recording")
         onPressed: CaptureService.recordRegion()
     }
 
     Connections {
         target: CaptureService
-        function onHideRequested(): void { drawers.dismiss(); launcher.dismiss(); }
+        function onHideRequested(): void {
+            drawers.dismiss();
+            launcher.dismiss();
+        }
     }
     Connections {
         target: interactions
         function onActiveSurfaceChanged(): void {
-            if (interactions.activeSurface) CaptureService.guardDismissal();
+            if (interactions.activeSurface)
+                CaptureService.guardDismissal();
         }
     }
 
@@ -68,10 +96,7 @@ ShellRoot {
         target: Hyprland
         function onRawEvent(event: HyprlandEvent): void {
             DisplayService.handleEvent(event.name, event.data);
-            if ((event.name === "custom" && event.data === "desktop-layout-changed")
-                || ["openwindow", "closewindow", "activewindowv2", "movewindowv2",
-                "changefloatingmode", "fullscreen", "workspacev2",
-                "configreloaded", "monitoraddedv2", "monitorremoved"].includes(event.name))
+            if ((event.name === "custom" && event.data === "desktop-layout-changed") || ["openwindow", "closewindow", "activewindowv2", "movewindowv2", "changefloatingmode", "fullscreen", "workspacev2", "configreloaded", "monitoraddedv2", "monitorremoved"].includes(event.name))
                 layoutRefresh.restart();
         }
     }

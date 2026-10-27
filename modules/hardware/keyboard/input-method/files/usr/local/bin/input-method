@@ -9,38 +9,38 @@ directory=
 
 run() { timeout --foreground 10s "$@"; }
 fail() {
-	printf '%s\n' "$*" >&2
-	return 1
+    printf '%s\n' "$*" >&2
+    return 1
 }
 on_error() {
-	local code=$? command=$BASH_COMMAND
-	trap - ERR
-	if [[ $rollback == true ]]; then
-		rollback=false
-		stop_input || true
-	fi
-	printf 'Input method failed: %s\n' "$command" >&2
-	if [[ $notify == true ]] && command -v notify-send >/dev/null; then
-		notify-send 'Input method' "Could not change input language. $command" || true
-	fi
-	exit "$code"
+    local code=$? command=$BASH_COMMAND
+    trap - ERR
+    if [[ $rollback == true ]]; then
+        rollback=false
+        stop_input || true
+    fi
+    printf 'Input method failed: %s\n' "$command" >&2
+    if [[ $notify == true ]] && command -v notify-send > /dev/null; then
+        notify-send 'Input method' "Could not change input language. $command" || true
+    fi
+    exit "$code"
 }
 trap on_error ERR
 
 write_file() {
-	local path=$1
-	mkdir -p -- "$(dirname -- "$path")"
-	cat >"$path.tmp"
-	mv -f -- "$path.tmp" "$path"
+    local path=$1
+    mkdir -p -- "$(dirname -- "$path")"
+    cat > "$path.tmp"
+    mv -f -- "$path.tmp" "$path"
 }
 
 # Update one INI key while retaining unrelated settings and comments. Empty
 # section names select the root options used by UniKey and the Wayland addon.
 ini_set() {
-	local path=$1 section=$2 key=$3 value=$4
-	mkdir -p -- "$(dirname -- "$path")"
-	[[ -e $path ]] || : >"$path"
-	awk -v section="$section" -v key="$key" -v value="$value" '
+    local path=$1 section=$2 key=$3 value=$4
+    mkdir -p -- "$(dirname -- "$path")"
+    [[ -e $path ]] || : > "$path"
+    awk -v section="$section" -v key="$key" -v value="$value" '
 	BEGIN { active = section == ""; found = active }
 	/^\[/ {
 		if (active && !written) { print key "=" value; written = 1 }
@@ -55,29 +55,32 @@ ini_set() {
 	END {
 		if (!found) print "\n[" section "]"
 		if (!written) print key "=" value
-	}' "$path" >"$path.tmp"
-	mv -f -- "$path.tmp" "$path"
+	}' "$path" > "$path.tmp"
+    mv -f -- "$path.tmp" "$path"
 }
 
 dbus() {
-	run gdbus call --session --dest org.freedesktop.DBus \
-		--object-path /org/freedesktop/DBus --method "org.freedesktop.DBus.$1" "${@:2}"
+    run gdbus call --session --dest org.freedesktop.DBus \
+        --object-path /org/freedesktop/DBus --method "org.freedesktop.DBus.$1" "${@:2}"
 }
 fcitx_running() {
-	local owner
-	owner=$(dbus NameHasOwner org.fcitx.Fcitx5) || return
-	[[ $owner == *true* ]]
+    local owner
+    owner=$(dbus NameHasOwner org.fcitx.Fcitx5) || return
+    [[ $owner == *true* ]]
 }
 vietnamese_available() {
-	command -v fcitx5 >/dev/null && command -v fcitx5-remote >/dev/null || return 1
-	local path engine=false
-	local data_paths="${XDG_DATA_HOME:-$HOME/.local/share}:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
-	local -a paths
-	IFS=: read -r -a paths <<<"$data_paths"
-	for path in "${paths[@]}"; do
-		if [[ -r $path/fcitx5/inputmethod/unikey.conf ]]; then engine=true; break; fi
-	done
-	[[ $engine == true ]] || return 1
+    command -v fcitx5 > /dev/null && command -v fcitx5-remote > /dev/null || return 1
+    local path engine=false
+    local data_paths="${XDG_DATA_HOME:-$HOME/.local/share}:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+    local -a paths
+    IFS=: read -r -a paths <<< "$data_paths"
+    for path in "${paths[@]}"; do
+        if [[ -r $path/fcitx5/inputmethod/unikey.conf ]]; then
+            engine=true
+            break
+        fi
+    done
+    [[ $engine == true ]] || return 1
     [[ $(run systemctl --user show vietnamese.service --property=LoadState --value) == loaded ]]
 }
 find_session() {
@@ -86,148 +89,148 @@ find_session() {
     directory="${XDG_RUNTIME_DIR:?No graphical session runtime directory}/input-method/hyprland-$identity"
 }
 read_secondary() {
-	selected='bg'
-	if [[ -r $directory/secondary ]]; then
-		IFS= read -r selected <"$directory/secondary" || true
-	fi
+    selected='bg'
+    if [[ -r $directory/secondary ]]; then
+        IFS= read -r selected < "$directory/secondary" || true
+    fi
 }
 # Layouts live in input-method.lua, which also reapplies $directory/secondary
 # when Hyprland reloads its configuration.
 hypr_config() {
-	run hyprctl eval "InputMethod.apply(\"$1\")" >/dev/null
+    run hyprctl eval "InputMethod.apply(\"$1\")" > /dev/null
 }
 stop_input() {
-	printf 'bg\n' | write_file "$directory/secondary"
-	if fcitx_running; then
-		# BG can be installed alone, without the Vietnamese unit. An externally
-		# started daemon is still stopped through its own exit command below.
-		run systemctl --user stop vietnamese.service >/dev/null || true
-	fi
-	if fcitx_running; then
-		run fcitx5-remote -e || return
-	fi
-	local attempt
-	for ((attempt = 0; attempt < 50; attempt++)); do
-		if ! fcitx_running; then
-			hypr_config bg
-			return
-		fi
-		sleep 0.1
-	done
-	fail 'Fcitx did not stop; keyboard layouts were not changed'
+    printf 'bg\n' | write_file "$directory/secondary"
+    if fcitx_running; then
+        # BG can be installed alone, without the Vietnamese unit. An externally
+        # started daemon is still stopped through its own exit command below.
+        run systemctl --user stop vietnamese.service > /dev/null || true
+    fi
+    if fcitx_running; then
+        run fcitx5-remote -e || return
+    fi
+    local attempt
+    for ((attempt = 0; attempt < 50; attempt++)); do
+        if ! fcitx_running; then
+            hypr_config bg
+            return
+        fi
+        sleep 0.1
+    done
+    fail 'Fcitx did not stop; keyboard layouts were not changed'
 }
 activate_vietnamese() {
-	# Readiness belongs to the daemon, not the focused widget. A menu, desktop,
-	# browser page or password field may have no editable input context at all.
-	local attempt group
-	for ((attempt = 0; attempt < 50; attempt++)); do
-		fcitx_running || fail 'Fcitx stopped before Vietnamese input was ready'
-		run fcitx5-remote -g Vietnamese
-		run fcitx5-remote -s unikey
-		group=$(run gdbus call --session --dest org.fcitx.Fcitx5 --object-path /controller \
-			--method org.fcitx.Fcitx.Controller1.FullInputMethodGroupInfo Vietnamese)
-		if [[ $group == "('Vietnamese', 'unikey',"* ]]; then
-			# Future contexts must also start in the requested mode. Activate()
-			# only changes an existing context; it is a no-op without one.
-			ini_set "$config_dir/fcitx5/config" Behavior ActiveByDefault True
-			run fcitx5-remote -r
-			run fcitx5-remote -o
-			printf 'vi\n' | write_file "$directory/language"
-			return
-		fi
-		sleep 0.1
-	done
-	fail 'Vietnamese Telex did not become active'
+    # Readiness belongs to the daemon, not the focused widget. A menu, desktop,
+    # browser page or password field may have no editable input context at all.
+    local attempt group
+    for ((attempt = 0; attempt < 50; attempt++)); do
+        fcitx_running || fail 'Fcitx stopped before Vietnamese input was ready'
+        run fcitx5-remote -g Vietnamese
+        run fcitx5-remote -s unikey
+        group=$(run gdbus call --session --dest org.fcitx.Fcitx5 --object-path /controller \
+            --method org.fcitx.Fcitx.Controller1.FullInputMethodGroupInfo Vietnamese)
+        if [[ $group == "('Vietnamese', 'unikey',"* ]]; then
+            # Future contexts must also start in the requested mode. Activate()
+            # only changes an existing context; it is a no-op without one.
+            ini_set "$config_dir/fcitx5/config" Behavior ActiveByDefault True
+            run fcitx5-remote -r
+            run fcitx5-remote -o
+            printf 'vi\n' | write_file "$directory/language"
+            return
+        fi
+        sleep 0.1
+    done
+    fail 'Vietnamese Telex did not become active'
 }
 select_language() {
-	local language=$1
-	case $language in
-	bg)
-		stop_input
-		run hyprctl switchxkblayout all 1 >/dev/null
-		;;
-	en)
-		read_secondary
-		if [[ $selected == vi ]] && fcitx_running; then
-			ini_set "$config_dir/fcitx5/config" Behavior ActiveByDefault False
-			run fcitx5-remote -r
-			run fcitx5-remote -c
-			printf 'en\n' | write_file "$directory/language"
-		else
-			run hyprctl switchxkblayout all 0 >/dev/null
-		fi
-		;;
-	vi)
-		vietnamese_available || fail 'Vietnamese Telex requires Fcitx5, UniKey and the vietnamese user service'
-		read_secondary
-		if [[ $selected != vi ]] || ! fcitx_running; then
-			stop_input
-			rollback=true
-			printf 'vi\n' | write_file "$directory/secondary"
-            hypr_config vi
-            run systemctl --user start vietnamese.service
-			local attempt
-			for ((attempt = 0; attempt < 50; attempt++)); do
-				fcitx_running && break
-				sleep 0.1
-			done
-			fcitx_running || fail 'Fcitx did not start'
-		fi
-		activate_vietnamese
-		rollback=false
-		;;
-	*) fail 'select requires en, bg or vi' ;;
-	esac
+    local language=$1
+    case $language in
+        bg)
+            stop_input
+            run hyprctl switchxkblayout all 1 > /dev/null
+            ;;
+        en)
+            read_secondary
+            if [[ $selected == vi ]] && fcitx_running; then
+                ini_set "$config_dir/fcitx5/config" Behavior ActiveByDefault False
+                run fcitx5-remote -r
+                run fcitx5-remote -c
+                printf 'en\n' | write_file "$directory/language"
+            else
+                run hyprctl switchxkblayout all 0 > /dev/null
+            fi
+            ;;
+        vi)
+            vietnamese_available || fail 'Vietnamese Telex requires Fcitx5, UniKey and the vietnamese user service'
+            read_secondary
+            if [[ $selected != vi ]] || ! fcitx_running; then
+                stop_input
+                rollback=true
+                printf 'vi\n' | write_file "$directory/secondary"
+                hypr_config vi
+                run systemctl --user start vietnamese.service
+                local attempt
+                for ((attempt = 0; attempt < 50; attempt++)); do
+                    fcitx_running && break
+                    sleep 0.1
+                done
+                fcitx_running || fail 'Fcitx did not start'
+            fi
+            activate_vietnamese
+            rollback=false
+            ;;
+        *) fail 'select requires en, bg or vi' ;;
+    esac
 }
 status() {
-	read_secondary
-	local language=en active=false available=false state
-	if vietnamese_available; then available=true; fi
-	if [[ $selected == vi ]]; then
-		if fcitx_running; then
-			active=true
-			state=$(run fcitx5-remote)
-			case $state in
-			2) language='vi' ;;
-			0)
-				# Keep the selected mode while no client has a text context.
-				if [[ -r $directory/language ]]; then IFS= read -r language <"$directory/language" || true; fi
-				;;
-			esac
-		fi
-	else
-		# Alt+Shift changes the keyboard that received the keys, which need
-		# not be the compositor's "main" keyboard (e.g. laptop + USB keyboard).
-		language=$(run hyprctl -j devices | jq -r --arg keyboard "${1:-}" '
+    read_secondary
+    local language=en active=false available=false state
+    if vietnamese_available; then available=true; fi
+    if [[ $selected == vi ]]; then
+        if fcitx_running; then
+            active=true
+            state=$(run fcitx5-remote)
+            case $state in
+                2) language='vi' ;;
+                0)
+                    # Keep the selected mode while no client has a text context.
+                    if [[ -r $directory/language ]]; then IFS= read -r language < "$directory/language" || true; fi
+                    ;;
+            esac
+        fi
+    else
+        # Alt+Shift changes the keyboard that received the keys, which need
+        # not be the compositor's "main" keyboard (e.g. laptop + USB keyboard).
+        language=$(run hyprctl -j devices | jq -r --arg keyboard "${1:-}" '
 			.keyboards | ((map(select(.name == $keyboard)) + map(select(.main)) + .)[0] // {}) |
 			if .active_layout_index != null then
 				.active_layout_index as $index |
 				if ((.layout // "us") | split(",")[$index]) == "bg" then "bg" else "en" end
 			elif ((.active_keymap // "") | ascii_downcase | contains("bulgarian")) then "bg" else "en" end')
-	fi
-	printf '{"available":%s,"secondary":"%s","language":"%s","running":%s}\n' "$available" "$selected" "$language" "$active"
+    fi
+    printf '{"available":%s,"secondary":"%s","language":"%s","running":%s}\n' "$available" "$selected" "$language" "$active"
 }
 
 args=()
 for argument in "$@"; do
-	if [[ $argument == --notify ]]; then notify=true; else args+=("$argument"); fi
+    if [[ $argument == --notify ]]; then notify=true; else args+=("$argument"); fi
 done
 action=${args[0]:-help}
 case $action in
-select | status)
-	find_session
-	if [[ $action == select ]]; then
-		mkdir -p -- "$directory"
-		exec 9>"$directory/lock"
-		flock -x 9
-		select_language "${args[1]:-}"
-		status
-	else
-		status "${args[1]:-}"
-	fi
-	;;
-help | --help | -h)
-	printf 'Usage: input-method {select en|bg|vi [--notify] | status}\n'
-	;;
-*) fail "Unknown input-method action: $action" ;;
+    select | status)
+        find_session
+        if [[ $action == select ]]; then
+            mkdir -p -- "$directory"
+            exec 9> "$directory/lock"
+            flock -x 9
+            select_language "${args[1]:-}"
+            status
+        else
+            status "${args[1]:-}"
+        fi
+        ;;
+    help | --help | -h)
+        printf 'Usage: input-method {select en|bg|vi [--notify] | status}\n'
+        ;;
+    *) fail "Unknown input-method action: $action" ;;
 esac

@@ -6,7 +6,7 @@ PlainInputField {
     id: root
     property bool clearButtonEnabled: true
     property string clearAccessibleName: qsTr("Clear text")
-    signal cleared()
+    signal cleared
 
     rightPadding: Theme.controlHeight + 4
 
@@ -36,6 +36,9 @@ PlainInputField {
             radius: Theme.controlRadius
             color: clearButton.hovered || clearButton.visualFocus ? Theme.raised : "transparent"
         }
-        PassiveToolTip { target: clearButton; text: root.clearAccessibleName }
+        PassiveToolTip {
+            target: clearButton
+            text: root.clearAccessibleName
+        }
     }
 }

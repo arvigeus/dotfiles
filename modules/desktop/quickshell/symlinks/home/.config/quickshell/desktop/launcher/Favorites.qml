@@ -5,8 +5,7 @@ QtObject {
     id: root
 
     // Runtime-owned local preference. No seed/managed copy can overwrite it.
-    property url location: StandardPaths.writableLocation(StandardPaths.ConfigLocation)
-        + "/quickshell/desktop/launcher.ini"
+    property url location: StandardPaths.writableLocation(StandardPaths.ConfigLocation) + "/quickshell/desktop/launcher.ini"
     property var ids: []
     readonly property Settings preferences: Settings {
         location: root.location
@@ -15,8 +14,7 @@ QtObject {
 
     Component.onCompleted: {
         const saved = preferences.value("favoriteIds", []);
-        const values = typeof saved === "string" ? [saved]
-            : saved && typeof saved.length === "number" ? Array.from(saved) : [];
+        const values = typeof saved === "string" ? [saved] : saved && typeof saved.length === "number" ? Array.from(saved) : [];
         ids = [...new Set(values.filter(id => typeof id === "string" && id.length > 0))];
     }
 

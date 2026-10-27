@@ -26,23 +26,49 @@ class PrivateFilesTests(unittest.TestCase):
         self.config = self.root / 'config.json'
 
     def configure(self, files=(), symlinks=()):
-        self.config.write_text(json.dumps({'extra': {'private': {
-            'files': list(files), 'symlinks': list(symlinks)}}}))
+        self.config.write_text(
+            json.dumps(
+                {
+                    'extra': {
+                        'private': {'files': list(files), 'symlinks': list(symlinks)}
+                    }
+                }
+            )
+        )
 
     def run_script(self, *command, home=None, check=True):
-        result = subprocess.run(command, env=dict(os.environ, HOME=str(home or self.home), PATH=os.defpath,
-                                GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull),
-                                capture_output=True, text=True)
+        result = subprocess.run(
+            command,
+            env=dict(
+                os.environ,
+                HOME=str(home or self.home),
+                PATH=os.defpath,
+                GIT_CONFIG_NOSYSTEM='1',
+                GIT_CONFIG_GLOBAL=os.devnull,
+            ),
+            capture_output=True,
+            text=True,
+        )
         if check:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
 
     def backup(self, *args, check=True):
-        return self.run_script('bash', str(REPO / 'backup.sh'), '--config', str(self.config),
-                               '--destination', str(self.private), *args, check=check)
+        return self.run_script(
+            'bash',
+            str(REPO / 'backup.sh'),
+            '--config',
+            str(self.config),
+            '--destination',
+            str(self.private),
+            *args,
+            check=check,
+        )
 
     def apply(self, *args, home=None, check=True):
-        return self.run_script('bash', str(self.private / 'apply.sh'), *args, home=home, check=check)
+        return self.run_script(
+            'bash', str(self.private / 'apply.sh'), *args, home=home, check=check
+        )
 
     def asset(self, path, content='fixture', mode=0o600):
         target = self.home / path
@@ -51,8 +77,12 @@ class PrivateFilesTests(unittest.TestCase):
         target.chmod(mode)
         return target
 
-    def test_standalone_restore_after_git_clone_recovers_modes_and_keeps_originals(self):
-        self.configure(['home/.ssh', 'home/empty'], ['home/.config/token', 'home/empty-link'])
+    def test_standalone_restore_after_git_clone_recovers_modes_and_keeps_originals(
+        self,
+    ):
+        self.configure(
+            ['home/.ssh', 'home/empty'], ['home/.config/token', 'home/empty-link']
+        )
         self.asset('.ssh/key', 'example-key')
         self.asset('.ssh/tool', 'example-executable', 0o700)
         (self.home / '.ssh').chmod(0o700)
@@ -65,12 +95,26 @@ class PrivateFilesTests(unittest.TestCase):
         link.symlink_to(external)
         self.backup()
         self.assertTrue((self.private / '.git').is_dir())
-        self.assertFalse((self.private / 'modules/backup/symlinks/home/.config/token').is_symlink())
+        self.assertFalse(
+            (self.private / 'modules/backup/symlinks/home/.config/token').is_symlink()
+        )
         self.run_script('git', '-C', str(self.private), 'add', '.')
-        self.run_script('git', '-C', str(self.private), '-c', 'user.name=Fixture',
-                        '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'Fixture')
+        self.run_script(
+            'git',
+            '-C',
+            str(self.private),
+            '-c',
+            'user.name=Fixture',
+            '-c',
+            'user.email=fixture@example.invalid',
+            'commit',
+            '-qm',
+            'Fixture',
+        )
         clone = self.root / 'clone'
-        self.run_script('git', 'clone', '--quiet', '--no-hardlinks', str(self.private), str(clone))
+        self.run_script(
+            'git', 'clone', '--quiet', '--no-hardlinks', str(self.private), str(clone)
+        )
         self.private = clone
         # A missing live directory must retain a Git-omitted empty snapshot too.
         (self.home / 'empty').rmdir()
@@ -87,7 +131,12 @@ class PrivateFilesTests(unittest.TestCase):
         self.assertTrue((restored / 'empty').is_dir())
         self.assertTrue((restored / 'empty-link').is_dir())
         self.assertTrue((restored / 'empty-link').is_symlink())
-        self.assertEqual(next(restored.glob('.ssh.before-private-*')).joinpath('existing').read_text(), 'keep-me')
+        self.assertEqual(
+            next(restored.glob('.ssh.before-private-*'))
+            .joinpath('existing')
+            .read_text(),
+            'keep-me',
+        )
         token = restored / '.config/token'
         self.assertTrue(token.is_symlink())
         self.assertEqual(token.read_text(), 'example-token')
@@ -142,16 +191,18 @@ class PrivateFilesTests(unittest.TestCase):
             asset = module / 'files/home' / f'{name}.conf'
             asset.parent.mkdir(parents=True)
             asset.write_text(name)
-            (module / 'config.json').write_text(json.dumps({'extra': {'custom': [name]}}))
+            (module / 'config.json').write_text(
+                json.dumps({'extra': {'custom': [name]}})
+            )
             hook = module / 'scripts' / f'{number}_configure.sh'
             hook.parent.mkdir()
-            hook.write_text(f'''test -f "$HOME/{name}.conf"
+            hook.write_text(f"""test -f "$HOME/{name}.conf"
 test -f "$HOME/token"
 test "$PWD" = "$DOTFILES_REPO"
 test "$1" = "$USERNAME"
 python3 -c 'import json,os; assert json.load(open(os.environ["DOTFILES_CONFIG"]))["extra"]["custom"] == ["first", "second"]'
 echo {name} >> "$HOME/hook-order"
-''')
+""")
         restored = self.root / 'restored'
         restored.mkdir()
         self.apply(home=restored)
@@ -163,8 +214,14 @@ echo {name} >> "$HOME/hook-order"
         self.assertEqual((self.private / 'README.md').read_text(), 'user documentation')
 
     def test_invalid_paths_overlaps_and_broken_links_fail(self):
-        for paths in [['home/../escape'], ['relative/path'], ['/'], ['//etc/key'],
-                      ['home/a', 'home/a/b'], ['home/a', '/home/a']]:
+        for paths in [
+            ['home/../escape'],
+            ['relative/path'],
+            ['/'],
+            ['//etc/key'],
+            ['home/a', 'home/a/b'],
+            ['home/a', '/home/a'],
+        ]:
             with self.subTest(paths=paths):
                 self.configure(paths)
                 self.assertNotEqual(self.backup(check=False).returncode, 0)
@@ -179,14 +236,18 @@ echo {name} >> "$HOME/hook-order"
         spec = importlib.util.spec_from_file_location('private_files', RUNNER)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        with mock.patch.object(module.Path, 'stat', return_value=SimpleNamespace(st_mode=stat.S_IFSOCK)):
+        with mock.patch.object(
+            module.Path, 'stat', return_value=SimpleNamespace(st_mode=stat.S_IFSOCK)
+        ):
             module.snapshot(self.home / 'keys/agent', self.root / 'unused')
         self.assertFalse((self.root / 'unused').exists())
         self.backup()
         snapshot = self.private / 'modules/backup/files/home/keys'
         self.assertFalse((snapshot / 'agent').exists())
         self.asset('keys/key', 'new')
-        (self.home / 'keys/cycle').symlink_to(self.home / 'keys', target_is_directory=True)
+        (self.home / 'keys/cycle').symlink_to(
+            self.home / 'keys', target_is_directory=True
+        )
         result = self.backup(check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('cycle', result.stderr)
@@ -205,36 +266,61 @@ echo {name} >> "$HOME/hook-order"
         manifest = json.loads((payload / 'config.json').read_text())
         manifest['permissions'][str(old_lock.relative_to(payload))] = 0o600
         (payload / 'config.json').write_text(json.dumps(manifest))
-        for name in ['.gnupg/public-keys.d/pubring.db.lock',
-                     '.gnupg/public-keys.d/.#lk0x123.host.456',
-                     '.config/app/settings.lock']:
+        for name in [
+            '.gnupg/public-keys.d/pubring.db.lock',
+            '.gnupg/public-keys.d/.#lk0x123.host.456',
+            '.config/app/settings.lock',
+        ]:
             self.asset(name, 'runtime lock')
         # Skip before stat: a lock may already be gone or link to a missing file.
         (self.home / '.gnupg/.#lk-vanished').symlink_to(self.home / 'absent')
         result = self.backup()
         self.assertIn('Skip lock:', result.stderr)
         manifest = json.loads((payload / 'config.json').read_text())
-        self.assertFalse(any(name.endswith('.lock') or '/.#lk' in name
-                             for name in manifest['permissions']))
-        self.assertEqual((payload / 'files/home/.gnupg/public-keys.d/pubring.db').read_text(),
-                         'public-keys')
+        self.assertFalse(
+            any(
+                name.endswith('.lock') or '/.#lk' in name
+                for name in manifest['permissions']
+            )
+        )
+        self.assertEqual(
+            (payload / 'files/home/.gnupg/public-keys.d/pubring.db').read_text(),
+            'public-keys',
+        )
         self.assertFalse(old_lock.exists())
         # Ignore rules also protect handwritten modules and newly created locks.
-        ignored = ['root.lock', 'modules/custom/files/home/nested.lock',
-                   'modules/custom/files/home/.#lk0x789.host.123']
+        ignored = [
+            'root.lock',
+            'modules/custom/files/home/nested.lock',
+            'modules/custom/files/home/.#lk0x789.host.123',
+        ]
         for name in ignored:
             self.run_script('git', '-C', str(self.private), 'check-ignore', '-q', name)
         self.run_script('git', '-C', str(self.private), 'add', '.')
-        self.run_script('git', '-C', str(self.private), '-c', 'user.name=Fixture',
-                        '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'Fixture')
+        self.run_script(
+            'git',
+            '-C',
+            str(self.private),
+            '-c',
+            'user.name=Fixture',
+            '-c',
+            'user.email=fixture@example.invalid',
+            'commit',
+            '-qm',
+            'Fixture',
+        )
         clone = self.root / 'clone'
-        self.run_script('git', 'clone', '--quiet', '--no-hardlinks', str(self.private), str(clone))
+        self.run_script(
+            'git', 'clone', '--quiet', '--no-hardlinks', str(self.private), str(clone)
+        )
         self.private = clone
         restored = self.root / 'restored'
         restored.mkdir()
         self.apply(home=restored)
-        self.assertEqual((restored / '.gnupg/private-keys-v1.d/example.key').read_text(),
-                         'private-key')
+        self.assertEqual(
+            (restored / '.gnupg/private-keys-v1.d/example.key').read_text(),
+            'private-key',
+        )
         self.assertFalse(list(restored.rglob('*.lock')))
         self.assertFalse(list(restored.rglob('.#lk*')))
 
@@ -265,13 +351,20 @@ echo {name} >> "$HOME/hook-order"
         public.mkdir()
         shutil.copy(REPO / 'generate-config.py', public)
         (public / 'host').write_text('vm')
-        for name, kind, path in [('hosts/vm', 'files', 'home/a'), ('app', 'symlinks', 'home/b')]:
+        for name, kind, path in [
+            ('hosts/vm', 'files', 'home/a'),
+            ('app', 'symlinks', 'home/b'),
+        ]:
             module = public / 'modules' / name
             module.mkdir(parents=True)
-            (module / 'config.json').write_text(json.dumps({'extra': {'private': {kind: [path]}}}))
+            (module / 'config.json').write_text(
+                json.dumps({'extra': {'private': {kind: [path]}}})
+            )
         self.run_script('python3', str(public / 'generate-config.py'))
         generated = json.loads((public / 'user-configuration.json').read_text())
-        self.assertEqual(generated['extra']['private'], {'files': ['home/a'], 'symlinks': ['home/b']})
+        self.assertEqual(
+            generated['extra']['private'], {'files': ['home/a'], 'symlinks': ['home/b']}
+        )
 
 
 if __name__ == '__main__':

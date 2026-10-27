@@ -1,6 +1,6 @@
 """Read-only account lookup and the Spaces profile header/editor action."""
+
 import importlib.util
-import json
 import os
 from pathlib import Path
 import tempfile
@@ -21,19 +21,29 @@ class ProfileTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
-        self.account = SimpleNamespace(pw_uid=1234, pw_name='alice', pw_dir=str(self.home),
-                                       pw_gecos='Alice Local,Room,Phone')
+        self.account = SimpleNamespace(
+            pw_uid=1234,
+            pw_name='alice',
+            pw_dir=str(self.home),
+            pw_gecos='Alice Local,Room,Phone',
+        )
         lookup = patch.object(profile.pwd, 'getpwuid', return_value=self.account)
-        lookup.start(); self.addCleanup(lookup.stop)
+        lookup.start()
+        self.addCleanup(lookup.stop)
 
     def test_account_service_name_photo_and_photo_refresh(self):
-        photo = self.home / 'portrait.svg'; photo.write_text('<svg/>')
-        with patch.object(profile, 'account_properties', return_value=dict(RealName='Alice Example', IconFile=str(photo))):
+        photo = self.home / 'portrait.svg'
+        photo.write_text('<svg/>')
+        with patch.object(
+            profile,
+            'account_properties',
+            return_value=dict(RealName='Alice Example', IconFile=str(photo)),
+        ):
             first = profile.profile()
             self.assertEqual(first['name'], 'Alice Example')
             self.assertEqual(first['username'], 'alice')
-            self.assertTrue(first['avatar'].startswith(photo.as_uri()+'?v='))
-            stamp = photo.stat().st_mtime_ns+1000000000
+            self.assertTrue(first['avatar'].startswith(photo.as_uri() + '?v='))
+            stamp = photo.stat().st_mtime_ns + 1000000000
             os.utime(photo, ns=(stamp, stamp))
             self.assertNotEqual(first['avatar'], profile.profile()['avatar'])
 
@@ -41,13 +51,21 @@ class ProfileTests(unittest.TestCase):
         with patch.object(profile, 'account_properties', return_value={}):
             self.assertEqual(profile.profile()['name'], 'Alice Local')
             self.account.pw_gecos = ''
-            self.assertEqual(profile.profile(), dict(name='', username='alice', avatar=''))
-            face = self.home / '.face.icon'; face.write_text('<svg/>')
+            self.assertEqual(
+                profile.profile(), dict(name='', username='alice', avatar='')
+            )
+            face = self.home / '.face.icon'
+            face.write_text('<svg/>')
             self.assertTrue(profile.profile()['avatar'].startswith(face.as_uri()))
 
     def test_missing_account_photo_falls_back_to_home_face(self):
-        photo = self.home / '.face'; photo.write_text('<svg/>')
-        with patch.object(profile, 'account_properties', return_value=dict(IconFile='/missing/profile-picture')):
+        photo = self.home / '.face'
+        photo.write_text('<svg/>')
+        with patch.object(
+            profile,
+            'account_properties',
+            return_value=dict(IconFile='/missing/profile-picture'),
+        ):
             self.assertTrue(profile.profile()['avatar'].startswith(photo.as_uri()))
 
 
@@ -57,10 +75,17 @@ class ProfileButtonTests(unittest.TestCase):
 
     def test_header_photo_hint_fallback_and_editor_launch(self):
         def setup(root):
-            data = dict(name='Alice Example', username='alice',
-                        avatar=(root / 'icons/user-round.svg').as_uri()+'?v=1')
-            (root / 'drawers/spaces/profile.py').write_text('import json\nprint(json.dumps('+repr(data)+'))\n')
-        self.run_qml('''import QtQuick
+            data = dict(
+                name='Alice Example',
+                username='alice',
+                avatar=(root / 'icons/user-round.svg').as_uri() + '?v=1',
+            )
+            (root / 'drawers/spaces/profile.py').write_text(
+                'import json\nprint(json.dumps(' + repr(data) + '))\n'
+            )
+
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtTest
@@ -99,7 +124,9 @@ ShellRoot {
   console.log("DISPLAY_PASS");Qt.quit();
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:4000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup)
+}""",
+            setup,
+        )
 
 
 if __name__ == '__main__':

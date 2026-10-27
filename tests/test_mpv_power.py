@@ -1,4 +1,5 @@
 """Generate the shipped shader profiles without leaking Windows-only options."""
+
 import json
 import os
 from pathlib import Path
@@ -11,12 +12,15 @@ REPO = Path(__file__).resolve().parents[1]
 POWER = REPO / 'modules/hardware/power/files/etc/mpv'
 
 
-@unittest.skipUnless(shutil.which('mpv'), 'mpv is required for native profile restoration')
+@unittest.skipUnless(
+    shutil.which('mpv'), 'mpv is required for native profile restoration'
+)
 class MpvQuality(unittest.TestCase):
     def test_only_powersave_changes_quality_and_exit_restores_user_settings(self):
         with tempfile.TemporaryDirectory() as directory:
             wrapper = Path(directory) / 'test.lua'
-            wrapper.write_text('''local mp = require('mp')
+            wrapper.write_text(
+                """local mp = require('mp')
 local active = 'zephyrus-balanced'
 local update
 local original_open, original_getenv = io.open, os.getenv
@@ -70,12 +74,29 @@ mp.add_timeout(0, function()
     print(ok and 'MPV_PASS' or ('MPV_FAIL ' .. tostring(err)))
     mp.commandv('quit', ok and 0 or 1)
 end)
-'''.replace('SCRIPT', json.dumps(str(POWER / 'scripts/dotfiles-power.lua'))))
-            result = subprocess.run(['mpv', '--no-config', '--load-scripts=no', '--idle=yes',
-                '--vo=null', '--ao=null', '--terminal=yes', '--scale=spline36', '--cscale=spline36',
-                '--dscale=mitchell', '--deband=yes', '--interpolation=yes',
-                '--include=' + str(POWER / 'power-profiles.conf'), '--script=' + str(wrapper)],
-                capture_output=True, text=True, timeout=10)
+""".replace('SCRIPT', json.dumps(str(POWER / 'scripts/dotfiles-power.lua')))
+            )
+            result = subprocess.run(
+                [
+                    'mpv',
+                    '--no-config',
+                    '--load-scripts=no',
+                    '--idle=yes',
+                    '--vo=null',
+                    '--ao=null',
+                    '--terminal=yes',
+                    '--scale=spline36',
+                    '--cscale=spline36',
+                    '--dscale=mitchell',
+                    '--deband=yes',
+                    '--interpolation=yes',
+                    '--include=' + str(POWER / 'power-profiles.conf'),
+                    '--script=' + str(wrapper),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
             log = result.stdout + result.stderr
             self.assertEqual(result.returncode, 0, log)
             self.assertIn('MPV_PASS', log)
@@ -88,25 +109,68 @@ class MpvGeneration(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             pack = root / 'pack.json'
-            pack.write_text(json.dumps({'profiles': {
-                'generic-high': {'displayname': 'High', 'shaders': ['hq.glsl'],
-                                 'setting-groups': ['neural']},
-                'AMD FidelityFX Super Resolution': {'displayname': 'FSR', 'shaders': ['fsr.glsl']},
-                'AMD FidelityFX Contrast Adaptive Sharpening': {'shaders': ['cas.glsl']},
-                'windows-only': {'displayname': 'Windows', 'platforms': ['windows'], 'setting-groups': ['windows']},
-                'linux-only': {'displayname': 'Linux', 'platforms': ['linux'], 'shaders': ['linux.glsl']}},
-                'setting-groups': {
-                    'windows': {'settings': [['gpu_api', 'd3d11'], ['vf', 'd3d11vpp']]},
-                    'neural': {'settings': [['scale', 'ewa_lanczos'], ['cscale', 'mitchell'],
-                                           ['dscale', 'mitchell'], ['linear_downscaling', False]]}}}))
-            env = dict(os.environ, DOTFILES_REPO=str(REPO), MPV_CONF_DIR=str(root / 'config'),
-                       MPV_SHADER_PACK=str(pack), MPV_SHADERS_DIR=str(root))
+            pack.write_text(
+                json.dumps(
+                    {
+                        'profiles': {
+                            'generic-high': {
+                                'displayname': 'High',
+                                'shaders': ['hq.glsl'],
+                                'setting-groups': ['neural'],
+                            },
+                            'AMD FidelityFX Super Resolution': {
+                                'displayname': 'FSR',
+                                'shaders': ['fsr.glsl'],
+                            },
+                            'AMD FidelityFX Contrast Adaptive Sharpening': {
+                                'shaders': ['cas.glsl']
+                            },
+                            'windows-only': {
+                                'displayname': 'Windows',
+                                'platforms': ['windows'],
+                                'setting-groups': ['windows'],
+                            },
+                            'linux-only': {
+                                'displayname': 'Linux',
+                                'platforms': ['linux'],
+                                'shaders': ['linux.glsl'],
+                            },
+                        },
+                        'setting-groups': {
+                            'windows': {
+                                'settings': [['gpu_api', 'd3d11'], ['vf', 'd3d11vpp']]
+                            },
+                            'neural': {
+                                'settings': [
+                                    ['scale', 'ewa_lanczos'],
+                                    ['cscale', 'mitchell'],
+                                    ['dscale', 'mitchell'],
+                                    ['linear_downscaling', False],
+                                ]
+                            },
+                        },
+                    }
+                )
+            )
+            env = dict(
+                os.environ,
+                DOTFILES_REPO=str(REPO),
+                MPV_CONF_DIR=str(root / 'config'),
+                MPV_SHADER_PACK=str(pack),
+                MPV_SHADERS_DIR=str(root),
+            )
             (root / 'config').mkdir()
             for filename in ('mpv.conf', 'input.conf'):
-                shutil.copyfile(REPO / 'modules/media/video/mpv/files/home/.config/mpv' / filename,
-                                root / 'config' / filename)
-            result = subprocess.run(['bash', str(REPO / 'modules/media/video/mpv/scripts/50_mpv.sh')],
-                                    env=env, capture_output=True, text=True)
+                shutil.copyfile(
+                    REPO / 'modules/media/video/mpv/files/home/.config/mpv' / filename,
+                    root / 'config' / filename,
+                )
+            result = subprocess.run(
+                ['bash', str(REPO / 'modules/media/video/mpv/scripts/50_mpv.sh')],
+                env=env,
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(result.returncode, 0, result.stderr)
             config = (root / 'config/mpv.conf').read_text()
             menu = (root / 'config/input.conf').read_text()
@@ -126,7 +190,7 @@ class MpvGeneration(unittest.TestCase):
             if not shutil.which('mpv'):
                 return
             wrapper = root / 'switch.lua'
-            wrapper.write_text('''local mp = require('mp')
+            wrapper.write_text("""local mp = require('mp')
 local function check(name, expected)
     local actual = mp.get_property_native('options/' .. name)
     assert(actual == expected, name .. ': expected ' .. tostring(expected) .. ', got ' .. tostring(actual))
@@ -156,11 +220,24 @@ mp.add_timeout(0, function()
     print(ok and 'MPV_PASS' or ('MPV_FAIL ' .. tostring(err)))
     mp.commandv('quit', ok and 0 or 1)
 end)
-''')
-            result = subprocess.run(['mpv', '--no-config', '--include=' + str(root / 'config/mpv.conf'),
-                '--load-scripts=no', '--idle=yes', '--vo=null', '--ao=null', '--terminal=yes',
-                '--script-opts=dotfiles-power-enabled=no', '--script=' + str(wrapper)],
-                capture_output=True, text=True, timeout=10)
+""")
+            result = subprocess.run(
+                [
+                    'mpv',
+                    '--no-config',
+                    '--include=' + str(root / 'config/mpv.conf'),
+                    '--load-scripts=no',
+                    '--idle=yes',
+                    '--vo=null',
+                    '--ao=null',
+                    '--terminal=yes',
+                    '--script-opts=dotfiles-power-enabled=no',
+                    '--script=' + str(wrapper),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn('MPV_PASS', result.stdout + result.stderr)
 

@@ -1,4 +1,5 @@
 """Read and validate the ordinary V4L2 controls exposed by a webcam."""
+
 import json
 import os
 from pathlib import Path
@@ -8,14 +9,25 @@ import subprocess
 import sys
 
 LABELS = {
-    'privacy': 'Camera privacy', 'brightness': 'Brightness', 'contrast': 'Contrast',
-    'saturation': 'Saturation', 'sharpness': 'Sharpness', 'gain': 'Gain',
-    'white_balance_automatic': 'Auto white balance', 'white_balance_temperature_auto': 'Auto white balance',
-    'white_balance_temperature': 'White balance', 'auto_exposure': 'Exposure mode',
-    'exposure_auto': 'Exposure mode', 'exposure_time_absolute': 'Exposure',
-    'exposure_absolute': 'Exposure', 'focus_automatic_continuous': 'Autofocus',
-    'focus_auto': 'Autofocus', 'focus_absolute': 'Focus', 'zoom_absolute': 'Zoom',
-    'power_line_frequency': 'Anti-flicker', 'backlight_compensation': 'Backlight compensation',
+    'privacy': 'Camera privacy',
+    'brightness': 'Brightness',
+    'contrast': 'Contrast',
+    'saturation': 'Saturation',
+    'sharpness': 'Sharpness',
+    'gain': 'Gain',
+    'white_balance_automatic': 'Auto white balance',
+    'white_balance_temperature_auto': 'Auto white balance',
+    'white_balance_temperature': 'White balance',
+    'auto_exposure': 'Exposure mode',
+    'exposure_auto': 'Exposure mode',
+    'exposure_time_absolute': 'Exposure',
+    'exposure_absolute': 'Exposure',
+    'focus_automatic_continuous': 'Autofocus',
+    'focus_auto': 'Autofocus',
+    'focus_absolute': 'Focus',
+    'zoom_absolute': 'Zoom',
+    'power_line_frequency': 'Anti-flicker',
+    'backlight_compensation': 'Backlight compensation',
 }
 
 
@@ -36,13 +48,19 @@ def identity(device):
 
 def command(device, *args):
     try:
-        result = subprocess.run(['v4l2-ctl', '--device', device, *args],
-                                capture_output=True, text=True, timeout=4,
-                                env={**os.environ, 'LC_ALL': 'C'})
+        result = subprocess.run(
+            ['v4l2-ctl', '--device', device, *args],
+            capture_output=True,
+            text=True,
+            timeout=4,
+            env={**os.environ, 'LC_ALL': 'C'},
+        )
     except FileNotFoundError:
         raise ValueError('Install v4l-utils for camera settings.') from None
     if result.returncode:
-        raise ValueError(result.stderr.strip() or 'The camera settings are unavailable.')
+        raise ValueError(
+            result.stderr.strip() or 'The camera settings are unavailable.'
+        )
     return result.stdout
 
 
@@ -61,21 +79,41 @@ def parse_controls(text):
                 continue
             flags = data.split('flags=', 1)[-1].split(',') if 'flags=' in data else []
             flags = [flag.strip() for flag in flags]
-            current = dict(key=key, label=LABELS[key], kind=kind, value=int(values['value']),
-                           minimum=int(values.get('min', 0)), maximum=int(values.get('max', 1)),
-                           step=max(1, int(values.get('step', 1))),
-                           writable=not any(flag in flags for flag in ('read-only', 'inactive', 'disabled', 'grabbed', 'write-only')),
-                           choices=[])
+            current = dict(
+                key=key,
+                label=LABELS[key],
+                kind=kind,
+                value=int(values['value']),
+                minimum=int(values.get('min', 0)),
+                maximum=int(values.get('max', 1)),
+                step=max(1, int(values.get('step', 1))),
+                writable=not any(
+                    flag in flags
+                    for flag in (
+                        'read-only',
+                        'inactive',
+                        'disabled',
+                        'grabbed',
+                        'write-only',
+                    )
+                ),
+                choices=[],
+            )
             controls.append(current)
         elif current and current['kind'] in ('menu', 'intmenu'):
             choice = re.match(r'\s*(-?\d+):\s*(.+)', line)
             if choice:
-                current['choices'].append(dict(value=int(choice[1]), label=choice[2].strip()))
+                current['choices'].append(
+                    dict(value=int(choice[1]), label=choice[2].strip())
+                )
     return controls
 
 
 def snapshot(device):
-    return dict(token=identity(device), controls=parse_controls(command(device, '--list-ctrls-menus')))
+    return dict(
+        token=identity(device),
+        controls=parse_controls(command(device, '--list-ctrls-menus')),
+    )
 
 
 def handle(request):
@@ -88,7 +126,9 @@ def handle(request):
         raise ValueError('Unknown webcam action.')
     if request.get('token') != state['token']:
         raise ValueError('The webcam changed. Reopen its settings.')
-    control = next((row for row in state['controls'] if row['key'] == request.get('key')), None)
+    control = next(
+        (row for row in state['controls'] if row['key'] == request.get('key')), None
+    )
     value = request.get('value')
     if not control or not control['writable']:
         raise ValueError('This camera control is unavailable or automatic.')
@@ -99,7 +139,7 @@ def handle(request):
             raise ValueError('Invalid camera setting.')
     elif (value - control['minimum']) % control['step']:
         raise ValueError('Invalid camera setting step.')
-    command(device, '--set-ctrl', f"{control['key']}={value}")
+    command(device, '--set-ctrl', f'{control["key"]}={value}')
     return snapshot(device)
 
 

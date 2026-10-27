@@ -1,5 +1,5 @@
-import QtQuick
 import "../ui"
+import QtQuick
 
 // Presentation state only. Future providers can bind these properties without
 // loading a drawer. Feature discovery remains scoped to the drawer's active flag.

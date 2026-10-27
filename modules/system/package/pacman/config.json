@@ -4,7 +4,11 @@
         "pacman-contrib",
         "archlinux-contrib"
     ],
-    "extra": {"aur_packages": ["paru"]},
+    "extra": {
+        "aur_packages": [
+            "paru"
+        ]
+    },
     "pacman_config": {
         "color": true,
         "parallel_downloads": 5

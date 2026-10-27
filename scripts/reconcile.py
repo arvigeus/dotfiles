@@ -1,4 +1,5 @@
 """Content-based reconciliation of the current managed files and service state."""
+
 import difflib
 import hashlib
 import json
@@ -26,8 +27,12 @@ class Review:
                 return default
         try:
             while True:
-                stream.write(message + '\n' + ', '.join(f'[{key}] {label}' for key, label in choices.items())
-                             + f' [{default}]: ')
+                stream.write(
+                    message
+                    + '\n'
+                    + ', '.join(f'[{key}] {label}' for key, label in choices.items())
+                    + f' [{default}]: '
+                )
                 stream.flush()
                 answer = stream.readline()
                 if not answer:
@@ -79,6 +84,7 @@ def mkdir_owned(path, uid, gid):
 
 class State:
     """One current-state manifest, published after each successful change."""
+
     def __init__(self, directory, dry_run=False):
         self.directory = Path(directory)
         self.path = self.directory / 'state.json'
@@ -86,26 +92,49 @@ class State:
         check_parents(self.path)
         if self.path.is_symlink():
             raise ValueError(f'Refusing symlinked state: {self.path}')
-        self.data = json.loads(self.path.read_text()) if self.path.exists() else {'version': 1, 'files': {}}
-        if (not isinstance(self.data, dict) or self.data.get('version') != 1
-                or not isinstance(self.data.get('files'), dict)):
+        self.data = (
+            json.loads(self.path.read_text())
+            if self.path.exists()
+            else {'version': 1, 'files': {}}
+        )
+        if (
+            not isinstance(self.data, dict)
+            or self.data.get('version') != 1
+            or not isinstance(self.data.get('files'), dict)
+        ):
             raise ValueError(f'Invalid reconciliation state: {self.path}')
         for entries in self.data['files'].values():
             if not isinstance(entries, dict):
                 raise ValueError(f'Invalid file ownership state: {self.path}')
             for path, record in entries.items():
-                if (not Path(path).is_absolute() or Path(path).as_posix() != path or '..' in Path(path).parts
-                        or not isinstance(record, dict)):
+                if (
+                    not Path(path).is_absolute()
+                    or Path(path).as_posix() != path
+                    or '..' in Path(path).parts
+                    or not isinstance(record, dict)
+                ):
                     raise ValueError(f'Invalid file ownership state: {self.path}')
                 link = set(record) == {'link'} and isinstance(record['link'], str)
-                file = (set(record) == {'sha256', 'mode'} and isinstance(record['sha256'], str)
-                        and len(record['sha256']) == 64 and all(c in '0123456789abcdef' for c in record['sha256'])
-                        and type(record['mode']) is int and 0 <= record['mode'] <= 0o7777)
+                file = (
+                    set(record) == {'sha256', 'mode'}
+                    and isinstance(record['sha256'], str)
+                    and len(record['sha256']) == 64
+                    and all(c in '0123456789abcdef' for c in record['sha256'])
+                    and type(record['mode']) is int
+                    and 0 <= record['mode'] <= 0o7777
+                )
                 if not (link or file):
                     raise ValueError(f'Invalid file fingerprint: {self.path}')
-        for key in ('services', 'user_services', 'masked_user_services', 'repositories'):
-            if key in self.data and (not isinstance(self.data[key], list)
-                                     or not all(isinstance(value, str) and value for value in self.data[key])):
+        for key in (
+            'services',
+            'user_services',
+            'masked_user_services',
+            'repositories',
+        ):
+            if key in self.data and (
+                not isinstance(self.data[key], list)
+                or not all(isinstance(value, str) and value for value in self.data[key])
+            ):
                 raise ValueError(f'Invalid {key} state: {self.path}')
         self.saved = json.dumps(self.data, sort_keys=True)
 
@@ -139,7 +168,9 @@ class Files:
     def backup(self, target, current):
         if current is None:
             return
-        destination = self.state.directory / 'backups' / self.backup_id / target.relative_to('/')
+        destination = (
+            self.state.directory / 'backups' / self.backup_id / target.relative_to('/')
+        )
         destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         shutil.copy2(target, destination, follow_symlinks=False)
         if not destination.is_symlink():
@@ -147,7 +178,9 @@ class Files:
                 os.fsync(stream.fileno())
         sync_directory(destination.parent)
         if fingerprint(target) != current:
-            raise ValueError(f'File changed while being backed up; retry apply: {target}')
+            raise ValueError(
+                f'File changed while being backed up; retry apply: {target}'
+            )
         print(f'  Backup: {destination}')
 
     def difference(self, target, source):
@@ -159,8 +192,17 @@ class Files:
             print('File exceeds the 1 MiB diff limit.')
         else:
             try:
-                print(''.join(difflib.unified_diff(target.read_text().splitlines(True),
-                          source.read_text().splitlines(True), fromfile=str(target), tofile=str(source))), end='')
+                print(
+                    ''.join(
+                        difflib.unified_diff(
+                            target.read_text().splitlines(True),
+                            source.read_text().splitlines(True),
+                            fromfile=str(target),
+                            tofile=str(source),
+                        )
+                    ),
+                    end='',
+                )
             except UnicodeError:
                 print('Binary files differ.')
 
@@ -171,8 +213,11 @@ class Files:
             return False
         action = 'replace' if source is not None else 'remove'
         while True:
-            choice = self.review.choose(f'Local changes or untracked file: {target}',
-                                        {'d': 'diff', 'r': action, 'k': 'keep', 'q': 'quit apply'}, 'k')
+            choice = self.review.choose(
+                f'Local changes or untracked file: {target}',
+                {'d': 'diff', 'r': action, 'k': 'keep', 'q': 'quit apply'},
+                'k',
+            )
             if choice == 'd':
                 self.difference(target, source)
             elif choice == 'q':
@@ -193,14 +238,18 @@ class Files:
                 raise ValueError(f'Missing source: {source}')
             for owner, records in self.state.data['files'].items():
                 if owner != scope and str(target) in records:
-                    raise ValueError(f'Multiple owners for {target}: {owner} and {scope}')
+                    raise ValueError(
+                        f'Multiple owners for {target}: {owner} and {scope}'
+                    )
             check_parents(target)
             fingerprint(target)
         for name in previous:
             if name not in targets:
                 check_parents(Path(name))
                 fingerprint(Path(name))
-        operations = list(entries) + [(None, Path(name), 0, 0) for name in sorted(previous) if name not in targets]
+        operations = list(entries) + [
+            (None, Path(name), 0, 0) for name in sorted(previous) if name not in targets
+        ]
         for source, target, uid, gid in operations:
             current = fingerprint(target)
             desired = fingerprint(source) if source is not None else None
@@ -217,7 +266,13 @@ class Files:
                 self.state.save()
                 continue
             clean = current is None or (baseline is not None and current == baseline)
-            action = 'Remove' if desired is None else 'Create' if current is None else 'Update'
+            action = (
+                'Remove'
+                if desired is None
+                else 'Create'
+                if current is None
+                else 'Update'
+            )
             if not clean and not self.approved(target, source):
                 print(f'Conflict (kept): {target}')
                 self.conflicts.append(str(target))
@@ -247,7 +302,9 @@ class Files:
                             os.fsync(stream.fileno())
                     os.chown(temporary, uid, gid, follow_symlinks=False)
                     if fingerprint(temporary) != desired:
-                        raise ValueError(f'Source changed during apply; retry: {source}')
+                        raise ValueError(
+                            f'Source changed during apply; retry: {source}'
+                        )
                     if fingerprint(target) != current:
                         raise ValueError(f'File changed during apply; retry: {target}')
                     temporary.replace(target)
@@ -260,15 +317,21 @@ class Files:
 
 
 def tree_entries(staging, destination, uid, gid):
-    return [(source, destination / source.relative_to(staging), uid, gid)
-            for source in sorted(staging.rglob('*')) if source.is_symlink() or source.is_file()]
+    return [
+        (source, destination / source.relative_to(staging), uid, gid)
+        for source in sorted(staging.rglob('*'))
+        if source.is_symlink() or source.is_file()
+    ]
 
 
 def publish_tree(staging, destination, uid, gid, state, scope, force=False):
     entries = tree_entries(staging, destination, uid, gid)
     # Generated empty directories (history, XDG folders) have user ownership too.
-    directories = [destination / source.relative_to(staging) for source in sorted(staging.rglob('*'))
-                   if source.is_dir() and not source.is_symlink()]
+    directories = [
+        destination / source.relative_to(staging)
+        for source in sorted(staging.rglob('*'))
+        if source.is_dir() and not source.is_symlink()
+    ]
     for directory in directories:
         check_parents(directory / '.entry')
     if not state.dry_run:

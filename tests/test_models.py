@@ -1,4 +1,5 @@
 """Plain snapshots must refresh reordered rows without losing their delegates."""
+
 import unittest
 
 import support
@@ -7,7 +8,9 @@ import support
 @unittest.skipUnless(support.QS, 'Quickshell is required')
 class ModelTests(unittest.TestCase):
     def test_update_and_reorder_preserve_delegate_and_current_record(self):
-        support.run_qml(self, '''import QtQuick
+        support.run_qml(
+            self,
+            """import QtQuick
 import Quickshell
 import "ui"
 ShellRoot {
@@ -39,4 +42,5 @@ ShellRoot {
    stage++;
   } catch(e) { console.error("DISPLAY_FAIL",e); Qt.quit(); }
  }}
-}''')
+}""",
+        )

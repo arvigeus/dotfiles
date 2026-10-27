@@ -1,5 +1,5 @@
-import QtQuick
 import "../../ui"
+import QtQuick
 
 Worker {
     backend: "subtitle_backend.py"

@@ -1,4 +1,5 @@
 """Pictures uses the real fullscreen host and owned workers without network access."""
+
 import unittest
 import support
 from test_movies_space import setup as host_setup
@@ -6,8 +7,11 @@ from test_movies_space import setup as host_setup
 
 def setup(root):
     host_setup(root)
-    (root / 'art.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450"><rect width="800" height="450" fill="#78a078"/></svg>')
-    (root / 'spaces/pictures/backend.py').write_text('''import sys,time
+    (root / 'art.svg').write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450"><rect width="800" height="450" fill="#78a078"/></svg>'
+    )
+    (root / 'spaces/pictures/backend.py').write_text(
+        """import sys,time
 sys.path.insert(0,%r)
 from spaces.pictures.backend import run,clean_item,PROVIDERS
 from spaces.movies.worker import serve
@@ -21,7 +25,13 @@ def handle(r):
  if r['op']=='set':time.sleep(.25);return {'message':'Wallpaper and lock updated'}
  return run(r)
 serve(handle,controls=('set','favorite','savePreferences'))
-''' % (str(support.DESKTOP), (root / 'art.svg').as_uri(), (root / 'art.svg').as_uri()))
+"""
+        % (
+            str(support.DESKTOP),
+            (root / 'art.svg').as_uri(),
+            (root / 'art.svg').as_uri(),
+        )
+    )
 
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
@@ -29,7 +39,8 @@ class PicturesSpaceTests(unittest.TestCase):
     run_qml = support.run_qml
 
     def test_lifecycle_filters_gallery_favorites_and_apply(self):
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import Quickshell
 import "ui"
@@ -72,12 +83,15 @@ ShellRoot {
   if(root.step===5){check(page!==root.original,"close did not destroy Pictures");check(page.gridMode,"layout preference did not persist");SpaceState.close("movies");SpaceState.close("pictures");console.log("DISPLAY_PASS");Qt.quit();}
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:11000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup=setup)
+}""",
+            setup=setup,
+        )
 
     def test_drawer_random_uses_shared_service_without_starting_space(self):
         def action_setup(root):
             setup(root)
-            (root / 'spaces/pictures/backend.py').write_text('''import sys,time
+            (root / 'spaces/pictures/backend.py').write_text(
+                """import sys,time
 sys.path.insert(0,%r)
 from spaces.movies.worker import serve
 def handle(r):
@@ -85,8 +99,12 @@ def handle(r):
  time.sleep(.25)
  return {'message':'Wallpaper and lock screen updated'}
 serve(handle)
-''' % str(support.DESKTOP))
-        self.run_qml('''import QtQuick
+"""
+                % str(support.DESKTOP)
+            )
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "ui"
 import "spaces/pictures"
@@ -101,33 +119,70 @@ ShellRoot {
   console.log("DISPLAY_PASS");Qt.quit();
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:8000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup=action_setup)
+}""",
+            setup=action_setup,
+        )
 
     def test_private_provider_selection_loads_command_package_and_reports_failure(self):
         def private_setup(root):
             import json
+
             setup(root)
             config = root / 'config/quickshell/desktop/spaces/pictures'
             package = config / 'providers/personal'
             package.mkdir(parents=True)
-            (package / 'manifest.json').write_text(json.dumps({'api_version':1,'command':['python3','{plugin_dir}/provider.py']}))
-            (package / 'provider.py').write_text('''import json,os,sys,time
+            (package / 'manifest.json').write_text(
+                json.dumps(
+                    {
+                        'api_version': 1,
+                        'command': ['python3', '{plugin_dir}/provider.py'],
+                    }
+                )
+            )
+            (package / 'provider.py').write_text("""import json,os,sys,time
 request=json.load(sys.stdin)
 time.sleep(.25)
 if os.environ.get('FIXTURE_FAIL'):
  print(json.dumps({'success':False,'error':'Fixture provider is offline.'}))
 else:
  print(json.dumps({'success':True,'items':[{'id':'private-video','title':'Private fixture','kind':'video','preview':'','ref':{'id':'private-video'}}],'next':0}))
-''')
-            (config / 'pictures.json').write_text(json.dumps({'providers':[
-                {'id':'personal','name':'Private collection','plugin':'providers/personal'},
-                {'id':'unavailable','name':'Unavailable collection','plugin':'providers/personal','env':{'FIXTURE_FAIL':'1'}}]}))
+""")
+            (config / 'pictures.json').write_text(
+                json.dumps(
+                    {
+                        'providers': [
+                            {
+                                'id': 'personal',
+                                'name': 'Private collection',
+                                'plugin': 'providers/personal',
+                            },
+                            {
+                                'id': 'unavailable',
+                                'name': 'Unavailable collection',
+                                'plugin': 'providers/personal',
+                                'env': {'FIXTURE_FAIL': '1'},
+                            },
+                        ]
+                    }
+                )
+            )
             worker = root / 'spaces/pictures/backend.py'
-            source = worker.read_text().replace('from spaces.movies.worker import serve','from spaces.pictures import providers\nfrom spaces.movies.worker import serve')
-            source = source.replace("[PROVIDERS['wallhaven']]", "[PROVIDERS['wallhaven']]+providers.descriptors()")
-            source = source.replace("if r['op']=='browse' and not r.get('favorites'):", "if r['op']=='browse' and not r.get('favorites') and r.get('provider')=='wallhaven':")
+            source = worker.read_text().replace(
+                'from spaces.movies.worker import serve',
+                'from spaces.pictures import providers\nfrom spaces.movies.worker import serve',
+            )
+            source = source.replace(
+                "[PROVIDERS['wallhaven']]",
+                "[PROVIDERS['wallhaven']]+providers.descriptors()",
+            )
+            source = source.replace(
+                "if r['op']=='browse' and not r.get('favorites'):",
+                "if r['op']=='browse' and not r.get('favorites') and r.get('provider')=='wallhaven':",
+            )
             worker.write_text(source)
-        self.run_qml('''import QtQuick
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "ui"
 ShellRoot {
@@ -158,10 +213,12 @@ ShellRoot {
   if(root.step===3){if(page.loading)return;check(page.error==="Fixture provider is offline." && !page.selected.id,"provider failure left stale artwork or no error");SpaceState.close("pictures");console.log("DISPLAY_PASS");Qt.quit();}
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:10000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup=private_setup)
+}""",
+            setup=private_setup,
+        )
 
     def test_displays_header_has_one_badged_wallpaper_action(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import Quickshell
 import "ui"
 import "drawers"
@@ -201,4 +258,4 @@ ShellRoot {
   wallpapers.busy=true;check(!button.enabled,"busy action remains enabled");
   console.log("DISPLAY_PASS");Qt.quit();
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
-}''')
+}""")

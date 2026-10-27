@@ -1,4 +1,5 @@
 """Exercise audio boundaries and the real drawer without mutating host audio."""
+
 import importlib.util
 import json
 import os
@@ -11,8 +12,13 @@ import time
 import unittest
 from unittest.mock import patch
 
-DESKTOP = Path(__file__).resolve().parents[1] / 'modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop'
-SPEC = importlib.util.spec_from_file_location('desktop_audio', DESKTOP / 'drawers/audio/backend.py')
+DESKTOP = (
+    Path(__file__).resolve().parents[1]
+    / 'modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop'
+)
+SPEC = importlib.util.spec_from_file_location(
+    'desktop_audio', DESKTOP / 'drawers/audio/backend.py'
+)
 backend = importlib.util.module_from_spec(SPEC)
 _bytecode_disabled = sys.dont_write_bytecode
 sys.dont_write_bytecode = True
@@ -20,92 +26,219 @@ SPEC.loader.exec_module(backend)
 sys.dont_write_bytecode = _bytecode_disabled
 QS = shutil.which('qs')
 
-SINK = dict(index=7, name='laptop', description='Generic audio', mute=False,
-            properties={'device.name': 'card'}, active_port='speaker',
-            volume={'left': {'value': 32768}, 'right': {'value': 32768}},
-            ports=[dict(name='speaker', description='Speakers', type='Speaker', availability='availability unknown'),
-                   dict(name='jack', description='Headphones', type='Headphones', availability='not available')])
-CARD = dict(index=4, name='card', active_profile='duplex', profiles={
-    'duplex': dict(description='Stereo + microphone', sinks=1, available=True),
-    'surround': dict(description='Surround', sinks=1, available=True),
-    'off': dict(description='Off', sinks=0, available=True),
-    'missing': dict(description='Disconnected', sinks=1, available=False)})
-STREAM = dict(index=23, sink=7, mute=False, volume={'left': {'value': 65536}},
-              properties={'application.name': '<Music & sound>', 'application.process.binary': 'test-player',
-                          'media.name': 'Track', 'object.serial': '100'})
-CONFIG = dict(rules=[dict(match={'node.name': 'laptop', 'port.name': 'speaker'}, label='Laptop speakers'),
-                          dict(match={'node.name': 'laptop', 'port.name': 'jack'}, label='Laptop headphones', maxVolume=85)])
+SINK = dict(
+    index=7,
+    name='laptop',
+    description='Generic audio',
+    mute=False,
+    properties={'device.name': 'card'},
+    active_port='speaker',
+    volume={'left': {'value': 32768}, 'right': {'value': 32768}},
+    ports=[
+        dict(
+            name='speaker',
+            description='Speakers',
+            type='Speaker',
+            availability='availability unknown',
+        ),
+        dict(
+            name='jack',
+            description='Headphones',
+            type='Headphones',
+            availability='not available',
+        ),
+    ],
+)
+CARD = dict(
+    index=4,
+    name='card',
+    active_profile='duplex',
+    profiles={
+        'duplex': dict(description='Stereo + microphone', sinks=1, available=True),
+        'surround': dict(description='Surround', sinks=1, available=True),
+        'off': dict(description='Off', sinks=0, available=True),
+        'missing': dict(description='Disconnected', sinks=1, available=False),
+    },
+)
+STREAM = dict(
+    index=23,
+    sink=7,
+    mute=False,
+    volume={'left': {'value': 65536}},
+    properties={
+        'application.name': '<Music & sound>',
+        'application.process.binary': 'test-player',
+        'media.name': 'Track',
+        'object.serial': '100',
+    },
+)
+CONFIG = dict(
+    rules=[
+        dict(
+            match={'node.name': 'laptop', 'port.name': 'speaker'},
+            label='Laptop speakers',
+        ),
+        dict(
+            match={'node.name': 'laptop', 'port.name': 'jack'},
+            label='Laptop headphones',
+            maxVolume=85,
+        ),
+    ]
+)
 
 
 def fake_read(kind):
-    return {'sinks': [SINK], 'cards': [CARD], 'sink-inputs': [STREAM], 'sources': [], 'source-outputs': []}[kind]
+    return {
+        'sinks': [SINK],
+        'cards': [CARD],
+        'sink-inputs': [STREAM],
+        'sources': [],
+        'source-outputs': [],
+    }[kind]
 
 
 class AudioBackendTests(unittest.TestCase):
     def test_names_match_ports_and_bad_file_falls_back(self):
-        self.assertEqual(backend.describe(SINK, SINK['ports'][0], CONFIG)['label'], 'Laptop speakers')
-        self.assertEqual(backend.describe(SINK, SINK['ports'][1], CONFIG)['label'], 'Laptop headphones')
+        self.assertEqual(
+            backend.describe(SINK, SINK['ports'][0], CONFIG)['label'], 'Laptop speakers'
+        )
+        self.assertEqual(
+            backend.describe(SINK, SINK['ports'][1], CONFIG)['label'],
+            'Laptop headphones',
+        )
         other = dict(SINK, name='another-device')
-        self.assertIn('Generic audio', backend.describe(other, SINK['ports'][0], CONFIG)['label'])
+        self.assertIn(
+            'Generic audio', backend.describe(other, SINK['ports'][0], CONFIG)['label']
+        )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'audio.json'
-            self.assertEqual(backend.load_config(path.parent), ({'rules': [], 'profiles': {}}, ''))
-            path.write_text(json.dumps({'rules': [{'label': 'x', 'contains': {'node.name': 'a'}, 'maxVolume': True}]}))
+            self.assertEqual(
+                backend.load_config(path.parent), ({'rules': [], 'profiles': {}}, '')
+            )
+            path.write_text(
+                json.dumps(
+                    {
+                        'rules': [
+                            {
+                                'label': 'x',
+                                'contains': {'node.name': 'a'},
+                                'maxVolume': True,
+                            }
+                        ]
+                    }
+                )
+            )
             self.assertIn('maxVolume', backend.load_config(path.parent)[1])
             path.write_text('{')
             self.assertIn('audio.json', backend.load_config(path.parent)[1])
 
     def test_snapshot_is_inventory_without_native_state(self):
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), patch.object(backend, 'read', side_effect=fake_read) as read, \
-                patch.object(backend, 'command') as command:
+        with (
+            patch.object(backend, 'load_config', return_value=(CONFIG, '')),
+            patch.object(backend, 'read', side_effect=fake_read) as read,
+            patch.object(backend, 'command') as command,
+        ):
             state = backend.snapshot()
         command.assert_not_called()
         self.assertNotIn('sink-inputs', [c.args[0] for c in read.call_args_list])
         output = state['outputs'][0]
-        self.assertEqual((output['name'], output['deviceKey'], output['label'], output['maxVolume']), ('laptop', 'card', 'Laptop speakers', 150))
-        self.assertFalse({'volume', 'muted', 'selected', 'index', 'properties'} & output.keys())
+        self.assertEqual(
+            (output['name'], output['deviceKey'], output['label'], output['maxVolume']),
+            ('laptop', 'card', 'Laptop speakers', 150),
+        )
+        self.assertFalse(
+            {'volume', 'muted', 'selected', 'index', 'properties'} & output.keys()
+        )
         self.assertEqual([r['name'] for r in output['routes']], ['speaker'])
         self.assertEqual(len(state['outputDevices'][0]['profiles']), 2)
         self.assertNotIn('streams', state)
 
     def test_disconnected_port_and_stale_stream_never_mutate(self):
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), patch.object(backend, 'read', side_effect=fake_read), \
-                patch.object(backend, 'command') as command:
-            for request, message in [(dict(op='output-port', name='laptop', port='jack'), 'disconnected'),
-                                     (dict(op='output-port', name='gone', port='speaker'), 'disconnected'),
-                                     (dict(op='move', kind='stream', serial='100', destination='laptop'), 'Choose'),
-                                     (dict(op='move', kind='stream', serial=True, destination='laptop'), 'Choose'),
-                                     (dict(op='move', kind='sink', serial=100, destination='laptop'), 'Choose'),
-                                     (dict(op='profile', name='laptop', card='other', previous='duplex', profile='surround'), 'changed')]:
+        with (
+            patch.object(backend, 'load_config', return_value=(CONFIG, '')),
+            patch.object(backend, 'read', side_effect=fake_read),
+            patch.object(backend, 'command') as command,
+        ):
+            for request, message in [
+                (dict(op='output-port', name='laptop', port='jack'), 'disconnected'),
+                (dict(op='output-port', name='gone', port='speaker'), 'disconnected'),
+                (
+                    dict(op='move', kind='stream', serial='100', destination='laptop'),
+                    'Choose',
+                ),
+                (
+                    dict(op='move', kind='stream', serial=True, destination='laptop'),
+                    'Choose',
+                ),
+                (
+                    dict(op='move', kind='sink', serial=100, destination='laptop'),
+                    'Choose',
+                ),
+                (
+                    dict(
+                        op='profile',
+                        name='laptop',
+                        card='other',
+                        previous='duplex',
+                        profile='surround',
+                    ),
+                    'changed',
+                ),
+            ]:
                 with self.assertRaisesRegex(ValueError, message):
                     backend.control(request)
             command.assert_not_called()
 
     def test_native_operations_are_not_helper_actions(self):
-        with patch.object(backend, 'read', side_effect=fake_read), patch.object(backend, 'command') as command:
-            for op in ('status', 'volume', 'mute', 'output-default', 'input-default', 'output-boost', None):
+        with (
+            patch.object(backend, 'read', side_effect=fake_read),
+            patch.object(backend, 'command') as command,
+        ):
+            for op in (
+                'status',
+                'volume',
+                'mute',
+                'output-default',
+                'input-default',
+                'output-boost',
+                None,
+            ):
                 with self.assertRaisesRegex(ValueError, 'Unknown'):
                     backend.control(dict(op=op, name='laptop', value=50))
             command.assert_not_called()
 
     def test_connection_and_explicit_app_routing(self):
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), patch.object(backend, 'read', side_effect=fake_read), \
-                patch.object(backend, 'command') as command:
+        with (
+            patch.object(backend, 'load_config', return_value=(CONFIG, '')),
+            patch.object(backend, 'read', side_effect=fake_read),
+            patch.object(backend, 'command') as command,
+        ):
             backend.control(dict(op='output-port', name='laptop', port='speaker'))
-            self.assertEqual([c.args for c in command.call_args_list], [
-                ('set-sink-port', 'laptop', 'speaker'), ('set-sink-mute', 'laptop', '0')])
+            self.assertEqual(
+                [c.args for c in command.call_args_list],
+                [
+                    ('set-sink-port', 'laptop', 'speaker'),
+                    ('set-sink-mute', 'laptop', '0'),
+                ],
+            )
             command.reset_mock()
-            backend.control(dict(op='move', kind='stream', serial=100, destination='laptop'))
+            backend.control(
+                dict(op='move', kind='stream', serial=100, destination='laptop')
+            )
             command.assert_called_once_with('move-sink-input', 100, 'laptop')
             command.reset_mock()
-            backend.control(dict(op='move', kind='recording', serial=101, destination='usb'))
+            backend.control(
+                dict(op='move', kind='recording', serial=101, destination='usb')
+            )
             command.assert_called_once_with('move-source-output', 101, 'usb')
         with patch.object(backend, 'command', side_effect=ValueError('failed')):
             with self.assertRaisesRegex(ValueError, 'gone'):
-                backend.control(dict(op='move', kind='stream', serial=100, destination='laptop'))
+                backend.control(
+                    dict(op='move', kind='stream', serial=100, destination='laptop')
+                )
 
     def test_watch_publishes_inventory_only_after_device_changes(self):
-        fake = r'''#!/usr/bin/env python3
+        fake = r"""#!/usr/bin/env python3
 import json,os,sys,time
 from pathlib import Path
 root=Path(os.environ['FAKE_AUDIO'])
@@ -123,30 +256,57 @@ if sys.argv[1:]==['subscribe']:
 elif sys.argv[-2]=='list':
  log('list'); print(json.dumps(json.loads((root/'state').read_text())[sys.argv[-1]]))
 else: raise SystemExit('Unexpected mutation: '+str(sys.argv))
-'''
+"""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'pactl').write_text(fake)
             (root / 'pactl').chmod(0o755)
-            (root / 'state').write_text(json.dumps({'sinks': [SINK], 'cards': [CARD], 'sources': []}))
-            env = {**os.environ, 'PATH': str(root) + os.pathsep + os.environ['PATH'], 'FAKE_AUDIO': str(root),
-                   'XDG_CONFIG_HOME': str(root / 'config')}
-            worker = subprocess.Popen([sys.executable, '-B', str(DESKTOP / 'drawers/audio/backend.py'), 'watch'],
-                                      env=env, stdout=subprocess.PIPE, text=True)
+            (root / 'state').write_text(
+                json.dumps({'sinks': [SINK], 'cards': [CARD], 'sources': []})
+            )
+            env = {
+                **os.environ,
+                'PATH': str(root) + os.pathsep + os.environ['PATH'],
+                'FAKE_AUDIO': str(root),
+                'XDG_CONFIG_HOME': str(root / 'config'),
+            }
+            worker = subprocess.Popen(
+                [
+                    sys.executable,
+                    '-B',
+                    str(DESKTOP / 'drawers/audio/backend.py'),
+                    'watch',
+                ],
+                env=env,
+                stdout=subprocess.PIPE,
+                text=True,
+            )
             try:
-                first, second = json.loads(worker.stdout.readline()), json.loads(worker.stdout.readline())
+                first, second = (
+                    json.loads(worker.stdout.readline()),
+                    json.loads(worker.stdout.readline()),
+                )
                 time.sleep(0.8)
             finally:
                 worker.terminate()
                 output = worker.communicate(timeout=5)[0]
             self.assertTrue(first['ok'] and second['ok'])
-            self.assertEqual([r['name'] for r in first['data']['outputs'][0]['routes']], ['speaker'])
-            self.assertEqual([r['name'] for r in second['data']['outputs'][0]['routes']], ['speaker', 'jack'])
+            self.assertEqual(
+                [r['name'] for r in first['data']['outputs'][0]['routes']], ['speaker']
+            )
+            self.assertEqual(
+                [r['name'] for r in second['data']['outputs'][0]['routes']],
+                ['speaker', 'jack'],
+            )
             self.assertEqual(output, '', 'unchanged inventory was published again')
             log = (root / 'log').read_text().split()
             sink, card = log.index('sink'), log.index('card')
-            self.assertEqual(log[:sink - 1], ['list'] * 3)
-            self.assertEqual(log[sink + 1:card - 1], ['list'] * 3, 'endpoint changes must re-read ports')
+            self.assertEqual(log[: sink - 1], ['list'] * 3)
+            self.assertEqual(
+                log[sink + 1 : card - 1],
+                ['list'] * 3,
+                'endpoint changes must re-read ports',
+            )
             self.assertEqual(log.count('list'), 12)
             subscriber = int((root / 'subscriber').read_text())
             time.sleep(0.2)
@@ -158,17 +318,44 @@ else: raise SystemExit('Unexpected mutation: '+str(sys.argv))
         first = dict(SINK, ports=[SINK['ports'][0], jack])
         second = dict(SINK, name='second', index=8)
         virtual = dict(SINK, name='virtual', index=10, properties={}, ports=[])
-        config = dict(rules=CONFIG['rules'] + [dict(match={'device.name': 'card'}, label='Laptop audio', deviceLabel='Laptop audio device')])
-        outputs, devices = backend.output_inventory([first, second, virtual], [CARD], config)
+        config = dict(
+            rules=CONFIG['rules']
+            + [
+                dict(
+                    match={'device.name': 'card'},
+                    label='Laptop audio',
+                    deviceLabel='Laptop audio device',
+                )
+            ]
+        )
+        outputs, devices = backend.output_inventory(
+            [first, second, virtual], [CARD], config
+        )
         self.assertEqual(len(outputs), 3)
         self.assertEqual(len(devices), 2)
-        self.assertEqual({r['name'] for r in next(o for o in outputs if o['name']=='laptop')['routes']}, {'speaker', 'jack'})
-        self.assertEqual(next(d for d in devices if d['key']=='card')['label'], 'Laptop audio device')
-        self.assertEqual(next(d for d in devices if d['key']=='virtual')['profiles'], [])
+        self.assertEqual(
+            {
+                r['name']
+                for r in next(o for o in outputs if o['name'] == 'laptop')['routes']
+            },
+            {'speaker', 'jack'},
+        )
+        self.assertEqual(
+            next(d for d in devices if d['key'] == 'card')['label'],
+            'Laptop audio device',
+        )
+        self.assertEqual(
+            next(d for d in devices if d['key'] == 'virtual')['profiles'], []
+        )
 
     def test_changing_connection_applies_route_cap_and_keeps_default_and_mute(self):
-        sink = dict(SINK, mute=True, volume={'left': {'value': 65536}},
-                    ports=[SINK['ports'][0], dict(SINK['ports'][1], availability='available')])
+        sink = dict(
+            SINK,
+            mute=True,
+            volume={'left': {'value': 65536}},
+            ports=[SINK['ports'][0], dict(SINK['ports'][1], availability='available')],
+        )
+
         def mutate(*args):
             if args[0] == 'set-sink-port':
                 sink['active_port'] = args[2]
@@ -178,70 +365,168 @@ else: raise SystemExit('Unexpected mutation: '+str(sys.argv))
                 sink['volume'] = {'left': {'value': args[2]}}
             elif args[0] == 'set-sink-mute':
                 sink['mute'] = args[2] == '1'
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), \
-                patch.object(backend, 'read', return_value=[sink]), patch.object(backend, 'command', side_effect=mutate) as command:
-            backend.control(dict(op='output-port', name='laptop', port='jack', boost=True))
-            self.assertEqual([c.args for c in command.call_args_list], [
-                ('set-sink-volume', 'laptop', int(85 * 65536 / 100)), ('set-sink-port', 'laptop', 'jack'),
-                ('set-sink-volume', 'laptop', int(85 * 65536 / 100)), ('set-sink-mute', 'laptop', '1')])
+
+        with (
+            patch.object(backend, 'load_config', return_value=(CONFIG, '')),
+            patch.object(backend, 'read', return_value=[sink]),
+            patch.object(backend, 'command', side_effect=mutate) as command,
+        ):
+            backend.control(
+                dict(op='output-port', name='laptop', port='jack', boost=True)
+            )
+            self.assertEqual(
+                [c.args for c in command.call_args_list],
+                [
+                    ('set-sink-volume', 'laptop', int(85 * 65536 / 100)),
+                    ('set-sink-port', 'laptop', 'jack'),
+                    ('set-sink-volume', 'laptop', int(85 * 65536 / 100)),
+                    ('set-sink-mute', 'laptop', '1'),
+                ],
+            )
             self.assertLessEqual(backend.volume(sink), 85)
             self.assertTrue(sink['mute'])
 
     def test_route_waits_for_delayed_policy_restoration(self):
         clock = [0.0]
+
         def read(kind):
             self.assertEqual(kind, 'sinks')
             restored = clock[0] >= 0.08
-            return [dict(SINK, active_port='jack' if clock[0] >= 0.04 else 'speaker',
-                         mute=not restored, volume={'left': {'value': 65536 if restored else 32768}})]
-        with patch.object(backend, 'read', side_effect=read), patch.object(backend, 'command'), \
-                patch.object(backend.time, 'monotonic', side_effect=lambda: clock[0]), \
-                patch.object(backend.time, 'sleep', side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)):
+            return [
+                dict(
+                    SINK,
+                    active_port='jack' if clock[0] >= 0.04 else 'speaker',
+                    mute=not restored,
+                    volume={'left': {'value': 65536 if restored else 32768}},
+                )
+            ]
+
+        with (
+            patch.object(backend, 'read', side_effect=read),
+            patch.object(backend, 'command'),
+            patch.object(backend.time, 'monotonic', side_effect=lambda: clock[0]),
+            patch.object(
+                backend.time,
+                'sleep',
+                side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+            ),
+        ):
             updated = backend.select_port('sink', SINK, 'jack')
         self.assertGreaterEqual(clock[0], 0.20)
         self.assertFalse(updated['mute'])
         self.assertEqual(backend.volume(updated), 100)
 
     def test_route_wait_reports_disconnect_and_timeout(self):
-        with patch.object(backend, 'command'), patch.object(backend, 'read', return_value=[]):
+        with (
+            patch.object(backend, 'command'),
+            patch.object(backend, 'read', return_value=[]),
+        ):
             with self.assertRaisesRegex(ValueError, 'disconnected'):
                 backend.select_port('sink', SINK, 'jack')
-        with patch.object(backend, 'command'), patch.object(backend, 'read', return_value=[SINK]), \
-                patch.object(backend.time, 'monotonic', side_effect=[0, 3]):
+        with (
+            patch.object(backend, 'command'),
+            patch.object(backend, 'read', return_value=[SINK]),
+            patch.object(backend.time, 'monotonic', side_effect=[0, 3]),
+        ):
             with self.assertRaisesRegex(ValueError, 'did not finish'):
                 backend.select_port('sink', SINK, 'jack')
 
     def test_profile_reduction_does_not_overlay_two_outputs_or_their_apps(self):
-        card = dict(CARD, active_profile='pro-audio', profiles={
-            'pro-audio': dict(sinks=2, sources=0), 'output:analog-stereo': dict(sinks=1, sources=0)})
-        first = dict(SINK, name='old-first', properties={'device.name': 'card', 'alsa.device': '0'})
-        second = dict(first, name='old-second', index=8, properties={'device.name': 'card', 'alsa.device': '1'}, volume={'left': {'value': 52428}})
+        card = dict(
+            CARD,
+            active_profile='pro-audio',
+            profiles={
+                'pro-audio': dict(sinks=2, sources=0),
+                'output:analog-stereo': dict(sinks=1, sources=0),
+            },
+        )
+        first = dict(
+            SINK,
+            name='old-first',
+            properties={'device.name': 'card', 'alsa.device': '0'},
+        )
+        second = dict(
+            first,
+            name='old-second',
+            index=8,
+            properties={'device.name': 'card', 'alsa.device': '1'},
+            volume={'left': {'value': 52428}},
+        )
         recreated = dict(first, name='new-first', index=17)
-        apps = [STREAM, dict(STREAM, index=24, sink=8, properties={'object.serial': '101'})]
+        apps = [
+            STREAM,
+            dict(STREAM, index=24, sink=8, properties={'object.serial': '101'}),
+        ]
         changed = [False]
         mutations = []
+
         def read(kind):
-            return {'sinks': [recreated] if changed[0] else [first, second], 'sources': [],
-                    'sink-inputs': apps, 'source-outputs': []}[kind]
+            return {
+                'sinks': [recreated] if changed[0] else [first, second],
+                'sources': [],
+                'sink-inputs': apps,
+                'source-outputs': [],
+            }[kind]
+
         def command(*args):
-            if args == ('-f', 'json', 'info'): return json.dumps({'default_sink_name': 'old-first'})
+            if args == ('-f', 'json', 'info'):
+                return json.dumps({'default_sink_name': 'old-first'})
             mutations.append(args)
-            if args[0] == 'set-card-profile': changed[0] = True
+            if args[0] == 'set-card-profile':
+                changed[0] = True
             return ''
-        with patch.object(backend, 'read', side_effect=read), patch.object(backend, 'command', side_effect=command):
-            backend.change_profile(card, dict(name='output:analog-stereo', sinks=1, sources=0))
-        self.assertEqual([c for c in mutations if c[0]=='set-sink-volume'], [('set-sink-volume', 'new-first', 32768, 32768)])
-        self.assertEqual([c for c in mutations if c[0]=='move-sink-input'], [('move-sink-input', 23, 'new-first')])
+
+        with (
+            patch.object(backend, 'read', side_effect=read),
+            patch.object(backend, 'command', side_effect=command),
+        ):
+            backend.change_profile(
+                card, dict(name='output:analog-stereo', sinks=1, sources=0)
+            )
+        self.assertEqual(
+            [c for c in mutations if c[0] == 'set-sink-volume'],
+            [('set-sink-volume', 'new-first', 32768, 32768)],
+        )
+        self.assertEqual(
+            [c for c in mutations if c[0] == 'move-sink-input'],
+            [('move-sink-input', 23, 'new-first')],
+        )
 
     def test_profile_checks_current_card_and_profile(self):
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), patch.object(backend, 'read', side_effect=fake_read), \
-                patch.object(backend, 'command') as command, patch.object(backend, 'change_profile') as change:
-            for previous, profile in [('stale', 'surround'), ('duplex', 'off'), ('duplex', 'missing')]:
+        with (
+            patch.object(backend, 'load_config', return_value=(CONFIG, '')),
+            patch.object(backend, 'read', side_effect=fake_read),
+            patch.object(backend, 'command') as command,
+            patch.object(backend, 'change_profile') as change,
+        ):
+            for previous, profile in [
+                ('stale', 'surround'),
+                ('duplex', 'off'),
+                ('duplex', 'missing'),
+            ]:
                 with self.assertRaises(ValueError):
-                    backend.control(dict(op='profile', name='laptop', card='card', previous=previous, profile=profile))
+                    backend.control(
+                        dict(
+                            op='profile',
+                            name='laptop',
+                            card='card',
+                            previous=previous,
+                            profile=profile,
+                        )
+                    )
             command.assert_not_called()
-            backend.control(dict(op='profile', name='laptop', card='card', previous='duplex', profile='surround'))
-            change.assert_called_once_with(CARD, dict(CARD['profiles']['surround'], name='surround'))
+            backend.control(
+                dict(
+                    op='profile',
+                    name='laptop',
+                    card='card',
+                    previous='duplex',
+                    profile='surround',
+                )
+            )
+            change.assert_called_once_with(
+                CARD, dict(CARD['profiles']['surround'], name='surround')
+            )
 
 
 class MicrophoneBackendTests(unittest.TestCase):
@@ -250,48 +535,129 @@ class MicrophoneBackendTests(unittest.TestCase):
         self.surround = 'output:analog-surround-40'
         self.capture = 'input:analog-stereo'
         profiles = {
-            self.stereo: dict(description='Analog Stereo Output', sinks=1, sources=0, priority=6500),
-            self.stereo + '+' + self.capture: dict(description='Analog Stereo Duplex', sinks=1, sources=1, priority=6565),
-            self.surround: dict(description='Analog Surround 4.0 Output', sinks=1, sources=0, priority=1200),
-            self.surround + '+' + self.capture: dict(description='Analog Surround 4.0 Output + Analog Stereo Input', sinks=1, sources=1, priority=1265),
-            self.capture: dict(description='Analog Stereo Input', sinks=0, sources=1, priority=65),
+            self.stereo: dict(
+                description='Analog Stereo Output', sinks=1, sources=0, priority=6500
+            ),
+            self.stereo + '+' + self.capture: dict(
+                description='Analog Stereo Duplex', sinks=1, sources=1, priority=6565
+            ),
+            self.surround: dict(
+                description='Analog Surround 4.0 Output',
+                sinks=1,
+                sources=0,
+                priority=1200,
+            ),
+            self.surround + '+' + self.capture: dict(
+                description='Analog Surround 4.0 Output + Analog Stereo Input',
+                sinks=1,
+                sources=1,
+                priority=1265,
+            ),
+            self.capture: dict(
+                description='Analog Stereo Input', sinks=0, sources=1, priority=65
+            ),
             'off': dict(sinks=0, sources=0),
             'pro-audio': dict(description='Pro Audio', sinks=1, sources=1),
         }
-        self.card = dict(CARD, active_profile=self.stereo, profiles=profiles, ports={
-            'speaker': dict(type='Speaker', profiles=[self.stereo, self.stereo+'+'+self.capture, self.surround, self.surround+'+'+self.capture]),
-            'jack': dict(type='Headphones', profiles=[self.stereo, self.stereo+'+'+self.capture]),
-            'mic': dict(type='Mic', availability='available', profiles=[self.capture, self.stereo+'+'+self.capture, self.surround+'+'+self.capture]),
-            'headset-mic': dict(type='Mic', availability='not available', profiles=[self.capture, self.stereo+'+'+self.capture]),
-        })
-        self.source = dict(name='microphone', index=9, description='Built-in microphone', mute=True,
-                           properties={'device.name': 'card', 'media.class': 'Audio/Source', 'alsa.device': '0'},
-                           volume={'left': {'value': 24576}}, active_port='mic',
-                           ports=[dict(name='mic', type='Mic', availability='available')])
+        self.card = dict(
+            CARD,
+            active_profile=self.stereo,
+            profiles=profiles,
+            ports={
+                'speaker': dict(
+                    type='Speaker',
+                    profiles=[
+                        self.stereo,
+                        self.stereo + '+' + self.capture,
+                        self.surround,
+                        self.surround + '+' + self.capture,
+                    ],
+                ),
+                'jack': dict(
+                    type='Headphones',
+                    profiles=[self.stereo, self.stereo + '+' + self.capture],
+                ),
+                'mic': dict(
+                    type='Mic',
+                    availability='available',
+                    profiles=[
+                        self.capture,
+                        self.stereo + '+' + self.capture,
+                        self.surround + '+' + self.capture,
+                    ],
+                ),
+                'headset-mic': dict(
+                    type='Mic',
+                    availability='not available',
+                    profiles=[self.capture, self.stereo + '+' + self.capture],
+                ),
+            },
+        )
+        self.source = dict(
+            name='microphone',
+            index=9,
+            description='Built-in microphone',
+            mute=True,
+            properties={
+                'device.name': 'card',
+                'media.class': 'Audio/Source',
+                'alsa.device': '0',
+            },
+            volume={'left': {'value': 24576}},
+            active_port='mic',
+            ports=[dict(name='mic', type='Mic', availability='available')],
+        )
 
     def test_layout_choices_group_capture_variants_and_preserve_capabilities(self):
-        config = {'profiles': {self.stereo: 'Stereo playback', self.surround: 'Four-channel playback'}}
+        config = {
+            'profiles': {
+                self.stereo: 'Stereo playback',
+                self.surround: 'Four-channel playback',
+            }
+        }
         modes = backend.playback_profiles(self.card, config, 'speaker')
-        self.assertEqual([p['name'] for p in modes], [self.stereo, self.surround, 'pro-audio'])
+        self.assertEqual(
+            [p['name'] for p in modes], [self.stereo, self.surround, 'pro-audio']
+        )
         self.assertTrue(modes[0]['selected'])
         self.assertTrue(modes[1]['enabled'])
         self.assertFalse(modes[2]['enabled'])
-        self.assertEqual(backend.resolve_profile(self.card, (self.surround,))['name'], self.surround)
+        self.assertEqual(
+            backend.resolve_profile(self.card, (self.surround,))['name'], self.surround
+        )
         self.card['active_profile'] = self.stereo + '+' + self.capture
-        self.assertEqual(backend.resolve_profile(self.card, (self.surround,))['name'], self.surround+'+'+self.capture)
-        self.assertIsNone(backend.resolve_profile(self.card, (self.surround,), port='jack'))
-        self.card['profiles'][self.surround+'+'+self.capture]['available'] = False
+        self.assertEqual(
+            backend.resolve_profile(self.card, (self.surround,))['name'],
+            self.surround + '+' + self.capture,
+        )
+        self.assertIsNone(
+            backend.resolve_profile(self.card, (self.surround,), port='jack')
+        )
+        self.card['profiles'][self.surround + '+' + self.capture]['available'] = False
         self.assertIsNone(backend.resolve_profile(self.card, (self.surround,)))
         self.card['active_profile'] = 'pro-audio'
         self.assertIsNone(backend.resolve_profile(self.card, capture=False))
-        self.assertEqual(backend.resolve_profile(self.card, (self.stereo,))['name'], self.stereo+'+'+self.capture)
+        self.assertEqual(
+            backend.resolve_profile(self.card, (self.stereo,))['name'],
+            self.stereo + '+' + self.capture,
+        )
 
     def test_disabled_devices_have_no_fake_sources_and_monitors_are_excluded(self):
-        monitor = dict(self.source, name='laptop.monitor', properties={'device.class': 'monitor'})
-        data = {'cards': [self.card], 'sinks': [SINK], 'sources': [monitor], 'sink-inputs': [], 'source-outputs': []}
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), \
-                patch.object(backend, 'read', side_effect=lambda kind: data[kind]), \
-                patch.object(backend, 'command', return_value='{}'):
+        monitor = dict(
+            self.source, name='laptop.monitor', properties={'device.class': 'monitor'}
+        )
+        data = {
+            'cards': [self.card],
+            'sinks': [SINK],
+            'sources': [monitor],
+            'sink-inputs': [],
+            'source-outputs': [],
+        }
+        with (
+            patch.object(backend, 'load_config', return_value=(CONFIG, '')),
+            patch.object(backend, 'read', side_effect=lambda kind: data[kind]),
+            patch.object(backend, 'command', return_value='{}'),
+        ):
             state = backend.snapshot()
             self.assertEqual(state['inputs'], [])
             device = state['inputDevices'][0]
@@ -313,10 +679,22 @@ class MicrophoneBackendTests(unittest.TestCase):
             self.assertFalse(backend.snapshot()['inputDevices'][0]['canToggle'])
 
     def test_independent_sources_and_shared_routes_are_distinct(self):
-        headset = dict(name='headset-mic', type='Mic', description='Headset microphone', availability='available')
+        headset = dict(
+            name='headset-mic',
+            type='Mic',
+            description='Headset microphone',
+            availability='available',
+        )
         disconnected = dict(headset, name='missing', availability='not available')
         source = dict(self.source, ports=self.source['ports'] + [headset, disconnected])
-        usb = dict(self.source, name='usb', index=10, properties={'media.class': 'Audio/Source'}, description='USB microphone', ports=[])
+        usb = dict(
+            self.source,
+            name='usb',
+            index=10,
+            properties={'media.class': 'Audio/Source'},
+            description='USB microphone',
+            ports=[],
+        )
         inputs, devices = backend.input_inventory([source, usb], [self.card], CONFIG)
         self.assertEqual(len(inputs), 2)
         shared = next(n for n in inputs if n['name'] == 'microphone')
@@ -329,17 +707,28 @@ class MicrophoneBackendTests(unittest.TestCase):
         self.assertEqual({n['deviceKey'] for n in inputs}, {'card'})
 
     def test_bluetooth_mode_changes_are_visible_but_not_silently_applied(self):
-        card = dict(index=5, name='bluetooth', active_profile='a2dp-sink', profiles={
-            'a2dp-sink': dict(sinks=1, sources=0),
-            'headset-head-unit': dict(sinks=1, sources=1),
-            'off': dict(sinks=0, sources=0)})
+        card = dict(
+            index=5,
+            name='bluetooth',
+            active_profile='a2dp-sink',
+            profiles={
+                'a2dp-sink': dict(sinks=1, sources=0),
+                'headset-head-unit': dict(sinks=1, sources=1),
+                'off': dict(sinks=0, sources=0),
+            },
+        )
         inputs, devices = backend.input_inventory([], [card], CONFIG)
         self.assertEqual(inputs, [])
         self.assertTrue(devices[0]['available'])
         self.assertFalse(devices[0]['enabled'] or devices[0]['canToggle'])
         self.assertIn('playback mode', devices[0]['toggleReason'])
         card['active_profile'] = 'headset-head-unit'
-        source = dict(self.source, name='bluetooth-input', properties={'device.name': 'bluetooth'}, ports=[])
+        source = dict(
+            self.source,
+            name='bluetooth-input',
+            properties={'device.name': 'bluetooth'},
+            ports=[],
+        )
         inputs, devices = backend.input_inventory([source], [card], CONFIG)
         self.assertTrue(devices[0]['enabled'])
         self.assertFalse(devices[0]['canToggle'])
@@ -348,53 +737,120 @@ class MicrophoneBackendTests(unittest.TestCase):
     def test_connection_action_keeps_mute_and_does_not_reroute_recordings(self):
         port = dict(name='headset-mic', availability='available')
         source = dict(self.source, ports=self.source['ports'] + [port])
+
         def mutate(*args):
             if args[0] == 'set-source-port':
                 source.update(active_port=args[2], mute=False)
             elif args[0] == 'set-source-mute':
                 source['mute'] = args[2] == '1'
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), \
-                patch.object(backend, 'read', return_value=[source]), patch.object(backend, 'command', side_effect=mutate) as command:
-            backend.control(dict(op='input-port', name='microphone', port='headset-mic'))
-            self.assertEqual([c.args for c in command.call_args_list], [
-                ('set-source-port', 'microphone', 'headset-mic'), ('set-source-mute', 'microphone', '1')])
+
+        with (
+            patch.object(backend, 'load_config', return_value=(CONFIG, '')),
+            patch.object(backend, 'read', return_value=[source]),
+            patch.object(backend, 'command', side_effect=mutate) as command,
+        ):
+            backend.control(
+                dict(op='input-port', name='microphone', port='headset-mic')
+            )
+            self.assertEqual(
+                [c.args for c in command.call_args_list],
+                [
+                    ('set-source-port', 'microphone', 'headset-mic'),
+                    ('set-source-mute', 'microphone', '1'),
+                ],
+            )
             self.assertTrue(source['mute'])
             command.reset_mock()
-            for request in (dict(op='input-port', name='gone', port='mic'), dict(op='input-port', name='microphone', port='missing')):
-                with self.assertRaises(ValueError): backend.control(request)
+            for request in (
+                dict(op='input-port', name='gone', port='mic'),
+                dict(op='input-port', name='microphone', port='missing'),
+            ):
+                with self.assertRaises(ValueError):
+                    backend.control(request)
             command.assert_not_called()
 
-    def test_enabling_input_selects_matching_profile_without_silently_changing_layout(self):
+    def test_enabling_input_selects_matching_profile_without_silently_changing_layout(
+        self,
+    ):
         reads = {'cards': [self.card], 'source-outputs': []}
         sources = []
+
         def change(card, target):
-            self.assertEqual(target['name'], self.stereo+'+'+self.capture)
+            self.assertEqual(target['name'], self.stereo + '+' + self.capture)
             sources.append(self.source)
+
         def mutate(*args):
             if args[0] == 'set-source-port':
                 self.source['mute'] = False
             elif args[0] == 'set-source-mute':
                 self.source['mute'] = args[2] == '1'
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), \
-                patch.object(backend, 'read', side_effect=lambda kind: sources if kind=='sources' else reads[kind]), \
-                patch.object(backend, 'change_profile', side_effect=change) as transition, patch.object(backend, 'command', side_effect=mutate) as command:
-            backend.control(dict(op='input-enabled', card='card', previous=self.stereo, port='mic', enabled=True))
+
+        with (
+            patch.object(backend, 'load_config', return_value=(CONFIG, '')),
+            patch.object(
+                backend,
+                'read',
+                side_effect=lambda kind: sources if kind == 'sources' else reads[kind],
+            ),
+            patch.object(backend, 'change_profile', side_effect=change) as transition,
+            patch.object(backend, 'command', side_effect=mutate) as command,
+        ):
+            backend.control(
+                dict(
+                    op='input-enabled',
+                    card='card',
+                    previous=self.stereo,
+                    port='mic',
+                    enabled=True,
+                )
+            )
             transition.assert_called_once()
-            self.assertEqual([c.args for c in command.call_args_list], [
-                ('set-source-port', 'microphone', 'mic'), ('set-source-mute', 'microphone', '1')])
+            self.assertEqual(
+                [c.args for c in command.call_args_list],
+                [
+                    ('set-source-port', 'microphone', 'mic'),
+                    ('set-source-mute', 'microphone', '1'),
+                ],
+            )
             self.assertTrue(self.source['mute'])
             sources.clear()
             command.reset_mock()
             for request in (
-                dict(op='input-enabled', card='card', previous='stale', port='mic', enabled=True),
-                dict(op='input-enabled', card='card', previous=self.stereo, port='headset-mic', enabled=True),
-                dict(op='input-enabled', card='card', previous=self.stereo, enabled='invalid'),
+                dict(
+                    op='input-enabled',
+                    card='card',
+                    previous='stale',
+                    port='mic',
+                    enabled=True,
+                ),
+                dict(
+                    op='input-enabled',
+                    card='card',
+                    previous=self.stereo,
+                    port='headset-mic',
+                    enabled=True,
+                ),
+                dict(
+                    op='input-enabled',
+                    card='card',
+                    previous=self.stereo,
+                    enabled='invalid',
+                ),
             ):
-                with self.assertRaises(ValueError): backend.control(request)
+                with self.assertRaises(ValueError):
+                    backend.control(request)
             command.assert_not_called()
-            self.card['profiles'][self.stereo+'+'+self.capture]['available'] = False
+            self.card['profiles'][self.stereo + '+' + self.capture]['available'] = False
             with self.assertRaisesRegex(ValueError, 'keeping its playback mode'):
-                backend.control(dict(op='input-enabled', card='card', previous=self.stereo, port='mic', enabled=True))
+                backend.control(
+                    dict(
+                        op='input-enabled',
+                        card='card',
+                        previous=self.stereo,
+                        port='mic',
+                        enabled=True,
+                    )
+                )
 
     def test_profile_mutes_unmatched_inputs_and_preserves_matched_mute(self):
         self.card['active_profile'] = self.stereo + '+' + self.capture
@@ -402,11 +858,25 @@ class MicrophoneBackendTests(unittest.TestCase):
             with self.subTest(muted=muted):
                 old = dict(self.source, mute=muted)
                 recreated = dict(old, name='recreated', index=90, ports=[])
-                extra = dict(recreated, name='extra', index=91, mute=False,
-                             properties={'device.name': 'card', 'alsa.device': '1'}, ports=self.source['ports'])
+                extra = dict(
+                    recreated,
+                    name='extra',
+                    index=91,
+                    mute=False,
+                    properties={'device.name': 'card', 'alsa.device': '1'},
+                    ports=self.source['ports'],
+                )
                 changed = [False]
+
                 def read(kind):
-                    return ([recreated, extra] if changed[0] else [old]) if kind == 'sources' else {'sinks': [SINK], 'sink-inputs': [], 'source-outputs': []}[kind]
+                    return (
+                        ([recreated, extra] if changed[0] else [old])
+                        if kind == 'sources'
+                        else {'sinks': [SINK], 'sink-inputs': [], 'source-outputs': []}[
+                            kind
+                        ]
+                    )
+
                 def mutate(*args):
                     if args == ('-f', 'json', 'info'):
                         return '{}'
@@ -415,10 +885,18 @@ class MicrophoneBackendTests(unittest.TestCase):
                     elif args[0] == 'set-source-port':
                         extra['mute'] = False
                     elif args[0] == 'set-source-mute':
-                        next(n for n in (recreated, extra) if n['name'] == args[1])['mute'] = args[2] == '1'
+                        next(n for n in (recreated, extra) if n['name'] == args[1])[
+                            'mute'
+                        ] = args[2] == '1'
                     return ''
-                with patch.object(backend, 'read', side_effect=read), patch.object(backend, 'command', side_effect=mutate):
-                    backend.change_profile(self.card, dict(name='pro-audio', sinks=1, sources=2))
+
+                with (
+                    patch.object(backend, 'read', side_effect=read),
+                    patch.object(backend, 'command', side_effect=mutate),
+                ):
+                    backend.change_profile(
+                        self.card, dict(name='pro-audio', sinks=1, sources=2)
+                    )
                 self.assertEqual(recreated['mute'], muted)
                 self.assertTrue(extra['mute'])
 
@@ -427,20 +905,45 @@ class MicrophoneBackendTests(unittest.TestCase):
             self.card['active_profile'] = mode + '+' + self.capture
             capture_enabled = [True]
             mutations = []
-            display = dict(SINK, name='display', index=8, properties={'device.name': 'other-card'})
+            display = dict(
+                SINK, name='display', index=8, properties={'device.name': 'other-card'}
+            )
+
             def read(kind):
-                return {'cards': [self.card], 'sinks': [SINK, display],
-                        'sources': [self.source] if capture_enabled[0] else [],
-                        'sink-inputs': [], 'source-outputs': []}[kind]
+                return {
+                    'cards': [self.card],
+                    'sinks': [SINK, display],
+                    'sources': [self.source] if capture_enabled[0] else [],
+                    'sink-inputs': [],
+                    'source-outputs': [],
+                }[kind]
+
             def command(*args):
                 if args == ('-f', 'json', 'info'):
-                    return json.dumps({'default_sink_name': 'display', 'default_source_name': 'microphone'})
+                    return json.dumps(
+                        {
+                            'default_sink_name': 'display',
+                            'default_source_name': 'microphone',
+                        }
+                    )
                 mutations.append(args)
-                if args[0] == 'set-card-profile': capture_enabled[0] = False
+                if args[0] == 'set-card-profile':
+                    capture_enabled[0] = False
                 return ''
-            with patch.object(backend, 'load_config', return_value=(CONFIG, '')), \
-                    patch.object(backend, 'read', side_effect=read), patch.object(backend, 'command', side_effect=command):
-                backend.control(dict(op='input-enabled', card='card', previous=self.card['active_profile'], enabled=False))
+
+            with (
+                patch.object(backend, 'load_config', return_value=(CONFIG, '')),
+                patch.object(backend, 'read', side_effect=read),
+                patch.object(backend, 'command', side_effect=command),
+            ):
+                backend.control(
+                    dict(
+                        op='input-enabled',
+                        card='card',
+                        previous=self.card['active_profile'],
+                        enabled=False,
+                    )
+                )
             self.assertFalse(capture_enabled[0])
             self.assertEqual(mutations[0], ('set-card-profile', 'card', mode))
             self.assertIn(('set-default-sink', 'display'), mutations)
@@ -448,32 +951,74 @@ class MicrophoneBackendTests(unittest.TestCase):
             self.assertFalse(any(c[0] == 'set-source-mute' for c in mutations))
 
         self.card['active_profile'] = 'pro-audio'
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), \
-                patch.object(backend, 'read', return_value=[self.card]), patch.object(backend, 'command') as command:
+        with (
+            patch.object(backend, 'load_config', return_value=(CONFIG, '')),
+            patch.object(backend, 'read', return_value=[self.card]),
+            patch.object(backend, 'command') as command,
+        ):
             with self.assertRaisesRegex(ValueError, 'Use mute'):
-                backend.control(dict(op='input-enabled', card='card', previous='pro-audio', enabled=False))
+                backend.control(
+                    dict(
+                        op='input-enabled',
+                        card='card',
+                        previous='pro-audio',
+                        enabled=False,
+                    )
+                )
             with self.assertRaisesRegex(ValueError, 'changed'):
-                backend.control(dict(op='input-enabled', card='card', previous='stale', enabled=False))
+                backend.control(
+                    dict(
+                        op='input-enabled', card='card', previous='stale', enabled=False
+                    )
+                )
             command.assert_not_called()
 
     def test_first_activation_restores_playback_and_stays_muted_without_selecting(self):
         activated = [False]
         mutations = []
         sink = dict(SINK, mute=True)
-        display = dict(SINK, name='display', index=8, properties={'device.name': 'other-card'})
-        data = {'cards': [self.card], 'sinks': [sink, display], 'sink-inputs': [], 'source-outputs': []}
+        display = dict(
+            SINK, name='display', index=8, properties={'device.name': 'other-card'}
+        )
+        data = {
+            'cards': [self.card],
+            'sinks': [sink, display],
+            'sink-inputs': [],
+            'source-outputs': [],
+        }
+
         def read(kind):
-            return ([self.source] if activated[0] else []) if kind=='sources' else data[kind]
+            return (
+                ([self.source] if activated[0] else [])
+                if kind == 'sources'
+                else data[kind]
+            )
+
         def command(*args):
             if args == ('-f', 'json', 'info'):
                 return json.dumps({'default_sink_name': 'display'})
             mutations.append(args)
-            if args[0]=='set-card-profile': activated[0] = True
+            if args[0] == 'set-card-profile':
+                activated[0] = True
             return ''
-        with patch.object(backend, 'load_config', return_value=(CONFIG, '')), \
-                patch.object(backend, 'read', side_effect=read), patch.object(backend, 'command', side_effect=command):
-            backend.control(dict(op='input-enabled', card='card', previous=self.stereo, port='mic', enabled=True))
-        self.assertEqual(mutations[0], ('set-card-profile', 'card', self.stereo+'+'+self.capture))
+
+        with (
+            patch.object(backend, 'load_config', return_value=(CONFIG, '')),
+            patch.object(backend, 'read', side_effect=read),
+            patch.object(backend, 'command', side_effect=command),
+        ):
+            backend.control(
+                dict(
+                    op='input-enabled',
+                    card='card',
+                    previous=self.stereo,
+                    port='mic',
+                    enabled=True,
+                )
+            )
+        self.assertEqual(
+            mutations[0], ('set-card-profile', 'card', self.stereo + '+' + self.capture)
+        )
         self.assertIn(('set-default-sink', 'display'), mutations)
         self.assertIn(('set-sink-mute', 'laptop', '1'), mutations)
         self.assertIn(('set-source-mute', 'microphone', '1'), mutations)
@@ -482,33 +1027,65 @@ class MicrophoneBackendTests(unittest.TestCase):
 
     def test_profile_transition_preserves_endpoint_state_routes_and_other_default(self):
         import copy
+
         card = copy.deepcopy(self.card)
-        card['active_profile'] = self.stereo+'+'+self.capture
+        card['active_profile'] = self.stereo + '+' + self.capture
         old_sink = copy.deepcopy(SINK)
-        old_sink.update(mute=True, properties={'device.name': 'card', 'alsa.device': '0'})
-        display = dict(SINK, name='display', index=8, properties={'device.name': 'display-card'})
+        old_sink.update(
+            mute=True, properties={'device.name': 'card', 'alsa.device': '0'}
+        )
+        display = dict(
+            SINK, name='display', index=8, properties={'device.name': 'display-card'}
+        )
         old_source = copy.deepcopy(self.source)
-        state = {'sinks': [old_sink, display], 'sources': [old_source],
-                 'sink-inputs': [dict(STREAM)],
-                 'source-outputs': [dict(STREAM, index=24, source=9)]}
+        state = {
+            'sinks': [old_sink, display],
+            'sources': [old_source],
+            'sink-inputs': [dict(STREAM)],
+            'source-outputs': [dict(STREAM, index=24, source=9)],
+        }
         info = {'default_sink_name': 'display', 'default_source_name': 'microphone'}
         mutations = []
         fail_once = [False]
+
         def command(*args):
-            if args == ('-f', 'json', 'info'): return json.dumps(info)
+            if args == ('-f', 'json', 'info'):
+                return json.dumps(info)
             mutations.append(args)
             op, *values = args
-            if op=='set-card-profile':
+            if op == 'set-card-profile':
                 card['active_profile'] = values[1]
-                state['sinks'][0] = dict(old_sink, name='recreated-output', index=70, mute=False, volume={'left': {'value': 65536}, 'right': {'value': 65536}})
-                state['sources'][0] = dict(old_source, name='recreated-input', index=90, mute=False, volume={'left': {'value': 65536}})
+                state['sinks'][0] = dict(
+                    old_sink,
+                    name='recreated-output',
+                    index=70,
+                    mute=False,
+                    volume={'left': {'value': 65536}, 'right': {'value': 65536}},
+                )
+                state['sources'][0] = dict(
+                    old_source,
+                    name='recreated-input',
+                    index=90,
+                    mute=False,
+                    volume={'left': {'value': 65536}},
+                )
                 info['default_sink_name'] = 'recreated-output'
-            if op=='set-sink-volume' and fail_once[0]:
+            if op == 'set-sink-volume' and fail_once[0]:
                 fail_once[0] = False
                 raise ValueError('simulated restoration failure')
             return ''
-        with patch.object(backend, 'read', side_effect=lambda kind: state[kind]), patch.object(backend, 'command', side_effect=command):
-            backend.change_profile(card, dict(card['profiles'][self.surround+'+'+self.capture], name=self.surround+'+'+self.capture))
+
+        with (
+            patch.object(backend, 'read', side_effect=lambda kind: state[kind]),
+            patch.object(backend, 'command', side_effect=command),
+        ):
+            backend.change_profile(
+                card,
+                dict(
+                    card['profiles'][self.surround + '+' + self.capture],
+                    name=self.surround + '+' + self.capture,
+                ),
+            )
             for expected in (
                 ('set-sink-volume', 'recreated-output', 32768, 32768),
                 ('set-sink-mute', 'recreated-output', '1'),
@@ -518,12 +1095,19 @@ class MicrophoneBackendTests(unittest.TestCase):
                 ('set-default-source', 'recreated-input'),
                 ('move-sink-input', 23, 'recreated-output'),
                 ('move-source-output', 24, 'recreated-input'),
-            ): self.assertIn(expected, mutations)
+            ):
+                self.assertIn(expected, mutations)
             # A failed restoration rolls the profile back, rather than claiming success.
             previous = card['active_profile']
             fail_once[0] = True
             with self.assertRaisesRegex(ValueError, 'previous mode was restored'):
-                backend.change_profile(copy.deepcopy(card), dict(card['profiles'][self.stereo+'+'+self.capture], name=self.stereo+'+'+self.capture))
+                backend.change_profile(
+                    copy.deepcopy(card),
+                    dict(
+                        card['profiles'][self.stereo + '+' + self.capture],
+                        name=self.stereo + '+' + self.capture,
+                    ),
+                )
             self.assertEqual(card['active_profile'], previous)
 
 
@@ -539,8 +1123,12 @@ class AudioConfigurationTests(unittest.TestCase):
             shutil.copy(original / 'generate-config.py', repo)
 
             def generate(host, answers=''):
-                result = subprocess.run(['python3', str(repo / 'generate-config.py'), host],
-                                        input=answers, text=True, capture_output=True)
+                result = subprocess.run(
+                    ['python3', str(repo / 'generate-config.py'), host],
+                    input=answers,
+                    text=True,
+                    capture_output=True,
+                )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 return json.loads((repo / 'user-configuration.json').read_text())
 
@@ -549,47 +1137,100 @@ class AudioConfigurationTests(unittest.TestCase):
                 directory.mkdir(parents=True)
                 for entry in config['extra']['symlinks']:
                     if entry['target'].startswith('home/.config/devices/audio/'):
-                        (directory / Path(entry['target']).name).symlink_to(repo / entry['source'])
+                        (directory / Path(entry['target']).name).symlink_to(
+                            repo / entry['source']
+                        )
                 return directory
 
             config = generate('zephyrus')
             self.assertNotIn('audio', config['extra'].get('quickshell', {}))
             directory = stage(config, 'zephyrus')
-            self.assertEqual({p.name for p in directory.iterdir()}, {'profiles.json', 'zephyrus.json', 'dell-s2722dc.json'})
+            self.assertEqual(
+                {p.name for p in directory.iterdir()},
+                {'profiles.json', 'zephyrus.json', 'dell-s2722dc.json'},
+            )
             self.assertTrue(all(p.is_symlink() for p in directory.iterdir()))
             audio, warning = backend.load_config(directory)
             self.assertEqual(warning, '')
             self.assertEqual(len(audio['rules']), 9)
             self.assertIn('pro-audio', audio['profiles'])
-            self.assertFalse(any(e['target'] == 'home/.config/quickshell/desktop/audio.json'
-                                 for kind in ('files', 'symlinks') for e in config['extra'][kind]))
-            hooks = [repo / s for s in config['extra']['scripts'] if s.startswith('modules/desktop/quickshell/')]
+            self.assertFalse(
+                any(
+                    e['target'] == 'home/.config/quickshell/desktop/audio.json'
+                    for kind in ('files', 'symlinks')
+                    for e in config['extra'][kind]
+                )
+            )
+            hooks = [
+                repo / s
+                for s in config['extra']['scripts']
+                if s.startswith('modules/desktop/quickshell/')
+            ]
             self.assertFalse(any('audio.json' in hook.read_text() for hook in hooks))
 
             # Exercise real merged aliases against profile-dependent node names.
             laptop = {'properties': {'device.name': 'alsa_card.pci-0000_07_00.6'}}
             for profile in ('analog-stereo', 'analog-surround-40'):
                 sink = dict(laptop, name='alsa_output.pci-0000_07_00.6.' + profile)
-                self.assertEqual(backend.describe(sink, {'name': 'analog-output-speaker'}, audio)['label'], 'Laptop speakers')
-                self.assertEqual(backend.describe(sink, {'name': 'analog-output-headphones'}, audio)['maxVolume'], 100)
+                self.assertEqual(
+                    backend.describe(sink, {'name': 'analog-output-speaker'}, audio)[
+                        'label'
+                    ],
+                    'Laptop speakers',
+                )
+                self.assertEqual(
+                    backend.describe(sink, {'name': 'analog-output-headphones'}, audio)[
+                        'maxVolume'
+                    ],
+                    100,
+                )
             sink = dict(laptop, name='alsa_output.pci-0000_07_00.6.pro-output-0')
-            self.assertEqual(backend.describe(sink, {}, audio)['label'], 'Laptop audio (all channels)')
-            display = dict(name='alsa_output.pci-0000_07_00.1.hdmi-stereo', description='Radeon [DELL S2722DC]',
-                           properties={'device.name': 'alsa_card.pci-0000_07_00.1'})
+            self.assertEqual(
+                backend.describe(sink, {}, audio)['label'],
+                'Laptop audio (all channels)',
+            )
+            display = dict(
+                name='alsa_output.pci-0000_07_00.1.hdmi-stereo',
+                description='Radeon [DELL S2722DC]',
+                properties={'device.name': 'alsa_card.pci-0000_07_00.1'},
+            )
             port = {'name': 'hdmi-output-0', 'description': 'HDMI / DisplayPort'}
-            self.assertEqual(backend.describe(display, port, audio)['label'], 'Dell S2722DC speakers')
+            self.assertEqual(
+                backend.describe(display, port, audio)['label'], 'Dell S2722DC speakers'
+            )
             display['description'] = 'Another monitor'
-            self.assertEqual(backend.describe(display, port, audio)['label'],
-                             'Display audio (integrated graphics) · Display connection 1')
+            self.assertEqual(
+                backend.describe(display, port, audio)['label'],
+                'Display audio (integrated graphics) · Display connection 1',
+            )
 
             # Actual profiles keep native identifiers for dispatch and hover details.
-            card = dict(CARD, active_profile='output:analog-stereo+input:analog-stereo', profiles={
-                'output:analog-stereo+input:analog-stereo': dict(description='Analog Stereo Duplex', sinks=1, sources=1),
-                'pro-audio': dict(description='Pro Audio', sinks=1),
-                'future-profile': dict(description='Future driver mode', sinks=1)})
-            with patch.object(backend, 'load_config', return_value=(audio, '')), \
-                    patch.object(backend, 'read', side_effect=lambda kind: {'sinks': [SINK], 'cards': [card], 'sink-inputs': [], 'sources': [], 'source-outputs': []}[kind]), \
-                    patch.object(backend, 'command', return_value='{}'):
+            card = dict(
+                CARD,
+                active_profile='output:analog-stereo+input:analog-stereo',
+                profiles={
+                    'output:analog-stereo+input:analog-stereo': dict(
+                        description='Analog Stereo Duplex', sinks=1, sources=1
+                    ),
+                    'pro-audio': dict(description='Pro Audio', sinks=1),
+                    'future-profile': dict(description='Future driver mode', sinks=1),
+                },
+            )
+            with (
+                patch.object(backend, 'load_config', return_value=(audio, '')),
+                patch.object(
+                    backend,
+                    'read',
+                    side_effect=lambda kind: {
+                        'sinks': [SINK],
+                        'cards': [card],
+                        'sink-inputs': [],
+                        'sources': [],
+                        'source-outputs': [],
+                    }[kind],
+                ),
+                patch.object(backend, 'command', return_value='{}'),
+            ):
                 profiles = backend.snapshot()['outputDevices'][0]['profiles']
             self.assertEqual(profiles[0]['name'], 'output:analog-stereo')
             self.assertEqual(profiles[0]['label'], 'Stereo playback')
@@ -599,7 +1240,10 @@ class AudioConfigurationTests(unittest.TestCase):
 
             vm_config = generate('vm', '\n64\n')
             vm_directory = stage(vm_config, 'vm')
-            self.assertEqual({p.name for p in vm_directory.iterdir()}, {'profiles.json', 'dell-s2722dc.json'})
+            self.assertEqual(
+                {p.name for p in vm_directory.iterdir()},
+                {'profiles.json', 'dell-s2722dc.json'},
+            )
             vm_audio, warning = backend.load_config(vm_directory)
             self.assertEqual(warning, '')
             self.assertEqual(len(vm_audio['rules']), 1)
@@ -613,10 +1257,16 @@ class AudioConfigurationTests(unittest.TestCase):
                 path.write_text(json.dumps({'profiles': profiles, 'rules': []}))
                 self.assertIn('profile names', backend.load_config(path.parent)[1])
             for device_label in ('', 42, False, []):
-                path.write_text(json.dumps({'rules': [dict(CONFIG['rules'][0], deviceLabel=device_label)]}))
+                path.write_text(
+                    json.dumps(
+                        {'rules': [dict(CONFIG['rules'][0], deviceLabel=device_label)]}
+                    )
+                )
                 self.assertIn('deviceLabel', backend.load_config(path.parent)[1])
             for priority in (True, 'first', float('inf')):
-                path.write_text(json.dumps({'rules': [dict(CONFIG['rules'][0], priority=priority)]}))
+                path.write_text(
+                    json.dumps({'rules': [dict(CONFIG['rules'][0], priority=priority)]})
+                )
                 self.assertIn('priority', backend.load_config(path.parent)[1])
 
     def test_directory_changes_and_bad_files_do_not_discard_valid_rules(self):
@@ -625,19 +1275,34 @@ class AudioConfigurationTests(unittest.TestCase):
             empty = {'rules': [], 'profiles': {}}
             self.assertEqual(backend.load_config(root / 'missing'), (empty, ''))
             first = root / '10-first.json'
-            first.write_text(json.dumps({'rules': CONFIG['rules'], 'profiles': {'pro-audio': 'Manual routing'}}))
+            first.write_text(
+                json.dumps(
+                    {
+                        'rules': CONFIG['rules'],
+                        'profiles': {'pro-audio': 'Manual routing'},
+                    }
+                )
+            )
             (root / '20-broken.json').write_text('{')
             (root / 'ignored.txt').write_text('{')
             conflicting = root / '30-conflict.json'
-            conflicting.write_text(json.dumps({'rules': [dict(CONFIG['rules'][0], label='Conflicting rule')],
-                                                'profiles': {'pro-audio': 'Different label'}}))
+            conflicting.write_text(
+                json.dumps(
+                    {
+                        'rules': [dict(CONFIG['rules'][0], label='Conflicting rule')],
+                        'profiles': {'pro-audio': 'Different label'},
+                    }
+                )
+            )
             config, warning = backend.load_config(root)
             self.assertEqual(config['rules'], CONFIG['rules'])
             self.assertEqual(config['profiles']['pro-audio'], 'Manual routing')
             self.assertIn('20-broken.json', warning)
             self.assertIn('30-conflict.json', warning)
             self.assertNotIn('ignored.txt', warning)
-            first.write_text(json.dumps({'rules': [dict(CONFIG['rules'][0], label='Updated name')]}))
+            first.write_text(
+                json.dumps({'rules': [dict(CONFIG['rules'][0], label='Updated name')]})
+            )
             config, warning = backend.load_config(root)
             self.assertEqual(config['rules'][0]['label'], 'Updated name')
             self.assertEqual(len(config['rules']), 2)
@@ -651,13 +1316,25 @@ class AudioConfigurationTests(unittest.TestCase):
 
 def stream(key, **values):
     """A native stream record as AudioService publishes it, minus its PwNode."""
-    return dict(dict(key=key, serial=int(key), label='<Music & sound>', detail='Track', icon='', applicationId='',
-                     applicationBinary='test-player', target='laptop', active=True), **values)
+    return dict(
+        dict(
+            key=key,
+            serial=int(key),
+            label='<Music & sound>',
+            detail='Track',
+            icon='',
+            applicationId='',
+            applicationBinary='test-player',
+            target='laptop',
+            active=True,
+        ),
+        **values,
+    )
 
 
 # Stand-in for AudioService: native nodes are QtObjects with the PwNode/PwNodeAudio
 # properties the drawers read, and every mutation is recorded.
-FAKE_SERVICE = r'''
+FAKE_SERVICE = r"""
  QtObject {
   id: fake
   property bool observing: false
@@ -699,7 +1376,7 @@ FAKE_SERVICE = r'''
   function setBoost(device, enabled) { boosts = Object.assign({}, boosts, {[device]: enabled}); record("boost", {device, enabled}); }
   function move(stream, destination) { record("move", {key: stream.key, destination: destination.name}); }
  }
-'''
+"""
 
 
 @unittest.skipUnless(QS, 'Quickshell is required')
@@ -718,24 +1395,55 @@ class AudioDrawerTests(unittest.TestCase):
             if setup:
                 setup(root)
             platform = os.environ.get('AUDIO_PREVIEW_PLATFORM', 'offscreen')
-            env = {**os.environ, 'QT_QPA_PLATFORM': platform, 'XDG_CONFIG_HOME': str(root / 'config'),
-                   'XDG_RUNTIME_DIR': str(runtime) if platform == 'offscreen' else os.environ['XDG_RUNTIME_DIR']}
-            for key in (('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE') if platform == 'offscreen' else ('HYPRLAND_INSTANCE_SIGNATURE',)):
+            env = {
+                **os.environ,
+                'QT_QPA_PLATFORM': platform,
+                'XDG_CONFIG_HOME': str(root / 'config'),
+                'XDG_RUNTIME_DIR': str(runtime)
+                if platform == 'offscreen'
+                else os.environ['XDG_RUNTIME_DIR'],
+            }
+            for key in (
+                ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE')
+                if platform == 'offscreen'
+                else ('HYPRLAND_INSTANCE_SIGNATURE',)
+            ):
                 env.pop(key, None)
             # Native PipeWire objects are stand-ins; never connect to the host server.
-            env.update(PIPEWIRE_REMOTE='audio-tests-offline', PIPEWIRE_RUNTIME_DIR=str(runtime))
-            result = subprocess.run([QS, '--no-color', '-p', str(root / 'shell.qml')], env=env, text=True, capture_output=True, timeout=20)
+            env.update(
+                PIPEWIRE_REMOTE='audio-tests-offline', PIPEWIRE_RUNTIME_DIR=str(runtime)
+            )
+            result = subprocess.run(
+                [QS, '--no-color', '-p', str(root / 'shell.qml')],
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=20,
+            )
         log = result.stdout + result.stderr
         if os.environ.get('AUDIO_PREVIEW_PLATFORM'):
             print(log)
         self.assertEqual(result.returncode, 0, log)
         self.assertIn('AUDIO_PASS', log)
-        for error in ('AUDIO_FAIL', 'TypeError', 'ReferenceError', 'Binding loop', 'Unable to assign', 'polish() loop', 'Polish loop', 'Failed to load'):
+        for error in (
+            'AUDIO_FAIL',
+            'TypeError',
+            'ReferenceError',
+            'Binding loop',
+            'Unable to assign',
+            'polish() loop',
+            'Polish loop',
+            'Failed to load',
+        ):
             self.assertNotIn(error, log)
 
-    def test_service_watches_inventory_runs_helper_actions_and_scales_native_levels(self):
+    def test_service_watches_inventory_runs_helper_actions_and_scales_native_levels(
+        self,
+    ):
         def setup(root):
-            (root / 'drawers/audio/backend.py').write_text(r'''import json,signal,sys,time
+            (
+                root / 'drawers/audio/backend.py'
+            ).write_text(r"""import json,signal,sys,time
 from pathlib import Path
 root=Path(__file__).parent
 if sys.argv[1:]==['watch']:
@@ -749,9 +1457,10 @@ else:
  request=json.loads(sys.stdin.readline())
  time.sleep(0.15)
  print(json.dumps({'ok': request['op'] != 'fail', 'error': 'Device disconnected', 'echo': request}),flush=True)
-''')
+""")
 
-        self.run_qml(r'''import QtQuick
+        self.run_qml(
+            r"""import QtQuick
 import Quickshell
 import "drawers/audio"
 ShellRoot {
@@ -809,13 +1518,18 @@ ShellRoot {
   } catch (error) { console.error("AUDIO_FAIL", error.message); Qt.quit(); }
  } }
 }
-''', setup)
+""",
+            setup,
+        )
 
     def test_boost_preferences_are_per_device_without_global_fallback(self):
         def setup(root):
             (root / 'config/quickshell/desktop/audio.ini').write_text(
-                '[Playback]\nboost=true\nboostDevices="{\\"*\\": true, \\"card\\": true, \\"other\\": \\"true\\"}"\n')
-        self.run_qml(r'''import QtQuick
+                '[Playback]\nboost=true\nboostDevices="{\\"*\\": true, \\"card\\": true, \\"other\\": \\"true\\"}"\n'
+            )
+
+        self.run_qml(
+            r"""import QtQuick
 import Quickshell
 import "drawers/audio"
 ShellRoot {
@@ -826,20 +1540,67 @@ ShellRoot {
   } catch (error) { console.error("AUDIO_FAIL", error.message); Qt.quit(); }
  } }
 }
-''', setup)
+""",
+            setup,
+        )
 
     def test_microphone_independent_controls_routes_default_and_lifetime(self):
-        device = dict(key='card', card='card', profile='output:analog-stereo', label='Laptop microphones', port='mic',
-                      enabled=False, available=True, canToggle=True, toggleReason='')
-        usb_device = dict(device, key='usb-card', card='usb-card', label='USB audio', enabled=True, port='')
-        usb = dict(key='usb', name='usb', deviceKey='usb-card', port='', portLabel='', maxVolume=150,
-                   available=True, label='USB microphone', icon='mic', routes=[])
-        builtin = dict(usb, key='microphone', name='microphone', deviceKey='card', port='mic', label='Built-in microphone',
-                       routes=[dict(name='mic', label='Built-in microphone', selected=True),
-                               dict(name='headset', label='Headset microphone', selected=False)])
-        device['inputSlots'] = [dict(key='card/input/0', label=builtin['label'], routes=builtin['routes'])]
-        state = dict(available=True, inputDevices=[device, usb_device], inputs=[usb], outputs=[], outputDevices=[], warning='')
-        self.run_qml(r'''import QtQuick
+        device = dict(
+            key='card',
+            card='card',
+            profile='output:analog-stereo',
+            label='Laptop microphones',
+            port='mic',
+            enabled=False,
+            available=True,
+            canToggle=True,
+            toggleReason='',
+        )
+        usb_device = dict(
+            device,
+            key='usb-card',
+            card='usb-card',
+            label='USB audio',
+            enabled=True,
+            port='',
+        )
+        usb = dict(
+            key='usb',
+            name='usb',
+            deviceKey='usb-card',
+            port='',
+            portLabel='',
+            maxVolume=150,
+            available=True,
+            label='USB microphone',
+            icon='mic',
+            routes=[],
+        )
+        builtin = dict(
+            usb,
+            key='microphone',
+            name='microphone',
+            deviceKey='card',
+            port='mic',
+            label='Built-in microphone',
+            routes=[
+                dict(name='mic', label='Built-in microphone', selected=True),
+                dict(name='headset', label='Headset microphone', selected=False),
+            ],
+        )
+        device['inputSlots'] = [
+            dict(key='card/input/0', label=builtin['label'], routes=builtin['routes'])
+        ]
+        state = dict(
+            available=True,
+            inputDevices=[device, usb_device],
+            inputs=[usb],
+            outputs=[],
+            outputDevices=[],
+            warning='',
+        )
+        self.run_qml(
+            r"""import QtQuick
 import QtTest
 import Quickshell
 import "drawers"
@@ -987,21 +1748,33 @@ FAKE_SERVICE MicrophoneDrawer { id: drawer; width: 448; height: 688; x: 16; y: 1
   } catch (error) { console.error("AUDIO_FAIL", error.message); Qt.quit(); }
  } }
 }
-'''.replace('FAKE_SERVICE', FAKE_SERVICE).replace('STATE', json.dumps(state)).replace('BUILTIN', json.dumps(builtin)))
+""".replace('FAKE_SERVICE', FAKE_SERVICE)
+            .replace('STATE', json.dumps(state))
+            .replace('BUILTIN', json.dumps(builtin))
+        )
 
     def test_status_icon_volume_mute_boost_and_theme(self):
         def setup(root):
             # Substitute the native sink/tracker only; keep production presentation bindings.
             path = root / 'bar/AudioStatus.qml'
-            source = path.read_text().replace('readonly property var sink: Pipewire.defaultAudioSink', 'property var sink: null')
+            source = path.read_text().replace(
+                'readonly property var sink: Pipewire.defaultAudioSink',
+                'property var sink: null',
+            )
             source = source.replace('objects: [sink].filter(n => n)', 'objects: []')
             path.write_text(source)
             path = root / 'bar/MicrophoneStatus.qml'
-            source = path.read_text().replace('readonly property var source: Pipewire.defaultAudioSource', 'property var source: null')
-            source = source.replace('objects: [source].filter(node => node)', 'objects: []')
+            source = path.read_text().replace(
+                'readonly property var source: Pipewire.defaultAudioSource',
+                'property var source: null',
+            )
+            source = source.replace(
+                'objects: [source].filter(node => node)', 'objects: []'
+            )
             path.write_text(source)
 
-        self.run_qml(r'''import QtQuick
+        self.run_qml(
+            r"""import QtQuick
 import Quickshell
 import "bar"
 import "ui" as UI
@@ -1054,13 +1827,19 @@ FloatingWindow {
   } catch (error) { console.error("AUDIO_FAIL", error.message); Qt.quit(); }
  } }
 }
-''', setup)
+""",
+            setup,
+        )
 
     def test_media_association_and_menu_order_after_inventory_changes(self):
         outputs, devices = backend.output_inventory([SINK], [CARD], CONFIG)
-        streams = [stream('100', applicationId='test.player'), stream('101', label='Browser', applicationBinary='browser')]
+        streams = [
+            stream('100', applicationId='test.player'),
+            stream('101', label='Browser', applicationBinary='browser'),
+        ]
         state = dict(available=True, outputs=outputs, outputDevices=devices, warning='')
-        self.run_qml(r'''import QtQuick
+        self.run_qml(
+            r"""import QtQuick
 import QtTest
 import Quickshell
 import "drawers"
@@ -1149,19 +1928,59 @@ FAKE_SERVICE component Player: QtObject {
   } catch(error) { console.error("AUDIO_FAIL",error.message); Qt.quit(); }
  } }
 }
-'''.replace('FAKE_SERVICE', FAKE_SERVICE).replace('STREAMS', json.dumps(streams)).replace('STATE', json.dumps(state)))
+""".replace('FAKE_SERVICE', FAKE_SERVICE)
+            .replace('STREAMS', json.dumps(streams))
+            .replace('STATE', json.dumps(state))
+        )
 
     def test_sound_independent_outputs_routes_profiles_boost_and_lifetime(self):
         jack = dict(SINK['ports'][1], availability='available')
-        laptop = dict(SINK, ports=[SINK['ports'][0], jack, dict(jack, name='missing', availability='not available')])
-        aux = dict(SINK, name='aux', index=12, description='Auxiliary speakers', ports=[])
-        display = dict(SINK, name='display', index=8, description='Dell S2722DC speakers', properties={'device.name': 'display-card'},
-                       active_port='hdmi', ports=[dict(name='hdmi', description='HDMI / DisplayPort', availability='available')])
+        laptop = dict(
+            SINK,
+            ports=[
+                SINK['ports'][0],
+                jack,
+                dict(jack, name='missing', availability='not available'),
+            ],
+        )
+        aux = dict(
+            SINK, name='aux', index=12, description='Auxiliary speakers', ports=[]
+        )
+        display = dict(
+            SINK,
+            name='display',
+            index=8,
+            description='Dell S2722DC speakers',
+            properties={'device.name': 'display-card'},
+            active_port='hdmi',
+            ports=[
+                dict(
+                    name='hdmi',
+                    description='HDMI / DisplayPort',
+                    availability='available',
+                )
+            ],
+        )
         card = dict(CARD, properties={'device.description': 'Laptop audio'})
-        display_card = dict(CARD, name='display-card', index=5, properties={'device.description': 'Display audio'})
-        outputs, devices = backend.output_inventory([laptop, aux, display], [card, display_card], CONFIG)
-        state = dict(available=True, outputs=outputs, outputDevices=devices, inputs=[], inputDevices=[], warning='')
-        self.run_qml(r'''import QtQuick
+        display_card = dict(
+            CARD,
+            name='display-card',
+            index=5,
+            properties={'device.description': 'Display audio'},
+        )
+        outputs, devices = backend.output_inventory(
+            [laptop, aux, display], [card, display_card], CONFIG
+        )
+        state = dict(
+            available=True,
+            outputs=outputs,
+            outputDevices=devices,
+            inputs=[],
+            inputDevices=[],
+            warning='',
+        )
+        self.run_qml(
+            r"""import QtQuick
 import QtTest
 import Quickshell
 import "drawers"
@@ -1316,8 +2135,10 @@ FAKE_SERVICE QtObject {
   } catch (error) { console.error("AUDIO_FAIL", error.message); Qt.quit(); }
  } }
 }
-'''.replace('FAKE_SERVICE', FAKE_SERVICE).replace('STREAMS', json.dumps([stream('100')])).replace('STATE', json.dumps(state)))
-
+""".replace('FAKE_SERVICE', FAKE_SERVICE)
+            .replace('STREAMS', json.dumps([stream('100')]))
+            .replace('STATE', json.dumps(state))
+        )
 
 
 if __name__ == '__main__':

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Per-output controls; confirmed layouts persist as Hyprland rules in displays.lua."""
+
 import hashlib
 import json
 import math
@@ -15,14 +16,20 @@ MODE = re.compile(r'^(\d+)x(\d+)@(\d+(?:\.\d+)?)(?:Hz)?$')
 INTERNAL = re.compile(r'^(eDP|LVDS|DSI)-')
 RULE = re.compile(r'^\s*hl\.monitor\(\{\s*output\s*=\s*("(?:[^"\\\n]|\\.)*")')
 RULE_MODE = re.compile(r'\bmode\s*=\s*("(?:[^"\\\n]|\\.)*")')
-HEADER = ['-- Display layout saved by the Displays drawer. Hyprland applies these rules',
-          '-- after the host defaults; delete a line to fall back to them.']
+HEADER = [
+    '-- Display layout saved by the Displays drawer. Hyprland applies these rules',
+    '-- after the host defaults; delete a line to fall back to them.',
+]
 
 
 def command(*args):
-    result = subprocess.run(['hyprctl', *args], check=False, capture_output=True, text=True, timeout=4)
+    result = subprocess.run(
+        ['hyprctl', *args], check=False, capture_output=True, text=True, timeout=4
+    )
     if result.returncode:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or 'Hyprland is unavailable.')
+        raise RuntimeError(
+            result.stderr.strip() or result.stdout.strip() or 'Hyprland is unavailable.'
+        )
     return result.stdout.strip()
 
 
@@ -37,45 +44,93 @@ def mode_parts(value):
 
 
 def identity(raw):
-    return [raw.get(key, '') for key in ('name', 'description', 'make', 'model', 'serial')]
+    return [
+        raw.get(key, '') for key in ('name', 'description', 'make', 'model', 'serial')
+    ]
 
 
 def fingerprint(records):
-    values = [{key: row[key] for key in ('name', 'identity', 'enabled', 'mode', 'scale', 'transform', 'x', 'y', 'mirror')} for row in records]
-    return hashlib.sha256(json.dumps(sorted(values, key=lambda row: row['name']), sort_keys=True).encode()).hexdigest()
+    values = [
+        {
+            key: row[key]
+            for key in (
+                'name',
+                'identity',
+                'enabled',
+                'mode',
+                'scale',
+                'transform',
+                'x',
+                'y',
+                'mirror',
+            )
+        }
+        for row in records
+    ]
+    return hashlib.sha256(
+        json.dumps(sorted(values, key=lambda row: row['name']), sort_keys=True).encode()
+    ).hexdigest()
 
 
 def snapshot():
     raw = json.loads(command('-j', 'monitors', 'all'))
     records = []
-    names = {str(monitor["id"]): monitor["name"] for monitor in raw if "id" in monitor}
+    names = {str(monitor['id']): monitor['name'] for monitor in raw if 'id' in monitor}
     for monitor in raw:
         # Hyprland creates this invisible output when the last real one goes
         # away. It must not satisfy the safety check or become a preference.
         if monitor['name'] == 'FALLBACK':
             continue
-        modes = list(dict.fromkeys(value for value in monitor.get('availableModes', []) if mode_parts(value)))
+        modes = list(
+            dict.fromkeys(
+                value
+                for value in monitor.get('availableModes', [])
+                if mode_parts(value)
+            )
+        )
         width, height = monitor.get('width', 0), monitor.get('height', 0)
         transform = monitor.get('transform', 0)
         # Hyprland reports the native pixel dimensions; transform applies afterwards.
         rate = monitor.get('refreshRate', 0)
-        current = next((value for value in modes if mode_parts(value)[:2] == (width, height)
-                        and abs(mode_parts(value)[2] - rate) < 0.02), f'{width}x{height}@{rate:.5f}Hz')
+        current = next(
+            (
+                value
+                for value in modes
+                if mode_parts(value)[:2] == (width, height)
+                and abs(mode_parts(value)[2] - rate) < 0.02
+            ),
+            f'{width}x{height}@{rate:.5f}Hz',
+        )
         enabled = not monitor.get('disabled', False)
         if not enabled and not mode_parts(current):
             current = modes[0] if modes else ''
         if enabled and mode_parts(current) and current not in modes:
             modes.insert(0, current)
-        records.append(dict(name=monitor['name'], identity=identity(monitor),
-                            label=(monitor.get('description') or monitor['name']), enabled=enabled,
-                            mode=current, modes=modes, scale=monitor.get('scale') or 1,
-                            transform=transform, x=monitor.get('x', 0), y=monitor.get('y', 0),
-                            mirror=names.get(str(monitor.get('mirrorOf')), 'none'), dpms=monitor.get('dpmsStatus', True)))
+        records.append(
+            dict(
+                name=monitor['name'],
+                identity=identity(monitor),
+                label=(monitor.get('description') or monitor['name']),
+                enabled=enabled,
+                mode=current,
+                modes=modes,
+                scale=monitor.get('scale') or 1,
+                transform=transform,
+                x=monitor.get('x', 0),
+                y=monitor.get('y', 0),
+                mirror=names.get(str(monitor.get('mirrorOf')), 'none'),
+                dpms=monitor.get('dpmsStatus', True),
+            )
+        )
     return dict(available=True, displays=records, token=fingerprint(records))
 
 
 def number(value, low, high, integer=False):
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+    ):
         raise ValueError('Display settings must be finite numbers.')
     if value < low or value > high or (integer and value != int(value)):
         raise ValueError('Display setting is outside its supported range.')
@@ -91,14 +146,20 @@ def dimensions(row):
 
 def validate(request, state):
     if request.get('token') != state['token']:
-        raise ValueError('Displays changed while editing. Reload the current setup and try again.')
+        raise ValueError(
+            'Displays changed while editing. Reload the current setup and try again.'
+        )
     rows = request.get('displays')
     known = {row['name']: row for row in state['displays']}
     if not isinstance(rows, list) or len(rows) != len(known):
         raise ValueError('The connected displays changed. Reload the current setup.')
     checked, seen = [], set()
     for row in rows:
-        if not isinstance(row, dict) or row.get('name') not in known or row['name'] in seen:
+        if (
+            not isinstance(row, dict)
+            or row.get('name') not in known
+            or row['name'] in seen
+        ):
             raise ValueError('Unknown or duplicate display.')
         seen.add(row['name'])
         original = known[row['name']]
@@ -109,13 +170,21 @@ def validate(request, state):
             mode = row.get('mode')
             if mode not in original['modes'] or not mode_parts(mode):
                 raise ValueError('This display no longer supports the selected mode.')
-            result.update(mode=mode, scale=number(row.get('scale'), 0.5, 4),
-                          transform=number(row.get('transform'), 0, 7, True),
-                          x=number(row.get('x'), -32768, 32768, True),
-                          y=number(row.get('y'), -32768, 32768, True))
+            result.update(
+                mode=mode,
+                scale=number(row.get('scale'), 0.5, 4),
+                transform=number(row.get('transform'), 0, 7, True),
+                x=number(row.get('x'), -32768, 32768, True),
+                y=number(row.get('y'), -32768, 32768, True),
+            )
             width, height, _ = mode_parts(mode)
-            if any(abs(size / result['scale'] - round(size / result['scale'])) > 0.01 for size in (width, height)):
-                raise ValueError('Choose a scale that produces whole logical pixels for this resolution.')
+            if any(
+                abs(size / result['scale'] - round(size / result['scale'])) > 0.01
+                for size in (width, height)
+            ):
+                raise ValueError(
+                    'Choose a scale that produces whole logical pixels for this resolution.'
+                )
         result['mirror'] = row.get('mirror', original['mirror'])
         checked.append(result)
     active = [row for row in checked if row['enabled']]
@@ -137,24 +206,40 @@ def validate(request, state):
         if first['mirror'] != 'none':
             continue
         aw, ah = dimensions(first)
-        for second in active[index + 1:]:
+        for second in active[index + 1 :]:
             if second['mirror'] != 'none':
                 continue
             bw, bh = dimensions(second)
-            if first['x'] < second['x'] + bw and second['x'] < first['x'] + aw and first['y'] < second['y'] + bh and second['y'] < first['y'] + ah:
-                raise ValueError('Displays would overlap. Adjust the arrangement in wdisplays first.')
+            if (
+                first['x'] < second['x'] + bw
+                and second['x'] < first['x'] + aw
+                and first['y'] < second['y'] + bh
+                and second['y'] < first['y'] + ah
+            ):
+                raise ValueError(
+                    'Displays would overlap. Adjust the arrangement in wdisplays first.'
+                )
     return checked
 
 
 def lua_string(value):
     # Printable ASCII stays readable; everything else uses fixed-width decimal escapes.
-    return '"' + ''.join(chr(byte) if 32 <= byte < 127 and byte not in (34, 92) else f'\\{byte:03d}'
-                         for byte in value.encode()) + '"'
+    return (
+        '"'
+        + ''.join(
+            chr(byte) if 32 <= byte < 127 and byte not in (34, 92) else f'\\{byte:03d}'
+            for byte in value.encode()
+        )
+        + '"'
+    )
 
 
 def lua_unquote(value):
-    return re.sub(rb'\\(\d{1,3}|.)', lambda match: bytes([int(match[1])]) if match[1].isdigit() else match[1],
-                  value[1:-1].encode()).decode(errors='replace')
+    return re.sub(
+        rb'\\(\d{1,3}|.)',
+        lambda match: bytes([int(match[1])]) if match[1].isdigit() else match[1],
+        value[1:-1].encode(),
+    ).decode(errors='replace')
 
 
 def selectors(rows):
@@ -163,26 +248,43 @@ def selectors(rows):
     for row in rows:
         description = row['identity'][1]
         # Hyprland matches desc: by prefix, so it must identify exactly one connected output.
-        unique = description and sum(other['identity'][1].startswith(description) for other in rows) == 1
+        unique = (
+            description
+            and sum(other['identity'][1].startswith(description) for other in rows) == 1
+        )
         result[row['name']] = 'desc:' + description if unique else row['name']
     return result
 
 
 def rule(row, names, mode=None):
-    fields = [('output', lua_string(names[row['name']])), ('disabled', str(not row['enabled']).lower())]
+    fields = [
+        ('output', lua_string(names[row['name']])),
+        ('disabled', str(not row['enabled']).lower()),
+    ]
     if row['enabled']:
-        fields += [('mode', lua_string((mode or row['mode']).removesuffix('Hz'))),
-                   ('position', lua_string(f"{row['x']}x{row['y']}")),
-                   ('scale', json.dumps(row['scale'])), ('transform', str(row['transform'])),
-                   ('mirror', lua_string('' if row['mirror'] == 'none' else names[row['mirror']]))]
-    return 'hl.monitor({ ' + ', '.join(f'{key} = {value}' for key, value in fields) + ' })'
+        fields += [
+            ('mode', lua_string((mode or row['mode']).removesuffix('Hz'))),
+            ('position', lua_string(f'{row["x"]}x{row["y"]}')),
+            ('scale', json.dumps(row['scale'])),
+            ('transform', str(row['transform'])),
+            (
+                'mirror',
+                lua_string('' if row['mirror'] == 'none' else names[row['mirror']]),
+            ),
+        ]
+    return (
+        'hl.monitor({ ' + ', '.join(f'{key} = {value}' for key, value in fields) + ' })'
+    )
 
 
 def apply_rows(rows, names):
     # Enable replacements before disabling outputs, even across separate refreshes.
     for enabled in (True, False):
-        scripts = [rule(row, names) for row in sorted(rows, key=lambda row: row.get('mirror', 'none') != 'none')
-                   if row['enabled'] == enabled]
+        scripts = [
+            rule(row, names)
+            for row in sorted(rows, key=lambda row: row.get('mirror', 'none') != 'none')
+            if row['enabled'] == enabled
+        ]
         if scripts:
             reply = command('eval', ';'.join(scripts))
             if reply != 'ok':
@@ -195,11 +297,15 @@ def apply_rows(rows, names):
                 until = time.monotonic() + 3
                 while True:
                     current = snapshot()
-                    current['displays'] = [row for row in current['displays'] if row['name'] in wanted]
+                    current['displays'] = [
+                        row for row in current['displays'] if row['name'] in wanted
+                    ]
                     if matches(replacements, current):
                         break
                     if time.monotonic() >= until:
-                        raise ValueError('Could not activate the replacement display. Existing displays were left enabled.')
+                        raise ValueError(
+                            'Could not activate the replacement display. Existing displays were left enabled.'
+                        )
                     time.sleep(0.1)
 
 
@@ -213,13 +319,28 @@ def matches(expected, actual):
     current = {row['name']: row for row in actual['displays']}
     for row in expected:
         other = current[row['name']]
-        if row['enabled'] != other['enabled'] or (row['enabled'] and row['mirror'] != other['mirror']):
+        if row['enabled'] != other['enabled'] or (
+            row['enabled'] and row['mirror'] != other['mirror']
+        ):
             return False
         if row['enabled']:
-            if (row['mirror'] == 'none' and any(row[key] != other[key] for key in ('x', 'y'))) or row['transform'] != other['transform'] or abs(row['scale'] - other['scale']) > 0.001:
+            if (
+                (
+                    row['mirror'] == 'none'
+                    and any(row[key] != other[key] for key in ('x', 'y'))
+                )
+                or row['transform'] != other['transform']
+                or abs(row['scale'] - other['scale']) > 0.001
+            ):
                 return False
             a, b = mode_parts(row['mode']), mode_parts(other['mode'])
-            if not a or not b or a[:2] != b[:2] or abs(a[2] - b[2]) > 0.1 or not other['dpms']:
+            if (
+                not a
+                or not b
+                or a[:2] != b[:2]
+                or abs(a[2] - b[2]) > 0.1
+                or not other['dpms']
+            ):
                 return False
     return True
 
@@ -227,40 +348,85 @@ def matches(expected, actual):
 def restore(before):
     current = snapshot()
     connected = {row['name']: row for row in current['displays']}
-    rows = [row for row in before['displays'] if row['name'] in connected and row['identity'] == connected[row['name']]['identity']]
+    rows = [
+        row
+        for row in before['displays']
+        if row['name'] in connected
+        and row['identity'] == connected[row['name']]['identity']
+    ]
     if not any(row['enabled'] and row['mirror'] == 'none' for row in rows):
-        fallback = next((row for row in current['displays'] if row['enabled'] and row['mirror'] == 'none'), None)
-        fallback = fallback or next((dict(row, enabled=True, mirror='none', mode=row['modes'][0], scale=1, transform=0, x=0, y=0)
-                                     for row in current['displays'] if row['modes']), None)
+        fallback = next(
+            (
+                row
+                for row in current['displays']
+                if row['enabled'] and row['mirror'] == 'none'
+            ),
+            None,
+        )
+        fallback = fallback or next(
+            (
+                dict(
+                    row,
+                    enabled=True,
+                    mirror='none',
+                    mode=row['modes'][0],
+                    scale=1,
+                    transform=0,
+                    x=0,
+                    y=0,
+                )
+                for row in current['displays']
+                if row['modes']
+            ),
+            None,
+        )
         if fallback:
             rows = [row for row in rows if row['name'] != fallback['name']] + [fallback]
-    independent = {row['name'] for row in rows if row['enabled'] and row['mirror'] == 'none'}
-    rows = [dict(row, mirror='none') if row['mirror'] != 'none' and row['mirror'] not in independent else row for row in rows]
+    independent = {
+        row['name'] for row in rows if row['enabled'] and row['mirror'] == 'none'
+    }
+    rows = [
+        dict(row, mirror='none')
+        if row['mirror'] != 'none' and row['mirror'] not in independent
+        else row
+        for row in rows
+    ]
     apply_rows(rows, selectors(current['displays']))
 
 
 def preferred_mode(row):
     # availableModes has no preferred flag. The native Lua inventory does;
     # query it without changing the output, then match its unrounded rate.
-    value = command('repl', 'local monitor=hl.get_monitor(' + lua_string(row['name']) + '); '
-                    'if monitor then for _, mode in ipairs(monitor.available_modes or {}) do '
-                    'if mode.preferred then return string.format("%dx%d@%.5f", '
-                    'mode.width, mode.height, mode.refresh_rate) end end end; return ""')
+    value = command(
+        'repl',
+        'local monitor=hl.get_monitor(' + lua_string(row['name']) + '); '
+        'if monitor then for _, mode in ipairs(monitor.available_modes or {}) do '
+        'if mode.preferred then return string.format("%dx%d@%.5f", '
+        'mode.width, mode.height, mode.refresh_rate) end end end; return ""',
+    )
     preferred = mode_parts(value)
     if preferred:
         for mode in row['modes']:
             parts = mode_parts(mode)
             if parts[:2] == preferred[:2] and abs(parts[2] - preferred[2]) < 0.02:
                 return mode
-    raise ValueError('The display did not report an available recommended mode. Use wdisplays to choose a resolution.')
+    raise ValueError(
+        'The display did not report an available recommended mode. Use wdisplays to choose a resolution.'
+    )
 
 
 def prepare_change(request, state):
-    original = next((row for row in state['displays'] if row['name'] == request.get('name')), None)
+    original = next(
+        (row for row in state['displays'] if row['name'] == request.get('name')), None
+    )
     if not original or original['identity'] != request.get('identity'):
         raise ValueError('The display changed or disconnected. Refresh and try again.')
     values = request.get('values')
-    if not isinstance(values, dict) or not values or not set(values) <= {'mode', 'scale', 'transform', 'mirror', 'enabled'}:
+    if (
+        not isinstance(values, dict)
+        or not values
+        or not set(values) <= {'mode', 'scale', 'transform', 'mirror', 'enabled'}
+    ):
         raise ValueError('Unsupported display setting.')
     if not original['enabled'] and values.get('enabled') is not True:
         raise ValueError('Enable this display before changing its settings.')
@@ -277,9 +443,17 @@ def prepare_change(request, state):
         number(target['scale'], 0.5, 4)
         number(target['transform'], 0, 7, True)
         if target['mirror'] == 'none':
-            others = [row for row in rows if row['name'] != target['name'] and row['enabled'] and row['mirror'] == 'none']
+            others = [
+                row
+                for row in rows
+                if row['name'] != target['name']
+                and row['enabled']
+                and row['mirror'] == 'none'
+            ]
             if not original['enabled'] or original['mirror'] != 'none':
-                target['x'] = max((row['x'] + dimensions(row)[0] for row in others), default=0)
+                target['x'] = max(
+                    (row['x'] + dimensions(row)[0] for row in others), default=0
+                )
                 target['y'] = min((row['y'] for row in others), default=0)
             else:
                 old_width, old_height = dimensions(original)
@@ -299,14 +473,22 @@ def control(request, before=None):
 
 
 def apply_setup(rows, before):
-    changed = [row for row, previous in zip(rows, before['displays'])
-               if row['enabled'] != previous['enabled'] or (row['enabled'] and fingerprint([row]) != fingerprint([previous]))]
+    changed = [
+        row
+        for row, previous in zip(rows, before['displays'])
+        if row['enabled'] != previous['enabled']
+        or (row['enabled'] and fingerprint([row]) != fingerprint([previous]))
+    ]
     if not changed:
         return before
     # Include a usable independent output when disabling an output so that
     # apply_rows verifies it before the disable operation.
-    if any(not row['enabled'] for row in changed) and not any(row['enabled'] and row['mirror'] == 'none' for row in changed):
-        changed.append(next(row for row in rows if row['enabled'] and row['mirror'] == 'none'))
+    if any(not row['enabled'] for row in changed) and not any(
+        row['enabled'] and row['mirror'] == 'none' for row in changed
+    ):
+        changed.append(
+            next(row for row in rows if row['enabled'] and row['mirror'] == 'none')
+        )
     try:
         apply_rows(changed, selectors(before['displays']))
         until = time.monotonic() + 3
@@ -315,19 +497,25 @@ def apply_setup(rows, before):
             if matches(rows, current):
                 return current
             if time.monotonic() >= until:
-                raise ValueError('The display could not activate the requested settings.')
+                raise ValueError(
+                    'The display could not activate the requested settings.'
+                )
             time.sleep(0.1)
     except Exception as exc:
         try:
             restore(before)
         except Exception as restore_error:
-            raise RuntimeError(f'{exc} Could not restore the previous setup: {restore_error}') from exc
+            raise RuntimeError(
+                f'{exc} Could not restore the previous setup: {restore_error}'
+            ) from exc
         raise
 
 
 def config_path():
     base = os.environ.get('XDG_CONFIG_HOME', '')
-    return (Path(base) if os.path.isabs(base) else Path.home() / '.config') / 'hypr/displays.lua'
+    return (
+        Path(base) if os.path.isabs(base) else Path.home() / '.config'
+    ) / 'hypr/displays.lua'
 
 
 def atomic_write(path, text):
@@ -365,8 +553,16 @@ def saved_mode(lines, selector):
 
 def matching_mode(row, value):
     wanted = mode_parts(value or '')
-    return next((mode for mode in row['modes'] if wanted and mode_parts(mode)[:2] == wanted[:2]
-                 and abs(mode_parts(mode)[2] - wanted[2]) < 0.02), None)
+    return next(
+        (
+            mode
+            for mode in row['modes']
+            if wanted
+            and mode_parts(mode)[:2] == wanted[:2]
+            and abs(mode_parts(mode)[2] - wanted[2]) < 0.02
+        ),
+        None,
+    )
 
 
 def capped_mode(row):
@@ -374,7 +570,11 @@ def capped_mode(row):
     current = mode_parts(row['mode'])
     if not current or current[2] <= 60.1:
         return None
-    candidates = [mode for mode in row['modes'] if mode_parts(mode)[:2] == current[:2] and 59 <= mode_parts(mode)[2] <= 60.1]
+    candidates = [
+        mode
+        for mode in row['modes']
+        if mode_parts(mode)[:2] == current[:2] and 59 <= mode_parts(mode)[2] <= 60.1
+    ]
     return max(candidates, key=lambda mode: mode_parts(mode)[2], default=None)
 
 
@@ -416,7 +616,9 @@ def persist(current, capped):
                 written.add(selector)
             continue
         output.append(line)
-    output = (output or list(HEADER)) + [line for selector, line in rules.items() if selector not in written]
+    output = (output or list(HEADER)) + [
+        line for selector, line in rules.items() if selector not in written
+    ]
     if output != lines:
         atomic_write(config_path(), '\n'.join(output) + '\n')
 
@@ -457,23 +659,49 @@ def ensure(current):
     if any(row['enabled'] and row['mirror'] == 'none' for row in rows):
         # Emergency enablement changes only live rules. On redocking, reapply a
         # saved panel-disable choice only while a usable external output survives.
-        if any(row['enabled'] and row['dpms'] and row['mirror'] == 'none' and not INTERNAL.match(row['name']) for row in rows):
+        if any(
+            row['enabled']
+            and row['dpms']
+            and row['mirror'] == 'none'
+            and not INTERNAL.match(row['name'])
+            for row in rows
+        ):
             saved = {}
             for line in saved_lines():
                 match = RULE.match(line)
                 if match:
-                    saved[lua_unquote(match[1])] = bool(re.search(r'\bdisabled\s*=\s*true\b', line))
+                    saved[lua_unquote(match[1])] = bool(
+                        re.search(r'\bdisabled\s*=\s*true\b', line)
+                    )
             names = selectors(rows)
-            desired = [dict(row, enabled=False) if row['enabled'] and INTERNAL.match(row['name'])
-                       and saved.get(names[row['name']]) else dict(row) for row in rows]
+            desired = [
+                dict(row, enabled=False)
+                if row['enabled']
+                and INTERNAL.match(row['name'])
+                and saved.get(names[row['name']])
+                else dict(row)
+                for row in rows
+            ]
             if fingerprint(desired) != current['token']:
                 return apply_setup(desired, current)
         return current
-    target = next((row for row in sorted(rows, key=lambda row: not INTERNAL.match(row['name'])) if row['modes']), None)
+    target = next(
+        (
+            row
+            for row in sorted(rows, key=lambda row: not INTERNAL.match(row['name']))
+            if row['modes']
+        ),
+        None,
+    )
     if target is None:
         return current
     # Merges into the output's live rule, keeping its last geometry.
-    reply = command('eval', 'hl.monitor({ output = ' + lua_string(selectors(rows)[target['name']]) + ', disabled = false })')
+    reply = command(
+        'eval',
+        'hl.monitor({ output = '
+        + lua_string(selectors(rows)[target['name']])
+        + ', disabled = false })',
+    )
     if reply != 'ok':
         raise RuntimeError(reply or 'Hyprland rejected the display change.')
     return snapshot()
@@ -524,7 +752,11 @@ def main():
         try:
             result = response(json.loads(line))
         except Exception as exc:
-            result = dict(ok=False, error=str(exc), data=dict(available=False, displays=[], token=''))
+            result = dict(
+                ok=False,
+                error=str(exc),
+                data=dict(available=False, displays=[], token=''),
+            )
         print(json.dumps(result), flush=True)
 
 

@@ -1,5 +1,5 @@
 """Games uses production workers and the retained fullscreen host with isolated providers."""
-import json
+
 import sys
 import unittest
 
@@ -12,40 +12,67 @@ from spaces.games.backend import GamesBackend
 
 def setup(root):
     movies_setup(root)
-    (root / 'spaces/movies/Browser.qml').write_text('''pragma Singleton
+    (root / 'spaces/movies/Browser.qml').write_text("""pragma Singleton
 import QtQuick
 QtObject {
  property string lastUrl: ""
  function open(url,moduleId,command,host){lastUrl=String(url);}
 }
-''')
+""")
     image = root / 'game-art.svg'
-    image.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#294963"/></svg>')
+    image.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#294963"/></svg>'
+    )
     (root / 'spaces/movies/torrent_backend.py').write_text(
         'import json,sys\nfor line in sys.stdin:\n'
         ' r=json.loads(line);result=dict(connected=False,canStart=False,error="Fixture offline") if r["op"]=="probe" else [];'
-        'print(json.dumps(dict(id=r["id"],result=result)),flush=True)\n')
-    backend = GamesBackend(root / 'config/quickshell/desktop/spaces/games/games.json',
-                           root / 'data/quickshell/desktop/spaces/games')
-    game = backend._save_game('fixture', dict(catalogProvider='fixture', catalogProviderId='fixture',
-        title='Fixture game', summary='A saved game', cover=None, rating=4.3, ratingCount=17,
-        officialWebsite='https://example.com/game',
-        artwork=[], screenshots=[dict(url=image.as_uri(), thumbnail=image.as_uri())]))
+        'print(json.dumps(dict(id=r["id"],result=result)),flush=True)\n'
+    )
+    backend = GamesBackend(
+        root / 'config/quickshell/desktop/spaces/games/games.json',
+        root / 'data/quickshell/desktop/spaces/games',
+    )
+    game = backend._save_game(
+        'fixture',
+        dict(
+            catalogProvider='fixture',
+            catalogProviderId='fixture',
+            title='Fixture game',
+            summary='A saved game',
+            cover=None,
+            rating=4.3,
+            ratingCount=17,
+            officialWebsite='https://example.com/game',
+            artwork=[],
+            screenshots=[dict(url=image.as_uri(), thumbnail=image.as_uri())],
+        ),
+    )
     backend.set_favorite(dict(gameId=game['id'], favorite=True))
     path = root / 'spaces/games/backend.py'
     source = path.read_text()
-    state = dict(steam=dict(items=[], ownedIds=[], available=False, ownershipKnown=False),
-                 epic=dict(items=[], ownedIds=[], available=False, ownershipKnown=False),
-                 gog=dict(items=[], ownedIds=[], available=True, ownershipKnown=False))
-    fixture = '\n'.join([
-        '    GamesBackend.libraries = lambda self, force=False: ' + repr(state),
-        '    GamesBackend.library_games = lambda self, request: self._favorite_games("", 0)',
-        '    GamesBackend.presentation = lambda self, request: {}',
-        '    GamesBackend.protondb = lambda self, request: dict(tier="gold",label="Gold",total=42,url="https://www.protondb.com/app/620")',
-        '    GamesBackend.howlongtobeat = lambda self, request: dict(main=10, extras=15, complete=20, override="", url="https://howlongtobeat.com/game/1")',
-        '    GamesBackend.action = lambda self, request: dict(started=True, handoff=True, message="Fixture launcher handoff")',
-    ]) + '\n'
-    path.write_text(source.replace('    backend = GamesBackend()\n', fixture + '    backend = GamesBackend()\n'))
+    state = dict(
+        steam=dict(items=[], ownedIds=[], available=False, ownershipKnown=False),
+        epic=dict(items=[], ownedIds=[], available=False, ownershipKnown=False),
+        gog=dict(items=[], ownedIds=[], available=True, ownershipKnown=False),
+    )
+    fixture = (
+        '\n'.join(
+            [
+                '    GamesBackend.libraries = lambda self, force=False: ' + repr(state),
+                '    GamesBackend.library_games = lambda self, request: self._favorite_games("", 0)',
+                '    GamesBackend.presentation = lambda self, request: {}',
+                '    GamesBackend.protondb = lambda self, request: dict(tier="gold",label="Gold",total=42,url="https://www.protondb.com/app/620")',
+                '    GamesBackend.howlongtobeat = lambda self, request: dict(main=10, extras=15, complete=20, override="", url="https://howlongtobeat.com/game/1")',
+                '    GamesBackend.action = lambda self, request: dict(started=True, handoff=True, message="Fixture launcher handoff")',
+            ]
+        )
+        + '\n'
+    )
+    path.write_text(
+        source.replace(
+            '    backend = GamesBackend()\n', fixture + '    backend = GamesBackend()\n'
+        )
+    )
 
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
@@ -53,7 +80,8 @@ class GamesSpaceTests(unittest.TestCase):
     run_qml = support.run_qml
 
     def test_badges_store_actions_tooltip_and_image_strip(self):
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -147,10 +175,13 @@ ShellRoot {
   }
  }catch(error){console.error("DISPLAY_FAIL",error);Qt.quit();}finally{driver.restart();}}}
  Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup=setup)
+}""",
+            setup=setup,
+        )
 
     def test_game_page_hide_restore_close_and_independent_movies(self):
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -219,4 +250,6 @@ ShellRoot {
   }
  }catch(error){console.error("DISPLAY_FAIL",error);Qt.quit();}finally{driver.restart();}}}
  Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup=setup)
+}""",
+            setup=setup,
+        )

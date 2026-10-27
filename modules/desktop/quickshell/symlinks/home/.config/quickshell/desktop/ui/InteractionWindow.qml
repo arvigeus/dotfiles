@@ -18,22 +18,37 @@ PanelWindow {
 
     screen: targetScreen
     visible: opened && targetScreen !== null
-    anchors { top: true; bottom: true; left: true; right: true }
+    anchors {
+        top: true
+        bottom: true
+        left: true
+        right: true
+    }
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: opened && visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
     mask: opened ? null : noInput
-    Region { id: noInput }
+    Region {
+        id: noInput
+    }
 
     function focusedOutput(): ShellScreen {
         return Quickshell.screens.find(output => output.name === Hyprland.focusedMonitor?.name) || null;
     }
 
-    function toggle(): void { toggleOn(focusedOutput()); }
-    function toggleOn(output: ShellScreen): void { interactionState.toggle(root, output); }
-    function openOn(output: ShellScreen): void { interactionState.open(root, output); }
-    function dismiss(): void { interactionState.dismiss(root); }
+    function toggle(): void {
+        toggleOn(focusedOutput());
+    }
+    function toggleOn(output: ShellScreen): void {
+        interactionState.toggle(root, output);
+    }
+    function openOn(output: ShellScreen): void {
+        interactionState.open(root, output);
+    }
+    function dismiss(): void {
+        interactionState.dismiss(root);
+    }
 
     // Wait for native activation before enabling text input/focusing a control.
     // Closing releases Exclusive keyboard focus; let the compositor restore
@@ -54,10 +69,19 @@ PanelWindow {
     Shortcut {
         sequence: "Escape"
         enabled: root.opened && root.visible
-        onActivated: { if (root.escapeHandler) root.escapeHandler(); else root.dismiss(); }
+        onActivated: {
+            if (root.escapeHandler)
+                root.escapeHandler();
+            else
+                root.dismiss();
+        }
     }
 
-    Rectangle { anchors.fill: parent; color: "#66000000"; opacity: root.backdropOpacity }
+    Rectangle {
+        anchors.fill: parent
+        color: "#66000000"
+        opacity: root.backdropOpacity
+    }
     MouseArea {
         objectName: "interactionBackdrop"
         anchors.fill: parent

@@ -61,5 +61,8 @@ BarButton {
             Layout.alignment: Qt.AlignVCenter
         }
     }
-    PassiveToolTip { target: root; text: root.entry.description || root.text }
+    PassiveToolTip {
+        target: root
+        text: root.entry.description || root.text
+    }
 }

@@ -5,8 +5,9 @@ import unittest
 
 
 spec = importlib.util.spec_from_file_location(
-    'qbit_configure', Path(__file__).resolve().parents[1]
-    / 'modules/internet/qbittorrent/configure.py')
+    'qbit_configure',
+    Path(__file__).resolve().parents[1] / 'modules/internet/qbittorrent/configure.py',
+)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
@@ -17,10 +18,13 @@ class QbittorrentConfigurationTests(unittest.TestCase):
             source = Path(directory) / 'live.conf'
             output = Path(directory) / 'stage/qBittorrent.conf'
             opaque = r'Geometry=@ByteArray(\0\xff\x1\0)' + '\n'
-            source.write_text('[GUI]\n; comment\n' + opaque
-                              + '[WebUI]\nAddress=*\nLocalHostAuth=true\nUsername=keep\n'
-                              + 'Password_PBKDF2=@ByteArray(existing:hash)\n'
-                              + '[Preferences]\nSearch\\SearchEnabled=false\nOther=keep')
+            source.write_text(
+                '[GUI]\n; comment\n'
+                + opaque
+                + '[WebUI]\nAddress=*\nLocalHostAuth=true\nUsername=keep\n'
+                + 'Password_PBKDF2=@ByteArray(existing:hash)\n'
+                + '[Preferences]\nSearch\\SearchEnabled=false\nOther=keep'
+            )
             module.configure(source, output)
             result = output.read_text()
             self.assertIn(opaque, result)

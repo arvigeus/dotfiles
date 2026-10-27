@@ -46,9 +46,7 @@ MouseArea {
 
         const origin = horizontal ? view.originX : view.originY;
         const minimum = origin - (horizontal ? view.leftMargin : view.topMargin);
-        const maximum = Math.max(minimum, origin
-            + (horizontal ? view.contentWidth - view.width + view.rightMargin
-                : view.contentHeight - view.height + view.bottomMargin));
+        const maximum = Math.max(minimum, origin + (horizontal ? view.contentWidth - view.width + view.rightMargin : view.contentHeight - view.height + view.bottomMargin));
         const current = horizontal ? view.contentX : view.contentY;
         const distance = gesture ? amount : amount / 120 * wheelStep;
         const next = Math.max(minimum, Math.min(maximum, current - distance));

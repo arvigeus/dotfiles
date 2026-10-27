@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Back up declared private paths and restore a standalone private checkout."""
+
 import argparse
 import getpass
 import json
@@ -14,12 +15,12 @@ import uuid
 
 
 KINDS = ('files', 'symlinks')
-APPLY = '''#!/usr/bin/env bash
+APPLY = """#!/usr/bin/env bash
 set -euo pipefail
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 exec python3 "$repo_dir/apply.py" apply --destination "$repo_dir" "$@"
-'''
-README = '''# Private dotfiles
+"""
+README = """# Private dotfiles
 
 Restore as your regular user with Python 3 installed:
 
@@ -38,8 +39,8 @@ Keep this repository private. Use `umask 077` before cloning it on a new machine
 
 Add installation or configuration hooks in your own modules beside the generated
 `modules/backup/`. See [ARCHITECTURE.md](ARCHITECTURE.md) for module conventions.
-'''
-ARCHITECTURE = '''# Private configuration
+"""
+ARCHITECTURE = """# Private configuration
 
 `apply.py` is a standalone copy of the public backup/restore engine; it requires
 Python 3 and Bash, without archinstall or the public checkout. `apply.sh` reads
@@ -73,7 +74,7 @@ globally by filename, then module path. They receive the username as `$1` and in
 use `sudo` for privileged actions. There is no staging home, automatic package
 handling, config.sh, check.sh, or archinstall integration. --dry-run validates
 config, assets and hook syntax without installing assets or executing hooks.
-'''
+"""
 
 
 def declarations(config):
@@ -87,20 +88,37 @@ def declarations(config):
         if not isinstance(paths, list):
             raise ValueError(f'extra.private.{kind} must be a list of paths')
         for path in paths:
-            if not isinstance(path, str) or not path or any(c in path for c in '\n\r\0'):
-                raise ValueError('Private paths must be nonempty strings without line breaks')
+            if (
+                not isinstance(path, str)
+                or not path
+                or any(c in path for c in '\n\r\0')
+            ):
+                raise ValueError(
+                    'Private paths must be nonempty strings without line breaks'
+                )
             parsed = PurePosixPath(path)
-            if (parsed.as_posix() != path or '..' in parsed.parts
-                    or path in ('/', '/home', 'home')
-                    or path.startswith('//')
-                    or not (path.startswith('home/') or path.startswith('/'))):
-                raise ValueError(f'Invalid private path: {path!r}; use home/... or /absolute/path')
-            if any(parsed == old or parsed in old.parents or old in parsed.parents
-                   for _, previous in result for old in [PurePosixPath(previous)]):
+            if (
+                parsed.as_posix() != path
+                or '..' in parsed.parts
+                or path in ('/', '/home', 'home')
+                or path.startswith('//')
+                or not (path.startswith('home/') or path.startswith('/'))
+            ):
+                raise ValueError(
+                    f'Invalid private path: {path!r}; use home/... or /absolute/path'
+                )
+            if any(
+                parsed == old or parsed in old.parents or old in parsed.parents
+                for _, previous in result
+                for old in [PurePosixPath(previous)]
+            ):
                 raise ValueError(f'Overlapping private path: {path}')
             stored = PurePosixPath(path.lstrip('/'))
-            if any(stored == old or stored in old.parents or old in stored.parents
-                   for _, previous in result for old in [PurePosixPath(previous.lstrip('/'))]):
+            if any(
+                stored == old or stored in old.parents or old in stored.parents
+                for _, previous in result
+                for old in [PurePosixPath(previous.lstrip('/'))]
+            ):
                 raise ValueError(f'Overlapping private storage path: {path}')
             result.append((kind, path))
     return result
@@ -137,7 +155,9 @@ def snapshot(source, destination, ancestors=(), forbidden=None):
         print(f'Skip socket: {source}', file=sys.stderr)
         return
     if stat.S_ISDIR(info.st_mode):
-        if forbidden is not None and (source.resolve() == forbidden or source.resolve() in forbidden.parents):
+        if forbidden is not None and (
+            source.resolve() == forbidden or source.resolve() in forbidden.parents
+        ):
             raise ValueError(f'Backup source contains the private repository: {source}')
         identity = (info.st_dev, info.st_ino)
         if identity in ancestors:
@@ -153,8 +173,11 @@ def snapshot(source, destination, ancestors=(), forbidden=None):
 
 
 def permissions(source, prefix):
-    return {str(prefix / path.relative_to(source)): stat.S_IMODE(path.stat().st_mode) & 0o777
-            for path in [source, *sorted(source.rglob('*'))]}
+    return {
+        str(prefix / path.relative_to(source)): stat.S_IMODE(path.stat().st_mode)
+        & 0o777
+        for path in [source, *sorted(source.rglob('*'))]
+    }
 
 
 def write_atomic(path, content, mode=0o600):
@@ -198,7 +221,9 @@ def backup(args, config, entries, home, repo):
     sources = []
     for kind, path in entries:
         source = target_path(path, home)
-        if source.is_dir() and (source.resolve() == repo or source.resolve() in repo.parents):
+        if source.is_dir() and (
+            source.resolve() == repo or source.resolve() in repo.parents
+        ):
             raise ValueError(f'Backup source contains the private repository: {source}')
         if not source.exists():
             if source.is_symlink():
@@ -210,14 +235,20 @@ def backup(args, config, entries, home, repo):
     if args.dry_run:
         return
     if not entries:
-        raise ValueError('No extra.private paths configured; regenerate user-configuration.json first')
+        raise ValueError(
+            'No extra.private paths configured; regenerate user-configuration.json first'
+        )
     repo.mkdir(parents=True, exist_ok=True, mode=0o700)
     repo.chmod(0o700)
     if not (repo / '.git').exists():
         subprocess.run(['git', 'init', '--quiet', str(repo)], check=True)
     payload = repo / 'modules/backup'
     check_parents(payload / 'config.json', repo)
-    old = json.loads((payload / 'config.json').read_text()) if (payload / 'config.json').exists() else {}
+    old = (
+        json.loads((payload / 'config.json').read_text())
+        if (payload / 'config.json').exists()
+        else {}
+    )
     modes = {}
     directories = []
     with tempfile.TemporaryDirectory(prefix='.backup-', dir=repo) as directory:
@@ -228,10 +259,15 @@ def backup(args, config, entries, home, repo):
             destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             snapshot(source, destination, forbidden=repo)
             if not destination.exists():
-                raise ValueError(f'Private entry is not a regular file or directory: {source}')
+                raise ValueError(
+                    f'Private entry is not a regular file or directory: {source}'
+                )
             modes.update(permissions(destination, relative))
-            directories.extend(str(relative / item.relative_to(destination))
-                               for item in [destination, *destination.rglob('*')] if item.is_dir())
+            directories.extend(
+                str(relative / item.relative_to(destination))
+                for item in [destination, *destination.rglob('*')]
+                if item.is_dir()
+            )
         saved = {kind: [] for kind in KINDS}
         for kind, path in entries:
             relative = stored_path(kind, path)
@@ -240,10 +276,18 @@ def backup(args, config, entries, home, repo):
             if (stage / relative).exists():
                 install(stage / relative, target)
             elif target.exists() or str(relative) in old.get('directories', []):
-                modes.update({key: value for key, value in old.get('permissions', {}).items()
-                              if key == str(relative) or key.startswith(str(relative) + '/')})
-                directories.extend(key for key in old.get('directories', [])
-                                   if key == str(relative) or key.startswith(str(relative) + '/'))
+                modes.update(
+                    {
+                        key: value
+                        for key, value in old.get('permissions', {}).items()
+                        if key == str(relative) or key.startswith(str(relative) + '/')
+                    }
+                )
+                directories.extend(
+                    key
+                    for key in old.get('directories', [])
+                    if key == str(relative) or key.startswith(str(relative) + '/')
+                )
             else:
                 continue
             saved[kind].append(path)
@@ -253,8 +297,14 @@ def backup(args, config, entries, home, repo):
             write_atomic(repo / 'README.md', README)
         write_atomic(repo / 'ARCHITECTURE.md', ARCHITECTURE)
         if not (repo / '.gitignore').exists():
-            write_atomic(repo / '.gitignore', '__pycache__/\n.backup-*/\n*.lock\n.#lk*\n')
-        manifest = {'extra': {'private': saved}, 'permissions': modes, 'directories': sorted(directories)}
+            write_atomic(
+                repo / '.gitignore', '__pycache__/\n.backup-*/\n*.lock\n.#lk*\n'
+            )
+        manifest = {
+            'extra': {'private': saved},
+            'permissions': modes,
+            'directories': sorted(directories),
+        }
         payload.mkdir(parents=True, exist_ok=True, mode=0o700)
         write_atomic(payload / 'config.json', json.dumps(manifest, indent=4) + '\n')
     print(f'Private repository ready: {repo}')
@@ -276,7 +326,10 @@ def modules(root):
     for directory in sorted(root.iterdir()):
         if not directory.is_dir() or directory.is_symlink():
             continue
-        if any((directory / marker).exists() for marker in ('config.json', 'files', 'symlinks', 'scripts')):
+        if any(
+            (directory / marker).exists()
+            for marker in ('config.json', 'files', 'symlinks', 'scripts')
+        ):
             yield directory
         else:
             yield from modules(directory)
@@ -287,23 +340,55 @@ def apply(args, home, repo):
     entries = []
     hooks = []
     for module in modules(repo / 'modules'):
-        fragment = json.loads((module / 'config.json').read_text()) if (module / 'config.json').exists() else {}
-        merge(config, {key: value for key, value in fragment.items() if key != 'permissions'})
+        fragment = (
+            json.loads((module / 'config.json').read_text())
+            if (module / 'config.json').exists()
+            else {}
+        )
+        merge(
+            config,
+            {key: value for key, value in fragment.items() if key != 'permissions'},
+        )
         if 'private' in fragment.get('extra', {}):
             for kind, path in declarations(fragment):
-                entries.append((kind, path, module / stored_path(kind, path), module,
-                                fragment.get('permissions', {}), fragment.get('directories', [])))
+                entries.append(
+                    (
+                        kind,
+                        path,
+                        module / stored_path(kind, path),
+                        module,
+                        fragment.get('permissions', {}),
+                        fragment.get('directories', []),
+                    )
+                )
         else:
             for kind in KINDS:
                 for source in sorted((module / kind).rglob('*')):
-                    if source.is_dir() and any(source.iterdir()) and not source.is_symlink():
+                    if (
+                        source.is_dir()
+                        and any(source.iterdir())
+                        and not source.is_symlink()
+                    ):
                         continue
                     relative = source.relative_to(module / kind).as_posix()
                     path = relative if relative.startswith('home/') else '/' + relative
                     declarations({'extra': {'private': {kind: [path]}}})
                     # Private handwritten assets use owner-only permissions after a clone.
-                    mode = 0o700 if source.is_dir() or source.stat().st_mode & 0o111 else 0o600
-                    entries.append((kind, path, source, module, {str(source.relative_to(module)): mode}, []))
+                    mode = (
+                        0o700
+                        if source.is_dir() or source.stat().st_mode & 0o111
+                        else 0o600
+                    )
+                    entries.append(
+                        (
+                            kind,
+                            path,
+                            source,
+                            module,
+                            {str(source.relative_to(module)): mode},
+                            [],
+                        )
+                    )
         for hook in (module / 'scripts').glob('*.sh'):
             subprocess.run(['bash', '-n', str(hook)], check=True)
             hooks.append(hook)
@@ -313,35 +398,54 @@ def apply(args, home, repo):
     for kind, path, source, module, modes, directories in entries:
         check_parents(source, repo)
         source_key = str(source.relative_to(module))
-        if (not source.exists() and source_key not in directories) or source.is_symlink():
+        if (
+            not source.exists() and source_key not in directories
+        ) or source.is_symlink():
             raise ValueError(f'Missing or symlinked backup asset: {source}')
         empty = []
         for directory in directories:
             relative = PurePosixPath(directory)
-            if '..' in relative.parts or relative.is_absolute() or relative.as_posix() != directory:
+            if (
+                '..' in relative.parts
+                or relative.is_absolute()
+                or relative.as_posix() != directory
+            ):
                 raise ValueError(f'Invalid saved directory: {directory}')
             item = module / directory
             if item == source or source in item.parents:
                 check_parents(item, repo)
                 if item.is_symlink() or (item.exists() and not item.is_dir()):
-                    raise ValueError(f'Saved directory conflicts with backup asset: {item}')
+                    raise ValueError(
+                        f'Saved directory conflicts with backup asset: {item}'
+                    )
                 mode = modes.get(directory)
                 if not isinstance(mode, int) or not 0 <= mode <= 0o777:
                     raise ValueError(f'Missing directory permissions: {item}')
                 empty.append(item.relative_to(source))
         target = target_path(path, home)
-        if any(target == old or target in old.parents or old in target.parents for old in targets):
+        if any(
+            target == old or target in old.parents or old in target.parents
+            for old in targets
+        ):
             raise ValueError(f'Overlapping private destination: {target}')
         targets.append(target)
         check_parents(target, home if path.startswith('home/') else Path('/'))
         if target == repo or target in repo.parents or repo in target.parents:
-            raise ValueError(f'Restore destination overlaps the private repository: {target}')
+            raise ValueError(
+                f'Restore destination overlaps the private repository: {target}'
+            )
         for item in [source, *source.rglob('*')]:
             relative = str(item.relative_to(module))
             mode = modes.get(relative)
-            if (item.is_symlink() or not isinstance(mode, int) or not 0 <= mode <= 0o777
-                    or (item.exists() and not (item.is_file() or item.is_dir()))):
-                raise ValueError(f'Missing permissions or unsupported backup asset: {item}')
+            if (
+                item.is_symlink()
+                or not isinstance(mode, int)
+                or not 0 <= mode <= 0o777
+                or (item.exists() and not (item.is_file() or item.is_dir()))
+            ):
+                raise ValueError(
+                    f'Missing permissions or unsupported backup asset: {item}'
+                )
         print(f'Install ({kind}): {target}')
         pending.append((kind, source, target, module, modes, empty))
     for hook in hooks:
@@ -351,7 +455,9 @@ def apply(args, home, repo):
     repo.chmod(0o700)
     for kind, source, target, module, modes, empty in pending:
         target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        with tempfile.TemporaryDirectory(prefix='.private-', dir=target.parent) as directory:
+        with tempfile.TemporaryDirectory(
+            prefix='.private-', dir=target.parent
+        ) as directory:
             staged = Path(directory) / 'asset'
             if kind == 'symlinks':
                 for directory in sorted(empty, key=lambda path: len(path.parts)):
@@ -370,23 +476,41 @@ def apply(args, home, repo):
             for item in reversed([output, *sorted(output.rglob('*'))]):
                 relative = source.relative_to(module) / item.relative_to(output)
                 item.chmod(modes[str(relative)])
-            if kind == 'symlinks' and target.is_symlink() and target.resolve() == source:
+            if (
+                kind == 'symlinks'
+                and target.is_symlink()
+                and target.resolve() == source
+            ):
                 continue
             install(staged, target, keep_original=True)
     with tempfile.TemporaryDirectory(prefix='dotfiles-private-') as directory:
         active = Path(directory) / 'config.json'
         active.write_text(json.dumps(config))
         user = getpass.getuser()
-        env = dict(os.environ, DOTFILES_REPO=str(repo), DOTFILES_CONFIG=str(active), USERNAME=user)
+        env = dict(
+            os.environ,
+            DOTFILES_REPO=str(repo),
+            DOTFILES_CONFIG=str(active),
+            USERNAME=user,
+        )
         for hook in hooks:
-            subprocess.run(['bash', '-euo', 'pipefail', str(hook), user], cwd=repo, env=env, check=True)
+            subprocess.run(
+                ['bash', '-euo', 'pipefail', str(hook), user],
+                cwd=repo,
+                env=env,
+                check=True,
+            )
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('backup', 'apply'))
-    parser.add_argument('--config', type=Path, help='Generated public configuration (backup only)')
-    parser.add_argument('--destination', type=Path, default=Path.home() / 'Projects/dotfiles-private')
+    parser.add_argument(
+        '--config', type=Path, help='Generated public configuration (backup only)'
+    )
+    parser.add_argument(
+        '--destination', type=Path, default=Path.home() / 'Projects/dotfiles-private'
+    )
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
     os.umask(0o077)
@@ -402,8 +526,10 @@ def main():
     # Catch home/... and absolute declarations that alias the same destination.
     targets = [target_path(path, home) for _, path in entries]
     for index, target in enumerate(targets):
-        if any(target == other or target in other.parents or other in target.parents
-               for other in targets[:index]):
+        if any(
+            target == other or target in other.parents or other in target.parents
+            for other in targets[:index]
+        ):
             raise ValueError(f'Overlapping private destination: {target}')
     backup(args, config, entries, home, repo)
 

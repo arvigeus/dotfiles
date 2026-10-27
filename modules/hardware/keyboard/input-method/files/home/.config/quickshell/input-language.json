@@ -1,1 +1,5 @@
-{"command":["/usr/local/bin/input-method"]}
+{
+    "command": [
+        "/usr/local/bin/input-method"
+    ]
+}

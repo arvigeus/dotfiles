@@ -1,6 +1,6 @@
 """Transient alarm/pomodoro scheduling and production popup; no real notifications."""
+
 import os
-from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -14,7 +14,7 @@ class ReminderTests(unittest.TestCase):
             return support.run_qml(self, body, setup)
 
     def test_alarm_delivery_cancellation_and_pomodoro_transitions_after_sleep(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import Quickshell
 import "drawers/weather"
 ShellRoot {
@@ -50,10 +50,11 @@ ShellRoot {
   check(sent.length===3&&!ReminderService.scheduler.running,"stopped pomodoro kept running");
   console.log("DISPLAY_PASS");Qt.quit();
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
-}''')
+}""")
 
     def test_alarm_uses_next_actual_local_time_across_dst(self):
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "drawers/weather"
 ShellRoot {
@@ -63,10 +64,12 @@ ShellRoot {
   check(ReminderService.nextAlarm("02:30",Date.UTC(2026,2,8,6))===Date.UTC(2026,2,9,6,30),"nonexistent hour silently changed time");
   console.log("DISPLAY_PASS");Qt.quit();
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
-}''', timezone='America/New_York')
+}""",
+            timezone='America/New_York',
+        )
 
     def test_scheduler_delivers_without_an_open_drawer(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import Quickshell
 import "drawers/weather"
 ShellRoot {
@@ -85,10 +88,10 @@ ShellRoot {
   Qt.quit();
  }}
  Timer{interval:3000;running:true;onTriggered:{console.error("DISPLAY_FAIL scheduler timeout");Qt.quit();}}
-}''')
+}""")
 
     def test_sections_popup_width_keyboard_countdown_stop_and_drawer_lifetime(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -185,10 +188,10 @@ ShellRoot {
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
  Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''')
+}""")
 
     def test_next_minute_at_midnight_and_open_editor_expiration(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import Quickshell
 import "drawers/weather"
 ShellRoot {
@@ -218,18 +221,31 @@ ShellRoot {
   }
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:4000;running:true;onTriggered:{console.error("DISPLAY_FAIL expiry timeout");Qt.quit();}}
-}''')
+}""")
 
     def test_default_delivery_passes_literal_arguments_to_notify_send(self):
         def setup(root):
-            bindir = root / 'bin'; bindir.mkdir()
-            output = root / 'notification.json'; output.write_text('[]')
+            bindir = root / 'bin'
+            bindir.mkdir()
+            output = root / 'notification.json'
+            output.write_text('[]')
             worker = bindir / 'notify-send'
-            worker.write_text('#!/usr/bin/python3\nimport json,sys\nfrom pathlib import Path\nPath(' + repr(str(output)) + ').write_text(json.dumps(sys.argv[1:]))\n')
+            worker.write_text(
+                '#!/usr/bin/python3\nimport json,sys\nfrom pathlib import Path\nPath('
+                + repr(str(output))
+                + ').write_text(json.dumps(sys.argv[1:]))\n'
+            )
             worker.chmod(0o755)
-            environment = patch.dict(os.environ, PATH=str(bindir) + os.pathsep + os.environ['PATH'], REMINDER_DELIVERY_FILE=str(output))
-            environment.start(); self.addCleanup(environment.stop)
-        self.run_qml('''import QtQuick
+            environment = patch.dict(
+                os.environ,
+                PATH=str(bindir) + os.pathsep + os.environ['PATH'],
+                REMINDER_DELIVERY_FILE=str(output),
+            )
+            environment.start()
+            self.addCleanup(environment.stop)
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import Quickshell.Io
 import "drawers/weather"
@@ -243,4 +259,6 @@ ShellRoot {
  }
  Component.onCompleted:ReminderService.deliver("Reminder","-Milk <tea> & honey")
  Timer{interval:3000;running:true;onTriggered:{console.error("DISPLAY_FAIL delivery timeout");Qt.quit();}}
-}''', setup)
+}""",
+            setup,
+        )

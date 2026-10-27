@@ -1,4 +1,8 @@
 {
-  "calendars": ["Personal"],
-  "task_lists": ["Tasks"]
+    "calendars": [
+        "Personal"
+    ],
+    "task_lists": [
+        "Tasks"
+    ]
 }

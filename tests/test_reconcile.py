@@ -1,4 +1,5 @@
 """Reconciliation preserves edits and checkpoints only completed changes."""
+
 import importlib.util
 import io
 import json
@@ -71,7 +72,12 @@ class FileReconciliationTests(unittest.TestCase):
             self.assertTrue(self.sync(('d', 'r'))[0])
         self.assertIn('-local', output.getvalue())
         self.assertEqual(self.target.read_text(), 'both changed\n')
-        self.assertTrue(any(path.read_text() == 'local\n' for path in (self.state_dir / 'backups').rglob('config')))
+        self.assertTrue(
+            any(
+                path.read_text() == 'local\n'
+                for path in (self.state_dir / 'backups').rglob('config')
+            )
+        )
 
     def test_first_adoption_preserves_an_unknown_existing_file(self):
         self.target.parent.mkdir()
@@ -85,7 +91,9 @@ class FileReconciliationTests(unittest.TestCase):
         self.sync()
         self.target.write_text('local\n')
         self.assertFalse(self.sync(entries=[])[0])
-        self.assertIn(str(self.target), reconcile.State(self.state_dir).data['files']['test'])
+        self.assertIn(
+            str(self.target), reconcile.State(self.state_dir).data['files']['test']
+        )
         self.assertTrue(self.sync(('r',), entries=[])[0])
         self.assertFalse(self.target.exists())
         self.assertEqual(reconcile.State(self.state_dir).data['files']['test'], {})
@@ -129,11 +137,13 @@ class FileReconciliationTests(unittest.TestCase):
         self.sync()
         self.source.write_text('updated\n')
         original = reconcile.shutil.copy2
+
         def changed(source, destination, **kwargs):
             result = original(source, destination, **kwargs)
             if source == self.target:
                 self.target.write_text('concurrent edit\n')
             return result
+
         with patch.object(reconcile.shutil, 'copy2', side_effect=changed):
             with self.assertRaisesRegex(ValueError, 'changed while being backed up'):
                 self.sync()
@@ -147,7 +157,10 @@ class FileReconciliationTests(unittest.TestCase):
                 self.sync()
         self.assertEqual(self.target.read_text(), 'updated\n')
         self.assertTrue(self.sync()[0])
-        self.assertEqual(reconcile.State(self.state_dir).data['files']['test'][str(self.target)], reconcile.fingerprint(self.target))
+        self.assertEqual(
+            reconcile.State(self.state_dir).data['files']['test'][str(self.target)],
+            reconcile.fingerprint(self.target),
+        )
 
     def test_dry_run_and_corrupt_state_never_write_targets(self):
         self.assertTrue(self.sync(dry_run=True)[0])
@@ -167,61 +180,114 @@ class FileReconciliationTests(unittest.TestCase):
 
 
 class PackageReconciliationTests(unittest.TestCase):
-    def package(self, name, depends=(), provides=(), reason=0, required=(), optional=()):
-        return SimpleNamespace(name=name, version='1', desc=name, isize=1024, depends=depends,
-                               provides=provides, reason=reason, compute_requiredby=lambda: required,
-                               compute_optionalfor=lambda: optional)
+    def package(
+        self, name, depends=(), provides=(), reason=0, required=(), optional=()
+    ):
+        return SimpleNamespace(
+            name=name,
+            version='1',
+            desc=name,
+            isize=1024,
+            depends=depends,
+            provides=provides,
+            reason=reason,
+            compute_requiredby=lambda: required,
+            compute_optionalfor=lambda: optional,
+        )
 
     def test_providers_and_transitive_dependencies_are_protected(self):
-        packages = [self.package('app', ['virtual>=2']), self.package('provider', ['lib'], ['virtual=2']),
-                    self.package('lib'), self.package('extra'), self.package('orphan', reason=1),
-                    self.package('other-dependency', reason=1, required=['extra'])]
+        packages = [
+            self.package('app', ['virtual>=2']),
+            self.package('provider', ['lib'], ['virtual=2']),
+            self.package('lib'),
+            self.package('extra'),
+            self.package('orphan', reason=1),
+            self.package('other-dependency', reason=1, required=['extra']),
+        ]
         handle = SimpleNamespace(get_localdb=lambda: SimpleNamespace(pkgcache=packages))
+
         def satisfy(packages, dependency):
-            return next((p for p in packages if p.name == dependency or
-                         (dependency == 'virtual>=2' and 'virtual=2' in p.provides)), None)
+            return next(
+                (
+                    p
+                    for p in packages
+                    if p.name == dependency
+                    or (dependency == 'virtual>=2' and 'virtual=2' in p.provides)
+                ),
+                None,
+            )
+
         with patch('pyalpm.find_satisfier', side_effect=satisfy):
-            missing, candidates = reconcile_packages.Inventory(handle).status(['repo/app'], ['absent-aur'])
+            missing, candidates = reconcile_packages.Inventory(handle).status(
+                ['repo/app'], ['absent-aur']
+            )
         self.assertEqual(missing, ['absent-aur (AUR)'])
         self.assertEqual([p.name for p in candidates], ['extra', 'orphan'])
 
     def test_review_never_cascades_and_rechecks_candidates_after_each_choice(self):
         a, b = self.package('a'), self.package('b')
         snapshots = iter([([], [a, b]), ([], [a, b]), ([], [])])
-        inventory = lambda: SimpleNamespace(status=lambda *_: next(snapshots))
+
+        def inventory():
+            return SimpleNamespace(status=lambda *_: next(snapshots))
+
         calls = []
+
         def run(argv, check):
             calls.append(argv)
             return SimpleNamespace(returncode=1)
+
         review = Answers('r')
         reconcile_packages.review_removals(['wanted'], [], review, inventory, run)
         self.assertEqual(calls, [['pacman', '-R', '--noconfirm', '--', 'a']])
         self.assertEqual(len(review.messages), 1)
 
     def test_missing_declarations_block_every_removal(self):
-        inventory = lambda: SimpleNamespace(status=lambda *_: (['missing'], [self.package('extra')]))
+        def inventory():
+            return SimpleNamespace(
+                status=lambda *_: (['missing'], [self.package('extra')])
+            )
+
         with self.assertRaisesRegex(ValueError, 'refusing removals'):
-            reconcile_packages.review_removals([], [], Answers('r'), inventory, lambda *_: self.fail('removal attempted'))
+            reconcile_packages.review_removals(
+                [],
+                [],
+                Answers('r'),
+                inventory,
+                lambda *_: self.fail('removal attempted'),
+            )
 
 
 class ServiceReconciliationTests(unittest.TestCase):
     def test_only_previously_managed_user_units_are_disabled_or_unmasked(self):
         with tempfile.TemporaryDirectory() as directory:
             state = reconcile.State(Path(directory))
-            state.data.update(user_services=['old.service'], masked_user_services=['old-mask.service'])
+            state.data.update(
+                user_services=['old.service'], masked_user_services=['old-mask.service']
+            )
             state.save()
             calls = []
-            reconcile_services.apply_user({'user_services': ['new.service'], 'masked_user_services': ['new-mask.service']}, state,
-                                          lambda *args: calls.append(args))
+            reconcile_services.apply_user(
+                {
+                    'user_services': ['new.service'],
+                    'masked_user_services': ['new-mask.service'],
+                },
+                state,
+                lambda *args: calls.append(args),
+            )
             self.assertIn(('systemctl', '--global', 'disable', 'old.service'), calls)
-            self.assertIn(('systemctl', '--global', 'unmask', 'old-mask.service'), calls)
+            self.assertIn(
+                ('systemctl', '--global', 'unmask', 'old-mask.service'), calls
+            )
             self.assertEqual(state.data['user_services'], ['new.service'])
             self.assertFalse(any('stop' in call or 'restart' in call for call in calls))
 
 
 class ApplyPlanningTests(unittest.TestCase):
     def load(self):
-        spec = importlib.util.spec_from_file_location('reconcile_apply', REPO / 'scripts/apply-config.py')
+        spec = importlib.util.spec_from_file_location(
+            'reconcile_apply', REPO / 'scripts/apply-config.py'
+        )
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
@@ -239,13 +305,18 @@ class ApplyPlanningTests(unittest.TestCase):
     def test_native_planning_collects_packages_and_never_executes_commands(self):
         module = self.load()
         raw = json.loads((REPO / 'user-configuration.json').read_text())
-        with tempfile.TemporaryDirectory() as directory, patch.object(module, 'run', side_effect=AssertionError('command executed')):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(module, 'run', side_effect=AssertionError('command executed')),
+        ):
             plan = module.native_plan(module.native_config(raw), Path(directory))
             self.assertIn('zram-generator', plan.packages)
             self.assertIn('pipewire', plan.packages)
             self.assertIn('bluetooth.service', plan.services)
             self.assertIn('iwd.service', plan.disabled_services)
-            self.assertTrue((Path(directory) / 'etc/systemd/zram-generator.conf').is_file())
+            self.assertTrue(
+                (Path(directory) / 'etc/systemd/zram-generator.conf').is_file()
+            )
             self.assertTrue((Path(directory) / 'etc/localtime').is_symlink())
 
     def test_apply_wrapper_dry_run_bypasses_validation_and_forwards_options(self):
@@ -258,16 +329,23 @@ class ApplyPlanningTests(unittest.TestCase):
             commands.mkdir()
             (commands / 'sudo').write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
             (commands / 'sudo').chmod(0o755)
-            result = subprocess.run(['bash', str(root / 'apply.sh'), '--dry-run', '--no-package-review'],
-                                    env=dict(os.environ, PATH=str(commands) + ':' + os.environ['PATH']),
-                                    capture_output=True, text=True)
+            result = subprocess.run(
+                ['bash', str(root / 'apply.sh'), '--dry-run', '--no-package-review'],
+                env=dict(os.environ, PATH=str(commands) + ':' + os.environ['PATH']),
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('--dry-run\n--no-package-review', result.stdout)
 
-    def test_full_apply_freezes_configuration_and_preserves_subprocess_checkpoints(self):
+    def test_full_apply_freezes_configuration_and_preserves_subprocess_checkpoints(
+        self,
+    ):
         self.workflow()
 
-    def test_failed_early_hook_prevents_package_transactions_and_restores_runtime_link(self):
+    def test_failed_early_hook_prevents_package_transactions_and_restores_runtime_link(
+        self,
+    ):
         self.workflow(fail_pre=True)
 
     def workflow(self, fail_pre=False):
@@ -276,19 +354,39 @@ class ApplyPlanningTests(unittest.TestCase):
             root = Path(directory)
             repo = root / 'repo'
             repo.mkdir()
-            (repo / 'generate-config.py').write_text((REPO / 'generate-config.py').read_text())
+            (repo / 'generate-config.py').write_text(
+                (REPO / 'generate-config.py').read_text()
+            )
             config = repo / 'user-configuration.json'
-            raw = {'packages': ['wanted'], 'custom_commands': ['fixture-custom-command'],
-                   'extra': {'desktop': 'hyprland', 'files': [], 'symlinks': [], 'checks': [], 'pre': [], 'scripts': []}}
+            raw = {
+                'packages': ['wanted'],
+                'custom_commands': ['fixture-custom-command'],
+                'extra': {
+                    'desktop': 'hyprland',
+                    'files': [],
+                    'symlinks': [],
+                    'checks': [],
+                    'pre': [],
+                    'scripts': [],
+                },
+            }
             config.write_text(json.dumps(raw))
             runtime = root / 'runtime-config'
             runtime.symlink_to(config)
             calls = []
             state_root = root / 'state'
             account = pwd.getpwuid(os.getuid())
+
             def plan(parsed, target):
                 target.mkdir(parents=True)
-                return SimpleNamespace(target=target, packages=parsed.packages, services=[], disabled_services=[], commands=[])
+                return SimpleNamespace(
+                    target=target,
+                    packages=parsed.packages,
+                    services=[],
+                    disabled_services=[],
+                    commands=[],
+                )
+
             def execute(argv, **kwargs):
                 calls.append(argv)
                 frozen = Path(kwargs['env']['DOTFILES_CONFIG'])
@@ -304,18 +402,37 @@ class ApplyPlanningTests(unittest.TestCase):
                     state.data['files']['hook-checkpoint'] = {}
                     state.save()
                 return SimpleNamespace(returncode=0)
-            with (patch.object(module, 'STATE_ROOT', state_root),
-                  patch.object(module, 'APPLY_LOCK', root / 'lock'),
-                  patch.object(module, 'RUNTIME_CONFIG', runtime),
-                  patch.object(module.os, 'geteuid', return_value=0),
-                  patch.dict(os.environ, SUDO_USER=account.pw_name),
-                  patch.object(module, 'native_config', side_effect=lambda value: SimpleNamespace(packages=value['packages'])),
-                  patch.object(module, 'native_plan', side_effect=plan),
-                  patch.object(module, 'repositories', side_effect=lambda *_: calls.append(['repositories'])),
-                  patch.object(module, 'run', side_effect=lambda *args: calls.append(list(args))),
-                  patch.object(module.subprocess, 'run', side_effect=execute),
-                  patch.object(module, 'review_removals', side_effect=lambda *_: calls.append(['review'])),
-                  patch.object(sys, 'argv', ['apply-config.py', str(config)])):
+
+            with (
+                patch.object(module, 'STATE_ROOT', state_root),
+                patch.object(module, 'APPLY_LOCK', root / 'lock'),
+                patch.object(module, 'RUNTIME_CONFIG', runtime),
+                patch.object(module.os, 'geteuid', return_value=0),
+                patch.dict(os.environ, SUDO_USER=account.pw_name),
+                patch.object(
+                    module,
+                    'native_config',
+                    side_effect=lambda value: SimpleNamespace(
+                        packages=value['packages']
+                    ),
+                ),
+                patch.object(module, 'native_plan', side_effect=plan),
+                patch.object(
+                    module,
+                    'repositories',
+                    side_effect=lambda *_: calls.append(['repositories']),
+                ),
+                patch.object(
+                    module, 'run', side_effect=lambda *args: calls.append(list(args))
+                ),
+                patch.object(module.subprocess, 'run', side_effect=execute),
+                patch.object(
+                    module,
+                    'review_removals',
+                    side_effect=lambda *_: calls.append(['review']),
+                ),
+                patch.object(sys, 'argv', ['apply-config.py', str(config)]),
+            ):
                 if fail_pre:
                     with self.assertRaises(subprocess.CalledProcessError):
                         module.main()
@@ -326,9 +443,14 @@ class ApplyPlanningTests(unittest.TestCase):
             if fail_pre:
                 self.assertEqual(transactions, [])
             else:
-                self.assertEqual(transactions, [['pacman', '-Syu', '--needed', '--', 'wanted']])
+                self.assertEqual(
+                    transactions, [['pacman', '-Syu', '--needed', '--', 'wanted']]
+                )
                 self.assertEqual(calls[-1], ['review'])
-                self.assertIn('hook-checkpoint', reconcile.State(state_root / str(account.pw_uid)).data['files'])
+                self.assertIn(
+                    'hook-checkpoint',
+                    reconcile.State(state_root / str(account.pw_uid)).data['files'],
+                )
 
 
 if __name__ == '__main__':

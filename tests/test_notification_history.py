@@ -1,6 +1,6 @@
 """Native notification lifecycle, private history, and production cards/drawer."""
+
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -9,26 +9,49 @@ from unittest.mock import patch
 import support
 
 
-@unittest.skipUnless(support.QS and shutil.which('dbus-run-session'),'Quickshell and private D-Bus are required')
+@unittest.skipUnless(
+    support.QS and shutil.which('dbus-run-session'),
+    'Quickshell and private D-Bus are required',
+)
 class HistoryQmlTests(unittest.TestCase):
     def run_qml(self, body, setup=None):
         run = subprocess.run
+
         def isolated(command, **kwargs):
             if command[0] == support.QS:
-                kwargs['env']['XDG_STATE_HOME'] = str(Path(kwargs['env']['XDG_CONFIG_HOME']).parent/'state')
+                kwargs['env']['XDG_STATE_HOME'] = str(
+                    Path(kwargs['env']['XDG_CONFIG_HOME']).parent / 'state'
+                )
                 command = ['dbus-run-session', '--', *command]
             return run(command, **kwargs)
-        with patch.object(support.subprocess,'run',side_effect=isolated):
-            return support.run_qml(self,body,setup)
+
+        with patch.object(support.subprocess, 'run', side_effect=isolated):
+            return support.run_qml(self, body, setup)
 
     def test_history_loads_bounded_and_saves_normalized_snapshot(self):
         def setup(root):
-            path = root/'state/quickshell/desktop/notifications.json'; path.parent.mkdir(parents=True)
-            first = dict(id='one', app='Mail', desktopEntry='org.example.Mail', summary='New mail', body='Literal $(command) & text', timestamp=10,
-                         appIcon='https://example.test/icon', image='image://temporary', actions=[dict(identifier='open', text='Open')], seen=False)
-            rows = [first, dict(first, summary='Duplicate')] + [dict(id=str(i), body='文'*20000) for i in range(150)]
-            path.write_text(json.dumps(dict(items=rows, paused=True))); path.chmod(0o600)
-        self.run_qml('''import QtQuick
+            path = root / 'state/quickshell/desktop/notifications.json'
+            path.parent.mkdir(parents=True)
+            first = dict(
+                id='one',
+                app='Mail',
+                desktopEntry='org.example.Mail',
+                summary='New mail',
+                body='Literal $(command) & text',
+                timestamp=10,
+                appIcon='https://example.test/icon',
+                image='image://temporary',
+                actions=[dict(identifier='open', text='Open')],
+                seen=False,
+            )
+            rows = [first, dict(first, summary='Duplicate')] + [
+                dict(id=str(i), body='文' * 20000) for i in range(150)
+            ]
+            path.write_text(json.dumps(dict(items=rows, paused=True)))
+            path.chmod(0o600)
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import Quickshell.Io
 import "drawers/notifications"
@@ -58,12 +81,20 @@ ShellRoot {
   }
   if(ticks>40)throw Error("timeout at "+stage+" "+center.error);
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
-}''',setup)
+}""",
+            setup,
+        )
 
-    def test_missing_images_do_not_render_placeholders_and_actions_get_optional_icons(self):
+    def test_missing_images_do_not_render_placeholders_and_actions_get_optional_icons(
+        self,
+    ):
         def setup(root):
-            (root/'artwork.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ff465c"/></svg>')
-        self.run_qml('''import QtQuick
+            (root / 'artwork.svg').write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ff465c"/></svg>'
+            )
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "drawers/notifications"
 ShellRoot {
@@ -109,10 +140,12 @@ ShellRoot {
   }
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
-}''',setup)
+}""",
+            setup,
+        )
 
     def test_simple_drawer_clear_is_immediate_and_cards_keep_their_identity(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import Quickshell
 import "drawers"
 ShellRoot {
@@ -136,10 +169,12 @@ ShellRoot {
   else if(stage===1){check(find(drawer,"notificationDismiss:two")===original,"quiet change rebuilt card");find(header.item,"notificationsClear").clicked();check(mock.lastOp==="clear"&&mock.state.items.length===0,"clear required confirmation");}
   else {console.log("DISPLAY_PASS");Qt.quit();}stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
-}''')
+}""")
 
-    def test_unseen_count_survives_popup_timeout_and_follows_explicit_acknowledgement(self):
-        self.run_qml('''import QtQuick
+    def test_unseen_count_survives_popup_timeout_and_follows_explicit_acknowledgement(
+        self,
+    ):
+        self.run_qml("""import QtQuick
 import Quickshell
 import Quickshell.Io
 import "drawers/notifications"
@@ -181,10 +216,10 @@ ShellRoot {
   }
   if(ticks>60)throw Error("timeout at "+stage+" "+center.error);
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
-}''')
+}""")
 
     def test_quiet_transients_expire_and_client_withdrawal_removes_history(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import Quickshell
 import Quickshell.Io
 import "drawers/notifications"
@@ -210,12 +245,14 @@ ShellRoot {
   }
   if(ticks>50)throw Error("timeout at "+stage);
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
-}''')
+}""")
 
     def test_reload_restores_live_actions_without_replaying_popups(self):
         def setup(root):
-            (root/'config/notification-reload').write_text('')
-        self.run_qml('''import QtQuick
+            (root / 'config/notification-reload').write_text('')
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import Quickshell.Io
 import "drawers/notifications"
@@ -245,10 +282,12 @@ ShellRoot {
   }else if(stage===10&&ticks>4){check(!center.error,"storage error");console.log("DISPLAY_PASS");Qt.quit();}
   if(ticks>50)throw Error("timeout at "+stage+" "+Object.keys(center.live).length+" "+center.error);
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
-}''',setup)
+}""",
+            setup,
+        )
 
     def test_real_dbus_replacement_actions_quiet_transience_and_hover(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import Quickshell
 import Quickshell.Io
 import "drawers"
@@ -301,4 +340,4 @@ ShellRoot {
   }else if(stage===9&&ticks>3){check(!center.error,"storage error: "+center.error);console.log("DISPLAY_PASS");Qt.quit();}
   if(ticks>60)throw Error("timeout at "+stage+" "+center.error);
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
-}''')
+}""")

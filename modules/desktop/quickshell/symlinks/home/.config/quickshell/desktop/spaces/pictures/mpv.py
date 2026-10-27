@@ -10,16 +10,16 @@ from pathlib import Path
 
 class MpvIpc:
     def __init__(self, owner, timeout=0.4):
-        if not re.fullmatch(r"[a-z][a-z0-9-]*", owner):
-            raise ValueError("Invalid player owner.")
+        if not re.fullmatch(r'[a-z][a-z0-9-]*', owner):
+            raise ValueError('Invalid player owner.')
         self.owner = owner
         self.timeout = timeout
 
     def directory(self):
-        runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir())
-        suffix = "zs-" + self.owner + "-" + str(os.getuid())
+        runtime = Path(os.environ.get('XDG_RUNTIME_DIR') or tempfile.gettempdir())
+        suffix = 'zs-' + self.owner + '-' + str(os.getuid())
         directory = runtime / suffix
-        if len(os.fsencode(str(directory / ("mpv-" + "a" * 16 + ".sock")))) >= 100:
+        if len(os.fsencode(str(directory / ('mpv-' + 'a' * 16 + '.sock')))) >= 100:
             directory = Path(tempfile.gettempdir()) / suffix
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         try:
@@ -29,8 +29,8 @@ class MpvIpc:
         return directory
 
     def validate(self, value):
-        path = Path(str(value or "").strip())
-        if not re.fullmatch(r"mpv-[a-f0-9]{16}\.sock", path.name):
+        path = Path(str(value or '').strip())
+        if not re.fullmatch(r'mpv-[a-f0-9]{16}\.sock', path.name):
             return None
         try:
             return path if path.parent.resolve() == self.directory().resolve() else None
@@ -45,7 +45,9 @@ class MpvIpc:
         client.settimeout(self.timeout)
         try:
             client.connect(str(path))
-            client.sendall((json.dumps({"command": command, "request_id": 1}) + "\n").encode())
+            client.sendall(
+                (json.dumps({'command': command, 'request_id': 1}) + '\n').encode()
+            )
             pending = bytearray()
             received = 0
             while received < 65536:
@@ -54,14 +56,14 @@ class MpvIpc:
                     return None
                 received += len(chunk)
                 pending.extend(chunk)
-                while b"\n" in pending:
-                    line, _, remaining = pending.partition(b"\n")
+                while b'\n' in pending:
+                    line, _, remaining = pending.partition(b'\n')
                     pending = bytearray(remaining)
                     reply = json.loads(line)
                     if not isinstance(reply, dict):
                         return None
                     # mpv can send events before the reply to this command.
-                    if reply.get("request_id") == 1:
+                    if reply.get('request_id') == 1:
                         return reply
             return None
         except (OSError, ValueError, TypeError):
@@ -70,12 +72,12 @@ class MpvIpc:
             client.close()
 
     def property(self, path, name):
-        reply = self.exchange(path, ["get_property", name])
-        return reply.get("data") if reply and reply.get("error") == "success" else None
+        reply = self.exchange(path, ['get_property', name])
+        return reply.get('data') if reply and reply.get('error') == 'success' else None
 
     def send(self, path, command):
         reply = self.exchange(path, command)
-        return bool(reply and reply.get("error") == "success")
+        return bool(reply and reply.get('error') == 'success')
 
     def cleanup(self, value):
         path = self.validate(value)

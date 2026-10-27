@@ -1,13 +1,13 @@
 {
-  "profiles": {
-    "output:analog-stereo": "Stereo playback",
-    "output:analog-surround-40": "Four-channel playback",
-    "output:hdmi-stereo": "Display audio (stereo)",
-    "output:hdmi-stereo-extra1": "Display connection 2 (stereo)",
-    "output:hdmi-surround": "Display audio (5.1 surround)",
-    "output:hdmi-surround71": "Display audio (7.1 surround)",
-    "output:hdmi-surround-extra1": "Display connection 2 (5.1 surround)",
-    "output:hdmi-surround71-extra1": "Display connection 2 (7.1 surround)",
-    "pro-audio": "Manual channel routing (advanced)"
-  }
+    "profiles": {
+        "output:analog-stereo": "Stereo playback",
+        "output:analog-surround-40": "Four-channel playback",
+        "output:hdmi-stereo": "Display audio (stereo)",
+        "output:hdmi-stereo-extra1": "Display connection 2 (stereo)",
+        "output:hdmi-surround": "Display audio (5.1 surround)",
+        "output:hdmi-surround71": "Display audio (7.1 surround)",
+        "output:hdmi-surround-extra1": "Display connection 2 (5.1 surround)",
+        "output:hdmi-surround71-extra1": "Display connection 2 (7.1 surround)",
+        "pro-audio": "Manual channel routing (advanced)"
+    }
 }

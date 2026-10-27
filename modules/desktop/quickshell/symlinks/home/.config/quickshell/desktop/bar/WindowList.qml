@@ -15,9 +15,7 @@ Surface {
     readonly property int cellWidth: 160
     readonly property var applicationEntries: DesktopEntries.applications.values
     // Hyprland supplies placement; each window's Wayland handle supplies live metadata.
-    readonly property var windowCandidates: Hyprland.toplevels.values
-        .filter(toplevel => toplevel && toplevel.monitor === root.monitor
-            && toplevel.workspace && toplevel.workspace === root.monitor?.activeWorkspace)
+    readonly property var windowCandidates: Hyprland.toplevels.values.filter(toplevel => toplevel && toplevel.monitor === root.monitor && toplevel.workspace && toplevel.workspace === root.monitor?.activeWorkspace)
     readonly property var windows: orderedWindows
     property var orderedWindows: []
 
@@ -31,29 +29,27 @@ Surface {
         delegate: Connections {
             required property HyprlandToplevel modelData
             target: modelData
-            function onLastIpcObjectChanged() { Qt.callLater(root.updateWindowOrder); }
+            function onLastIpcObjectChanged() {
+                Qt.callLater(root.updateWindowOrder);
+            }
         }
     }
 
     function updateWindowOrder(): void {
-        const next = windowCandidates.filter(window => window && window.workspace)
-            .map(window => {
-                const position = window.lastIpcObject.at;
-                return {
-                    window: window,
-                    x: position?.[0] ?? Number.MAX_SAFE_INTEGER,
-                    y: position?.[1] ?? Number.MAX_SAFE_INTEGER,
-                    address: window.address
-                };
-            })
-            // Read columns left-to-right and stacks top-to-bottom on this workspace.
-            // Break overlaps consistently.
-            .sort((a, b) => a.x - b.x || a.y - b.y
-                || a.address.localeCompare(b.address))
-            .map(entry => entry.window);
+        const next = windowCandidates.filter(window => window && window.workspace).map(window => {
+            const position = window.lastIpcObject.at;
+            return {
+                window: window,
+                x: position?.[0] ?? Number.MAX_SAFE_INTEGER,
+                y: position?.[1] ?? Number.MAX_SAFE_INTEGER,
+                address: window.address
+            };
+        })
+        // Read columns left-to-right and stacks top-to-bottom on this workspace.
+        // Break overlaps consistently.
+        .sort((a, b) => a.x - b.x || a.y - b.y || a.address.localeCompare(b.address)).map(entry => entry.window);
 
-        if (next.length !== orderedWindows.length
-            || next.some((window, index) => window !== orderedWindows[index]))
+        if (next.length !== orderedWindows.length || next.some((window, index) => window !== orderedWindows[index]))
             orderedWindows = next;
     }
 
@@ -66,8 +62,7 @@ Surface {
         Hyprland.dispatch('hl.dsp.focus({window = "address:0x' + address + '"})');
     }
 
-    implicitWidth: Math.min(Math.max(0, maximumWidth),
-        windows.length * cellWidth + Math.max(0, windows.length - 1) * Theme.spacingSmall)
+    implicitWidth: Math.min(Math.max(0, maximumWidth), windows.length * cellWidth + Math.max(0, windows.length - 1) * Theme.spacingSmall)
     implicitHeight: Theme.controlHeight
     // Match the full-height item backgrounds so hovering an end keeps its shape.
     radius: Theme.controlRadius
@@ -81,16 +76,16 @@ Surface {
         orientation: ListView.Horizontal
         boundsBehavior: Flickable.StopAtBounds
         spacing: Theme.spacingSmall
-        model: ScriptModel { values: root.windows }
+        model: ScriptModel {
+            values: root.windows
+        }
 
         delegate: BarButton {
             id: button
             required property HyprlandToplevel modelData
             readonly property Toplevel wayland: modelData ? modelData.wayland : null
-            readonly property string appId: wayland && wayland.appId ? wayland.appId
-                : (modelData ? modelData.lastIpcObject.class || "" : "")
-            readonly property var desktopEntry: root.applicationEntries.length
-                ? DesktopEntries.heuristicLookup(appId) : null
+            readonly property string appId: wayland && wayland.appId ? wayland.appId : (modelData ? modelData.lastIpcObject.class || "" : "")
+            readonly property var desktopEntry: root.applicationEntries.length ? DesktopEntries.heuristicLookup(appId) : null
 
             width: root.cellWidth
             height: Theme.controlHeight
@@ -132,7 +127,8 @@ Surface {
                     text: qsTr("Close %1").arg(button.text)
                     enabled: !!button.wayland
                     // The child button consumes its click; closing needs no activation.
-                    onClicked: if (button.wayland) button.wayland.close()
+                    onClicked: if (button.wayland)
+                        button.wayland.close()
 
                     contentItem: Icon {
                         name: "x"

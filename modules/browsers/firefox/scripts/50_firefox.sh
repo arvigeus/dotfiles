@@ -4,7 +4,10 @@ repo_dir=${DOTFILES_REPO:?}
 source "$repo_dir/scripts/config-helpers.sh"
 config=$(jq -c '.extra.browsers.firefox' /run/system-configuration.json)
 arkenfox=/usr/share/arkenfox-user.js/user.js
-[[ -s $arkenfox ]] || { echo "Arkenfox template missing: $arkenfox" >&2; exit 1; }
+[[ -s $arkenfox ]] || {
+    echo "Arkenfox template missing: $arkenfox" >&2
+    exit 1
+}
 
 # AutoConfig applies Arkenfox to whichever profile Firefox selects. pref() resets
 # values at startup like user.js does, without locking them.
@@ -13,7 +16,7 @@ arkenfox_config() {
     printf 'var user_pref = pref;\n'
     cat "$arkenfox" || return
     printf '\n'
-    jq -r '.user_prefs | to_entries | sort_by(.key)[] | "user_pref(\(.key | tojson), \(.value | tojson));"' <<<"$config"
+    jq -r '.user_prefs | to_entries | sort_by(.key)[] | "user_pref(\(.key | tojson), \(.value | tojson));"' <<< "$config"
 }
 file_write /usr/lib/firefox/arkenfox.cfg arkenfox_config
 
@@ -22,4 +25,4 @@ file_write /usr/lib/firefox/arkenfox.cfg arkenfox_config
 file_write /usr/lib/firefox/distribution/policies.json jq '{policies: ({
     Extensions: {Install: .extensions},
     SearchEngines: {Add: [.search_engines[] | {Name: .name, URLTemplate: .template, IconURL: .icon, Alias: .alias}]}
-} * (.policies // {}))}' <<<"$config"
+} * (.policies // {}))}' <<< "$config"

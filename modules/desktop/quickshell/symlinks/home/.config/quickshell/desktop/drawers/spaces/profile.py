@@ -1,4 +1,5 @@
 """Read the local account's display name and photo without changing settings."""
+
 import json
 import os
 from pathlib import Path
@@ -12,12 +13,28 @@ def account_properties(uid):
         return {}
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
-        path = bus.call_sync('org.freedesktop.Accounts', '/org/freedesktop/Accounts',
-            'org.freedesktop.Accounts', 'FindUserById', GLib.Variant('(x)', (uid,)),
-            GLib.VariantType.new('(o)'), Gio.DBusCallFlags.NONE, 1500, None).unpack()[0]
-        return bus.call_sync('org.freedesktop.Accounts', path, 'org.freedesktop.DBus.Properties',
-            'GetAll', GLib.Variant('(s)', ('org.freedesktop.Accounts.User',)),
-            GLib.VariantType.new('(a{sv})'), Gio.DBusCallFlags.NONE, 1500, None).unpack()[0]
+        path = bus.call_sync(
+            'org.freedesktop.Accounts',
+            '/org/freedesktop/Accounts',
+            'org.freedesktop.Accounts',
+            'FindUserById',
+            GLib.Variant('(x)', (uid,)),
+            GLib.VariantType.new('(o)'),
+            Gio.DBusCallFlags.NONE,
+            1500,
+            None,
+        ).unpack()[0]
+        return bus.call_sync(
+            'org.freedesktop.Accounts',
+            path,
+            'org.freedesktop.DBus.Properties',
+            'GetAll',
+            GLib.Variant('(s)', ('org.freedesktop.Accounts.User',)),
+            GLib.VariantType.new('(a{sv})'),
+            Gio.DBusCallFlags.NONE,
+            1500,
+            None,
+        ).unpack()[0]
     except GLib.Error:
         return {}
 
@@ -26,9 +43,12 @@ def profile():
     account = pwd.getpwuid(os.getuid())
     properties = account_properties(account.pw_uid)
     name = properties.get('RealName') or account.pw_gecos.split(',', 1)[0].strip()
-    candidates = [properties.get('IconFile'), Path(account.pw_dir) / '.face',
-                  Path(account.pw_dir) / '.face.icon',
-                  Path('/var/lib/AccountsService/icons') / account.pw_name]
+    candidates = [
+        properties.get('IconFile'),
+        Path(account.pw_dir) / '.face',
+        Path(account.pw_dir) / '.face.icon',
+        Path('/var/lib/AccountsService/icons') / account.pw_name,
+    ]
     avatar = ''
     for value in candidates:
         if not value:

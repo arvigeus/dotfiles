@@ -1,3 +1,12 @@
 {
-    "packages": ["union", "breeze", "breeze5", "breeze-icons", "plasma-integration", "plasma5-integration", "qt5-wayland", "qt6-wayland"]
+    "packages": [
+        "union",
+        "breeze",
+        "breeze5",
+        "breeze-icons",
+        "plasma-integration",
+        "plasma5-integration",
+        "qt5-wayland",
+        "qt6-wayland"
+    ]
 }

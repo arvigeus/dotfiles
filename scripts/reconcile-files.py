@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Reconcile declared system assets or a tree of generated files."""
+
 import argparse
 import json
 from pathlib import Path
@@ -17,8 +18,13 @@ def system_assets(config, repo, staging):
                 continue
             source = repo / entry['source']
             target = Path(entry['target'])
-            if (not target.is_absolute() or '..' in target.parts or target == Path('/')
-                    or not source.is_file() or not source.resolve().is_relative_to(repo.resolve())):
+            if (
+                not target.is_absolute()
+                or '..' in target.parts
+                or target == Path('/')
+                or not source.is_file()
+                or not source.resolve().is_relative_to(repo.resolve())
+            ):
                 raise ValueError(f'Invalid asset: {entry}')
             prepared = staging / str(len(entries))
             if kind == 'files':
@@ -44,19 +50,33 @@ def main():
     tree.add_argument('scope')
     for command in (assets, tree):
         command.add_argument('state', type=Path)
-        command.add_argument('--force', action='store_true', help='Initial installation only: replace existing defaults')
+        command.add_argument(
+            '--force',
+            action='store_true',
+            help='Initial installation only: replace existing defaults',
+        )
         command.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
     state = State(args.state, dry_run=args.dry_run)
     if args.action == 'tree':
-        complete = publish_tree(args.staging, args.destination, args.uid, args.gid, state, args.scope, args.force)
+        complete = publish_tree(
+            args.staging,
+            args.destination,
+            args.uid,
+            args.gid,
+            state,
+            args.scope,
+            args.force,
+        )
     else:
         config = json.loads(args.config.read_text())
         with tempfile.TemporaryDirectory() as directory:
             entries = system_assets(config, args.repo.resolve(), Path(directory))
             complete = Files(state, force=args.force).sync('assets', entries)
     if not complete and not args.dry_run:
-        parser.exit(2, 'Local file conflicts remain; resolve them and run apply again.\n')
+        parser.exit(
+            2, 'Local file conflicts remain; resolve them and run apply again.\n'
+        )
 
 
 if __name__ == '__main__':

@@ -1,4 +1,5 @@
 """The actual project dashboard shows snapshots and launches only explicit actions."""
+
 import os
 import subprocess
 import sys
@@ -13,9 +14,12 @@ LIB = REPO / 'modules/dev/tools/projects/files/usr/local/lib/project-tools'
 class ProjectDashboardTests(unittest.TestCase):
     def test_real_dialog_inspects_filters_refreshes_and_dispatches_tasks(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder) / 'Example'; root.mkdir()
-            (root / 'package.json').write_text('{"name":"Cool <project>","description":"Example project", "dependencies":{"react":"*"}}')
-            (root / 'mise.toml').write_text('''[tools]
+            root = Path(folder) / 'Example'
+            root.mkdir()
+            (root / 'package.json').write_text(
+                '{"name":"Cool <project>","description":"Example project", "dependencies":{"react":"*"}}'
+            )
+            (root / 'mise.toml').write_text("""[tools]
 node="26"
 [tasks.check]
 description="Check the project"
@@ -23,9 +27,14 @@ run="touch MUST_NOT_RUN"
 [tasks.build]
 description="Build the project"
 run="touch MUST_NOT_RUN"
-''')
-            env = dict(os.environ, QT_QPA_PLATFORM='offscreen', PYTHONPATH=str(LIB), PROJECT_TEST_ROOT=str(root))
-            script = '''
+""")
+            env = dict(
+                os.environ,
+                QT_QPA_PLATFORM='offscreen',
+                PYTHONPATH=str(LIB),
+                PROJECT_TEST_ROOT=str(root),
+            )
+            script = """
 import os, time
 from pathlib import Path
 from PySide6.QtCore import Qt
@@ -128,9 +137,15 @@ w.sync.click();assert calls[-1]==('fetch',root)
 w.commit.click();assert calls[-1]==('commit',root)
 assert not (root/'MUST_NOT_RUN').exists()
 w.close()
-'''
-            result = subprocess.run([sys.executable, '-c', script], check=False, env=env,
-                                    capture_output=True, text=True, timeout=35)
+"""
+            result = subprocess.run(
+                [sys.executable, '-c', script],
+                check=False,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=35,
+            )
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
 

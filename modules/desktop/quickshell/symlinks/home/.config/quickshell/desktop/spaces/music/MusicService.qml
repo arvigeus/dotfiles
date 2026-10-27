@@ -2,15 +2,16 @@ import QtQuick
 import "../movies"
 
 Worker {
+    id: root
     objectName: "musicService"
     backend: "backend.py"
     backendDirectory: "spaces/music"
     spaceId: "music"
     serviceName: "Music"
-    id: root
     property bool active: false
     property bool observeBackgroundJobs: false
-    onActiveChanged: if (active) pollJobs()
+    onActiveChanged: if (active)
+        pollJobs()
     property var jobs: []
     property int startingJobs: 0
     property bool pollingJobs: false
@@ -26,26 +27,49 @@ Worker {
             if (error || !result || !result.job_id) {
                 startingJobs = Math.max(0, startingJobs - 1);
                 const message = error || "Could not start this operation.";
-                if (accepted) accepted("",message);
-                else jobStartFailed(message);
+                if (accepted)
+                    accepted("", message);
+                else
+                    jobStartFailed(message);
                 return;
             }
-            jobRequests[result.job_id] = {op: op, args: args};
-            if (!jobs.some(job => job.job_id === result.job_id)) jobs = jobs.concat([{job_id: result.job_id, title: args.title || "Transfer", state: "queued", done: 0, total: 0, detail: "Preparing…"}]);
+            jobRequests[result.job_id] = {
+                op: op,
+                args: args
+            };
+            if (!jobs.some(job => job.job_id === result.job_id))
+                jobs = jobs.concat([
+                    {
+                        job_id: result.job_id,
+                        title: args.title || "Transfer",
+                        state: "queued",
+                        done: 0,
+                        total: 0,
+                        detail: "Preparing…"
+                    }
+                ]);
             startingJobs = Math.max(0, startingJobs - 1);
-            if (accepted) accepted(String(result.job_id),"");
+            if (accepted)
+                accepted(String(result.job_id), "");
             pollJobs();
         });
     }
     function retryJob(id) {
         const entry = jobRequests[id];
-        if (entry) startJob(entry.op, entry.args);
+        if (entry)
+            startJob(entry.op, entry.args);
     }
     function cancelJob(id) {
-        request("cancel_job", {job_id: id}, (result, error) => { if (error) jobStartFailed(error); });
+        request("cancel_job", {
+            job_id: id
+        }, (result, error) => {
+            if (error)
+                jobStartFailed(error);
+        });
     }
     function pollJobs() {
-        if (pollingJobs || stopped) return;
+        if (pollingJobs || stopped)
+            return;
         pollingJobs = true;
         request("jobs", {}, (result, error) => {
             pollingJobs = false;
@@ -57,7 +81,9 @@ Worker {
             }
             const snapshot = (result.jobs || []).map(job => {
                 if (["failed", "cancelled"].includes(job.state) && jobRequests[job.job_id])
-                    return Object.assign({}, job, {actionLabel: "Retry"});
+                    return Object.assign({}, job, {
+                        actionLabel: "Retry"
+                    });
                 return job;
             });
             for (const job of snapshot) {
@@ -72,17 +98,30 @@ Worker {
             jobs = snapshot.concat(jobs.filter(j => ["queued", "running"].includes(j.state) && !ids.includes(j.job_id)));
             const retained = jobs.map(j => j.job_id);
             for (const key of Object.keys(announcedJobs))
-                if (!retained.includes(key)) delete announcedJobs[key];
+                if (!retained.includes(key))
+                    delete announcedJobs[key];
             for (const key of Object.keys(jobRequests))
-                if (!retained.includes(key)) delete jobRequests[key];
+                if (!retained.includes(key))
+                    delete jobRequests[key];
         });
     }
     onStoppedChanged: {
         if (stopped) {
             for (const job of jobs.filter(j => j.state === "queued" || j.state === "running"))
-                jobFinished(Object.assign({},job,{state:"failed",error:serviceName + " service stopped. Close Music and reopen it."}));
-            jobs = []; startingJobs = 0; jobRequests = {}; announcedJobs = {};
+                jobFinished(Object.assign({}, job, {
+                    state: "failed",
+                    error: serviceName + " service stopped. Close Music and reopen it."
+                }));
+            jobs = [];
+            startingJobs = 0;
+            jobRequests = {};
+            announcedJobs = {};
         }
     }
-    Timer { interval: 700; repeat: true; running: (root.active || root.observeBackgroundJobs) && root.activeJobCount > 0; onTriggered: root.pollJobs() }
+    Timer {
+        interval: 700
+        repeat: true
+        running: (root.active || root.observeBackgroundJobs) && root.activeJobCount > 0
+        onTriggered: root.pollJobs()
+    }
 }

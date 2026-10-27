@@ -1,4 +1,5 @@
 """Recording ownership, audio routing and native IPC without host capture."""
+
 import importlib.util
 import io
 import json
@@ -13,7 +14,10 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
-BACKEND = Path(__file__).resolve().parents[1] / 'modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/recorder.py'
+BACKEND = (
+    Path(__file__).resolve().parents[1]
+    / 'modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/recorder.py'
+)
 SPEC = importlib.util.spec_from_file_location('capture_recorder', BACKEND)
 recorder = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(recorder)
@@ -23,9 +27,15 @@ class RecorderTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)
-        self.environment = patch.dict(os.environ, XDG_CONFIG_HOME=str(self.root / 'config'), XDG_RUNTIME_DIR=str(self.root))
+        self.environment = patch.dict(
+            os.environ,
+            XDG_CONFIG_HOME=str(self.root / 'config'),
+            XDG_RUNTIME_DIR=str(self.root),
+        )
         self.environment.start()
-        self.location = patch.object(recorder, 'location', side_effect=lambda kind: self.root / kind)
+        self.location = patch.object(
+            recorder, 'location', side_effect=lambda kind: self.root / kind
+        )
         self.location.start()
         self.root.joinpath('desktop-capture').mkdir()
 
@@ -35,8 +45,18 @@ class RecorderTests(unittest.TestCase):
         self.directory.cleanup()
 
     def test_sources_are_literal_and_audio_is_one_mixed_track(self):
-        for audio, microphone, expected in ((True, True, 'default_output|default_input'), (True, False, 'default_output'), (False, True, 'default_input'), (False, False, None)):
-            command = recorder.recording_command('1920x1080+-100+0', '/tmp/video with spaces.mp4', dict(systemAudio=audio, microphone=microphone, pointer=False), '/tmp/ipc')
+        for audio, microphone, expected in (
+            (True, True, 'default_output|default_input'),
+            (True, False, 'default_output'),
+            (False, True, 'default_input'),
+            (False, False, None),
+        ):
+            command = recorder.recording_command(
+                '1920x1080+-100+0',
+                '/tmp/video with spaces.mp4',
+                dict(systemAudio=audio, microphone=microphone, pointer=False),
+                '/tmp/ipc',
+            )
             self.assertIn('/tmp/video with spaces.mp4', command)
             self.assertEqual(command[command.index('-cursor') + 1], 'no')
             if expected:
@@ -46,13 +66,18 @@ class RecorderTests(unittest.TestCase):
                 self.assertNotIn('-a', command)
         for source in ('', '-o', 'DP-1|/dev/video0', '$(touch /tmp/unsafe)', None):
             with self.subTest(source=source), self.assertRaises(ValueError):
-                recorder.recording_command(source, '/tmp/test.mp4', recorder.DEFAULTS, '/tmp/ipc')
+                recorder.recording_command(
+                    source, '/tmp/test.mp4', recorder.DEFAULTS, '/tmp/ipc'
+                )
 
     def test_options_are_saved_and_reloaded_with_boolean_validation(self):
         owner = recorder.Recorder()
         owner.request(dict(op='option', key='microphone', value=True))
         self.assertTrue(recorder.Recorder().options['microphone'])
-        for request in (dict(op='option', key='unknown', value=True), dict(op='option', key='pointer', value='false')):
+        for request in (
+            dict(op='option', key='unknown', value=True),
+            dict(op='option', key='pointer', value='false'),
+        ):
             with self.assertRaises(ValueError):
                 owner.request(request)
         self.assertTrue(owner.options['pointer'])
@@ -60,8 +85,23 @@ class RecorderTests(unittest.TestCase):
     def test_missing_microphone_never_records_a_speaker_monitor_as_input(self):
         owner = recorder.Recorder()
         owner.options['microphone'] = True
-        results = [MagicMock(stdout='speakers.monitor\n'), MagicMock(stdout=json.dumps([dict(name='speakers.monitor', properties={'device.class': 'monitor'})]))]
-        with patch.object(recorder.subprocess, 'run', side_effect=results), patch.object(recorder.subprocess, 'Popen') as launch:
+        results = [
+            MagicMock(stdout='speakers.monitor\n'),
+            MagicMock(
+                stdout=json.dumps(
+                    [
+                        dict(
+                            name='speakers.monitor',
+                            properties={'device.class': 'monitor'},
+                        )
+                    ]
+                )
+            ),
+        ]
+        with (
+            patch.object(recorder.subprocess, 'run', side_effect=results),
+            patch.object(recorder.subprocess, 'Popen') as launch,
+        ):
             with self.assertRaisesRegex(ValueError, 'No microphone'):
                 owner.request(dict(op='start', source='DP-3'))
             launch.assert_not_called()
@@ -70,7 +110,12 @@ class RecorderTests(unittest.TestCase):
         owner = recorder.Recorder()
         process = MagicMock()
         process.poll.return_value = None
-        with patch.object(recorder.shutil, 'which', return_value='/usr/bin/gpu-screen-recorder'), patch.object(recorder.subprocess, 'Popen', return_value=process):
+        with (
+            patch.object(
+                recorder.shutil, 'which', return_value='/usr/bin/gpu-screen-recorder'
+            ),
+            patch.object(recorder.subprocess, 'Popen', return_value=process),
+        ):
             owner.request(dict(op='start', source='DP-3'))
             with self.assertRaisesRegex(ValueError, 'already running'):
                 owner.request(dict(op='start', source='DP-3'))
@@ -78,8 +123,8 @@ class RecorderTests(unittest.TestCase):
                 owner.request(dict(op='option', key='pointer', value=False))
             owner.ipc.touch()
             owner.tick()
-            self.assertEqual(owner.phase, "starting")
-            Path(owner.path + ".ts").write_text("first frame")
+            self.assertEqual(owner.phase, 'starting')
+            Path(owner.path + '.ts').write_text('first frame')
             owner.tick()
             self.assertEqual(owner.phase, 'recording')
             owner.request(dict(op='stop'))
@@ -101,14 +146,20 @@ class RecorderTests(unittest.TestCase):
         connection = MagicMock()
         connection.__enter__.return_value = connection
         connection.makefile.return_value = io.StringIO('{"id":1,"result":"ok"}\n')
-        with patch.object(recorder.socket, 'socket', return_value=connection), patch.object(recorder.time, 'monotonic', return_value=13.5):
+        with (
+            patch.object(recorder.socket, 'socket', return_value=connection),
+            patch.object(recorder.time, 'monotonic', return_value=13.5),
+        ):
             owner.request(dict(op='pause'))
             self.assertEqual(owner.phase, 'paused')
             self.assertEqual(owner.snapshot()['elapsed'], 3)
             request = json.loads(connection.sendall.call_args.args[0])
             self.assertEqual(request, dict(id=1, name='set-paused', data=True))
         connection.makefile.return_value = io.StringIO('{"id":1,"result":"ok"}\n')
-        with patch.object(recorder.socket, 'socket', return_value=connection), patch.object(recorder.time, 'monotonic', return_value=100):
+        with (
+            patch.object(recorder.socket, 'socket', return_value=connection),
+            patch.object(recorder.time, 'monotonic', return_value=100),
+        ):
             owner.request(dict(op='pause'))
         with patch.object(recorder.time, 'monotonic', return_value=102):
             self.assertEqual(owner.snapshot()['elapsed'], 5)
@@ -131,10 +182,12 @@ class RecorderTests(unittest.TestCase):
         binary = self.root / 'bin'
         binary.mkdir()
         userdir = binary / 'xdg-user-dir'
-        userdir.write_text('#!/usr/bin/env python3\nimport os,sys\nprint(os.environ["XDG_RUNTIME_DIR"]+"/"+sys.argv[1])\n')
+        userdir.write_text(
+            '#!/usr/bin/env python3\nimport os,sys\nprint(os.environ["XDG_RUNTIME_DIR"]+"/"+sys.argv[1])\n'
+        )
         userdir.chmod(0o755)
         native = binary / 'gpu-screen-recorder'
-        native.write_text('''#!/usr/bin/env python3
+        native.write_text("""#!/usr/bin/env python3
 import json,os,signal,socket,sys
 args=sys.argv
 ipc=args[args.index('-ipc')+1]
@@ -150,14 +203,24 @@ while True:
     request=json.loads(client.makefile().readline())
     client.sendall((json.dumps(dict(id=request['id'],result='ok'))+'\\n').encode())
     client.close()
-''')
+""")
         native.chmod(0o755)
         env = dict(os.environ, PATH=str(binary) + ':' + os.environ['PATH'])
-        process = subprocess.Popen(['python3', '-B', str(BACKEND)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        process = subprocess.Popen(
+            ['python3', '-B', str(BACKEND)],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
         endpoint = recorder.runtime_dir() / 'control.sock'
         deadline = time.monotonic() + 4
-        while not endpoint.exists() and process.poll() is None and time.monotonic() < deadline:
-            time.sleep(.02)
+        while (
+            not endpoint.exists()
+            and process.poll() is None
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.02)
 
         def connect(request):
             connection = socket.socket(socket.AF_UNIX)
@@ -175,8 +238,9 @@ while True:
             while time.monotonic() < deadline:
                 with connect(dict(op='status')) as connection:
                     state = json.loads(connection.makefile().readline())
-                if predicate(state): return state
-                time.sleep(.03)
+                if predicate(state):
+                    return state
+                time.sleep(0.03)
             self.fail('State did not settle: ' + str(state))
 
         try:
@@ -208,33 +272,48 @@ while True:
                 process.terminate()
                 process.communicate(timeout=5)
 
-
     def test_socket_activation_uses_inherited_listener_and_exits_when_idle(self):
         endpoint = self.root / 'desktop-capture/control.sock'
         listener = socket.socket(socket.AF_UNIX)
-        listener.bind(str(endpoint)); listener.listen()
+        listener.bind(str(endpoint))
+        listener.listen()
         self.addCleanup(listener.close)
-        script = ('import os,runpy,sys\nos.dup2(int(sys.argv[2]),3)\nos.environ["LISTEN_PID"]=str(os.getpid())\n'
-                  'os.environ["LISTEN_FDS"]="1"\nimport importlib.util\n'
-                  'spec=importlib.util.spec_from_file_location("r",sys.argv[1]);r=importlib.util.module_from_spec(spec)\n'
-                  'spec.loader.exec_module(r);r.IDLE_EXIT=0.3;r.location=lambda kind:r.Path(os.environ["XDG_RUNTIME_DIR"])/kind\n'
-                  'r.serve()\n')
+        script = (
+            'import os,runpy,sys\nos.dup2(int(sys.argv[2]),3)\nos.environ["LISTEN_PID"]=str(os.getpid())\n'
+            'os.environ["LISTEN_FDS"]="1"\nimport importlib.util\n'
+            'spec=importlib.util.spec_from_file_location("r",sys.argv[1]);r=importlib.util.module_from_spec(spec)\n'
+            'spec.loader.exec_module(r);r.IDLE_EXIT=0.3;r.location=lambda kind:r.Path(os.environ["XDG_RUNTIME_DIR"])/kind\n'
+            'r.serve()\n'
+        )
         client = socket.socket(socket.AF_UNIX)
         client.connect(str(endpoint))
-        client.sendall(b'{"op":"status"}\n{"op":"option","key":"pointer","value":false}\n')
-        process = subprocess.Popen([sys.executable, '-c', script, str(BACKEND), str(listener.fileno())],
-                                   pass_fds=(listener.fileno(),), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        client.sendall(
+            b'{"op":"status"}\n{"op":"option","key":"pointer","value":false}\n'
+        )
+        process = subprocess.Popen(
+            [sys.executable, '-c', script, str(BACKEND), str(listener.fileno())],
+            pass_fds=(listener.fileno(),),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
         try:
             with client, client.makefile() as replies:
                 self.assertEqual(json.loads(replies.readline())['phase'], 'idle')
                 # Broadcasts may interleave with replies; the option reply follows in order.
-                self.assertTrue(any(not json.loads(replies.readline())['options']['pointer'] for _ in range(3)))
+                self.assertTrue(
+                    any(
+                        not json.loads(replies.readline())['options']['pointer']
+                        for _ in range(3)
+                    )
+                )
             # No client and no recording: the service exits; systemd keeps the socket.
             self.assertEqual(process.wait(timeout=5), 0, process.stderr.read())
             self.assertTrue(endpoint.exists())
         finally:
             if process.poll() is None:
-                process.kill(); process.wait()
+                process.kill()
+                process.wait()
 
 
 if __name__ == '__main__':

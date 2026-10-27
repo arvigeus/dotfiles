@@ -1,4 +1,5 @@
 """Account tools use isolated services and never modify a real account."""
+
 import importlib.util
 import os
 from pathlib import Path
@@ -8,49 +9,100 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-LIB = Path(__file__).resolve().parents[1] / 'modules/desktop/quickshell/files/usr/local/lib/account-tools'
+LIB = (
+    Path(__file__).resolve().parents[1]
+    / 'modules/desktop/quickshell/files/usr/local/lib/account-tools'
+)
 SPEC = importlib.util.spec_from_file_location('account_core', LIB / 'account_core.py')
-core = importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(core)
+core = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(core)
 
 
 class AccountTests(unittest.TestCase):
     def test_snapshot_groups_and_service_failure_preserve_local_details(self):
-        account = SimpleNamespace(pw_uid=1234, pw_gid=100, pw_name='alice', pw_gecos='Alice,Room',
-                                  pw_dir='/nonexistent', pw_shell='/bin/bash')
-        with patch.object(core.os, 'getgrouplist', return_value=[100, 200, 100]), \
-             patch.object(core.grp, 'getgrgid', side_effect=lambda gid: SimpleNamespace(gr_name={100:'users',200:'wheel'}[gid])):
-            def unavailable(uid): raise OSError('offline')
+        account = SimpleNamespace(
+            pw_uid=1234,
+            pw_gid=100,
+            pw_name='alice',
+            pw_gecos='Alice,Room',
+            pw_dir='/nonexistent',
+            pw_shell='/bin/bash',
+        )
+        with (
+            patch.object(core.os, 'getgrouplist', return_value=[100, 200, 100]),
+            patch.object(
+                core.grp,
+                'getgrgid',
+                side_effect=lambda gid: SimpleNamespace(
+                    gr_name={100: 'users', 200: 'wheel'}[gid]
+                ),
+            ),
+        ):
+
+            def unavailable(uid):
+                raise OSError('offline')
+
             data = core.snapshot(account, unavailable)
         self.assertEqual(data['fields']['RealName'], 'Alice')
         self.assertEqual(data['shell'], '/bin/bash')
-        self.assertEqual(data['groups'], [dict(name='users', gid=100, primary=True),
-                                          dict(name='wheel', gid=200, primary=False)])
-        self.assertFalse(data['available']); self.assertIn('offline', data['error'])
+        self.assertEqual(
+            data['groups'],
+            [
+                dict(name='users', gid=100, primary=True),
+                dict(name='wheel', gid=200, primary=False),
+            ],
+        )
+        self.assertFalse(data['available'])
+        self.assertIn('offline', data['error'])
 
     def test_only_current_uid_and_allowed_fields_are_written(self):
         calls = []
+
         class Service:
-            def __init__(self, uid): calls.append(uid)
-            def set(self, key, value): calls.append((key, value))
-        result = core.save({'RealName':'Alice', 'Email':'alice@example.org'}, Service)
-        self.assertEqual(calls, [os.getuid(), ('RealName','Alice'), ('Email','alice@example.org')])
-        self.assertEqual(result, dict(saved={'RealName':'Alice', 'Email':'alice@example.org'}, error=''))
-        for changes in [{'Shell':'/bin/zsh'}, {'uid':'0'}, {'RealName':'x\x00y'}, {'Email':3}, [], {'IconFile':'relative.png'}]:
-            with self.subTest(changes=changes), self.assertRaises(ValueError): core.save(changes, Service)
+            def __init__(self, uid):
+                calls.append(uid)
+
+            def set(self, key, value):
+                calls.append((key, value))
+
+        result = core.save({'RealName': 'Alice', 'Email': 'alice@example.org'}, Service)
+        self.assertEqual(
+            calls, [os.getuid(), ('RealName', 'Alice'), ('Email', 'alice@example.org')]
+        )
+        self.assertEqual(
+            result,
+            dict(saved={'RealName': 'Alice', 'Email': 'alice@example.org'}, error=''),
+        )
+        for changes in [
+            {'Shell': '/bin/zsh'},
+            {'uid': '0'},
+            {'RealName': 'x\x00y'},
+            {'Email': 3},
+            [],
+            {'IconFile': 'relative.png'},
+        ]:
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                core.save(changes, Service)
         self.assertEqual(len(calls), 3)
 
     def test_partial_save_reports_successful_fields(self):
         class Service:
-            def __init__(self, uid): pass
+            def __init__(self, uid):
+                pass
+
             def set(self, key, value):
-                if key == 'Email': raise PermissionError('denied')
-        result = core.save({'RealName':'Saved', 'Email':'unsaved', 'Location':'untouched'}, Service)
-        self.assertEqual(result['saved'], {'RealName':'Saved'})
+                if key == 'Email':
+                    raise PermissionError('denied')
+
+        result = core.save(
+            {'RealName': 'Saved', 'Email': 'unsaved', 'Location': 'untouched'}, Service
+        )
+        self.assertEqual(result['saved'], {'RealName': 'Saved'})
         self.assertIn('Email', result['error'])
         self.assertIn('denied', result['error'])
 
     def test_real_dialog_drafts_photo_and_async_dispatch(self):
-        script = '''
+        script = """
 import json, tempfile, time
 from pathlib import Path
 from unittest.mock import patch
@@ -116,10 +168,16 @@ w.loaded(dict(data,available=False,error='offline'))
 assert not w.fields['RealName'].isEnabled() and not w.photo.isEnabled()
 assert w.details.topLevelItemCount()>0 and w.tabs.isEnabled()
 w.close(); assert not Path(first_photo).exists()
-'''
-        result = subprocess.run([sys.executable, '-c', script], env=dict(os.environ,
-            QT_QPA_PLATFORM='offscreen', PYTHONPATH=str(LIB)), capture_output=True, text=True, timeout=15)
-        self.assertEqual(result.returncode, 0, result.stderr+result.stdout)
+"""
+        result = subprocess.run(
+            [sys.executable, '-c', script],
+            env=dict(os.environ, QT_QPA_PLATFORM='offscreen', PYTHONPATH=str(LIB)),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
 
-if __name__ == '__main__': unittest.main()
+if __name__ == '__main__':
+    unittest.main()

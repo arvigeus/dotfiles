@@ -4,7 +4,11 @@
             "power_management": "tuned"
         }
     },
-    "extra": {"user_services": ["power-session.path"]},
+    "extra": {
+        "user_services": [
+            "power-session.path"
+        ]
+    },
     "services": [
         "tuned-ppd.service",
         "power-source.service"

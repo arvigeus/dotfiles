@@ -1,4 +1,5 @@
 """Real fixture conversions and tag editing never touch the user's audio library."""
+
 import importlib.util
 import base64
 import json
@@ -30,9 +31,26 @@ class AudioToolsTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.source = self.root / "Artist's $(touch UNEXPECTED) song.flac"
-        self.run_command(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=0.3',
-                          '-ac', '2', '-metadata', 'title=Original', '-metadata', 'artist=Artist',
-                          '-metadata', 'comment=Keep this', str(self.source)])
+        self.run_command(
+            [
+                'ffmpeg',
+                '-v',
+                'error',
+                '-f',
+                'lavfi',
+                '-i',
+                'sine=frequency=440:duration=0.3',
+                '-ac',
+                '2',
+                '-metadata',
+                'title=Original',
+                '-metadata',
+                'artist=Artist',
+                '-metadata',
+                'comment=Keep this',
+                str(self.source),
+            ]
+        )
         self.original = self.source.read_bytes()
 
     def run_command(self, command):
@@ -74,19 +92,33 @@ class AudioToolsTests(unittest.TestCase):
             core.conversion(self.source, preset)
 
     def test_normalized_conversion_uses_configured_output_sample_rate(self):
-        operation = core.conversion(self.source, core.read_presets(PRESETS)[0], normalize=True)
+        operation = core.conversion(
+            self.source, core.read_presets(PRESETS)[0], normalize=True
+        )
         self.complete(operation)
-        self.assertEqual(self.info(operation.target)['audio'][0]['sample_rate'], '48000')
+        self.assertEqual(
+            self.info(operation.target)['audio'][0]['sample_rate'], '48000'
+        )
 
     def test_tags_unicode_clear_field_backup_and_audio_are_preserved(self):
-        before = self.run_command(['ffmpeg', '-v', 'error', '-i', str(self.source), '-f', 'md5', '-']).stdout
-        self.complete(core.tag_edit(self.source, {'title': 'Български · Tiếng Việt', 'artist': ''}))
+        before = self.run_command(
+            ['ffmpeg', '-v', 'error', '-i', str(self.source), '-f', 'md5', '-']
+        ).stdout
+        self.complete(
+            core.tag_edit(
+                self.source, {'title': 'Български · Tiếng Việt', 'artist': ''}
+            )
+        )
         info = self.info(self.source)
         self.assertEqual(info['tags']['title'], 'Български · Tiếng Việt')
         self.assertFalse(info['tags'].get('artist'))
         self.assertEqual(info['tags']['comment'], 'Keep this')
-        self.assertEqual(Path(str(self.source) + '.tags-backup').read_bytes(), self.original)
-        after = self.run_command(['ffmpeg', '-v', 'error', '-i', str(self.source), '-f', 'md5', '-']).stdout
+        self.assertEqual(
+            Path(str(self.source) + '.tags-backup').read_bytes(), self.original
+        )
+        after = self.run_command(
+            ['ffmpeg', '-v', 'error', '-i', str(self.source), '-f', 'md5', '-']
+        ).stdout
         self.assertEqual(before, after)
 
     def test_changed_source_and_failed_job_leave_original_safe(self):
@@ -104,16 +136,39 @@ class AudioToolsTests(unittest.TestCase):
 
     def test_cover_add_remove_and_tags_roundtrip_in_common_containers(self):
         cover = self.root / 'cover.png'
-        self.run_command(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=80x80',
-                          '-frames:v', '1', str(cover)])
+        self.run_command(
+            [
+                'ffmpeg',
+                '-v',
+                'error',
+                '-f',
+                'lavfi',
+                '-i',
+                'color=c=blue:s=80x80',
+                '-frames:v',
+                '1',
+                str(cover),
+            ]
+        )
         presets = core.read_presets(PRESETS)
         for preset in [presets[0], presets[1], presets[3]]:
             with self.subTest(preset=preset['id']):
                 operation = core.conversion(self.source, preset)
                 self.complete(operation)
                 source = operation.target
-                self.complete(core.tag_edit(source, {'album_artist': 'Artist', 'track': '3/12',
-                                                    'composer': 'Composer', 'date': '2026'}, str(cover), False))
+                self.complete(
+                    core.tag_edit(
+                        source,
+                        {
+                            'album_artist': 'Artist',
+                            'track': '3/12',
+                            'composer': 'Composer',
+                            'date': '2026',
+                        },
+                        str(cover),
+                        False,
+                    )
+                )
                 self.assertEqual(self.info(source)['artwork'], 1)
                 converted = core.conversion(source, presets[0], self.root)
                 self.complete(converted)
@@ -123,9 +178,11 @@ class AudioToolsTests(unittest.TestCase):
 
     def test_invalid_preset_and_hardlinks_are_rejected(self):
         invalid = self.root / 'presets.json'
-        data = json.loads(PRESETS.read_text()); data['presets'][0]['extension'] = '../mp3'
+        data = json.loads(PRESETS.read_text())
+        data['presets'][0]['extension'] = '../mp3'
         invalid.write_text(json.dumps(data))
-        with self.assertRaises(ValueError): core.read_presets(invalid)
+        with self.assertRaises(ValueError):
+            core.read_presets(invalid)
         os.link(self.source, self.root / 'hardlink.flac')
         with self.assertRaisesRegex(ValueError, 'hard-linked'):
             core.tag_edit(self.source, {'title': 'No'})
@@ -143,13 +200,29 @@ class AudioToolsTests(unittest.TestCase):
         operation = core.conversion(self.source, core.read_presets(PRESETS)[4])
         self.complete(operation)
         cover = self.root / 'cover.png'
-        self.run_command(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=80x80',
-                          '-frames:v', '1', str(cover)])
+        self.run_command(
+            [
+                'ffmpeg',
+                '-v',
+                'error',
+                '-f',
+                'lavfi',
+                '-i',
+                'color=c=blue:s=80x80',
+                '-frames:v',
+                '1',
+                str(cover),
+            ]
+        )
         picture = Picture()
-        picture.type = 3; picture.mime = 'image/png'; picture.width = picture.height = 80
+        picture.type = 3
+        picture.mime = 'image/png'
+        picture.width = picture.height = 80
         picture.data = cover.read_bytes()
         audio = OggOpus(operation.target)
-        audio['metadata_block_picture'] = [base64.b64encode(picture.write()).decode('ascii')]
+        audio['metadata_block_picture'] = [
+            base64.b64encode(picture.write()).decode('ascii')
+        ]
         audio['custom-field'] = ['Keep this too']
         audio['tracknumber'] = ['1/5']
         audio['discnumber'] = ['1/1']
@@ -158,8 +231,25 @@ class AudioToolsTests(unittest.TestCase):
         return operation.target
 
     def packets(self, path):
-        probe = json.loads(self.run_command(['ffprobe', '-v', 'error', '-select_streams', 'a:0',
-            '-show_packets', '-show_entries', 'packet=data_hash', '-show_data_hash', 'sha256', '-of', 'json', str(path)]).stdout)
+        probe = json.loads(
+            self.run_command(
+                [
+                    'ffprobe',
+                    '-v',
+                    'error',
+                    '-select_streams',
+                    'a:0',
+                    '-show_packets',
+                    '-show_entries',
+                    'packet=data_hash',
+                    '-show_data_hash',
+                    'sha256',
+                    '-of',
+                    'json',
+                    str(path),
+                ]
+            ).stdout
+        )
         return [packet['data_hash'] for packet in probe['packets']]
 
     def test_opus_tags_preserve_cover_packets_aliases_and_large_lyrics(self):
@@ -167,9 +257,15 @@ class AudioToolsTests(unittest.TestCase):
         original = source.read_bytes()
         before = self.packets(source)
         cover = OggOpus(source)['metadata_block_picture']
-        changes = {'title': 'Smile · 千本桜', 'artist': '', 'album_artist': 'Glen Hansard',
-                   'track': '3/12', 'disc': '1/2', 'date': '2013-06-13',
-                   'lyrics': 'A line of lyrics\n' * 12000}
+        changes = {
+            'title': 'Smile · 千本桜',
+            'artist': '',
+            'album_artist': 'Glen Hansard',
+            'track': '3/12',
+            'disc': '1/2',
+            'date': '2013-06-13',
+            'lyrics': 'A line of lyrics\n' * 12000,
+        }
         self.assertEqual(self.info(source)['tags']['track'], '1/5')
         self.complete(core.tag_edit(source, changes))
         info = self.info(source)
@@ -186,8 +282,19 @@ class AudioToolsTests(unittest.TestCase):
         self.assertEqual(Path(str(source) + '.tags-backup').read_bytes(), original)
         self.assertFalse(list(self.root.glob('.audio-tools-*')))
         # Blank edits must not revive values through Vorbis aliases.
-        self.complete(core.tag_edit(source, {'album_artist': '', 'track': '', 'disc': '', 'date': ''}, backup=False))
-        self.assertTrue(all(not self.info(source)['tags'][key] for key in ('album_artist', 'track', 'disc', 'date')))
+        self.complete(
+            core.tag_edit(
+                source,
+                {'album_artist': '', 'track': '', 'disc': '', 'date': ''},
+                backup=False,
+            )
+        )
+        self.assertTrue(
+            all(
+                not self.info(source)['tags'][key]
+                for key in ('album_artist', 'track', 'disc', 'date')
+            )
+        )
         self.assertEqual(self.packets(source), before)
 
     def test_opus_abort_and_source_conflict_clean_the_private_job_payload(self):

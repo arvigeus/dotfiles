@@ -1,4 +1,5 @@
 """System overview parsing and interactive actions; never updates the host."""
+
 import importlib.util
 import json
 import os
@@ -12,7 +13,9 @@ from unittest.mock import call, patch
 
 import support
 
-SPEC = importlib.util.spec_from_file_location('desktop_system', support.DESKTOP / 'drawers/system/backend.py')
+SPEC = importlib.util.spec_from_file_location(
+    'desktop_system', support.DESKTOP / 'drawers/system/backend.py'
+)
 backend = importlib.util.module_from_spec(SPEC)
 _bytecode_disabled = sys.dont_write_bytecode
 sys.dont_write_bytecode = True
@@ -21,28 +24,58 @@ sys.dont_write_bytecode = _bytecode_disabled
 
 
 def snapshot():
-    return dict(os='Arch Linux', kernel='test-kernel', uptime=90061, kernelChanged=True,
-                boot=dict(total='22.5s', phases=[dict(label='Kernel', duration='2.5s'), dict(label='Userspace', duration='20s')], summary=''),
-                slow=[dict(unit='slow.service', duration='10s')],
-                scopes=[dict(scope='system', failed=[dict(unit='broken.service', description='Test failure')]), dict(scope='user', failed=[])],
-                timers=[dict(unit='cleanup.timer', scope='user', next=1792491033949)],
-                errors={}, terminalAvailable=True)
+    return dict(
+        os='Arch Linux',
+        kernel='test-kernel',
+        uptime=90061,
+        kernelChanged=True,
+        boot=dict(
+            total='22.5s',
+            phases=[
+                dict(label='Kernel', duration='2.5s'),
+                dict(label='Userspace', duration='20s'),
+            ],
+            summary='',
+        ),
+        slow=[dict(unit='slow.service', duration='10s')],
+        scopes=[
+            dict(
+                scope='system',
+                failed=[dict(unit='broken.service', description='Test failure')],
+            ),
+            dict(scope='user', failed=[]),
+        ],
+        timers=[dict(unit='cleanup.timer', scope='user', next=1792491033949)],
+        errors={},
+        terminalAvailable=True,
+    )
 
 
 class SystemBackendTests(unittest.TestCase):
     def test_snapshots_only_read_the_requested_section(self):
-        with patch.object(backend, 'command', return_value='[]') as run, \
-                patch.object(backend, 'system_info', return_value=dict(kernel='test')) as info, \
-                patch.object(backend, 'maintenance_available', return_value=dict(health=True)) as maintenance, \
-                patch.object(backend, 'updater') as update:
+        with (
+            patch.object(backend, 'command', return_value='[]') as run,
+            patch.object(
+                backend, 'system_info', return_value=dict(kernel='test')
+            ) as info,
+            patch.object(
+                backend, 'maintenance_available', return_value=dict(health=True)
+            ) as maintenance,
+            patch.object(backend, 'updater') as update,
+        ):
             boot = backend.snapshot('boot')
-            self.assertEqual([entry.args[0][0] for entry in run.call_args_list], ['systemd-analyze'] * 2)
+            self.assertEqual(
+                [entry.args[0][0] for entry in run.call_args_list],
+                ['systemd-analyze'] * 2,
+            )
             self.assertNotIn('scopes', boot)
             info.assert_not_called()
             maintenance.assert_not_called()
             run.reset_mock()
             services = backend.snapshot('services')
-            self.assertEqual([entry.args[0][0] for entry in run.call_args_list], ['systemctl'] * 4)
+            self.assertEqual(
+                [entry.args[0][0] for entry in run.call_args_list], ['systemctl'] * 4
+            )
             self.assertNotIn('boot', services)
             run.reset_mock()
             self.assertEqual(backend.snapshot('info')['kernel'], 'test')
@@ -52,11 +85,18 @@ class SystemBackendTests(unittest.TestCase):
             update.assert_not_called()
 
     def test_boot_phases_handle_optional_initrd_and_minute_units(self):
-        result = backend.boot_times('Startup finished in 9s (firmware) + 500ms (loader) + 2s (kernel) + 1min 2.4s (initrd) + 3s (userspace) = 1min 16.9s\ngraphical.target reached after 3s in userspace.')
+        result = backend.boot_times(
+            'Startup finished in 9s (firmware) + 500ms (loader) + 2s (kernel) + 1min 2.4s (initrd) + 3s (userspace) = 1min 16.9s\ngraphical.target reached after 3s in userspace.'
+        )
         self.assertEqual(result['total'], '1min 16.9s')
-        self.assertEqual(result['phases'][3], dict(label='Initrd', duration='1min 2.4s'))
+        self.assertEqual(
+            result['phases'][3], dict(label='Initrd', duration='1min 2.4s')
+        )
         self.assertEqual(backend.boot_times('')['phases'], [])
-        self.assertEqual(backend.slow_units(' 1min 5s slow.service\n 100ms fast.service')[0], dict(duration='1min 5s', unit='slow.service'))
+        self.assertEqual(
+            backend.slow_units(' 1min 5s slow.service\n 100ms fast.service')[0],
+            dict(duration='1min 5s', unit='slow.service'),
+        )
 
     def test_partial_errors_do_not_report_healthy_services_and_timer_units_are_ms(self):
         def command(argv):
@@ -65,8 +105,17 @@ class SystemBackendTests(unittest.TestCase):
             if '--user' in argv and 'list-units' in argv:
                 raise RuntimeError('User bus unavailable')
             if 'list-units' in argv:
-                return json.dumps([dict(unit='bad.service', description='Failed service')])
-            return json.dumps([dict(unit='late.timer', next=1792491133949065), dict(unit='unset.timer', next=2**64-1), dict(unit='soon.timer', next=1792491033949065)])
+                return json.dumps(
+                    [dict(unit='bad.service', description='Failed service')]
+                )
+            return json.dumps(
+                [
+                    dict(unit='late.timer', next=1792491133949065),
+                    dict(unit='unset.timer', next=2**64 - 1),
+                    dict(unit='soon.timer', next=1792491033949065),
+                ]
+            )
+
         with patch.object(backend, 'command', side_effect=command):
             boot = backend.snapshot('boot')
             state = backend.snapshot('services')
@@ -77,14 +126,33 @@ class SystemBackendTests(unittest.TestCase):
         self.assertNotIn('unset.timer', [row['unit'] for row in state['timers']])
 
     def test_updates_are_interactive_and_journal_unit_is_literal(self):
-        with patch.object(backend.shutil, 'which', side_effect=lambda name: name if name in ('system-update', 'topgrade') else None):
+        with patch.object(
+            backend.shutil,
+            'which',
+            side_effect=lambda name: (
+                name if name in ('system-update', 'topgrade') else None
+            ),
+        ):
             self.assertEqual(backend.action_command('update'), ['system-update'])
-        with patch.object(backend.shutil, 'which', side_effect=lambda name: name if name in ('topgrade', 'paru', 'sudo', 'pacman') else None):
+        with patch.object(
+            backend.shutil,
+            'which',
+            side_effect=lambda name: (
+                name if name in ('topgrade', 'paru', 'sudo', 'pacman') else None
+            ),
+        ):
             self.assertEqual(backend.action_command('update'), ['topgrade'])
-        with patch.object(backend.shutil, 'which', side_effect=lambda name: name if name in ('sudo', 'pacman') else None):
+        with patch.object(
+            backend.shutil,
+            'which',
+            side_effect=lambda name: name if name in ('sudo', 'pacman') else None,
+        ):
             with self.assertRaisesRegex(ValueError, 'Topgrade'):
                 backend.action_command('update')
-        self.assertEqual(backend.action_command('logs', 'user', r'foo\x2dbar.service'), ['journalctl', '--user', '-b', '-n', '200', r'--unit=foo\x2dbar.service'])
+        self.assertEqual(
+            backend.action_command('logs', 'user', r'foo\x2dbar.service'),
+            ['journalctl', '--user', '-b', '-n', '200', r'--unit=foo\x2dbar.service'],
+        )
         for unit in ('--system', '$(touch /tmp/unsafe)', 'foo;bar'):
             with self.assertRaises(ValueError):
                 backend.action_command('logs', 'system', unit)
@@ -92,58 +160,125 @@ class SystemBackendTests(unittest.TestCase):
             backend.action_command('restart')
 
     def test_signing_repair_preserves_keyring_and_stops_on_failure(self):
-        with patch.object(backend, 'maintenance_available', return_value=dict(signing=True)), \
-                patch.object(backend, 'run_terminal', return_value=SimpleNamespace(returncode=0)) as run:
+        with (
+            patch.object(
+                backend, 'maintenance_available', return_value=dict(signing=True)
+            ),
+            patch.object(
+                backend, 'run_terminal', return_value=SimpleNamespace(returncode=0)
+            ) as run,
+        ):
             self.assertEqual(backend.run_action('repair-signing'), 0)
-            self.assertEqual(run.call_args_list, [call(['sudo', '--', 'pacman-key', op])
-                                                 for op in ('--init', '--populate', '--updatedb')])
+            self.assertEqual(
+                run.call_args_list,
+                [
+                    call(['sudo', '--', 'pacman-key', op])
+                    for op in ('--init', '--populate', '--updatedb')
+                ],
+            )
             run.reset_mock()
-            run.side_effect = [SimpleNamespace(returncode=0), SimpleNamespace(returncode=2)]
+            run.side_effect = [
+                SimpleNamespace(returncode=0),
+                SimpleNamespace(returncode=2),
+            ]
             self.assertEqual(backend.run_action('repair-signing'), 2)
             self.assertEqual(run.call_count, 2)
 
     def test_unavailable_maintenance_never_launches_commands(self):
-        with patch.object(backend, 'maintenance_available', return_value=dict(signing=False, health=False)), \
-                patch.object(backend, 'run_terminal') as run:
+        with (
+            patch.object(
+                backend,
+                'maintenance_available',
+                return_value=dict(signing=False, health=False),
+            ),
+            patch.object(backend, 'run_terminal') as run,
+        ):
             for action in ('repair-signing', 'check-packages', 'unknown'):
                 with self.assertRaises(ValueError):
                     backend.run_action(action)
             run.assert_not_called()
 
     def test_health_checks_both_scopes_without_changes_when_repair_declined(self):
-        with patch.object(backend, 'maintenance_available', return_value=dict(health=True)), \
-                patch.object(backend, 'run_terminal', side_effect=[
+        with (
+            patch.object(
+                backend, 'maintenance_available', return_value=dict(health=True)
+            ),
+            patch.object(
+                backend,
+                'run_terminal',
+                side_effect=[
                     SimpleNamespace(returncode=1),
-                    SimpleNamespace(returncode=1, stdout='broken /usr/bin/missing\n', stderr='missing file\n')]) as run, \
-                patch.object(backend, 'command', return_value='broken\n'), \
-                patch.object(backend.shutil, 'which', return_value='/usr/bin/sudo'), \
-                patch('builtins.input', return_value='n'):
+                    SimpleNamespace(
+                        returncode=1,
+                        stdout='broken /usr/bin/missing\n',
+                        stderr='missing file\n',
+                    ),
+                ],
+            ) as run,
+            patch.object(backend, 'command', return_value='broken\n'),
+            patch.object(backend.shutil, 'which', return_value='/usr/bin/sudo'),
+            patch('builtins.input', return_value='n'),
+        ):
             self.assertEqual(backend.run_action('check-packages'), 1)
-            self.assertEqual([args.args[0] for args in run.call_args_list], [['pacman', '-Dk'], ['pacman', '-Qkq']])
+            self.assertEqual(
+                [args.args[0] for args in run.call_args_list],
+                [['pacman', '-Dk'], ['pacman', '-Qkq']],
+            )
 
     def test_health_repair_targets_only_reported_repository_packages_and_rechecks(self):
-        with patch.object(backend, 'maintenance_available', return_value=dict(health=True)), \
-                patch.object(backend, 'run_terminal', side_effect=[
+        with (
+            patch.object(
+                backend, 'maintenance_available', return_value=dict(health=True)
+            ),
+            patch.object(
+                backend,
+                'run_terminal',
+                side_effect=[
                     SimpleNamespace(returncode=0),
-                    SimpleNamespace(returncode=1, stdout='broken /usr/bin/missing\nbroken /usr/lib/missing\nforeign /opt/missing\n--unsafe /missing\n$(touch /missing\n', stderr=''),
+                    SimpleNamespace(
+                        returncode=1,
+                        stdout='broken /usr/bin/missing\nbroken /usr/lib/missing\nforeign /opt/missing\n--unsafe /missing\n$(touch /missing\n',
+                        stderr='',
+                    ),
                     SimpleNamespace(returncode=0),
                     SimpleNamespace(returncode=0),
-                    SimpleNamespace(returncode=0, stdout='', stderr='')]) as run, \
-                patch.object(backend, 'command', return_value='broken\nhealthy\n--unsafe\n'), \
-                patch.object(backend.shutil, 'which', return_value='/usr/bin/sudo'), \
-                patch('builtins.input', return_value='yes') as prompt:
+                    SimpleNamespace(returncode=0, stdout='', stderr=''),
+                ],
+            ) as run,
+            patch.object(
+                backend, 'command', return_value='broken\nhealthy\n--unsafe\n'
+            ),
+            patch.object(backend.shutil, 'which', return_value='/usr/bin/sudo'),
+            patch('builtins.input', return_value='yes') as prompt,
+        ):
             self.assertEqual(backend.run_action('check-packages'), 0)
-            self.assertEqual(run.call_args_list[2], call(['sudo', '--', 'pacman', '-Syu', '--', 'broken']))
+            self.assertEqual(
+                run.call_args_list[2],
+                call(['sudo', '--', 'pacman', '-Syu', '--', 'broken']),
+            )
             self.assertEqual(run.call_count, 5)
             prompt.assert_called_once()
 
     def test_healthy_packages_and_unreadable_repository_list_offer_no_repair(self):
-        with patch.object(backend, 'maintenance_available', return_value=dict(health=True)), \
-                patch.object(backend, 'run_terminal', side_effect=[
-                    SimpleNamespace(returncode=0), SimpleNamespace(returncode=0, stdout='', stderr=''),
-                    SimpleNamespace(returncode=0), SimpleNamespace(returncode=1, stdout='broken /missing\n', stderr='')]) as run, \
-                patch.object(backend, 'command', side_effect=RuntimeError('Unavailable')), \
-                patch('builtins.input') as prompt:
+        with (
+            patch.object(
+                backend, 'maintenance_available', return_value=dict(health=True)
+            ),
+            patch.object(
+                backend,
+                'run_terminal',
+                side_effect=[
+                    SimpleNamespace(returncode=0),
+                    SimpleNamespace(returncode=0, stdout='', stderr=''),
+                    SimpleNamespace(returncode=0),
+                    SimpleNamespace(
+                        returncode=1, stdout='broken /missing\n', stderr=''
+                    ),
+                ],
+            ) as run,
+            patch.object(backend, 'command', side_effect=RuntimeError('Unavailable')),
+            patch('builtins.input') as prompt,
+        ):
             self.assertEqual(backend.check_package_health(), 0)
             self.assertEqual(backend.check_package_health(), 1)
             self.assertEqual(run.call_count, 4)
@@ -153,25 +288,45 @@ class SystemBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
             pacman = folder / 'pacman'
-            pacman.write_text(f'#!{sys.executable}\n' + '''import os,sys
+            pacman.write_text(
+                f'#!{sys.executable}\n'
+                + """import os,sys
 from pathlib import Path
 with Path(os.environ['COMMAND_LOG']).open('a') as log: log.write(' '.join(sys.argv[1:])+'\\n')
 if os.environ['BROKEN'] == '1':
  if sys.argv[1:] == ['-Qkq']: print('broken /usr/bin/missing'); sys.exit(1)
  if sys.argv[1:] == ['-Qnq']: print('broken')
-''')
+"""
+            )
             pacman.chmod(0o755)
             # Even when sudo exists, declining must never invoke it.
             sudo = folder / 'sudo'
-            sudo.write_text(f'#!{sys.executable}\nraise RuntimeError("Unexpected mutation")\n')
+            sudo.write_text(
+                f'#!{sys.executable}\nraise RuntimeError("Unexpected mutation")\n'
+            )
             sudo.chmod(0o755)
-            for broken, expected, commands in [('0', 0, ['-Dk', '-Qkq']), ('1', 1, ['-Dk', '-Qkq', '-Qnq'])]:
+            for broken, expected, commands in [
+                ('0', 0, ['-Dk', '-Qkq']),
+                ('1', 1, ['-Dk', '-Qkq', '-Qnq']),
+            ]:
                 log = folder / 'commands'
                 log.write_text('')
-                result = subprocess.run([sys.executable, str(SPEC.origin), '--action', 'check-packages'],
-                                        env=dict(os.environ, PATH=str(folder), COMMAND_LOG=str(log), BROKEN=broken),
-                                        input='n\n\n', text=True, capture_output=True, timeout=10)
-                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                result = subprocess.run(
+                    [sys.executable, str(SPEC.origin), '--action', 'check-packages'],
+                    env=dict(
+                        os.environ,
+                        PATH=str(folder),
+                        COMMAND_LOG=str(log),
+                        BROKEN=broken,
+                    ),
+                    input='n\n\n',
+                    text=True,
+                    capture_output=True,
+                    timeout=10,
+                )
+                self.assertEqual(
+                    result.returncode, expected, result.stdout + result.stderr
+                )
                 self.assertIn(f'Finished (exit {expected})', result.stdout)
                 self.assertEqual(log.read_text().splitlines(), commands)
 
@@ -182,7 +337,8 @@ class SystemDrawerTests(unittest.TestCase):
 
     def test_full_width_actions_popovers_info_and_narrow_layout(self):
         state = json.dumps(snapshot())
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Layouts
 import QtTest
 import Quickshell
@@ -252,14 +408,21 @@ ShellRoot {
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",stage,e.message);Qt.quit();}}}
 }
-'''.replace('STATE', state))
+""".replace('STATE', state)
+        )
 
     def test_service_reads_only_while_active_and_launches_literal_arguments(self):
         state = snapshot()
+
         def setup(root):
             (root / 'drawers/system/backend.py').write_text(
-                'import json,time,sys\ntime.sleep(.05)\nstate=' + repr(state) + '\nstate["kernel"]=sys.argv[-1]\nprint(json.dumps(state))\n')
-        self.run_qml('''import QtQuick
+                'import json,time,sys\ntime.sleep(.05)\nstate='
+                + repr(state)
+                + '\nstate["kernel"]=sys.argv[-1]\nprint(json.dumps(state))\n'
+            )
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "drawers/system"
 ShellRoot {
@@ -294,4 +457,6 @@ ShellRoot {
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",stage,e.message);Qt.quit();}}}
 }
-''', setup)
+""",
+            setup,
+        )

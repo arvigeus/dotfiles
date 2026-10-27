@@ -3,7 +3,7 @@
 while IFS= read -r assignment; do
     # shellcheck disable=SC2163 # Each line is a NAME=value assignment.
     export "$assignment"
-done <<END
+done << END
 $(/usr/lib/systemd/user-environment-generators/30-systemd-environment-d-generator)
 END
 unset assignment

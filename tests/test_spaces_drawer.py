@@ -1,6 +1,6 @@
 """Spaces navigation placeholders and session actions without changing the host session."""
+
 import importlib.util
-import os
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -8,20 +8,27 @@ from unittest.mock import patch
 import support
 
 
-SPEC = importlib.util.spec_from_file_location('desktop_session', support.DESKTOP / 'drawers/spaces/backend.py')
+SPEC = importlib.util.spec_from_file_location(
+    'desktop_session', support.DESKTOP / 'drawers/spaces/backend.py'
+)
 backend = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(backend)
 
 
 class SessionBackendTests(unittest.TestCase):
     def test_actions_and_shutdown_delay_validation(self):
-        with patch.object(backend, 'snapshot', return_value={}), patch.object(backend, 'run') as run:
+        with (
+            patch.object(backend, 'snapshot', return_value={}),
+            patch.object(backend, 'run') as run,
+        ):
             for action in ('suspend', 'reboot', 'poweroff'):
                 backend.handle(dict(action=action))
                 run.assert_called_with(['systemctl', action])
             for minutes in backend.DELAYS:
                 backend.handle(dict(action='schedule-poweroff', minutes=minutes))
-                run.assert_called_with(['systemctl', 'poweroff', f'--when=+{minutes}min'])
+                run.assert_called_with(
+                    ['systemctl', 'poweroff', f'--when=+{minutes}min']
+                )
             backend.handle(dict(action='cancel-poweroff'))
             run.assert_called_with(['systemctl', 'poweroff', '--when=cancel'])
             run.reset_mock()
@@ -33,7 +40,10 @@ class SessionBackendTests(unittest.TestCase):
             run.assert_not_called()
 
     def test_gaming_switch_and_reload_use_one_shot_session_requests(self):
-        with patch.object(backend, 'snapshot', return_value={}), patch.object(backend, 'run') as run:
+        with (
+            patch.object(backend, 'snapshot', return_value={}),
+            patch.object(backend, 'run') as run,
+        ):
             backend.handle(dict(action='gaming'))
             run.assert_called_with(['session-mode', 'gaming'])
             backend.handle(dict(action='reload'))
@@ -41,19 +51,40 @@ class SessionBackendTests(unittest.TestCase):
 
     def test_capabilities_shutdown_status_and_command_errors(self):
         with patch.object(backend, 'run') as run:
-            for answer, expected in [('yes', True), ('challenge', True), ('no', False), ('na', False)]:
-                run.return_value = subprocess.CompletedProcess([], 0, f's "{answer}"', '')
+            for answer, expected in [
+                ('yes', True),
+                ('challenge', True),
+                ('no', False),
+                ('na', False),
+            ]:
+                run.return_value = subprocess.CompletedProcess(
+                    [], 0, f's "{answer}"', ''
+                )
                 self.assertEqual(backend.can('CanSuspend'), expected)
             run.side_effect = OSError('No bus')
             self.assertFalse(backend.can('CanSuspend'))
-        with patch.object(backend, 'can', return_value=True), \
-                patch.object(backend, 'session_status', return_value={}), patch.object(backend, 'run') as run:
-            run.return_value = subprocess.CompletedProcess([], 0, '', 'Shutdown scheduled for tomorrow.')
-            self.assertEqual(backend.snapshot()['scheduledShutdown'], 'Shutdown scheduled for tomorrow.')
+        with (
+            patch.object(backend, 'can', return_value=True),
+            patch.object(backend, 'session_status', return_value={}),
+            patch.object(backend, 'run') as run,
+        ):
+            run.return_value = subprocess.CompletedProcess(
+                [], 0, '', 'Shutdown scheduled for tomorrow.'
+            )
+            self.assertEqual(
+                backend.snapshot()['scheduledShutdown'],
+                'Shutdown scheduled for tomorrow.',
+            )
             self.assertFalse(backend.snapshot()['capabilities']['gaming'])
-            run.return_value = subprocess.CompletedProcess([], 0, 'No scheduled shutdown.', '')
+            run.return_value = subprocess.CompletedProcess(
+                [], 0, 'No scheduled shutdown.', ''
+            )
             self.assertEqual(backend.snapshot()['scheduledShutdown'], '')
-        with patch.object(backend.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'Access denied')):
+        with patch.object(
+            backend.subprocess,
+            'run',
+            return_value=subprocess.CompletedProcess([], 1, '', 'Access denied'),
+        ):
             with self.assertRaisesRegex(ValueError, 'Access denied'):
                 backend.run(['systemctl', 'suspend'])
 
@@ -63,7 +94,7 @@ class SpacesDrawerTests(unittest.TestCase):
     run_qml = support.run_qml
 
     def test_placeholders_hold_confirmation_popover_and_dismissal(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -168,17 +199,19 @@ ShellRoot {
   console.log("DISPLAY_PASS");Qt.quit();
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''')
+}""")
 
     def test_submitted_command_survives_page_destruction_and_reports_failure(self):
         def setup(root):
-            (root / 'drawers/spaces/backend.py').write_text('''import json,sys,time
+            (root / 'drawers/spaces/backend.py').write_text("""import json,sys,time
 request=json.loads(sys.argv[1])
 assert request==dict(action="schedule-poweroff",minutes=30),request
 time.sleep(.4)
 print(json.dumps(dict(ok=False,error="Fixture denied")))
-''')
-        self.run_qml('''import QtQuick
+""")
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "drawers/spaces"
 ShellRoot {
@@ -195,19 +228,26 @@ ShellRoot {
   }
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
-}''', setup)
+}""",
+            setup,
+        )
 
     def test_real_pause_service_survives_drawer_and_resets_with_worker(self):
         def setup(root):
             path = root / 'drawers/displays/comfort.py'
             source = path.read_text()
-            source = source.replace("if __name__ == '__main__':", """if __name__ == '__main__':
+            source = source.replace(
+                "if __name__ == '__main__':",
+                """if __name__ == '__main__':
     os.environ['HYPRLAND_INSTANCE_SIGNATURE'] = 'fixture'
     backend.snapshot = lambda: dict(displays=[])
     systemctl = lambda *args: 'inactive'
-""")
+""",
+            )
             path.write_text(source)
-        self.run_qml('''import QtQuick
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "drawers/spaces"
 import "drawers/displays"
@@ -239,7 +279,9 @@ ShellRoot {
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:6000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup)
+}""",
+            setup,
+        )
 
 
 if __name__ == '__main__':

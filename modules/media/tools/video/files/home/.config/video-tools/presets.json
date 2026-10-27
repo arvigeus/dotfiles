@@ -3,7 +3,7 @@
     "presets": [
         {
             "id": "mp4-h264",
-            "name": "MP4 · H.264",
+            "name": "MP4 \u00b7 H.264",
             "description": "Compatible MP4, high quality, original resolution. First video and all audio tracks; subtitles are omitted.",
             "extension": "mp4",
             "mode": "encode",
@@ -15,7 +15,7 @@
         },
         {
             "id": "mp4-1080p",
-            "name": "MP4 · H.264 · up to 1080p",
+            "name": "MP4 \u00b7 H.264 \u00b7 up to 1080p",
             "description": "Smaller MP4 for sharing. Downscales larger video, never upscales. First video and all audio tracks; subtitles are omitted.",
             "extension": "mp4",
             "mode": "encode",
@@ -29,7 +29,7 @@
         },
         {
             "id": "webm-1080p",
-            "name": "WebM · VP9 · up to 1080p",
+            "name": "WebM \u00b7 VP9 \u00b7 up to 1080p",
             "description": "Efficient web video. Slower encoding; first video and all audio tracks, without subtitles.",
             "extension": "webm",
             "mode": "encode",
@@ -42,7 +42,7 @@
         },
         {
             "id": "av1-balanced",
-            "name": "MKV · AV1 · balanced",
+            "name": "MKV \u00b7 AV1 \u00b7 balanced",
             "description": "Smaller-file option using 10-bit software AV1 and Opus audio, at original resolution. Encoding takes longer; savings depend on the source. First video and all audio tracks; subtitles are omitted.",
             "extension": "mkv",
             "mode": "encode",
@@ -55,7 +55,7 @@
         },
         {
             "id": "av1-1080p",
-            "name": "MKV · AV1 · compact · up to 1080p",
+            "name": "MKV \u00b7 AV1 \u00b7 compact \u00b7 up to 1080p",
             "description": "More aggressive compression, capped at 1080p without upscaling. Uses 10-bit software AV1 and Opus; trades some quality for size. First video and all audio tracks; subtitles are omitted.",
             "extension": "mkv",
             "mode": "encode",
@@ -70,14 +70,14 @@
         },
         {
             "id": "mkv-copy",
-            "name": "MKV · copy all tracks",
+            "name": "MKV \u00b7 copy all tracks",
             "description": "Fast remux without re-encoding. Keeps video, audio, subtitles, chapters and attachments supported by Matroska.",
             "extension": "mkv",
             "mode": "copy"
         },
         {
             "id": "m4a-audio",
-            "name": "Extract audio · M4A / AAC 192 kbps",
+            "name": "Extract audio \u00b7 M4A / AAC 192 kbps",
             "description": "Extracts the first audio track to an M4A file. The source video is kept.",
             "extension": "m4a",
             "mode": "audio",

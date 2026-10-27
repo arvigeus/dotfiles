@@ -1,4 +1,5 @@
 """Display identification and visual tests; no monitor configuration writes."""
+
 import os
 import unittest
 
@@ -11,7 +12,7 @@ class DisplayToolTests(unittest.TestCase):
 
     def test_controller_selection_hotplug_and_identification_timeout(self):
         def setup(root):
-            (root / 'drawers/displays/FakeTestWindow.qml').write_text('''import QtQml
+            (root / 'drawers/displays/FakeTestWindow.qml').write_text("""import QtQml
 QtObject {
  property var target:null
  property var controller:null
@@ -19,8 +20,10 @@ QtObject {
  Component.onCompleted: console.log("TEST_WINDOW_CREATED")
  Component.onDestruction: console.log("TEST_WINDOW_DESTROYED")
 }
-''')
-        log = self.run_qml('''import QtQuick
+""")
+
+        log = self.run_qml(
+            """import QtQuick
 import Quickshell
 import "drawers/displays"
 ShellRoot {
@@ -59,13 +62,15 @@ ShellRoot {
  }}
  Timer{interval:9000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }
-''', setup)
+""",
+            setup,
+        )
         self.assertEqual(log.count('TEST_WINDOW_CREATED'), 4, log)
         self.assertEqual(log.count('TEST_WINDOW_READY'), 4, log)
         self.assertEqual(log.count('TEST_WINDOW_DESTROYED'), 4, log)
 
     def test_patterns_motion_and_click_dismissal(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import QtTest
 import Quickshell
 import "drawers/displays"
@@ -126,11 +131,14 @@ ShellRoot {
  }}
  Timer{interval:6000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }
-''')
+""")
 
-    @unittest.skipUnless(os.environ.get('DISPLAY_PREVIEW_PLATFORM') == 'wayland', 'Wayland panels require a native backend')
+    @unittest.skipUnless(
+        os.environ.get('DISPLAY_PREVIEW_PLATFORM') == 'wayland',
+        'Wayland panels require a native backend',
+    )
     def test_native_panel_input_masks_keyboard_and_dismissal(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import QtTest
 import Quickshell
 import Quickshell.Wayland
@@ -184,7 +192,7 @@ ShellRoot {
  }}
  Timer{interval:6000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }
-''')
+""")
 
 
 if __name__ == '__main__':

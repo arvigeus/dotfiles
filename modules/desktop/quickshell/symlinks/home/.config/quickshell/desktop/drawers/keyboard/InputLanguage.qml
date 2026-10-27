@@ -21,23 +21,31 @@ Singleton {
     readonly property string selectingLanguage: selectionPending || (requestActive && worker.action === "select" ? worker.code : "")
     readonly property bool selecting: selectingLanguage !== ""
     readonly property string label: loaded ? language.toUpperCase() : "…"
-    readonly property string description: error || (!loaded ? qsTr("Reading input language…")
-        : languageName(language) + " · Alt+Shift: English / " + languageName(secondary))
+    readonly property string description: error || (!loaded ? qsTr("Reading input language…") : languageName(language) + " · Alt+Shift: English / " + languageName(secondary))
     signal selectionFinished(string code, bool success)
 
     function languageName(code: string): string {
-        return ({en: "English", bg: "Български", vi: "Tiếng Việt"})[code] || code;
+        return ({
+                en: "English",
+                bg: "Български",
+                vi: "Tiếng Việt"
+            })[code] || code;
     }
-    function refresh(): void { request("status", keyboard); }
+    function refresh(): void {
+        request("status", keyboard);
+    }
     function select(code: string): void {
-        if (!["en", "bg", "vi"].includes(code) || (code === "vi" && !available)) return;
+        if (!["en", "bg", "vi"].includes(code) || (code === "vi" && !available))
+            return;
         keyboard = "";
         request("select", code);
     }
     function request(action: string, code: string): void {
         if (requestActive) {
-            if (action === "select") selectionPending = code;
-            else refreshPending = true;
+            if (action === "select")
+                selectionPending = code;
+            else
+                refreshPending = true;
             return;
         }
         worker.action = action;
@@ -45,13 +53,15 @@ Singleton {
         worker.failure = "";
         worker.received = false;
         worker.result = null;
-        if (action === "select") selectionError = "";
+        if (action === "select")
+            selectionError = "";
         worker.command = ["python3", Quickshell.shellPath("drawers/keyboard/backend.py"), action, code];
         requestActive = true;
         worker.running = true;
     }
     function next(): void {
-        if (requestActive) return;
+        if (requestActive)
+            return;
         if (selectionPending) {
             const code = selectionPending;
             selectionPending = "";
@@ -65,7 +75,8 @@ Singleton {
         if (name === "activelayout") {
             keyboard = data.slice(0, data.indexOf(","));
             layoutChanged.restart();
-        } else if (name === "configreloaded") layoutChanged.restart();
+        } else if (name === "configreloaded")
+            layoutChanged.restart();
     }
     Process {
         id: worker
@@ -76,17 +87,23 @@ Singleton {
         property var result: null
         stdout: StdioCollector {
             onStreamFinished: {
-                if (!text.trim()) return;
+                if (!text.trim())
+                    return;
                 try {
                     const state = JSON.parse(text);
-                    if (!["en", "bg", "vi"].includes(state.language) || !["bg", "vi"].includes(state.secondary)
-                        || typeof state.available !== "boolean") throw new Error("Invalid state");
+                    if (!["en", "bg", "vi"].includes(state.language) || !["bg", "vi"].includes(state.secondary) || typeof state.available !== "boolean")
+                        throw new Error("Invalid state");
                     worker.result = state;
                     worker.received = true;
-                } catch (error) { worker.failure = qsTr("Could not read the input language."); }
+                } catch (error) {
+                    worker.failure = qsTr("Could not read the input language.");
+                }
             }
         }
-        stderr: StdioCollector { onStreamFinished: if (text.trim()) worker.failure = text.trim(); }
+        stderr: StdioCollector {
+            onStreamFinished: if (text.trim())
+                worker.failure = text.trim()
+        }
         onExited: (exitCode, exitStatus) => {
             const failureText = failure || (exitCode || !received ? qsTr("Could not change or read the input language.") : "");
             if (!failureText) {
@@ -97,9 +114,11 @@ Singleton {
             }
             if (action === "select") {
                 root.selectionError = failureText;
-                if (failureText) root.refreshPending = true;
+                if (failureText)
+                    root.refreshPending = true;
                 root.selectionFinished(code, !failureText);
-            } else root.statusError = failureText;
+            } else
+                root.statusError = failureText;
             root.requestActive = false;
             Qt.callLater(root.next);
         }
@@ -107,15 +126,23 @@ Singleton {
     Timer {
         id: updates
         // Provider mode changes have no XKB event. No daemon starts on reads.
-        interval: 1000; repeat: true
+        interval: 1000
+        repeat: true
         running: root.loaded && root.secondary === "vi"
         onTriggered: root.refresh()
     }
-    Timer { id: layoutChanged; interval: 80; onTriggered: root.refresh() }
+    Timer {
+        id: layoutChanged
+        interval: 80
+        onTriggered: root.refresh()
+    }
     Connections {
         id: events
         target: Hyprland
-        function onRawEvent(event): void { root.handleLayoutEvent(event.name, event.data); }
+        function onRawEvent(event): void {
+            root.handleLayoutEvent(event.name, event.data);
+        }
     }
-    Component.onCompleted: if (Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE")) refresh();
+    Component.onCompleted: if (Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE"))
+        refresh()
 }

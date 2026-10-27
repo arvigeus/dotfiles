@@ -5,6 +5,7 @@ process registers the agent, owns Pair(), forwards prompts as JSON lines,
 then trusts and connects the device and exits. Input: {"op": "respond", "id",
 "accept", "value"} or {"op": "cancel"}; stdin EOF cancels an unfinished pairing.
 """
+
 import json
 import os
 import sys
@@ -14,7 +15,7 @@ from gi.repository import Gio, GLib
 DEVICE = 'org.bluez.Device1'
 PROPERTIES = 'org.freedesktop.DBus.Properties'
 AGENT_PATH = '/dotfiles/bluetooth/agent'
-AGENT_XML = '''<node><interface name="org.bluez.Agent1">
+AGENT_XML = """<node><interface name="org.bluez.Agent1">
 <method name="Release"/><method name="Cancel"/>
 <method name="RequestPinCode"><arg type="o" direction="in"/><arg type="s" direction="out"/></method>
 <method name="RequestPasskey"><arg type="o" direction="in"/><arg type="u" direction="out"/></method>
@@ -23,7 +24,7 @@ AGENT_XML = '''<node><interface name="org.bluez.Agent1">
 <method name="RequestConfirmation"><arg type="o" direction="in"/><arg type="u" direction="in"/></method>
 <method name="RequestAuthorization"><arg type="o" direction="in"/></method>
 <method name="AuthorizeService"><arg type="o" direction="in"/><arg type="s" direction="in"/></method>
-</interface></node>'''
+</interface></node>"""
 
 
 def error_text(error):
@@ -43,16 +44,29 @@ def error_text(error):
 
 class Pairing:
     def __init__(self, bus, key, address, emit, quit):
-        self.bus, self.key, self.address, self.emit, self.quit = bus, key, address, emit, quit
-        self.connecting = False  # Pair() succeeded; trust and connect survive cancellation.
+        self.bus, self.key, self.address, self.emit, self.quit = (
+            bus,
+            key,
+            address,
+            emit,
+            quit,
+        )
+        self.connecting = (
+            False  # Pair() succeeded; trust and connect survive cancellation.
+        )
         self.canceled = False
         self.done = False
         self.prompt = None
         self.invocation = None
         self.prompt_id = 0
         self.timer = 0
-        self.bus.register_object(AGENT_PATH, Gio.DBusNodeInfo.new_for_xml(AGENT_XML).interfaces[0],
-                                 self.agent, None, None)
+        self.bus.register_object(
+            AGENT_PATH,
+            Gio.DBusNodeInfo.new_for_xml(AGENT_XML).interfaces[0],
+            self.agent,
+            None,
+            None,
+        )
 
     def call(self, path, interface, method, args=None, done=None, timeout=30000):
         def finished(bus, result):
@@ -63,13 +77,33 @@ class Pairing:
                 error = error_text(exc)
             if done:
                 done(error)
-        self.bus.call('org.bluez', path, interface, method, args, None, Gio.DBusCallFlags.NONE,
-                      timeout, None, finished)
+
+        self.bus.call(
+            'org.bluez',
+            path,
+            interface,
+            method,
+            args,
+            None,
+            Gio.DBusCallFlags.NONE,
+            timeout,
+            None,
+            finished,
+        )
 
     def start(self):
         try:
-            props = self.bus.call_sync('org.bluez', self.key, PROPERTIES, 'GetAll', GLib.Variant('(s)', (DEVICE,)),
-                                       None, Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+            props = self.bus.call_sync(
+                'org.bluez',
+                self.key,
+                PROPERTIES,
+                'GetAll',
+                GLib.Variant('(s)', (DEVICE,)),
+                None,
+                Gio.DBusCallFlags.NONE,
+                3000,
+                None,
+            ).unpack()[0]
         except GLib.Error:
             props = {}
         if props.get('Address') != self.address:
@@ -78,8 +112,13 @@ class Pairing:
             self.finish('This device is already paired. Connect instead.')
         else:
             self.timer = GLib.timeout_add_seconds(60, self.expire)
-            self.call('/org/bluez', 'org.bluez.AgentManager1', 'RegisterAgent',
-                      GLib.Variant('(os)', (AGENT_PATH, 'KeyboardDisplay')), self.registered)
+            self.call(
+                '/org/bluez',
+                'org.bluez.AgentManager1',
+                'RegisterAgent',
+                GLib.Variant('(os)', (AGENT_PATH, 'KeyboardDisplay')),
+                self.registered,
+            )
 
     def registered(self, error):
         if error or self.canceled:
@@ -95,15 +134,28 @@ class Pairing:
         self.connecting = True
         self.emit(dict(type='connecting'))
         # Completed pairing authorizes this device's future reconnections.
-        self.call(self.key, PROPERTIES, 'Set', GLib.Variant('(ssv)', (DEVICE, 'Trusted', GLib.Variant('b', True))),
-                  self.trusted)
+        self.call(
+            self.key,
+            PROPERTIES,
+            'Set',
+            GLib.Variant('(ssv)', (DEVICE, 'Trusted', GLib.Variant('b', True))),
+            self.trusted,
+        )
 
     def trusted(self, error):
         if error:
-            self.finish('Paired, but could not authorize automatic reconnections: ' + error)
+            self.finish(
+                'Paired, but could not authorize automatic reconnections: ' + error
+            )
         else:
-            self.call(self.key, DEVICE, 'Connect',
-                      done=lambda error: self.finish('Paired, but could not connect: ' + error if error else ''))
+            self.call(
+                self.key,
+                DEVICE,
+                'Connect',
+                done=lambda error: self.finish(
+                    'Paired, but could not connect: ' + error if error else ''
+                ),
+            )
 
     def finish(self, error=''):
         if self.done:
@@ -118,7 +170,9 @@ class Pairing:
 
     def clear_prompt(self):
         if self.invocation:
-            self.invocation.return_dbus_error('org.bluez.Error.Canceled', 'Pairing canceled')
+            self.invocation.return_dbus_error(
+                'org.bluez.Error.Canceled', 'Pairing canceled'
+            )
         had_prompt = self.prompt is not None
         self.invocation, self.prompt = None, None
         if had_prompt:
@@ -138,9 +192,17 @@ class Pairing:
     def agent(self, bus, sender, path, interface, method, params, invocation):
         args = params.unpack()
         # Only BlueZ may invoke this agent, and only for the requested device.
-        owner = self.bus.call_sync('org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus',
-                                   'GetNameOwner', GLib.Variant('(s)', ('org.bluez',)),
-                                   None, Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+        owner = self.bus.call_sync(
+            'org.freedesktop.DBus',
+            '/org/freedesktop/DBus',
+            'org.freedesktop.DBus',
+            'GetNameOwner',
+            GLib.Variant('(s)', ('org.bluez',)),
+            None,
+            Gio.DBusCallFlags.NONE,
+            3000,
+            None,
+        ).unpack()[0]
         if sender != owner:
             invocation.return_dbus_error('org.bluez.Error.Rejected', 'Unknown caller')
             return
@@ -149,14 +211,24 @@ class Pairing:
             invocation.return_value(None)
             return
         if self.connecting or self.canceled or self.done or args[0] != self.key:
-            invocation.return_dbus_error('org.bluez.Error.Rejected', 'No pairing requested for this device')
+            invocation.return_dbus_error(
+                'org.bluez.Error.Rejected', 'No pairing requested for this device'
+            )
             return
         self.clear_prompt()
         self.prompt_id += 1
-        self.prompt = dict(id=self.prompt_id, kind=method,
-                           code=(f'{args[1]:06d}' if method in ('RequestConfirmation', 'DisplayPasskey') else
-                                 args[1] if method == 'DisplayPinCode' else ''),
-                           entered=args[2] if method == 'DisplayPasskey' else 0)
+        self.prompt = dict(
+            id=self.prompt_id,
+            kind=method,
+            code=(
+                f'{args[1]:06d}'
+                if method in ('RequestConfirmation', 'DisplayPasskey')
+                else args[1]
+                if method == 'DisplayPinCode'
+                else ''
+            ),
+            entered=args[2] if method == 'DisplayPasskey' else 0,
+        )
         if method.startswith('Display'):
             invocation.return_value(None)
         else:
@@ -164,16 +236,27 @@ class Pairing:
         self.emit(dict(type='prompt', prompt=self.prompt))
 
     def respond(self, request):
-        if not self.prompt or request.get('id') != self.prompt['id'] or not self.invocation:
+        if (
+            not self.prompt
+            or request.get('id') != self.prompt['id']
+            or not self.invocation
+        ):
             raise ValueError('This pairing request has expired.')
         if not request.get('accept'):
-            self.invocation.return_dbus_error('org.bluez.Error.Rejected', 'Pairing rejected')
+            self.invocation.return_dbus_error(
+                'org.bluez.Error.Rejected', 'Pairing rejected'
+            )
             self.invocation = None
             self.cancel()
             return
         kind, value = self.prompt['kind'], request.get('value', '')
         if kind == 'RequestPasskey':
-            if not isinstance(value, str) or not value.isascii() or not value.isdigit() or len(value) > 6:
+            if (
+                not isinstance(value, str)
+                or not value.isascii()
+                or not value.isdigit()
+                or len(value) > 6
+            ):
                 raise ValueError('Enter a passkey of one to six digits.')
             result = GLib.Variant('(u)', (int(value),))
         elif kind == 'RequestPinCode':
@@ -203,7 +286,14 @@ def main():
             print(json.dumps(value), flush=True)
         except OSError:
             pass  # Quickshell went away; finish the BlueZ calls regardless.
-    pairing = Pairing(Gio.bus_get_sync(Gio.BusType.SYSTEM, None), sys.argv[1], sys.argv[2], emit, loop.quit)
+
+    pairing = Pairing(
+        Gio.bus_get_sync(Gio.BusType.SYSTEM, None),
+        sys.argv[1],
+        sys.argv[2],
+        emit,
+        loop.quit,
+    )
     buffer = bytearray()
     os.set_blocking(sys.stdin.fileno(), False)
 
@@ -224,6 +314,7 @@ def main():
             except ValueError as exc:
                 emit(dict(type='error', error=str(exc)))
         return True
+
     GLib.io_add_watch(sys.stdin.fileno(), GLib.IO_IN | GLib.IO_HUP, read_input)
     pairing.start()
     if not pairing.done:

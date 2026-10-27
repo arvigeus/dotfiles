@@ -1,6 +1,6 @@
 pragma Singleton
-import QtQuick
 import "../../ui" as Desktop
+import QtQuick
 
 QtObject {
     readonly property color background: "#09090b"

@@ -1,4 +1,5 @@
 """Capture lifecycle and drawer layout without taking pictures or recording."""
+
 import json
 import os
 import socket
@@ -18,15 +19,15 @@ class CaptureTests(unittest.TestCase):
     def test_countdown_freezes_request_survives_page_and_can_cancel(self):
         with tempfile.TemporaryDirectory() as directory:
             command = Path(directory) / 'desktop-screenshot'
-            command.write_text('''#!/usr/bin/env python3
+            command.write_text("""#!/usr/bin/env python3
 import sys
 assert sys.stdin.read() == ''
 assert sys.argv[1:] == ['output', '--output', 'DP-2', '--report', '--save', '--edit'], sys.argv
 print('/tmp/Last screenshot.png')
-''')
+""")
             command.chmod(0o755)
             with patch.dict(os.environ, PATH=directory + ':' + os.environ['PATH']):
-                self.run_qml('''import QtQuick
+                self.run_qml("""import QtQuick
 import Quickshell
 import "drawers/capture"
 ShellRoot {
@@ -60,24 +61,44 @@ ShellRoot {
   }
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:4000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''')
+}""")
 
     def test_recording_start_waits_for_dismissal_and_survives_closed_page(self):
         seen = []
 
         def setup(root):
             # A fake service on the runtime control socket (systemd would own it).
-            directory = root / 'runtime/desktop-capture'; directory.mkdir(parents=True)
-            server = socket.socket(socket.AF_UNIX); server.bind(str(directory / 'control.sock')); server.listen()
+            directory = root / 'runtime/desktop-capture'
+            directory.mkdir(parents=True)
+            server = socket.socket(socket.AF_UNIX)
+            server.bind(str(directory / 'control.sock'))
+            server.listen()
+
             def serve():
                 with server:
                     connection, _ = server.accept()
                     with connection, connection.makefile() as requests:
                         for line in requests:
                             seen.append(json.loads(line))
-                            connection.sendall((json.dumps(dict(phase="recording" if seen[-1]["op"] == "start" else "idle", available=True, elapsed=0)) + "\n").encode())
+                            connection.sendall(
+                                (
+                                    json.dumps(
+                                        dict(
+                                            phase='recording'
+                                            if seen[-1]['op'] == 'start'
+                                            else 'idle',
+                                            available=True,
+                                            elapsed=0,
+                                        )
+                                    )
+                                    + '\n'
+                                ).encode()
+                            )
+
             threading.Thread(target=serve, daemon=True).start()
-        self.run_qml('''import QtQuick
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "drawers/capture"
 ShellRoot {
@@ -101,17 +122,23 @@ ShellRoot {
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:4000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup)
+}""",
+            setup,
+        )
         self.assertEqual(seen, [dict(op='start', source='DP-2')])
 
     def test_region_shortcut_selection_cancellation_and_stop(self):
         with tempfile.TemporaryDirectory() as directory:
             selector = Path(directory) / 'slurp'
             count = Path(directory) / 'count'
-            selector.write_text("#!/usr/bin/env python3\nimport sys\nfrom pathlib import Path\nassert sys.stdin.read() == ''\np=Path(" + repr(str(count)) + ")\nif p.exists():raise SystemExit(1)\np.touch()\nprint('640x360+6656+0')\n")
+            selector.write_text(
+                "#!/usr/bin/env python3\nimport sys\nfrom pathlib import Path\nassert sys.stdin.read() == ''\np=Path("
+                + repr(str(count))
+                + ")\nif p.exists():raise SystemExit(1)\np.touch()\nprint('640x360+6656+0')\n"
+            )
             selector.chmod(0o755)
             with patch.dict(os.environ, PATH=directory + ':' + os.environ['PATH']):
-                self.run_qml('''import QtQuick
+                self.run_qml("""import QtQuick
 import Quickshell
 import "drawers/capture"
 ShellRoot {
@@ -138,10 +165,10 @@ ShellRoot {
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''')
+}""")
 
     def test_split_button_timing_preference_and_recording_options(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import Quickshell
 import "drawers"
 import "drawers/capture"
@@ -219,15 +246,17 @@ ShellRoot {
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''')
+}""")
 
     def test_delayed_region_freezes_clipboard_choice_and_accepts_clipboard_result(self):
         with tempfile.TemporaryDirectory() as directory:
             command = Path(directory) / 'desktop-screenshot'
-            command.write_text("#!/usr/bin/env python3\nimport sys\nassert sys.stdin.read() == ''\nassert sys.argv[1:]==['region','--report','--no-save','--edit'],sys.argv\nprint('clipboard')\n")
+            command.write_text(
+                "#!/usr/bin/env python3\nimport sys\nassert sys.stdin.read() == ''\nassert sys.argv[1:]==['region','--report','--no-save','--edit'],sys.argv\nprint('clipboard')\n"
+            )
             command.chmod(0o755)
             with patch.dict(os.environ, PATH=directory + ':' + os.environ['PATH']):
-                self.run_qml('''import QtQuick
+                self.run_qml("""import QtQuick
 import Quickshell
 import "drawers/capture"
 ShellRoot {
@@ -255,10 +284,10 @@ ShellRoot {
   }
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
-}''')
+}""")
 
     def test_menu_fits_rendered_labels_hover_and_checkbox_clicks(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import QtTest
 import Quickshell
 import "drawers"
@@ -315,10 +344,10 @@ ShellRoot {
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''')
+}""")
 
     def test_combo_hover_uses_one_background_for_both_targets(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import QtTest
 import Quickshell
 import "drawers/capture"
@@ -344,10 +373,10 @@ ShellRoot {
   }
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
-}''')
+}""")
 
     def test_webcam_slider_drag_commits_new_value_and_keeps_readback(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -392,10 +421,10 @@ ShellRoot {
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:4000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''')
+}""")
 
     def test_webcam_device_controls_privacy_and_preview_lifetime(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import Quickshell
 import "drawers/capture"
 import "ui"
@@ -449,7 +478,7 @@ ShellRoot {
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''')
+}""")
 
 
 if __name__ == '__main__':

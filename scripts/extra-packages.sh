@@ -16,14 +16,17 @@ mapfile -t aur < <(jq -r '.extra.aur_packages[]' "$config")
 if ((${#aur[@]})); then
     build_dir=$(mktemp -d)
     sudoers=/etc/sudoers.d/package-build
-    [[ ! -e $sudoers && ! -L $sudoers ]] || { echo "Build sudoers file already exists: $sudoers" >&2; exit 1; }
+    [[ ! -e $sudoers && ! -L $sudoers ]] || {
+        echo "Build sudoers file already exists: $sudoers" >&2
+        exit 1
+    }
     trap 'rm -rf -- "$build_dir"; rm -f -- "$sudoers"' EXIT
     # makepkg and paru call sudo pacman; allow only that during the build.
     printf '%s ALL=(root) NOPASSWD: /usr/bin/pacman\n' "$user" > "$build_dir/sudoers"
     visudo --check --quiet --file "$build_dir/sudoers"
     install -o root -g root -m 0440 "$build_dir/sudoers" "$sudoers"
     chown "$user:" "$build_dir"
-    if ! run_as_user paru --version >/dev/null 2>&1; then
+    if ! run_as_user paru --version > /dev/null 2>&1; then
         run_as_user git clone --depth 1 https://aur.archlinux.org/paru.git "$build_dir/paru"
         # shellcheck disable=SC2016
         run_as_user bash -c 'cd -- "$1" && makepkg --noconfirm --syncdeps --install --clean' bash "$build_dir/paru"

@@ -1,4 +1,5 @@
 """Run production interaction ownership and drawer input with isolated settings."""
+
 import os
 from pathlib import Path
 import re
@@ -19,84 +20,121 @@ class DesktopInteractionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             support.copy_theme_ui(root)
-            for name in ('icons', 'drawers', 'launcher', 'bar', 'integrations', 'spaces'):
+            for name in (
+                'icons',
+                'drawers',
+                'launcher',
+                'bar',
+                'integrations',
+                'spaces',
+            ):
                 shutil.copytree(DESKTOP / name, root / name)
             # Only native surface and shortcut registration need substitutes.
             # The owner, geometry, input, controls, persistence and launcher run
             # unchanged. Native layer focus/hotplug remain live acceptance checks.
             path = root / 'ui/InteractionWindow.qml'
             source = path.read_text().replace(
-                'PanelWindow {', 'FloatingWindow {\n    implicitWidth: 1280; implicitHeight: 720', 1)
-            source = source.replace('    anchors { top: true; bottom: true; left: true; right: true }\n', '')
+                'PanelWindow {',
+                'FloatingWindow {\n    implicitWidth: 1280; implicitHeight: 720',
+                1,
+            )
+            source = source.replace(
+                '    anchors { top: true; bottom: true; left: true; right: true }\n', ''
+            )
             source = source.replace('    exclusionMode: ExclusionMode.Ignore\n', '')
             source = re.sub(r'^    WlrLayershell\..*\n', '', source, flags=re.M)
             path.write_text(source)
             path = root / 'bar/Bar.qml'
-            source = path.read_text().replace('PanelWindow {',
-                'FloatingWindow {\n    implicitWidth: 1280', 1)
-            source = source.replace('    anchors { top: true; left: true; right: true }\n', '')
+            source = path.read_text().replace(
+                'PanelWindow {', 'FloatingWindow {\n    implicitWidth: 1280', 1
+            )
+            source = source.replace(
+                '    anchors { top: true; left: true; right: true }\n', ''
+            )
             source = source.replace('    exclusiveZone: Theme.pillHeight\n', '')
             source = re.sub(r'^    WlrLayershell\..*\n', '', source, flags=re.M)
             path.write_text(source)
             for name in ('ui/DrawerHost.qml', 'launcher/Launcher.qml'):
                 path = root / name
-                source = re.sub(r'^    WlrLayershell\..*\n', '', path.read_text(), flags=re.M)
-                shortcut = 'Instantiator' if name == 'ui/DrawerHost.qml' else 'GlobalShortcut'
-                source = re.sub(r'    ' + shortcut + r' \{.*?\n    \}\n', '', source, count=1, flags=re.S)
+                source = re.sub(
+                    r'^    WlrLayershell\..*\n', '', path.read_text(), flags=re.M
+                )
+                shortcut = (
+                    'Instantiator' if name == 'ui/DrawerHost.qml' else 'GlobalShortcut'
+                )
+                source = re.sub(
+                    r'    ' + shortcut + r' \{.*?\n    \}\n',
+                    '',
+                    source,
+                    count=1,
+                    flags=re.S,
+                )
                 path.write_text(source)
             # Display popup Escape must cancel its edit instead of dismissing the host.
-            (root / 'drawers/displays/backend.py').write_text('''import json,sys
+            (root / 'drawers/displays/backend.py').write_text("""import json,sys
 state={"available":True,"token":"fixture","displays":[{"name":"test-output","identity":["test-output"],"label":"Test monitor","enabled":True,"mode":"1920x1080@60.00Hz","modes":["1920x1080@60.00Hz"],"scale":1,"transform":0,"x":0,"y":0,"mirror":"none","dpms":True}]}
 if __name__=="__main__":
  for line in sys.stdin:
   json.loads(line)
   print(json.dumps(dict(ok=True,error="",data=state)),flush=True)
-''')
-            (root / 'drawers/displays/brightness.py').write_text('import json,sys;json.loads(sys.stdin.readline());print(json.dumps(dict(ok=True,values=[])))')
-            (root / 'drawers/bluetooth/backend.py').write_text('''import json,sys
+""")
+            (root / 'drawers/displays/brightness.py').write_text(
+                'import json,sys;json.loads(sys.stdin.readline());print(json.dumps(dict(ok=True,values=[])))'
+            )
+            (root / 'drawers/bluetooth/backend.py').write_text("""import json,sys
 for line in sys.stdin:
  request=json.loads(line)
  if request.get('active'):print(json.dumps(dict(type='state',available=True,adapters=[dict(key='a',name='Laptop',address='00',powered=True)],devices=[])),flush=True)
  else:print(json.dumps(dict(type='scan',key='')),flush=True)
-''')
+""")
             # Storage uses fixture inventory; opening or dismissing must never touch host disks.
-            (root / 'drawers/disks/backend.py').write_text('''import json,sys
+            (root / 'drawers/disks/backend.py').write_text("""import json,sys
 volume=dict(key="vault",identity="vault",label="Vault",device="/dev/test1",fs="crypto_LUKS",size=1000,capacity=None,free=None,used=None,capacityError="",mounts=[],encrypted=True,locked=True,canMount=False,canUnmount=False,reason="",target="/")
 drive=dict(key="test-drive",identity="drive",label="Test drive",size=1000,connection="usb",removable=True,canEject=True,ejectReason="",healthSupported=True,volumes=[volume])
 for line in sys.stdin:
  json.loads(line)
  print(json.dumps(dict(ok=True,error="",data=dict(drives=[drive],editorAvailable=False))),flush=True)
-''')
+""")
             from test_system_drawer import snapshot as system_snapshot
+
             (root / 'drawers/system/backend.py').write_text(
-                'import json\nprint(json.dumps(' + repr(system_snapshot()) + '))\n')
+                'import json\nprint(json.dumps(' + repr(system_snapshot()) + '))\n'
+            )
             # Power drawers use fixture inventory and never mutate host profiles.
             from test_power_drawers import snapshot as power_snapshot
+
             (root / 'drawers/power/backend.py').write_text(
                 'import json,sys\n'
                 f'state={power_snapshot()!r}\n'
                 'for line in sys.stdin:\n'
                 ' request=json.loads(line)\n'
                 ' if request["op"]=="profile":state["profiles"]["active"]=request["value"]\n'
-                ' print(json.dumps(dict(ok=True,error="",data=state)),flush=True)\n')
+                ' print(json.dumps(dict(ok=True,error="",data=state)),flush=True)\n'
+            )
             # Observe real page creation/destruction, including unrelated pages.
-            (root / 'ui/ProbeState.qml').write_text('''pragma Singleton
+            (root / 'ui/ProbeState.qml').write_text("""pragma Singleton
 import QtQuick
 QtObject {
     property var events: []
     function record(event) { events = events.concat([event]); }
     function count(event) { return events.filter(value => value === event).length; }
 }
-''')
+""")
             with (root / 'ui/qmldir').open('a') as manifest:
                 manifest.write('singleton ProbeState 1.0 ProbeState.qml\n')
-            for key, name in (('displays', 'Displays'), ('spaces', 'Spaces'),
-                              ('wifi', 'Wifi'), ('bluetooth', 'Bluetooth')):
+            for key, name in (
+                ('displays', 'Displays'),
+                ('spaces', 'Spaces'),
+                ('wifi', 'Wifi'),
+                ('bluetooth', 'Bluetooth'),
+            ):
                 path = root / f'drawers/{name}Drawer.qml'
                 source = path.read_text()
                 if not re.search(r'^import QtQuick$', source, flags=re.M):
                     source = 'import QtQuick\n' + source
-                source = source.replace('DrawerPage {', f'''DrawerPage {{
+                source = source.replace(
+                    'DrawerPage {',
+                    f"""DrawerPage {{
     Item {{
         id: pageLifecycleProbe
         Component.onCompleted: ProbeState.record("created:{key}")
@@ -106,11 +144,13 @@ QtObject {
             function onActiveChanged() {{ ProbeState.record("active:{key}:" + pageLifecycleProbe.parent.active); }}
         }}
     }}
-''', 1)
+""",
+                    1,
+                )
                 path.write_text(source)
             # An additional drawer requires no host/shell/window-rule changes. Its
             # timer stands in for discovery that must stop during the exit.
-            (root / 'drawers/ProbeDrawer.qml').write_text('''import QtQuick
+            (root / 'drawers/ProbeDrawer.qml').write_text("""import QtQuick
 import QtQuick.Controls
 import "../ui"
 DrawerPage {
@@ -129,11 +169,11 @@ DrawerPage {
     Timer { interval: 1; repeat: true; running: root.active; onTriggered: root.ticks++ }
     TextField { id: field; objectName: "probeField" }
 }
-''')
+""")
             config = root / 'config/quickshell/desktop'
             config.mkdir(parents=True)
             (config / 'theme-mode').write_text('dark\n')
-            (root / 'shell.qml').write_text('''import QtQuick
+            (root / 'shell.qml').write_text("""import QtQuick
 import QtTest
 import Quickshell
 import "ui"
@@ -539,17 +579,28 @@ ShellRoot {
         } catch (e) { console.error("INTERACTIONS_FAIL", stage, e.message); Qt.quit(); }
     } }
 }
-''')
+""")
             (root / 'runtime').mkdir(mode=0o700)
-            env = {**os.environ, 'XDG_RUNTIME_DIR': str(root / 'runtime'), 'QT_QPA_PLATFORM': 'offscreen',
-                   'XDG_CONFIG_HOME': str(root / 'config'), 'XDG_DATA_HOME': str(root / 'data'),
-                   'XDG_STATE_HOME': str(root / 'state'), 'XDG_CACHE_HOME': str(root / 'cache'),
-                   'PIPEWIRE_REMOTE': 'dotfiles-tests-unavailable',
-                   'XDG_DATA_DIRS': str(root / 'empty')}
+            env = {
+                **os.environ,
+                'XDG_RUNTIME_DIR': str(root / 'runtime'),
+                'QT_QPA_PLATFORM': 'offscreen',
+                'XDG_CONFIG_HOME': str(root / 'config'),
+                'XDG_DATA_HOME': str(root / 'data'),
+                'XDG_STATE_HOME': str(root / 'state'),
+                'XDG_CACHE_HOME': str(root / 'cache'),
+                'PIPEWIRE_REMOTE': 'dotfiles-tests-unavailable',
+                'XDG_DATA_DIRS': str(root / 'empty'),
+            }
             for key in ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE'):
                 env.pop(key, None)
-            result = subprocess.run([QS, '--no-color', '-p', str(root / 'shell.qml')],
-                                    env=env, text=True, capture_output=True, timeout=20)
+            result = subprocess.run(
+                [QS, '--no-color', '-p', str(root / 'shell.qml')],
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=20,
+            )
             log = result.stdout + result.stderr
             self.assertEqual(result.returncode, 0, log)
             self.assertNotIn('INTERACTIONS_FAIL', log)

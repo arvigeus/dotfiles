@@ -8,7 +8,9 @@ import "ui"
 ShellRoot {
     Connections {
         target: Quickshell
-        function onLastWindowClosed() { Qt.quit(); }
+        function onLastWindowClosed() {
+            Qt.quit();
+        }
     }
 
     FloatingWindow {
@@ -50,8 +52,7 @@ ShellRoot {
             RowLayout {
                 spacing: Theme.spacingMedium
                 Repeater {
-                    model: [Theme.background, Theme.surface, Theme.raised, Theme.border,
-                        Theme.text, Theme.muted, Theme.accent, Theme.danger, Theme.warning, Theme.success]
+                    model: [Theme.background, Theme.surface, Theme.raised, Theme.border, Theme.text, Theme.muted, Theme.accent, Theme.danger, Theme.warning, Theme.success]
                     delegate: Rectangle {
                         required property color modelData
                         implicitWidth: 40
@@ -83,8 +84,12 @@ ShellRoot {
                 RowLayout {
                     anchors.centerIn: parent
                     spacing: Theme.gap
-                    Icon { name: "monitor" }
-                    ShellText { text: "Raised surface" }
+                    Icon {
+                        name: "monitor"
+                    }
+                    ShellText {
+                        text: "Raised surface"
+                    }
                 }
             }
             Surface {
@@ -94,8 +99,13 @@ ShellRoot {
                 RowLayout {
                     anchors.centerIn: parent
                     spacing: Theme.gap
-                    Icon { name: "settings"; color: Theme.accent }
-                    ShellText { text: "Accent surface" }
+                    Icon {
+                        name: "settings"
+                        color: Theme.accent
+                    }
+                    ShellText {
+                        text: "Accent surface"
+                    }
                 }
             }
 
@@ -108,14 +118,26 @@ ShellRoot {
                         name: modelData
                     }
                 }
-                ShellText { text: "Interface icons"; color: Theme.muted }
+                ShellText {
+                    text: "Interface icons"
+                    color: Theme.muted
+                }
             }
             RowLayout {
                 spacing: Theme.padding
-                AppIcon { icon: "firefox" }
-                AppIcon { icon: "org.kde.dolphin" }
-                AppIcon { icon: "desktop-preview-missing-icon" }
-                ShellText { text: "Application icons · missing icons stay blank"; color: Theme.muted }
+                AppIcon {
+                    icon: "firefox"
+                }
+                AppIcon {
+                    icon: "org.kde.dolphin"
+                }
+                AppIcon {
+                    icon: "desktop-preview-missing-icon"
+                }
+                ShellText {
+                    text: "Application icons · missing icons stay blank"
+                    color: Theme.muted
+                }
             }
             ShellText {
                 Layout.fillWidth: true

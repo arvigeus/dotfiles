@@ -7,9 +7,9 @@ from pathlib import Path
 
 def atomic_write(path, content, mode=0o600):
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=".pictures-", dir=path.parent)
+    descriptor, temporary = tempfile.mkstemp(prefix='.pictures-', dir=path.parent)
     try:
-        with os.fdopen(descriptor, "wb") as stream:
+        with os.fdopen(descriptor, 'wb') as stream:
             stream.write(content if isinstance(content, bytes) else content.encode())
             stream.flush()
             os.fsync(stream.fileno())

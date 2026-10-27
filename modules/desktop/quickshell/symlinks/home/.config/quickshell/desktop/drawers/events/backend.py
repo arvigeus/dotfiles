@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fast private cache reads, background synchronization and resource-level writes."""
+
 import fcntl
 import hashlib
 import json
@@ -50,13 +51,28 @@ def locked(name='sync.lock'):
 def configuration():
     path = config_root() / 'calendar.json'
     options = nextcloud.read_json(path) if path.exists() else {}
-    return {key: caldav.selection(options, key) for key in ('calendars', 'task_lists') if key in options}
+    return {
+        key: caldav.selection(options, key)
+        for key in ('calendars', 'task_lists')
+        if key in options
+    }
 
 
 def context(request):
     options = configuration()
     account = nextcloud.load_account()
-    empty = dict(events=[], tasks=[], calendars=[], task_count=0, due=False, stale=False, error='', account_id='', eventsReady=False, tasksReady=False)
+    empty = dict(
+        events=[],
+        tasks=[],
+        calendars=[],
+        task_count=0,
+        due=False,
+        stale=False,
+        error='',
+        account_id='',
+        eventsReady=False,
+        tasksReady=False,
+    )
     if not account:
         return None, None, dict(empty, state='unconfigured')
     try:
@@ -70,20 +86,41 @@ def context(request):
         raise ValueError('Choose a calendar range of at most 180 days.')
     # A replaced password file selects a new cache scope, like an account change.
     identity = [account, options, [info.st_ino, info.st_size, info.st_mtime_ns]]
-    empty['account_id'] = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
-    return {**account, **options}, cache_root() / f"{empty['account_id']}-{start}-{end}.json", empty
+    empty['account_id'] = hashlib.sha256(
+        json.dumps(identity, sort_keys=True).encode()
+    ).hexdigest()
+    return (
+        {**account, **options},
+        cache_root() / f'{empty["account_id"]}-{start}-{end}.json',
+        empty,
+    )
 
 
-ENVELOPE = ('account_id', 'start', 'end', 'upcoming_start', 'upcoming_end', 'attempt_start', 'attempt_end')
+ENVELOPE = (
+    'account_id',
+    'start',
+    'end',
+    'upcoming_start',
+    'upcoming_end',
+    'attempt_start',
+    'attempt_end',
+)
 
 
 def read_cache(path):
     try:
         value = json.loads(path.read_text())
-        if (not isinstance(value.get('data'), dict) or not isinstance(value.get('fetched'), (int, float))
-                or not isinstance(value.get('attempted'), (int, float)) or not isinstance(value.get('complete'), bool)
-                or any(not isinstance(value.get(key), str) for key in ENVELOPE)
-                or any(not isinstance(value['data'].get(key), list) for key in ('events', 'tasks', 'calendars'))):
+        if (
+            not isinstance(value.get('data'), dict)
+            or not isinstance(value.get('fetched'), (int, float))
+            or not isinstance(value.get('attempted'), (int, float))
+            or not isinstance(value.get('complete'), bool)
+            or any(not isinstance(value.get(key), str) for key in ENVELOPE)
+            or any(
+                not isinstance(value['data'].get(key), list)
+                for key in ('events', 'tasks', 'calendars')
+            )
+        ):
             return None
         return value
     except (OSError, ValueError, AttributeError):
@@ -113,7 +150,8 @@ def dirty_caches():
 
 def recover_revision():
     """Fence a terminated writer without replaying its uncertain remote request."""
-    if not revision() % 2: return
+    if not revision() % 2:
+        return
     descriptor = os.open(cache_root() / 'write.lock', os.O_CREAT | os.O_RDWR, 0o600)
     try:
         try:
@@ -128,38 +166,89 @@ def recover_revision():
 
 def envelope(data, request, account_id, fetched, **extra):
     today = date.today()
-    return dict(data=data, fetched=fetched, attempted=time.time(), account_id=account_id,
-                start=request['start'], end=request['end'],
-                upcoming_start=str(today - timedelta(days=7)), upcoming_end=str(today + timedelta(days=60)),
-                complete=True, attempt_start=request['start'], attempt_end=request['end'], **extra)
+    return dict(
+        data=data,
+        fetched=fetched,
+        attempted=time.time(),
+        account_id=account_id,
+        start=request['start'],
+        end=request['end'],
+        upcoming_start=str(today - timedelta(days=7)),
+        upcoming_end=str(today + timedelta(days=60)),
+        complete=True,
+        attempt_start=request['start'],
+        attempt_end=request['end'],
+        **extra,
+    )
 
 
 def cached_status(request, path, empty):
     """Called under the short publication lock; never performs network I/O."""
     cached = read_cache(path)
     exact = cached is not None
-    candidates = [value for item in cache_root().glob('*.json')
-                  if (value := read_cache(item)) and value['account_id'] == empty['account_id'] and value['fetched']]
+    candidates = [
+        value
+        for item in cache_root().glob('*.json')
+        if (value := read_cache(item))
+        and value['account_id'] == empty['account_id']
+        and value['fetched']
+    ]
     latest = max(candidates, key=lambda value: value['fetched'], default=None)
-    if not cached: cached = latest
-    covered = bool(cached and (exact and cached['complete'] or
-        cached['start'] <= request['start'] and cached['end'] >= request['end'] or
-        cached['upcoming_start'] <= request['start'] and cached['upcoming_end'] >= request['end']))
+    if not cached:
+        cached = latest
+    covered = bool(
+        cached
+        and (
+            exact
+            and cached['complete']
+            or cached['start'] <= request['start']
+            and cached['end'] >= request['end']
+            or cached['upcoming_start'] <= request['start']
+            and cached['upcoming_end'] >= request['end']
+        )
+    )
     now = time.time()
     stale = not cached or cached.get('dirty', False) or now - cached['fetched'] >= 900
-    same_attempt = cached and cached['attempt_start'] == request['start'] and cached['attempt_end'] == request['end']
-    due = (stale or not covered) and (not same_attempt or now - cached['attempted'] >= 300)
-    global_data = {key: latest['data'].get(key, empty.get(key)) for key in ('tasks', 'calendars', 'task_count')} if latest else {}
-    return dict({**empty, **(cached['data'] if cached else {}), **global_data},
-                state=('ready' if cached['fetched'] else 'unavailable') if cached else 'loading',
-                stale=bool(cached and cached['fetched'] and stale), due=due,
-                updated=cached['fetched'] if cached else 0, account_id=empty['account_id'],
-                eventsReady=bool(cached and cached['fetched'] and covered), tasksReady=bool(latest), tasksUpdated=latest['fetched'] if latest else 0)
+    same_attempt = (
+        cached
+        and cached['attempt_start'] == request['start']
+        and cached['attempt_end'] == request['end']
+    )
+    due = (stale or not covered) and (
+        not same_attempt or now - cached['attempted'] >= 300
+    )
+    global_data = (
+        {
+            key: latest['data'].get(key, empty.get(key))
+            for key in ('tasks', 'calendars', 'task_count')
+        }
+        if latest
+        else {}
+    )
+    return dict(
+        {**empty, **(cached['data'] if cached else {}), **global_data},
+        state=('ready' if cached['fetched'] else 'unavailable')
+        if cached
+        else 'loading',
+        stale=bool(cached and cached['fetched'] and stale),
+        due=due,
+        updated=cached['fetched'] if cached else 0,
+        account_id=empty['account_id'],
+        eventsReady=bool(cached and cached['fetched'] and covered),
+        tasksReady=bool(latest),
+        tasksUpdated=latest['fetched'] if latest else 0,
+    )
 
 
 def sort_data(data):
     data['events'].sort(key=lambda item: item['start'])
-    data['tasks'].sort(key=lambda item: (item.get('due', '') == '', item.get('due', ''), item['summary'].casefold()))
+    data['tasks'].sort(
+        key=lambda item: (
+            item.get('due', '') == '',
+            item.get('due', ''),
+            item['summary'].casefold(),
+        )
+    )
     data['task_count'] = sum(not item.get('completed') for item in data['tasks'])
     return data
 
@@ -167,7 +256,9 @@ def sort_data(data):
 def resource_rows(result, kind, request):
     if result.get('deleted'):
         return dict(events=[], tasks=[])
-    href, etag, content, collection = (result[key] for key in ('href', 'etag', 'ical', 'collection'))
+    href, etag, content, collection = (
+        result[key] for key in ('href', 'etag', 'ical', 'collection')
+    )
     entries = [(href, etag, content)]
     zone = caldav.tz.gettz()
     if kind == 'VTODO':
@@ -175,23 +266,36 @@ def resource_rows(result, kind, request):
     today = date.today()
     lower = min(date.fromisoformat(request['start']), today - timedelta(days=7))
     upper = max(date.fromisoformat(request['end']), today + timedelta(days=60))
-    return dict(events=caldav.events_from(entries, collection,
-        datetime.combine(lower, datetime.min.time(), tzinfo=zone),
-        datetime.combine(upper, datetime.min.time(), tzinfo=zone), zone), tasks=[])
+    return dict(
+        events=caldav.events_from(
+            entries,
+            collection,
+            datetime.combine(lower, datetime.min.time(), tzinfo=zone),
+            datetime.combine(upper, datetime.min.time(), tzinfo=zone),
+            zone,
+        ),
+        tasks=[],
+    )
 
 
 def patch_resource(data, href, kind, rows):
     field = 'tasks' if kind == 'VTODO' else 'events'
     updated = dict(data)
-    updated[field] = [item for item in data[field] if item.get('href') != href] + rows[field]
+    updated[field] = [item for item in data[field] if item.get('href') != href] + rows[
+        field
+    ]
     # sort_data mutates lists; preserve unrelated snapshot lists by copying them.
-    return sort_data(dict(updated, events=list(updated['events']), tasks=list(updated['tasks'])))
+    return sort_data(
+        dict(updated, events=list(updated['events']), tasks=list(updated['tasks']))
+    )
 
 
 def mutate(request, config, empty):
     account_id = empty['account_id']
     if request.get('account_id') != account_id:
-        raise nextcloud.NextcloudError('The account or collection selection changed. Review this item before saving.')
+        raise nextcloud.NextcloudError(
+            'The account or collection selection changed. Review this item before saving.'
+        )
     kind, entry = request.get('kind', 'VTODO'), request.get('entry', {})
     if kind not in ('VTODO', 'VEVENT') or not isinstance(entry, dict):
         raise ValueError('Invalid calendar item.')
@@ -200,23 +304,33 @@ def mutate(request, config, empty):
         with locked():
             # Repair an odd revision left by a terminated writer before starting.
             if revision() % 2:
-                dirty_caches(); bump_revision()
+                dirty_caches()
+                bump_revision()
             bump_revision()
         result = None
         try:
             client = caldav.Client(config)
             op = request['op']
-            if op == 'save': result = client.save_item(config, kind, entry)
-            elif op == 'complete': result = client.set_completed(config, entry, bool(request.get('completed')))
-            elif op == 'delete': result = client.delete_item(config, kind, entry)
-            else: raise ValueError('Unknown calendar operation.')
+            if op == 'save':
+                result = client.save_item(config, kind, entry)
+            elif op == 'complete':
+                result = client.set_completed(
+                    config, entry, bool(request.get('completed'))
+                )
+            elif op == 'delete':
+                result = client.delete_item(config, kind, entry)
+            else:
+                raise ValueError('Unknown calendar operation.')
             if not result.get('deleted'):
                 # Fetch just the changed resource, including its fresh ETag and
                 # any recurring master/exception. A committed PUT is never retried.
                 try:
                     raw, headers = client.request('GET', result['href'])
-                    result.update(ical=raw.decode('utf-8'), etag=headers.get('ETag', ''))
-                    if not result['etag']: raise ValueError('The updated item has no ETag.')
+                    result.update(
+                        ical=raw.decode('utf-8'), etag=headers.get('ETag', '')
+                    )
+                    if not result['etag']:
+                        raise ValueError('The updated item has no ETag.')
                 except (ValueError, OSError):
                     result['reconcile'] = True
         finally:
@@ -224,10 +338,13 @@ def mutate(request, config, empty):
                 try:
                     for path in cache_root().glob('*.json'):
                         cached = read_cache(path)
-                        if not cached or cached['account_id'] != account_id: continue
+                        if not cached or cached['account_id'] != account_id:
+                            continue
                         if result and not result.get('reconcile'):
                             rows = resource_rows(result, kind, cached)
-                            cached['data'] = patch_resource(cached['data'], result['href'], kind, rows)
+                            cached['data'] = patch_resource(
+                                cached['data'], result['href'], kind, rows
+                            )
                         else:
                             cached['dirty'] = True
                             cached['attempted'] = 0
@@ -235,11 +352,18 @@ def mutate(request, config, empty):
                 except (OSError, ValueError, KeyError):
                     # A committed remote write must not become a retryable failure
                     # merely because local publication/readback failed.
-                    if result: result['reconcile'] = True
+                    if result:
+                        result['reconcile'] = True
                 finally:
                     bump_revision()
-        response = dict(saved=True, href=result['href'], kind=kind, account_id=account_id,
-                        deleted=bool(result.get('deleted')), reconcile=bool(result.get('reconcile')))
+        response = dict(
+            saved=True,
+            href=result['href'],
+            kind=kind,
+            account_id=account_id,
+            deleted=bool(result.get('deleted')),
+            reconcile=bool(result.get('reconcile')),
+        )
         if not response['reconcile']:
             response.update(resource_rows(result, kind, request))
         return response
@@ -249,13 +373,15 @@ def handle(request):
     op = request.get('op')
     config, path, empty = context(request)
     if not config:
-        if op not in ('status', 'fetch'): raise ValueError('Configure the Nextcloud account first.')
+        if op not in ('status', 'fetch'):
+            raise ValueError('Configure the Nextcloud account first.')
         return empty
     if op not in ('status', 'fetch'):
         return mutate(request, config, empty)
     with locked():
         recover_revision()
-        if op == 'status': return cached_status(request, path, empty)
+        if op == 'status':
+            return cached_status(request, path, empty)
         token = revision()
     try:
         data = caldav.snapshot(config, start=request['start'], end=request['end'])
@@ -263,23 +389,44 @@ def handle(request):
         with locked():
             cached = read_cache(path)
             if not cached:
-                candidates = [value for item in cache_root().glob('*.json')
-                    if (value := read_cache(item)) and value['account_id'] == empty['account_id'] and value['fetched']]
-                cached = max(candidates, key=lambda value: value['fetched'], default=None)
-                if cached: cached['complete'] = False
+                candidates = [
+                    value
+                    for item in cache_root().glob('*.json')
+                    if (value := read_cache(item))
+                    and value['account_id'] == empty['account_id']
+                    and value['fetched']
+                ]
+                cached = max(
+                    candidates, key=lambda value: value['fetched'], default=None
+                )
+                if cached:
+                    cached['complete'] = False
             if not cached:
                 cached = envelope(empty.copy(), request, empty['account_id'], 0)
                 cached['complete'] = False
-            cached.update(attempted=time.time(), attempt_start=request['start'], attempt_end=request['end'], dirty=True)
+            cached.update(
+                attempted=time.time(),
+                attempt_start=request['start'],
+                attempt_end=request['end'],
+                dirty=True,
+            )
             cached['data']['error'] = str(error)
             atomic_json(path, cached)
-            return dict(cached_status(request, path, empty), stale=bool(cached['fetched']), due=False)
+            return dict(
+                cached_status(request, path, empty),
+                stale=bool(cached['fetched']),
+                due=False,
+            )
     with locked():
         # A full refresh started before/during a write cannot replace newer data.
         if revision() != token or token % 2:
             return dict(cached_status(request, path, empty), due=False, superseded=True)
         atomic_json(path, envelope(data, request, empty['account_id'], time.time()))
-        for old in sorted(cache_root().glob('*.json'), key=lambda item: item.stat().st_mtime, reverse=True)[12:]:
+        for old in sorted(
+            cache_root().glob('*.json'),
+            key=lambda item: item.stat().st_mtime,
+            reverse=True,
+        )[12:]:
             old.unlink(missing_ok=True)
         return cached_status(request, path, empty)
 
@@ -289,5 +436,9 @@ if __name__ == '__main__':
         print(json.dumps(dict(ok=True, data=handle(json.loads(sys.stdin.readline())))))
     except (ValueError, OSError, TypeError, KeyError, OverflowError):
         error = sys.exc_info()[1]
-        message = str(error) if isinstance(error, (nextcloud.NextcloudError, ValueError)) else 'Could not read calendar data.'
+        message = (
+            str(error)
+            if isinstance(error, (nextcloud.NextcloudError, ValueError))
+            else 'Could not read calendar data.'
+        )
         print(json.dumps(dict(ok=False, error=message)))

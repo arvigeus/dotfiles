@@ -142,10 +142,15 @@ helper details.
 
 ## Development checks
 
-`ci.sh` inspects tracked and unignored, untracked files. Its default mode is
+`lint.sh` inspects tracked and unignored, untracked files. Its default mode is
 read-only; `--fix` formats files before running the same checks. It formats
 Python with Ruff, shell scripts with shfmt, QML with qmlformat, and JSON with
 Python's JSON encoder. It checks Python with Ruff, shell syntax and lint with
-Bash and ShellCheck, QML parsing through qmlformat, JSON syntax, and JSONC module
-fragments through the parser used by `generate-config.py`. Required commands are
-checked only when their file type is present.
+Bash and ShellCheck, QML parsing through the Qt 6 qmlformat, JSON syntax, and
+JSONC module fragments through the parser used by `generate-config.py`. Required
+commands are checked only when their file type is present. `ruff.toml` pins the
+lint rules and format style; tests ignore E402 because they add module paths
+before importing.
+ShellCheck runs in Bash mode because many managed shell fragments are sourced
+files and do not have shebangs; SC1091 is ignored for an asset sourced from the
+runtime XDG configuration path.

@@ -1,4 +1,5 @@
 """Explicit speaker checks and an in-memory microphone recording/playback test."""
+
 import io
 import json
 import math
@@ -20,9 +21,15 @@ RATE = 24000
 RECORD_SECONDS = 10
 SAMPLES = Path('/usr/share/sounds/alsa')
 VOICES = {
-    'mono': 'Front_Center', 'front-left': 'Front_Left', 'front-right': 'Front_Right',
-    'front-center': 'Front_Center', 'rear-left': 'Rear_Left', 'rear-right': 'Rear_Right',
-    'rear-center': 'Rear_Center', 'side-left': 'Side_Left', 'side-right': 'Side_Right',
+    'mono': 'Front_Center',
+    'front-left': 'Front_Left',
+    'front-right': 'Front_Right',
+    'front-center': 'Front_Center',
+    'rear-left': 'Rear_Left',
+    'rear-right': 'Rear_Right',
+    'rear-center': 'Rear_Center',
+    'side-left': 'Side_Left',
+    'side-right': 'Side_Right',
 }
 
 
@@ -32,12 +39,19 @@ def report(phase, detail='', error=''):
 
 def connected(node):
     ports = audio.entries(node.get('ports'))
-    return not ports or any(p['name'] == node.get('active_port') and audio.available(p.get('availability')) for p in ports)
+    return not ports or any(
+        p['name'] == node.get('active_port') and audio.available(p.get('availability'))
+        for p in ports
+    )
 
 
 def require_node(kind, name):
     node = next((n for n in audio.read(kind) if n['name'] == name), None)
-    if not node or not connected(node) or (kind == 'sources' and not audio.capture_source(node)):
+    if (
+        not node
+        or not connected(node)
+        or (kind == 'sources' and not audio.capture_source(node))
+    ):
         raise ValueError('The test device is no longer available.')
     if node.get('mute'):
         raise ValueError('The test device is muted.')
@@ -53,8 +67,17 @@ def channel_audio(channel):
     # ALSA has no spoken sample for LFE, height or auxiliary channels.
     frequency = 80 if channel == 'lfe' else 440
     count = int(RATE * 0.6)
-    pcm = b''.join(struct.pack('<h', int(6000 * min(i / 240, (count - i) / 240, 1)
-                                          * math.sin(2 * math.pi * frequency * i / RATE))) for i in range(count))
+    pcm = b''.join(
+        struct.pack(
+            '<h',
+            int(
+                6000
+                * min(i / 240, (count - i) / 240, 1)
+                * math.sin(2 * math.pi * frequency * i / RATE)
+            ),
+        )
+        for i in range(count)
+    )
     output = io.BytesIO()
     with wave.open(output, 'wb') as wav:
         wav.setparams((1, 2, RATE, 0, 'NONE', 'not compressed'))
@@ -63,10 +86,16 @@ def channel_audio(channel):
 
 
 def client_args(device, stream):
-    return ['--device=' + device, '--client-name=Audio test', '--stream-name=' + stream,
-            '--property=application.id=' + APPLICATION_ID,
-            '--property=node.dont-fallback=true', '--property=node.dont-reconnect=true',
-            '--property=node.stream.restore-props=false', '--property=node.stream.restore-target=false']
+    return [
+        '--device=' + device,
+        '--client-name=Audio test',
+        '--stream-name=' + stream,
+        '--property=application.id=' + APPLICATION_ID,
+        '--property=node.dont-fallback=true',
+        '--property=node.dont-reconnect=true',
+        '--property=node.stream.restore-props=false',
+        '--property=node.stream.restore-target=false',
+    ]
 
 
 class Probe:
@@ -118,7 +147,12 @@ class Probe:
             args += ['--channel-map=' + channel, '--no-remix']
         if raw:
             args += ['--raw', '--format=s16le', '--rate=' + str(RATE), '--channels=1']
-        self.child = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.child = subprocess.Popen(
+            args,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         deadline = time.monotonic() + 15
         first = True
         try:
@@ -129,7 +163,9 @@ class Probe:
                 try:
                     self.child.communicate(input=data if first else None, timeout=0.1)
                     if self.child.returncode:
-                        raise ValueError('Could not play the audio test on this output.')
+                        raise ValueError(
+                            'Could not play the audio test on this output.'
+                        )
                     break
                 except subprocess.TimeoutExpired:
                     first = False
@@ -144,15 +180,30 @@ class Probe:
             raise ValueError('No unmuted outputs are available.')
         for sink in sinks:
             channels = sink.get('channel_map', '')
-            channels = [name.strip() for name in channels.split(',') if name.strip()] if isinstance(channels, str) else channels
+            channels = (
+                [name.strip() for name in channels.split(',') if name.strip()]
+                if isinstance(channels, str)
+                else channels
+            )
             if not channels:
                 raise ValueError('This output does not report its speaker channels.')
             for channel in channels:
                 self.check()
                 current = require_node('sinks', sink['name'])
-                if current.get('active_port') != sink.get('active_port') or current.get('channel_map') != sink.get('channel_map'):
-                    raise ValueError('The output connection changed. Run the test again.')
-                port = next((p for p in audio.entries(current.get('ports')) if p['name'] == current.get('active_port')), {})
+                if current.get('active_port') != sink.get('active_port') or current.get(
+                    'channel_map'
+                ) != sink.get('channel_map'):
+                    raise ValueError(
+                        'The output connection changed. Run the test again.'
+                    )
+                port = next(
+                    (
+                        p
+                        for p in audio.entries(current.get('ports'))
+                        if p['name'] == current.get('active_port')
+                    ),
+                    {},
+                )
                 label = audio.describe(current, port, config)['label']
                 report('speakers', label + ' · ' + channel.replace('-', ' ').title())
                 data = channel_audio(channel)
@@ -160,9 +211,20 @@ class Probe:
 
     def record(self, source, detail=''):
         require_node('sources', source)
-        self.child = subprocess.Popen(['parec', *client_args(source, 'Microphone test'), '--raw',
-                                       '--format=s16le', '--rate=' + str(RATE), '--channels=1', '--latency-msec=30'],
-                                      stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        self.child = subprocess.Popen(
+            [
+                'parec',
+                *client_args(source, 'Microphone test'),
+                '--raw',
+                '--format=s16le',
+                '--rate=' + str(RATE),
+                '--channels=1',
+                '--latency-msec=30',
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
         data = bytearray()
         started = time.monotonic()
         last_check = started
@@ -190,13 +252,15 @@ class Probe:
                                 raise InterruptedError
                             self.released = b'\n' in chunk
                         elif not chunk:
-                            raise ValueError('Microphone recording stopped unexpectedly.')
+                            raise ValueError(
+                                'Microphone recording stopped unexpectedly.'
+                            )
                         else:
                             remaining = RECORD_SECONDS * RATE * 2 - len(data)
                             data.extend(chunk[:remaining])
         finally:
             self.stop_child()
-        return data[:len(data) // 2 * 2]
+        return data[: len(data) // 2 * 2]
 
     def microphone(self):
         info = json.loads(audio.command('-f', 'json', 'info'))
@@ -207,7 +271,14 @@ class Probe:
         config, _ = audio.load_config()
         labels = []
         for node in nodes:
-            port = next((p for p in audio.entries(node.get('ports')) if p['name'] == node.get('active_port')), {})
+            port = next(
+                (
+                    p
+                    for p in audio.entries(node.get('ports'))
+                    if p['name'] == node.get('active_port')
+                ),
+                {},
+            )
             labels.append(audio.describe(node, port, config)['label'])
         detail = ' → '.join(labels)
         data = self.record(source, detail)
@@ -243,8 +314,19 @@ def main():
         report('done')
     except InterruptedError:
         pass
-    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
-        report('error', error=str(error) if isinstance(error, ValueError) else 'Could not run the audio test.')
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        subprocess.SubprocessError,
+    ) as error:
+        report(
+            'error',
+            error=str(error)
+            if isinstance(error, ValueError)
+            else 'Could not run the audio test.',
+        )
     finally:
         probe.stop_child()
 

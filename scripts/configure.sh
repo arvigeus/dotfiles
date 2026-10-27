@@ -3,11 +3,17 @@
 # module hooks and the staged home. --check and --pre run only those hooks.
 # CONFIG_MODE=install (default, inside archinstall's target) or live.
 set -Eeuo pipefail
-[[ $EUID == 0 ]] || { echo 'Run through ./apply.sh or archinstall.' >&2; exit 1; }
+[[ $EUID == 0 ]] || {
+    echo 'Run through ./apply.sh or archinstall.' >&2
+    exit 1
+}
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 config=${DOTFILES_CONFIG:-$repo_dir/user-configuration.json}
 mode=${CONFIG_MODE:-install}
-[[ $mode == live || $mode == install ]] || { echo "Unknown CONFIG_MODE: $mode" >&2; exit 1; }
+[[ $mode == live || $mode == install ]] || {
+    echo "Unknown CONFIG_MODE: $mode" >&2
+    exit 1
+}
 user=${SUDO_USER:-}
 export DOTFILES_DESKTOP
 DOTFILES_DESKTOP=$(jq -er '.extra.desktop' "$config")
@@ -25,24 +31,42 @@ run_hooks() (
 )
 
 case ${1:-} in
-    --check) run_hooks checks; exit 0 ;;
-    --pre) run_hooks pre; exit 0 ;;
+    --check)
+        run_hooks checks
+        exit 0
+        ;;
+    --pre)
+        run_hooks pre
+        exit 0
+        ;;
     '') ;;
-    *) echo "Unknown action: $1" >&2; exit 1 ;;
+    *)
+        echo "Unknown action: $1" >&2
+        exit 1
+        ;;
 esac
 
 if [[ -z $user ]]; then
     mapfile -t users < <(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 { print $1 }')
-    ((${#users[@]} == 1)) || { echo 'Expected one regular user; set SUDO_USER to select one.' >&2; exit 1; }
+    ((${#users[@]} == 1)) || {
+        echo 'Expected one regular user; set SUDO_USER to select one.' >&2
+        exit 1
+    }
     user=${users[0]}
 fi
 IFS=: read -r _ _ user_uid user_gid _ user_home _ < <(getent passwd "$user")
-[[ $user_uid != 0 && $user_home == /* && $user_home != / ]] || { echo "Unsuitable user: $user" >&2; exit 1; }
+[[ $user_uid != 0 && $user_home == /* && $user_home != / ]] || {
+    echo "Unsuitable user: $user" >&2
+    exit 1
+}
 
 if [[ $mode == install ]]; then
     # Continue from the user's own checkout so symlinked assets point into it.
     destination=$user_home/Projects/dotfiles
-    [[ ! -e $destination && ! -L $destination ]] || { echo "Checkout already exists: $destination" >&2; exit 1; }
+    [[ ! -e $destination && ! -L $destination ]] || {
+        echo "Checkout already exists: $destination" >&2
+        exit 1
+    }
     install -d -o "$user_uid" -g "$user_gid" "$user_home/Projects"
     cp -a -- "$repo_dir" "$destination"
     jq -r '.extra.host' "$config" > "$destination/host"

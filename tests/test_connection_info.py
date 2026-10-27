@@ -1,4 +1,5 @@
 """Discoverable connection details and copy controls; all network data is fake."""
+
 import shutil
 import unittest
 
@@ -10,7 +11,7 @@ class ConnectionInfoTests(unittest.TestCase):
     run_qml = fixtures.NetworkFeatureQmlTests.run_qml
 
     def test_shared_popovers_copy_live_values_and_close_without_mutations(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtTest
@@ -111,4 +112,4 @@ FloatingWindow {
   stage++;
  }catch(e){console.error("FEATURE_FAIL",stage,e.message);Qt.quit();}}}
 }
-''')
+""")

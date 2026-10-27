@@ -15,20 +15,40 @@ report=false
 output=
 editor=${DESKTOP_SCREENSHOT_EDITOR:-ksnip}
 case $mode in
-    edit) mode=region; edit=true ;;
-    region|window|output|active-window) ;;
+    edit)
+        mode=region
+        edit=true
+        ;;
+    region | window | output | active-window) ;;
     *) fail 'Choose edit, region, window, active-window, or output.' ;;
 esac
 while [[ $# -gt 0 ]]; do
     case $1 in
         --output)
             [[ $# -ge 2 && -n $2 && $mode == output ]] || fail '--output needs a display name in output mode.'
-            output=$2; shift 2 ;;
-        --edit) edit=true; shift ;;
-        --no-edit) edit=false; shift ;;
-        --save) save=true; shift ;;
-        --no-save) save=false; shift ;;
-        --report) report=true; shift ;;
+            output=$2
+            shift 2
+            ;;
+        --edit)
+            edit=true
+            shift
+            ;;
+        --no-edit)
+            edit=false
+            shift
+            ;;
+        --save)
+            save=true
+            shift
+            ;;
+        --no-save)
+            save=false
+            shift
+            ;;
+        --report)
+            report=true
+            shift
+            ;;
         *) fail "Unknown option: $1" ;;
     esac
 done
@@ -50,13 +70,13 @@ if [[ $edit == auto ]]; then
 fi
 $save || edit=false
 
-command -v grim >/dev/null || fail 'Install grim to take screenshots.'
+command -v grim > /dev/null || fail 'Install grim to take screenshots.'
 if $edit; then
     case $editor in
-        ksnip|satty) ;;
+        ksnip | satty) ;;
         *) fail 'Choose ksnip or satty as DESKTOP_SCREENSHOT_EDITOR.' ;;
     esac
-    command -v "$editor" >/dev/null || fail "Install $editor to edit screenshots."
+    command -v "$editor" > /dev/null || fail "Install $editor to edit screenshots."
 fi
 
 # Window boxes for slurp, clipped to their monitor's logical area so that
@@ -135,7 +155,7 @@ case $editor in
         ;;
 esac
 if $report; then
-    "${editor_args[@]}" >/dev/null 2>&1 &
+    "${editor_args[@]}" > /dev/null 2>&1 &
 else
     exec "${editor_args[@]}"
 fi

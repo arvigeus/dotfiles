@@ -6,5 +6,7 @@ ListView {
     id: root
     clip: true
     boundsBehavior: Flickable.StopAtBounds
-    WheelScroll { view: root }
+    WheelScroll {
+        view: root
+    }
 }

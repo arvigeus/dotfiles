@@ -1,34 +1,48 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# == 0 || ( $# == 1 && $1 == boot ) ]] || { echo 'Usage: ./vm.sh [boot]' >&2; exit 1; }
+[[ $# == 0 || ($# == 1 && $1 == boot) ]] || {
+    echo 'Usage: ./vm.sh [boot]' >&2
+    exit 1
+}
 mode=${1:-iso}
-[[ $EUID != 0 ]] || { echo 'Run ./vm.sh as your regular user.' >&2; exit 1; }
+[[ $EUID != 0 ]] || {
+    echo 'Run ./vm.sh as your regular user.' >&2
+    exit 1
+}
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles-vm"
 for tool in qemu-system-x86_64 qemu-img; do
-    command -v "$tool" >/dev/null || {
-        echo "Missing $tool; install qemu-desktop and qemu-img." >&2; exit 1;
+    command -v "$tool" > /dev/null || {
+        echo "Missing $tool; install qemu-desktop and qemu-img." >&2
+        exit 1
     }
 done
 [[ -r /dev/kvm && -w /dev/kvm ]] || {
-    echo 'KVM access is required (/dev/kvm).' >&2; exit 1;
+    echo 'KVM access is required (/dev/kvm).' >&2
+    exit 1
 }
 firmware_dir=/usr/share/edk2/x64
 [[ -r $firmware_dir/OVMF_CODE.4m.fd && -r $firmware_dir/OVMF_VARS.4m.fd ]] || {
-    echo 'UEFI firmware is missing; install edk2-ovmf.' >&2; exit 1;
+    echo 'UEFI firmware is missing; install edk2-ovmf.' >&2
+    exit 1
 }
 if [[ $mode == iso ]]; then
     for tool in bsdtar python3; do
-        command -v "$tool" >/dev/null || {
-            echo "Missing $tool; install libarchive and python." >&2; exit 1;
+        command -v "$tool" > /dev/null || {
+            echo "Missing $tool; install libarchive and python." >&2
+            exit 1
         }
     done
     read -r -p 'Arch ISO path: ' iso
-    [[ -f $iso && -r $iso ]] || { echo "Cannot read ISO: $iso" >&2; exit 1; }
+    [[ -f $iso && -r $iso ]] || {
+        echo "Cannot read ISO: $iso" >&2
+        exit 1
+    }
     iso=$(realpath -- "$iso")
 else
     [[ -f $state_dir/disk.qcow2 && -f $state_dir/OVMF_VARS.fd ]] || {
-        echo 'No saved VM disk and firmware; run ./vm.sh first.' >&2; exit 1;
+        echo 'No saved VM disk and firmware; run ./vm.sh first.' >&2
+        exit 1
     }
 fi
 mkdir -p -- "$state_dir"
@@ -44,8 +58,8 @@ if [[ $mode == iso ]]; then
     server_pid=
     cleanup() {
         if [[ -n $server_pid ]]; then
-            kill "$server_pid" 2>/dev/null || true
-            wait "$server_pid" 2>/dev/null || true
+            kill "$server_pid" 2> /dev/null || true
+            wait "$server_pid" 2> /dev/null || true
         fi
         rm -rf -- "$scratch"
     }
@@ -54,16 +68,25 @@ if [[ $mode == iso ]]; then
     bsdtar -xOf "$iso" arch/boot/x86_64/initramfs-linux.img > "$scratch/initramfs"
     entry=$(bsdtar -xOf "$iso" loader/entries/01-archiso-linux.conf)
     options=$(sed -n 's/^options[[:space:]]\+//p' <<< "$entry")
-    [[ -n $options ]] || { echo 'ISO has no supported Arch boot entry.' >&2; exit 1; }
+    [[ -n $options ]] || {
+        echo 'ISO has no supported Arch boot entry.' >&2
+        exit 1
+    }
     python3 "$repo_dir/scripts/vm-serve.py" "$repo_dir" > "$scratch/port" &
     server_pid=$!
-    for ((attempt=0; attempt<50; attempt++)); do
+    for ((attempt = 0; attempt < 50; attempt++)); do
         [[ -s $scratch/port ]] && break
-        kill -0 "$server_pid" 2>/dev/null || { echo 'Startup server failed.' >&2; exit 1; }
+        kill -0 "$server_pid" 2> /dev/null || {
+            echo 'Startup server failed.' >&2
+            exit 1
+        }
         sleep 0.1
     done
     port=$(cat "$scratch/port")
-    [[ $port =~ ^[0-9]+$ ]] || { echo 'Startup server did not become ready.' >&2; exit 1; }
+    [[ $port =~ ^[0-9]+$ ]] || {
+        echo 'Startup server did not become ready.' >&2
+        exit 1
+    }
     boot_args+=(
         -drive "media=cdrom,readonly=on,file=$(qemu_path "$iso")"
         -kernel "$scratch/linux" -initrd "$scratch/initramfs"

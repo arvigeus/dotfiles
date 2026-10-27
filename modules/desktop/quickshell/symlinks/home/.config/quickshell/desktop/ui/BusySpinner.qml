@@ -16,21 +16,33 @@ Item {
         anchors.fill: parent
         // Retained/asynchronously loaded pages can first expose a zero-size
         // canvas. Paint once it has a surface and whenever that surface returns.
-        onAvailableChanged: if (available) requestPaint()
+        onAvailableChanged: if (available)
+            requestPaint()
         onWidthChanged: requestPaint()
         onHeightChanged: requestPaint()
-        onVisibleChanged: if (visible) requestPaint()
+        onVisibleChanged: if (visible)
+            requestPaint()
         onPaint: {
             const ctx = getContext("2d");
             ctx.reset();
             const radius = Math.max(0, Math.min(width, height) / 2 - 2);
             ctx.lineWidth = 2;
             ctx.strokeStyle = root.track;
-            ctx.beginPath(); ctx.arc(width / 2, height / 2, radius, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(width / 2, height / 2, radius, 0, Math.PI * 2);
+            ctx.stroke();
             ctx.strokeStyle = root.foreground;
             ctx.lineCap = "round";
-            ctx.beginPath(); ctx.arc(width / 2, height / 2, radius, -Math.PI / 2, Math.PI * 0.6); ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(width / 2, height / 2, radius, -Math.PI / 2, Math.PI * 0.6);
+            ctx.stroke();
         }
-        RotationAnimator on rotation { from: 0; to: 360; duration: 900; loops: Animation.Infinite; running: root.running && root.visible }
+        RotationAnimator on rotation {
+            from: 0
+            to: 360
+            duration: 900
+            loops: Animation.Infinite
+            running: root.running && root.visible
+        }
     }
 }

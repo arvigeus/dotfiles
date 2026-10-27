@@ -13,11 +13,11 @@ QtObject {
         let found = null;
         for (const device of root.devices)
             for (const candidate of device.networks.values)
-                if (candidate.connected && (!found || candidate.signalStrength > found.signalStrength)) found = candidate;
+                if (candidate.connected && (!found || candidate.signalStrength > found.signalStrength))
+                    found = candidate;
         return found;
     }
     readonly property int strength: Math.round((network?.signalStrength ?? 0) * 100)
     readonly property string iconName: NetworkIcons.wifi(strength, enabled, network !== null)
-    readonly property string description: !enabled ? qsTr("Wi-Fi is off")
-        : network ? network.name + " · " + strength + qsTr("% signal") : qsTr("Wi-Fi · Not connected")
+    readonly property string description: !enabled ? qsTr("Wi-Fi is off") : network ? network.name + " · " + strength + qsTr("% signal") : qsTr("Wi-Fi · Not connected")
 }

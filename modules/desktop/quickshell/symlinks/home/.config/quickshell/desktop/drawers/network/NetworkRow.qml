@@ -39,15 +39,32 @@ Button {
     }
     Component {
         id: wifi
-        WifiIcon { strength: root.strength; secured: root.secured; foreground: root.foreground }
+        WifiIcon {
+            strength: root.strength
+            secured: root.secured
+            foreground: root.foreground
+        }
     }
     Component {
         id: standard
-        Item { Icon { anchors.centerIn: parent; width: 22; height: 22; name: root.iconName; color: root.foreground } }
+        Item {
+            Icon {
+                anchors.centerIn: parent
+                width: 22
+                height: 22
+                name: root.iconName
+                color: root.foreground
+            }
+        }
     }
     background: ButtonBackground {
         idleColor: root.connected ? Theme.accentSurface : "transparent"
-        highlighted: root.highlighted; pressed: root.down
+        highlighted: root.highlighted
+        pressed: root.down
     }
-    PassiveToolTip { target: root; text: root.hint; maximumLineCount: 18 }
+    PassiveToolTip {
+        target: root
+        text: root.hint
+        maximumLineCount: 18
+    }
 }

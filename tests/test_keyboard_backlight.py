@@ -1,4 +1,5 @@
 """Keyboard LED targeting, native levels, and serialized production QML."""
+
 import importlib.util
 import sys
 from types import SimpleNamespace
@@ -13,8 +14,10 @@ import test_keyboard_drawer as fixtures
 SOURCE = support.DESKTOP / 'drawers/keyboard/backlight.py'
 REPO = Path(__file__).resolve().parents[1]
 ADAPTERS = {
-    'asus': REPO / 'modules/hardware/devices/zephyrus/symlinks/home/.config/devices/keyboard/backends/asus.py',
-    'logitech': REPO / 'modules/hardware/peripherals/logitech/symlinks/home/.config/devices/keyboard/backends/logitech.py',
+    'asus': REPO
+    / 'modules/hardware/devices/zephyrus/symlinks/home/.config/devices/keyboard/backends/asus.py',
+    'logitech': REPO
+    / 'modules/hardware/peripherals/logitech/symlinks/home/.config/devices/keyboard/backends/logitech.py',
 }
 SPEC = importlib.util.spec_from_file_location('keyboard_backlight', SOURCE)
 backlight = importlib.util.module_from_spec(SPEC)
@@ -35,10 +38,17 @@ logitech = load_adapter('logitech')
 class AuraTests(unittest.TestCase):
     def setUp(self):
         self.aura = lighting.Provider()
-        self.props = dict(SupportedBasicModes=[0, 2, 10], LedMode=0,
-                          LedModeData=(0, 0, (166, 0, 0), (0, 0, 0), 'Med', 'Right'), Brightness=0)
-        self.properties = patch.object(self.aura, 'properties', side_effect=lambda path: self.props)
-        self.properties.start(); self.addCleanup(self.properties.stop)
+        self.props = dict(
+            SupportedBasicModes=[0, 2, 10],
+            LedMode=0,
+            LedModeData=(0, 0, (166, 0, 0), (0, 0, 0), 'Med', 'Right'),
+            Brightness=0,
+        )
+        self.properties = patch.object(
+            self.aura, 'properties', side_effect=lambda path: self.props
+        )
+        self.properties.start()
+        self.addCleanup(self.properties.stop)
 
     def test_only_supported_effects_and_real_rgb_capability_are_described(self):
         row = self.aura.describe('/keyboard', self.props)
@@ -48,18 +58,26 @@ class AuraTests(unittest.TestCase):
         self.assertFalse(self.aura.describe('/keyboard', self.props)['rgb'])
 
     def test_unsupported_effect_and_color_changes_never_write(self):
-        requests = [dict(effect=1), dict(effect=True), dict(effect=0, color='#123456'), dict(effect=2, color='#ff0000')]
+        requests = [
+            dict(effect=1),
+            dict(effect=True),
+            dict(effect=0, color='#123456'),
+            dict(effect=2, color='#ff0000'),
+        ]
         with patch.object(self.aura, 'call') as call:
             for request in requests:
-                with self.subTest(request=request), self.assertRaises(ValueError): self.aura.change_lighting('/keyboard', request)
+                with self.subTest(request=request), self.assertRaises(ValueError):
+                    self.aura.change_lighting('/keyboard', request)
             self.props['LedMode'] = 2
-            with self.assertRaisesRegex(ValueError, 'does not support'): self.aura.change_lighting('/keyboard', dict(effect=2, color='#ff0000'))
+            with self.assertRaisesRegex(ValueError, 'does not support'):
+                self.aura.change_lighting('/keyboard', dict(effect=2, color='#ff0000'))
             call.assert_not_called()
 
     def test_effect_uses_public_mode_number_and_color_preserves_other_fields(self):
         def write(path, interface, method, signature, args):
             name, value = args[1:]
             self.props[name] = value.unpack()
+
         with patch.object(self.aura, 'call', side_effect=write) as call:
             self.aura.change_lighting('/keyboard', dict(effect=10))
             self.assertEqual(call.call_args.args[-1][2].get_type_string(), 'u')
@@ -77,24 +95,47 @@ class AuraTests(unittest.TestCase):
 class LogitechTests(unittest.TestCase):
     def setUp(self):
         self.adapter = logitech.Provider()
-        self.state = dict(key='logitech:serial', identity='logitech:serial', mode=1, value=2, maximum=7, available=True,
-                          modes=[dict(id=1), dict(id=3), dict(id=255)])
+        self.state = dict(
+            key='logitech:serial',
+            identity='logitech:serial',
+            mode=1,
+            value=2,
+            maximum=7,
+            available=True,
+            modes=[dict(id=1), dict(id=3), dict(id=255)],
+        )
         self.item = SimpleNamespace(ping=lambda: True, unitId='serial', serial='serial')
         self.adapter.devices[self.state['key']] = ('receiver', self.item)
-        self.read = patch.object(self.adapter, 'read', side_effect=lambda *args: dict(self.state))
-        self.read.start(); self.addCleanup(self.read.stop)
+        self.read = patch.object(
+            self.adapter, 'read', side_effect=lambda *args: dict(self.state)
+        )
+        self.read.start()
+        self.addCleanup(self.read.stop)
         self.mode = SimpleNamespace(write=self.write_mode)
-        self.level = SimpleNamespace(read=lambda **kwargs: self.state['value'], write=self.write_level)
-        templates = SimpleNamespace(Backlight2=SimpleNamespace(build=lambda item: self.mode), Backlight2Level=SimpleNamespace(build=lambda item: self.level))
-        self.modules = patch.dict(sys.modules, {'logitech_receiver': SimpleNamespace(settings_templates=templates)})
-        self.modules.start(); self.addCleanup(self.modules.stop)
+        self.level = SimpleNamespace(
+            read=lambda **kwargs: self.state['value'], write=self.write_level
+        )
+        templates = SimpleNamespace(
+            Backlight2=SimpleNamespace(build=lambda item: self.mode),
+            Backlight2Level=SimpleNamespace(build=lambda item: self.level),
+        )
+        self.modules = patch.dict(
+            sys.modules,
+            {'logitech_receiver': SimpleNamespace(settings_templates=templates)},
+        )
+        self.modules.start()
+        self.addCleanup(self.modules.stop)
         self.writes = []
 
     def write_mode(self, value, save):
-        self.writes.append(('mode', value, save)); self.state['mode'] = value; return value
+        self.writes.append(('mode', value, save))
+        self.state['mode'] = value
+        return value
 
     def write_level(self, value, save):
-        self.writes.append(('value', value, save)); self.state['value'] = value; return value
+        self.writes.append(('value', value, save))
+        self.state['value'] = value
+        return value
 
     def test_brightness_explicitly_selects_manual_then_off_without_persisting(self):
         self.adapter.change(self.state, dict(op='set', value=6, maximum=7))
@@ -103,19 +144,30 @@ class LogitechTests(unittest.TestCase):
         self.assertEqual(self.state['mode'], 255)
 
     def test_stale_identity_unsupported_modes_and_ranges_never_write(self):
-        for request in [dict(op='mode', mode=2), dict(op='set', value=True, maximum=7), dict(op='set', value=8, maximum=7), dict(op='set', value=1, maximum=8)]:
-            with self.subTest(request=request), self.assertRaises(ValueError): self.adapter.change(self.state, request)
+        for request in [
+            dict(op='mode', mode=2),
+            dict(op='set', value=True, maximum=7),
+            dict(op='set', value=8, maximum=7),
+            dict(op='set', value=1, maximum=8),
+        ]:
+            with self.subTest(request=request), self.assertRaises(ValueError):
+                self.adapter.change(self.state, request)
         self.item.unitId = 'replacement'
-        with self.assertRaisesRegex(ValueError, 'changed'): self.adapter.change(self.state, dict(op='mode', mode=1))
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            self.adapter.change(self.state, dict(op='mode', mode=1))
         self.assertEqual(self.writes, [])
 
     def test_failed_second_write_restores_previous_level_and_mode(self):
         original = self.mode.write
+
         def fail(value, save):
-            if value == 3: raise ValueError('write failed')
+            if value == 3:
+                raise ValueError('write failed')
             return original(value, save)
+
         self.mode.write = fail
-        with self.assertRaisesRegex(ValueError, 'write failed'): self.adapter.change(self.state, dict(op='set', value=6, maximum=7))
+        with self.assertRaisesRegex(ValueError, 'write failed'):
+            self.adapter.change(self.state, dict(op='set', value=6, maximum=7))
         self.assertEqual((self.state['value'], self.state['mode']), (2, 1))
 
 
@@ -124,10 +176,22 @@ class ProviderDiscoveryTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.providers = Path(self.directory.name) / 'backends'
-        self.native = dict(key='asus::kbd_backlight', identity='native', value=1, maximum=3, available=True, reason='')
-        for item in (patch.object(backlight, 'PROVIDERS', self.providers),
-                     patch.object(backlight, 'snapshot', side_effect=lambda: [dict(self.native)])):
-            item.start(); self.addCleanup(item.stop)
+        self.native = dict(
+            key='asus::kbd_backlight',
+            identity='native',
+            value=1,
+            maximum=3,
+            available=True,
+            reason='',
+        )
+        for item in (
+            patch.object(backlight, 'PROVIDERS', self.providers),
+            patch.object(
+                backlight, 'snapshot', side_effect=lambda: [dict(self.native)]
+            ),
+        ):
+            item.start()
+            self.addCleanup(item.stop)
 
     def install(self, name):
         self.providers.mkdir(exist_ok=True)
@@ -151,12 +215,22 @@ class ProviderDiscoveryTests(unittest.TestCase):
         controller = backlight.Controller()
         self.assertEqual(list(controller.providers), ['asus'])
         aura = controller.providers['asus']
-        props = dict(SupportedBasicModes=[0], LedMode=0, LedModeData=(0, 0, (255, 0, 0), (0, 0, 0), 'Med', 'Right'))
-        with patch.object(aura, 'discover', return_value=('/aura', props)), patch.object(aura, 'change_lighting') as change:
+        props = dict(
+            SupportedBasicModes=[0],
+            LedMode=0,
+            LedModeData=(0, 0, (255, 0, 0), (0, 0, 0), 'Med', 'Right'),
+        )
+        with (
+            patch.object(aura, 'discover', return_value=('/aura', props)),
+            patch.object(aura, 'change_lighting') as change,
+        ):
             rows = controller.snapshot()
             self.assertEqual(len(rows), 1)
             row = rows[0]
-            self.assertEqual((row['provider'], row['connection'], row['rgb']), ('asus', 'Built-in keyboard', True))
+            self.assertEqual(
+                (row['provider'], row['connection'], row['rgb']),
+                ('asus', 'Built-in keyboard', True),
+            )
             with patch.object(backlight, 'handle') as handle:
                 controller.handle(dict(row, op='set', value=0))
                 handle.assert_called_once()
@@ -173,8 +247,17 @@ class ProviderDiscoveryTests(unittest.TestCase):
         controller = backlight.Controller()
         self.assertEqual(list(controller.providers), ['logitech'])
         adapter = controller.providers['logitech']
-        remote = dict(key='logitech:serial', identity='logitech:serial', value=2, maximum=7, available=True)
-        with patch.object(adapter, 'snapshot', return_value=[remote]), patch.object(adapter, 'change') as change:
+        remote = dict(
+            key='logitech:serial',
+            identity='logitech:serial',
+            value=2,
+            maximum=7,
+            available=True,
+        )
+        with (
+            patch.object(adapter, 'snapshot', return_value=[remote]),
+            patch.object(adapter, 'change') as change,
+        ):
             rows = controller.snapshot()
             self.assertEqual([row['provider'] for row in rows], ['sysfs', 'logitech'])
             request = dict(remote, op='mode', mode=1)
@@ -198,17 +281,34 @@ class BacklightTests(unittest.TestCase):
         (self.light / 'max_brightness').write_text('3')
         (self.leds / 'input::capslock').mkdir()
         (self.leds / 'panel_backlight').mkdir()
-        for item in (patch.object(backlight, 'LEDS', self.leds), patch.object(backlight.shutil, 'which', return_value='/usr/bin/brightnessctl')):
-            item.start(); self.addCleanup(item.stop)
+        for item in (
+            patch.object(backlight, 'LEDS', self.leds),
+            patch.object(
+                backlight.shutil, 'which', return_value='/usr/bin/brightnessctl'
+            ),
+        ):
+            item.start()
+            self.addCleanup(item.stop)
 
     def request(self, value=0, **changes):
         row = backlight.snapshot()[0]
-        return dict(dict(op='set', key=row['key'], identity=row['identity'], maximum=row['maximum'], value=value), **changes)
+        return dict(
+            dict(
+                op='set',
+                key=row['key'],
+                identity=row['identity'],
+                maximum=row['maximum'],
+                value=value,
+            ),
+            **changes,
+        )
 
     def test_snapshot_only_exposes_keyboard_lights_and_discrete_levels(self):
         rows = backlight.snapshot()
         self.assertEqual(len(rows), 1)
-        self.assertEqual((rows[0]['value'], rows[0]['maximum'], rows[0]['available']), (1, 3, True))
+        self.assertEqual(
+            (rows[0]['value'], rows[0]['maximum'], rows[0]['available']), (1, 3, True)
+        )
         self.light.rename(self.leds / 'removed')
         self.assertEqual(backlight.snapshot(), [])
 
@@ -216,32 +316,66 @@ class BacklightTests(unittest.TestCase):
         def write(args, **kwargs):
             (self.light / 'brightness').write_text(args[-1])
             return type('Result', (), dict(returncode=0, stderr=''))()
+
         with patch.object(backlight.subprocess, 'run', side_effect=write) as run:
             for level in (0, 3):
-                self.assertEqual(backlight.handle(self.request(level))[0]['value'], level)
-                self.assertEqual(run.call_args.args[0], ['brightnessctl', '--class=leds', '--device', 'asus::kbd_backlight', '--quiet', 'set', str(level)])
+                self.assertEqual(
+                    backlight.handle(self.request(level))[0]['value'], level
+                )
+                self.assertEqual(
+                    run.call_args.args[0],
+                    [
+                        'brightnessctl',
+                        '--class=leds',
+                        '--device',
+                        'asus::kbd_backlight',
+                        '--quiet',
+                        'set',
+                        str(level),
+                    ],
+                )
 
     def test_invalid_stale_and_indicator_requests_never_write(self):
         cases = [self.request(value) for value in (-1, 4, True, 1.5, '1')]
-        cases += [self.request(identity='replaced'), self.request(maximum=4), self.request(key='../asus::kbd_backlight'), self.request(key='input::capslock')]
+        cases += [
+            self.request(identity='replaced'),
+            self.request(maximum=4),
+            self.request(key='../asus::kbd_backlight'),
+            self.request(key='input::capslock'),
+        ]
         with patch.object(backlight.subprocess, 'run') as run:
             for request in cases:
-                with self.subTest(request=request), self.assertRaises(ValueError): backlight.handle(request)
+                with self.subTest(request=request), self.assertRaises(ValueError):
+                    backlight.handle(request)
             run.assert_not_called()
 
     def test_permission_failure_and_missing_tool_leave_hardware_unchanged(self):
-        with patch.object(backlight.subprocess, 'run', return_value=type('Result', (), dict(returncode=1, stderr='Permission denied'))()), self.assertRaisesRegex(ValueError, 'Permission'):
+        with (
+            patch.object(
+                backlight.subprocess,
+                'run',
+                return_value=type(
+                    'Result', (), dict(returncode=1, stderr='Permission denied')
+                )(),
+            ),
+            self.assertRaisesRegex(ValueError, 'Permission'),
+        ):
             backlight.handle(self.request())
         self.assertEqual((self.light / 'brightness').read_text(), '1')
         with patch.object(backlight.shutil, 'which', return_value=None):
             self.assertFalse(backlight.snapshot()[0]['available'])
-            with self.assertRaisesRegex(ValueError, 'brightnessctl'): backlight.handle(self.request())
+            with self.assertRaisesRegex(ValueError, 'brightnessctl'):
+                backlight.handle(self.request())
 
     def test_hardware_range_change_after_write_is_reported(self):
         def write(*args, **kwargs):
             (self.light / 'max_brightness').write_text('2')
             return type('Result', (), dict(returncode=0, stderr=''))()
-        with patch.object(backlight.subprocess, 'run', side_effect=write), self.assertRaisesRegex(ValueError, 'disconnected'):
+
+        with (
+            patch.object(backlight.subprocess, 'run', side_effect=write),
+            self.assertRaisesRegex(ValueError, 'disconnected'),
+        ):
             backlight.handle(self.request())
 
 
@@ -249,7 +383,7 @@ class BacklightTests(unittest.TestCase):
 class BacklightQmlTests(unittest.TestCase):
     def test_latest_slider_change_finishes_after_dismissal_and_polling_stops(self):
         def setup(root):
-            (root / 'drawers/keyboard/backlight.py').write_text('''import json,sys,time
+            (root / 'drawers/keyboard/backlight.py').write_text("""import json,sys,time
 from pathlib import Path
 p=Path(__file__).with_name('light-state.json')
 s=json.loads(p.read_text()) if p.exists() else dict(key='keyboard::kbd_backlight',identity='test',maximum=3,value=1,available=True,reason='',history='')
@@ -257,8 +391,11 @@ for line in sys.stdin:
  r=json.loads(line);time.sleep(.1)
  if r['op']=='set':s['value']=r['value'];s['history']+=str(r['value'])+',';p.write_text(json.dumps(s))
  print(json.dumps(dict(ok=True,values=[s],error='')),flush=True)
-''')
-        fixtures.KeyboardQmlTests.run_qml(self, '''import QtQuick
+""")
+
+        fixtures.KeyboardQmlTests.run_qml(
+            self,
+            """import QtQuick
 import Quickshell
 import "drawers/keyboard"
 ShellRoot {
@@ -280,10 +417,14 @@ ShellRoot {
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }
-''', setup)
+""",
+            setup,
+        )
 
     def test_cards_filter_color_effect_and_logitech_mode_controls(self):
-        fixtures.KeyboardQmlTests.run_qml(self, '''import QtQuick
+        fixtures.KeyboardQmlTests.run_qml(
+            self,
+            """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -365,7 +506,8 @@ ShellRoot {
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }
-''')
+""",
+        )
 
 
 if __name__ == '__main__':

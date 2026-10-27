@@ -1,4 +1,5 @@
 """Check native settings on disk and favorite ordering in Qt's JS engine."""
+
 import os
 from pathlib import Path
 import shutil
@@ -7,8 +8,11 @@ import tempfile
 import unittest
 
 
-LAUNCHER = (Path(__file__).resolve().parents[1] / 'modules/desktop/quickshell'
-            / 'symlinks/home/.config/quickshell/desktop/launcher')
+LAUNCHER = (
+    Path(__file__).resolve().parents[1]
+    / 'modules/desktop/quickshell'
+    / 'symlinks/home/.config/quickshell/desktop/launcher'
+)
 RUNNER = shutil.which('qmltestrunner6')
 if not RUNNER and Path('/usr/lib/qt6/bin/qmltestrunner').is_file():
     RUNNER = '/usr/lib/qt6/bin/qmltestrunner'
@@ -20,7 +24,8 @@ class LauncherFavoritesTests(unittest.TestCase):
         # Keep Quickshell's static plugins out of the Qt-only test engine.
         shutil.copyfile(LAUNCHER / 'Favorites.qml', root / 'Favorites.qml')
         shutil.copyfile(LAUNCHER / 'Search.js', root / 'Search.js')
-        qml = '''import QtQuick
+        qml = (
+            """import QtQuick
 import QtCore
 import QtTest
 import "Search.js" as Search
@@ -30,19 +35,30 @@ TestCase {
     function store(name) {
         return factory.createObject(this, {location: Qt.resolvedUrl(name + ".ini")});
     }
-''' + body + '\n}\n'
+"""
+            + body
+            + '\n}\n'
+        )
         (root / 'tst_favorites.qml').write_text(qml)
         result = subprocess.run(
             [RUNNER, '-input', str(root / 'tst_favorites.qml')],
-            text=True, capture_output=True, timeout=30,
-            env={**os.environ, 'QT_QPA_PLATFORM': 'offscreen',
-                 'XDG_CONFIG_HOME': str(root / 'config')})
+            text=True,
+            capture_output=True,
+            timeout=30,
+            env={
+                **os.environ,
+                'QT_QPA_PLATFORM': 'offscreen',
+                'XDG_CONFIG_HOME': str(root / 'config'),
+            },
+        )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_preferences_across_fresh_processes_and_first_write(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            self.run_qt(root, '''
+            self.run_qt(
+                root,
+                """
     function test_save() {
         const untouched = store("untouched");
         compare(untouched.ids, []); untouched.destroy();
@@ -55,22 +71,28 @@ TestCase {
         // Native settings should retain unrelated values in the same file.
         many.preferences.setValue("otherPreference", "keep"); many.preferences.sync();
     }
-''')
+""",
+            )
             self.assertFalse((root / 'untouched.ini').exists())
             for name in ('one', 'many', 'empty'):
                 self.assertTrue((root / (name + '.ini')).is_file())
-            self.run_qt(root, '''
+            self.run_qt(
+                root,
+                """
     function test_restore_from_disk() {
         compare(store("one").ids, ["firefox"]);
         const many = store("many"); compare(many.ids, ["kitty", "missing-app"]);
         compare(many.preferences.value("otherPreference", ""), "keep");
         compare(store("empty").ids, []);
     }
-''')
+""",
+            )
 
     def test_normalization_ranking_and_reinstalled_apps(self):
         with tempfile.TemporaryDirectory() as directory:
-            self.run_qt(Path(directory), '''
+            self.run_qt(
+                Path(directory),
+                """
     function test_normalize_and_reload_immediately() {
         const original = store("dirty");
         original.preferences.setValue("favoriteIds", ["kitty", "", 4, "kitty", "missing-app"]);
@@ -108,4 +130,5 @@ TestCase {
         compare(saved, ["missing", "z"]);
         compare(ids(installed, "absent", saved), []);
     }
-''')
+""",
+            )

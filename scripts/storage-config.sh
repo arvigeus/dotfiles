@@ -8,14 +8,14 @@ size=${2:?Expected LUKS partition size in bytes}
     exit 1
 }
 # The shared root LV needs 50 GiB; partition lengths must be MiB-aligned.
-((size > 50 * 1024**3 && size % (1024**2) == 0)) || {
+((size > 50 * 1024 ** 3 && size % (1024 ** 2) == 0)) || {
     echo 'The LUKS partition must exceed 50 GiB and be aligned to 1 MiB.' >&2
     exit 1
 }
 jq --arg device "$device" --argjson size "$size" '
     .disk_config.device_modifications[0].device = $device |
     .disk_config.device_modifications[0].partitions[1].size.value = $size
-' <<'JSON'
+' << 'JSON'
 {
     "disk_config": {
         "btrfs_options": {

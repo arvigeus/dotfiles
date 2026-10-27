@@ -52,8 +52,8 @@ UEFI settings live under `${XDG_STATE_HOME:-~/.local/state}/dotfiles-vm`.
 
 ## Development checks
 
-Run `./ci.sh` to check source formatting and syntax, or `./ci.sh --fix` to format
-supported files first. See [development checks](ARCHITECTURE.md#development-checks)
+Run `./lint.sh` to check source formatting and syntax, or `./lint.sh --fix` to
+format supported files first. See [development checks](ARCHITECTURE.md#development-checks)
 for the covered file types and tools.
 
 ## Apply to a live system

@@ -1,4 +1,5 @@
 """Real retained Space integration, asynchronous detail selection and hidden jobs."""
+
 import unittest
 import support
 from test_streaming import RAW
@@ -7,10 +8,10 @@ from test_movies_space import setup as movies_setup
 
 def setup(root):
     movies_setup(root)
-    image = root / "frame.ppm"
-    image.write_bytes(b"P6\n16 9\n255\n" + bytes((70, 35, 100)) * 144)
-    path = root / "spaces/streaming/backend.py"
-    fixture = '''    import time
+    image = root / 'frame.ppm'
+    image.write_bytes(b'P6\n16 9\n255\n' + bytes((70, 35, 100)) * 144)
+    path = root / 'spaces/streaming/backend.py'
+    fixture = """    import time
     fixture = FIXTURE
     backend = StreamingBackend()
     backend.key_path.parent.mkdir(parents=True, exist_ok=True)
@@ -45,15 +46,17 @@ def setup(root):
         time.sleep(.3)
         return "A useful summary at 01:00."
     insights.generate = generate
-'''.replace("FIXTURE", repr(RAW)).replace("FRAME", repr(image.as_uri()))
-    path.write_text(path.read_text().replace("    backend = StreamingBackend()\n", fixture))
+""".replace('FIXTURE', repr(RAW)).replace('FRAME', repr(image.as_uri()))
+    path.write_text(
+        path.read_text().replace('    backend = StreamingBackend()\n', fixture)
+    )
 
 
 def pagination_setup(root):
     setup(root)
-    path = root / "spaces/streaming/backend.py"
+    path = root / 'spaces/streaming/backend.py'
     source = path.read_text()
-    fixture = '''    previous_extract = backend.commands.extract
+    fixture = """    previous_extract = backend.commands.extract
     def paged_extract(target, **options):
         if "paging" not in target and "failing" not in target:
             return previous_extract(target, **options)
@@ -68,16 +71,24 @@ def pagination_setup(root):
         item = original_posts(channel, page)["items"][0]
         return dict(items=[dict(item, id="UgPagingPost%012d" % index, avatar=item["avatar"] if index % 2 else "", poll=[], text="A paged creator update.\\nMore details about the update.") for index in range(page*12+1, page*12+13)], more=page < 2, pageKey="posts-"+str(page))
     backend.posts.page = paged_posts
-'''
-    path.write_text(source.replace("    backend.posts.page = posts\n", "    backend.posts.page = posts\n" + fixture))
+"""
+    path.write_text(
+        source.replace(
+            '    backend.posts.page = posts\n',
+            '    backend.posts.page = posts\n' + fixture,
+        )
+    )
 
 
-@unittest.skipUnless(support.QS, "Quickshell is required")
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class StreamingSpaceTests(unittest.TestCase):
     run_qml = support.run_qml
 
-    def test_auto_paging_for_rail_grid_and_posts_preserves_scroll_and_stops_when_hidden_or_failed(self):
-        self.run_qml('''import QtQuick
+    def test_auto_paging_for_rail_grid_and_posts_preserves_scroll_and_stops_when_hidden_or_failed(
+        self,
+    ):
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "ui"
 ShellRoot {
@@ -147,10 +158,13 @@ ShellRoot {
   }
  }catch(error){console.error("DISPLAY_FAIL stage "+stage,error.message+" "+error.stack);Qt.quit();}}}
  Timer{interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout stage "+stage);Qt.quit();}}
-}''', pagination_setup)
+}""",
+            pagination_setup,
+        )
 
     def test_search_details_channels_and_hidden_analysis(self):
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -260,8 +274,10 @@ ShellRoot {
   }
  }catch(error){console.error("DISPLAY_FAIL stage "+stage,error.message+" "+error.stack);Qt.quit();}finally{driver.restart();}}}
  Timer{interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout stage "+stage);Qt.quit();}}
-}''', setup)
+}""",
+            setup,
+        )
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

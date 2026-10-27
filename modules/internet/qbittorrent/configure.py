@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Merge managed preferences into qBittorrent's Qt INI file."""
+
 from pathlib import Path
 import base64
 import hashlib
@@ -58,8 +59,11 @@ def configure(source, destination):
         # Discard the random password: no credential is needed for loopback use.
         salt = secrets.token_bytes(16)
         key = hashlib.pbkdf2_hmac('sha512', secrets.token_bytes(32), salt, 100000)
-        password = '@ByteArray(' + ':'.join(base64.b64encode(value).decode()
-                                           for value in (salt, key)) + ')'
+        password = (
+            '@ByteArray('
+            + ':'.join(base64.b64encode(value).decode() for value in (salt, key))
+            + ')'
+        )
     settings['WebUI']['Password_PBKDF2'] = password
     pending = {section: dict(values) for section, values in settings.items()}
     lines = []
@@ -91,7 +95,9 @@ def configure(source, destination):
         lines.extend(f'{key}={value}\n' for key, value in values.items())
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(mode='w', dir=destination.parent, delete=False) as output:
+    with tempfile.NamedTemporaryFile(
+        mode='w', dir=destination.parent, delete=False
+    ) as output:
         temporary = Path(output.name)
         try:
             output.write(''.join(lines))

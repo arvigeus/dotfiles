@@ -1,4 +1,5 @@
 """Optional private integrations without package updates or real agent execution."""
+
 import os
 from pathlib import Path
 import subprocess
@@ -26,22 +27,53 @@ class MaintenanceIntegrationTests(unittest.TestCase):
     def test_update_prefers_private_agent_and_preserves_literal_arguments(self):
         self.program('system-agent')
         self.program('topgrade')
-        result = subprocess.run([str(UPDATE), '--config', 'space ; $(literal).toml'],
-                                env=self.env, text=True, capture_output=True)
+        result = subprocess.run(
+            [str(UPDATE), '--config', 'space ; $(literal).toml'],
+            env=self.env,
+            text=True,
+            capture_output=True,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.splitlines(), ['update', '--config', 'space ; $(literal).toml'])
+        self.assertEqual(
+            result.stdout.splitlines(),
+            ['update', '--config', 'space ; $(literal).toml'],
+        )
 
     def test_update_uses_native_topgrade_when_private_project_is_absent(self):
         self.program('topgrade')
-        result = subprocess.run([str(UPDATE), '--no-ask-retry'], env=self.env, text=True, capture_output=True)
+        result = subprocess.run(
+            [str(UPDATE), '--no-ask-retry'],
+            env=self.env,
+            text=True,
+            capture_output=True,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), ['--no-ask-retry'])
 
     def test_backup_passes_existing_options_through_private_lock_wrapper(self):
         self.program('system-agent')
-        result = subprocess.run([str(REPO/'backup.sh'), '--dry-run', '--destination', str(self.root/'private')],
-                                env=self.env, text=True, capture_output=True)
+        result = subprocess.run(
+            [
+                str(REPO / 'backup.sh'),
+                '--dry-run',
+                '--destination',
+                str(self.root / 'private'),
+            ],
+            env=self.env,
+            text=True,
+            capture_output=True,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.splitlines(), ['--dotfiles', str(REPO), 'backup', '--',
-                                                     '--dry-run', '--destination', str(self.root/'private')])
-        self.assertFalse((self.root/'private').exists())
+        self.assertEqual(
+            result.stdout.splitlines(),
+            [
+                '--dotfiles',
+                str(REPO),
+                'backup',
+                '--',
+                '--dry-run',
+                '--destination',
+                str(self.root / 'private'),
+            ],
+        )
+        self.assertFalse((self.root / 'private').exists())

@@ -1,12 +1,17 @@
 """Artwork previews upgrade to originals and share downloads with the backdrop."""
+
 import unittest
 import support
 
 
 def setup(root):
     for name, size, color in [('low', 120, 'red'), ('full', 2400, 'green')]:
-        (root / (name + '.svg')).write_text('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d"><rect width="100%%" height="100%%" fill="%s"/></svg>' % (size, size // 2, color))
-    (root / 'spaces/movies/image_cache.py').write_text('''import sys,time,json,threading
+        (root / (name + '.svg')).write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d"><rect width="100%%" height="100%%" fill="%s"/></svg>'
+            % (size, size // 2, color)
+        )
+    (root / 'spaces/movies/image_cache.py').write_text(
+        """import sys,time,json,threading
 from pathlib import Path
 sys.path.insert(0,%r)
 from spaces.movies.worker import serve
@@ -20,7 +25,9 @@ def handle(r):
  time.sleep(.75 if key=='full' else .03)
  return (Path(%r)/(key+'.svg')).as_uri()
 serve(handle)
-''' % (str(support.DESKTOP), str(root / 'counts.json'), str(root)))
+"""
+        % (str(support.DESKTOP), str(root / 'counts.json'), str(root))
+    )
 
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
@@ -28,7 +35,8 @@ class ProgressiveImageTests(unittest.TestCase):
     run_qml = support.run_qml
 
     def test_preview_is_replaced_by_original_and_downloads_are_shared(self):
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import Quickshell.Io
 import "spaces/movies"
@@ -56,4 +64,6 @@ ShellRoot {
   console.log("DISPLAY_PASS");Qt.quit();
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:8000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup=setup)
+}""",
+            setup=setup,
+        )

@@ -1,5 +1,5 @@
-import QtQuick
 import "../movies"
+import QtQuick
 
 Worker {
     objectName: "gamesService"

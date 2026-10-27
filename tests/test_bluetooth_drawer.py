@@ -1,7 +1,6 @@
 """BlueZ pairing helper and native drawer interactions without host mutations."""
+
 import importlib.util
-import json
-import os
 import unittest
 from unittest.mock import Mock, patch
 
@@ -19,13 +18,23 @@ class PairingHelperTests(unittest.TestCase):
         self.events, self.calls, self.quit = [], [], Mock()
         self.bus = Mock()
         self.props = dict(Address='AA:BB', Paired=False)
-        self.bus.call_sync.side_effect = lambda service, path, interface, method, *a: Mock(
-            unpack=Mock(return_value=(self.props,) if method == 'GetAll' else (':bluez',)))
+        self.bus.call_sync.side_effect = lambda service, path, interface, method, *a: (
+            Mock(
+                unpack=Mock(
+                    return_value=(self.props,) if method == 'GetAll' else (':bluez',)
+                )
+            )
+        )
         self.p = backend.Pairing(self.bus, D, 'AA:BB', self.events.append, self.quit)
-        self.p.call = lambda path, interface, method, args=None, done=None, timeout=30000: self.calls.append(
-            dict(path=path, method=method, args=args, done=done))
+        self.p.call = (
+            lambda path, interface, method, args=None, done=None, timeout=30000: (
+                self.calls.append(dict(path=path, method=method, args=args, done=done))
+            )
+        )
         for name in ('timeout_add_seconds', 'source_remove'):
-            item = patch.object(backend.GLib, name, return_value=7); item.start(); self.addCleanup(item.stop)
+            item = patch.object(backend.GLib, name, return_value=7)
+            item.start()
+            self.addCleanup(item.stop)
 
     def complete(self, method, error=''):
         next(c for c in reversed(self.calls) if c['method'] == method)['done'](error)
@@ -35,16 +44,28 @@ class PairingHelperTests(unittest.TestCase):
 
     def prompt(self, kind='RequestConfirmation', args=None, sender=':bluez'):
         invocation = Mock()
-        self.p.agent(self.bus, sender, backend.AGENT_PATH, 'org.bluez.Agent1', kind,
-                     backend.GLib.Variant('(ou)', (D, 42)) if args is None else args, invocation)
+        self.p.agent(
+            self.bus,
+            sender,
+            backend.AGENT_PATH,
+            'org.bluez.Agent1',
+            kind,
+            backend.GLib.Variant('(ou)', (D, 42)) if args is None else args,
+            invocation,
+        )
         return invocation
 
     def start(self):
-        self.p.start(); self.complete('RegisterAgent')
+        self.p.start()
+        self.complete('RegisterAgent')
 
     def test_errors_are_readable(self):
-        error = backend.Gio.dbus_error_new_for_dbus_error('org.bluez.Error.AuthenticationRejected', 'Rejected')
-        self.assertEqual(backend.error_text(error), 'Pairing was rejected by the device.')
+        error = backend.Gio.dbus_error_new_for_dbus_error(
+            'org.bluez.Error.AuthenticationRejected', 'Rejected'
+        )
+        self.assertEqual(
+            backend.error_text(error), 'Pairing was rejected by the device.'
+        )
 
     def test_stale_or_paired_device_never_registers_agent(self):
         for props in (dict(Address='other'), dict(Address='AA:BB', Paired=True)):
@@ -56,16 +77,21 @@ class PairingHelperTests(unittest.TestCase):
 
     def test_confirmed_pairing_trusts_then_connects_and_exits(self):
         self.start()
-        self.assertEqual(self.calls[0]['args'].unpack(), (backend.AGENT_PATH, 'KeyboardDisplay'))
+        self.assertEqual(
+            self.calls[0]['args'].unpack(), (backend.AGENT_PATH, 'KeyboardDisplay')
+        )
         invocation = self.prompt()
         self.assertEqual(self.p.prompt['code'], '000042')
         self.p.respond(dict(id=self.p.prompt['id'], accept=True))
         invocation.return_value.assert_called_once_with(None)
         self.complete('Pair')
         self.assertEqual(self.events[-1], dict(type='connecting'))
-        self.assertEqual(self.calls[-1]['args'].unpack(), (backend.DEVICE, 'Trusted', True))
+        self.assertEqual(
+            self.calls[-1]['args'].unpack(), (backend.DEVICE, 'Trusted', True)
+        )
         self.p.cancel()  # Dismissal after pairing must not interrupt the connection.
-        self.complete('Set'); self.complete('Connect')
+        self.complete('Set')
+        self.complete('Connect')
         self.assertEqual(self.methods(), ['RegisterAgent', 'Pair', 'Set', 'Connect'])
         self.assertEqual(self.events[-1], dict(type='done', error=''))
         self.quit.assert_called_once()
@@ -86,30 +112,41 @@ class PairingHelperTests(unittest.TestCase):
 
     def test_rejection_cancels_without_trust(self):
         self.start()
-        invocation = self.prompt('RequestAuthorization', backend.GLib.Variant('(o)', (D,)))
+        invocation = self.prompt(
+            'RequestAuthorization', backend.GLib.Variant('(o)', (D,))
+        )
         self.p.respond(dict(id=self.p.prompt['id'], accept=False))
         invocation.return_dbus_error.assert_called_once()
         self.assertEqual(self.methods()[-1], 'CancelPairing')
         self.complete('Pair', 'Pairing was rejected by the device.')
         self.assertNotIn('Set', self.methods())
-        self.assertEqual(self.events[-1]['error'], 'Pairing was rejected by the device.')
+        self.assertEqual(
+            self.events[-1]['error'], 'Pairing was rejected by the device.'
+        )
 
     def test_foreign_sender_and_other_device_cannot_prompt(self):
         self.start()
         self.prompt(sender=':other').return_dbus_error.assert_called_once()
-        self.prompt(args=backend.GLib.Variant('(ou)', ('/other', 1))).return_dbus_error.assert_called_once()
+        self.prompt(
+            args=backend.GLib.Variant('(ou)', ('/other', 1))
+        ).return_dbus_error.assert_called_once()
         self.assertIsNone(self.p.prompt)
 
     def test_cancel_before_pair_and_trust_failure(self):
-        self.p.start(); self.p.cancel(); self.complete('RegisterAgent')
+        self.p.start()
+        self.p.cancel()
+        self.complete('RegisterAgent')
         self.assertNotIn('Pair', self.methods())
         self.assertEqual(self.events[-1]['error'], 'Pairing canceled.')
-        self.setUp(); self.start(); self.complete('Pair'); self.complete('Set', 'Permission denied')
+        self.setUp()
+        self.start()
+        self.complete('Pair')
+        self.complete('Set', 'Permission denied')
         self.assertNotIn('Connect', self.methods())
         self.assertTrue(self.events[-1]['error'].startswith('Paired, but'))
 
 
-QML = '''import QtQuick
+QML = """import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtTest
@@ -212,7 +249,7 @@ ShellRoot {
  }catch(e){console.error("DISPLAY_FAIL",e);steps.stop();Qt.callLater(Qt.quit);}} }
  Timer { interval:8000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();} }
 }
-'''
+"""
 
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
@@ -224,7 +261,7 @@ class BluetoothQmlTests(unittest.TestCase):
 
     def test_service_pair_helper_and_native_failure_messages(self):
         def setup(root):
-            (root / 'drawers/bluetooth/backend.py').write_text('''import json,sys
+            (root / 'drawers/bluetooth/backend.py').write_text("""import json,sys
 def emit(v): print(json.dumps(v),flush=True)
 assert sys.argv[1:]==['/dev/x','AA']
 emit(dict(type='prompt',prompt=dict(id=1,kind='RequestPasskey',code='')))
@@ -233,8 +270,10 @@ for line in sys.stdin:
  if r['op']=='respond' and r['value']=='bad': emit(dict(type='error',error='Invalid passkey'))
  elif r['op']=='respond':
   emit(dict(type='prompt',prompt=None));emit(dict(type='connecting'));emit(dict(type='done',error=''));break
-''')
-        self.run_qml('''import QtQuick
+""")
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import Quickshell.Bluetooth
 import "drawers/bluetooth"
@@ -254,7 +293,9 @@ ShellRoot {
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer {interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup)
+}""",
+            setup,
+        )
 
 
 if __name__ == '__main__':

@@ -1,6 +1,10 @@
 {
-    "packages": ["umu-launcher"],
+    "packages": [
+        "umu-launcher"
+    ],
     "extra": {
-        "aur_packages": ["legendary"]
+        "aur_packages": [
+            "legendary"
+        ]
     }
 }

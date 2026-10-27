@@ -15,9 +15,8 @@ Singleton {
     function readPalette() {
         try {
             const value = JSON.parse(paletteFile.text());
-            if (Object.keys(value).sort().join() !== "font,fontSize,monospaceFont,palettes"
-                || typeof value.fontSize !== "number" || value.fontSize < 6 || value.fontSize > 24
-                || !Number.isFinite(value.fontSize)) throw new Error("Invalid theme fields or font size");
+            if (Object.keys(value).sort().join() !== "font,fontSize,monospaceFont,palettes" || typeof value.fontSize !== "number" || value.fontSize < 6 || value.fontSize > 24 || !Number.isFinite(value.fontSize))
+                throw new Error("Invalid theme fields or font size");
             for (const key of ["font", "monospaceFont"])
                 if (typeof value[key] !== "string" || !/^[\w .+()-]{1,100}$/.test(value[key]))
                     throw new Error("Invalid font family");
@@ -26,9 +25,11 @@ Singleton {
             const keys = "accent,accentText,background,border,danger,muted,raised,success,surface,text,visited,warning";
             for (const mode of ["dark", "light"]) {
                 const palette = value.palettes[mode];
-                if (Object.keys(palette).sort().join() !== keys) throw new Error("Invalid color tokens");
+                if (Object.keys(palette).sort().join() !== keys)
+                    throw new Error("Invalid color tokens");
                 for (const color of Object.values(palette))
-                    if (typeof color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(color)) throw new Error("Colors must use #RRGGBB");
+                    if (typeof color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(color))
+                        throw new Error("Colors must use #RRGGBB");
             }
             paletteError = "";
             return value;
@@ -37,22 +38,32 @@ Singleton {
             return definition;
         }
     }
-    function start(): void { started = true; synchronize(); }
-    function synchronize(): void { if (started && !paletteError) { pending = true; syncTimer.restart(); } }
+    function start(): void {
+        started = true;
+        synchronize();
+    }
+    function synchronize(): void {
+        if (started && !paletteError) {
+            pending = true;
+            syncTimer.restart();
+        }
+    }
     onModeChanged: synchronize()
     onDefinitionChanged: synchronize()
     FileView {
         id: paletteFile
         path: "/etc/desktop-palette.json"
-        blockLoading: true; watchChanges: true
+        blockLoading: true
+        watchChanges: true
         onFileChanged: reload()
         onTextChanged: root.definition = root.readPalette()
     }
     FileView {
         id: modeFile
-        path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config")
-            + "/quickshell/desktop/theme-mode"
-        blockLoading: true; watchChanges: true; atomicWrites: true
+        path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/quickshell/desktop/theme-mode"
+        blockLoading: true
+        watchChanges: true
+        atomicWrites: true
         printErrors: false
         onFileChanged: reload()
         onSaved: reload()
@@ -92,7 +103,9 @@ Singleton {
             const values = [luminance(color), luminance(palette.accent)].sort((a, b) => a - b);
             return (values[1] + 0.05) / (values[0] + 0.05);
         }
-        for (const value of [palette.accentText, palette.text]) if (contrast(value) >= 4.5) return value;
+        for (const value of [palette.accentText, palette.text])
+            if (contrast(value) >= 4.5)
+                return value;
         return contrast("#000000") >= contrast("#ffffff") ? "#000000" : "#ffffff";
     }
     readonly property color accentText: selectionText(palette)
@@ -128,7 +141,8 @@ Singleton {
         id: syncTimer
         interval: 120
         onTriggered: {
-            if (sync.running) return;
+            if (sync.running)
+                return;
             root.pending = false;
             sync.running = true;
         }
@@ -138,14 +152,19 @@ Singleton {
         command: ["python3", Quickshell.shellPath("ui/theme.py")]
         stdout: StdioCollector {
             onStreamFinished: {
-                try { root.error = JSON.parse(text).warnings.join("\n"); }
-                catch (_) { /* Failed commands report stderr below. */ }
+                try {
+                    root.error = JSON.parse(text).warnings.join("\n");
+                } catch (_) { /* Failed commands report stderr below. */ }
             }
         }
-        stderr: StdioCollector { id: syncErrors }
+        stderr: StdioCollector {
+            id: syncErrors
+        }
         onExited: (code, status) => {
-            if (code !== 0) root.error = qsTr("Could not apply appearance: ") + syncErrors.text.trim();
-            if (root.pending) syncTimer.restart();
+            if (code !== 0)
+                root.error = qsTr("Could not apply appearance: ") + syncErrors.text.trim();
+            if (root.pending)
+                syncTimer.restart();
         }
     }
 }

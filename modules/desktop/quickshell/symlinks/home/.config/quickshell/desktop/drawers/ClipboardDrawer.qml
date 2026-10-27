@@ -9,11 +9,14 @@ DrawerPage {
     id: root
     Connections {
         target: ClipboardService
-        function onCopied(): void { root.closeRequested(); }
+        function onCopied(): void {
+            root.closeRequested();
+        }
     }
     Component.onCompleted: searchField.submit()
     onActiveChanged: {
-        if (active) searchField.submit();
+        if (active)
+            searchField.submit();
     }
     escapeHandler: null
 
@@ -66,7 +69,12 @@ DrawerPage {
             clearAccessibleName: qsTr("Clear clipboard search")
             onSearchRequested: query => ClipboardService.search(query)
         }
-        Note { objectName: "clipboardError"; visible: ClipboardService.error !== ""; text: ClipboardService.error; color: Theme.danger }
+        Note {
+            objectName: "clipboardError"
+            visible: ClipboardService.error !== ""
+            text: ClipboardService.error
+            color: Theme.danger
+        }
         Note {
             objectName: "clipboardPausedNotice"
             visible: ClipboardService.paused
@@ -104,7 +112,8 @@ DrawerPage {
                 radius: Theme.radius
                 color: Theme.surface
                 border.color: Theme.border
-                Component.onCompleted: if (modelData.image) ClipboardService.loadThumbnail(modelData.id)
+                Component.onCompleted: if (modelData.image)
+                    ClipboardService.loadThumbnail(modelData.id)
 
                 RowLayout {
                     id: row
@@ -130,7 +139,11 @@ DrawerPage {
                                 visible: card.modelData.image
                                 Layout.preferredWidth: 88
                                 Layout.preferredHeight: 64
-                                Rectangle { anchors.fill: parent; radius: Theme.controlRadius; color: Theme.background }
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: Theme.controlRadius
+                                    color: Theme.background
+                                }
                                 Image {
                                     anchors.fill: parent
                                     source: ClipboardService.thumbnails[card.modelData.id] || ""
@@ -142,7 +155,8 @@ DrawerPage {
                                 Icon {
                                     anchors.centerIn: parent
                                     name: "camera"
-                                    width: 22; height: 22
+                                    width: 22
+                                    height: 22
                                     color: Theme.muted
                                     visible: !ClipboardService.thumbnails[card.modelData.id]
                                 }
@@ -150,7 +164,8 @@ DrawerPage {
                             Icon {
                                 visible: !card.modelData.image
                                 name: "clipboard"
-                                width: 18; height: 18
+                                width: 18
+                                height: 18
                                 color: Theme.muted
                             }
                             ColumnLayout {
@@ -188,5 +203,4 @@ DrawerPage {
             }
         }
     }
-
 }

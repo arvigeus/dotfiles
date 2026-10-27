@@ -3,6 +3,7 @@ import QtQuick
 // Both layers use the same cache: previews appear while the original is loading.
 Item {
     id: root
+
     property var cacheService: ImageCache
     property url source: ""
     property url previewSource: ""
@@ -23,6 +24,7 @@ Item {
 
     CrossfadeImage {
         id: preview
+
         objectName: root.previewImageObjectName
         anchors.fill: parent
         cacheService: root.cacheService
@@ -32,10 +34,17 @@ Item {
         fillMode: root.fillMode
         horizontalAlignment: root.horizontalAlignment
         opacity: root.usingPreview ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 240 } }
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: 240
+            }
+        }
     }
+
     CrossfadeImage {
         id: original
+
         objectName: root.fullImageObjectName
         anchors.fill: parent
         cacheService: root.cacheService
@@ -47,6 +56,11 @@ Item {
         fillMode: root.fillMode
         horizontalAlignment: root.horizontalAlignment
         opacity: original.hasImage ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 240 } }
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: 240
+            }
+        }
     }
 }

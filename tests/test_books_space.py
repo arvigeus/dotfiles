@@ -1,32 +1,53 @@
 """Books uses production workers, controls and the retained fullscreen host."""
+
 import sys
 import unittest
 
 import support
 from test_movies_space import setup as movies_setup
+
 sys.path.insert(0, str(support.DESKTOP))
 from spaces.books.backend import BooksBackend
 
 
 def setup(root):
     movies_setup(root)
-    backend = BooksBackend(root / 'config/quickshell/desktop/spaces/books/books.json',
-                           root / 'data/quickshell/desktop/spaces/books',
-                           root / 'cache/quickshell/desktop/spaces/books')
-    book = dict(id='OL100W', title='Fixture book', authors=[dict(id='OL1A', name='Fixture author')],
-                firstPublishYear=2024, editionCount=2, languages=['eng'], description='A saved synopsis',
-                ratingAverage=4.2, ratingCount=12, coverSmall='', coverLarge='')
+    backend = BooksBackend(
+        root / 'config/quickshell/desktop/spaces/books/books.json',
+        root / 'data/quickshell/desktop/spaces/books',
+        root / 'cache/quickshell/desktop/spaces/books',
+    )
+    book = dict(
+        id='OL100W',
+        title='Fixture book',
+        authors=[dict(id='OL1A', name='Fixture author')],
+        firstPublishYear=2024,
+        editionCount=2,
+        languages=['eng'],
+        description='A saved synopsis',
+        ratingAverage=4.2,
+        ratingCount=12,
+        coverSmall='',
+        coverLarge='',
+    )
     artwork = root / 'book-art.svg'
-    artwork.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450"><rect width="300" height="450" fill="#315a68"/><text x="35" y="130" fill="white" font-size="30">Fixture book</text></svg>')
-    book['coverSmall'] = artwork.as_uri(); book['coverLarge'] = artwork.as_uri()
+    artwork.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450"><rect width="300" height="450" fill="#315a68"/><text x="35" y="130" fill="white" font-size="30">Fixture book</text></svg>'
+    )
+    book['coverSmall'] = artwork.as_uri()
+    book['coverLarge'] = artwork.as_uri()
     backend.put_cache('work:OL100W', book)
     backend._save_favorite(book, True)
-    backend.put_cache('author:OL1A', dict(id='OL1A', name='Fixture author', biography='A saved biography'))
-    backend.downloads.stop(); backend.commands.close()
+    backend.put_cache(
+        'author:OL1A',
+        dict(id='OL1A', name='Fixture author', biography='A saved biography'),
+    )
+    backend.downloads.stop()
+    backend.commands.close()
     path = root / 'spaces/books/backend.py'
     source = path.read_text()
     # Use the real request/response path and database without contacting any provider.
-    fixture = '''    original_browse = BooksBackend.browse
+    fixture = """    original_browse = BooksBackend.browse
     BooksBackend.browse = lambda self, request: original_browse(self, dict(request, favorites=True))
     BooksBackend.author_details = lambda self, request: dict(id="OL1A",name="Fixture author",biography="A saved biography")
     BooksBackend.author_works = lambda self, request: dict(items=self.browse({})["items"],next="")
@@ -44,8 +65,12 @@ def setup(root):
                 return dict(path=self.local.add(title,source))
         return self.downloads.start("Fixture download", action)
     BooksBackend.queue_provider_download = delayed_download
-'''
-    path.write_text(source.replace('    backend = BooksBackend()\n', fixture + '    backend = BooksBackend()\n'))
+"""
+    path.write_text(
+        source.replace(
+            '    backend = BooksBackend()\n', fixture + '    backend = BooksBackend()\n'
+        )
+    )
 
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
@@ -53,7 +78,8 @@ class BooksSpaceTests(unittest.TestCase):
     run_qml = support.run_qml
 
     def test_layout_details_escape_retention_jobs_and_independent_close(self):
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -155,4 +181,6 @@ ShellRoot {
  }catch(error){console.error("DISPLAY_FAIL",error.message+" "+error.stack);Qt.quit();}finally{driver.restart();}}}
  Timer {interval:11000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at "+root.step);Qt.quit();}}
 }
-''', setup=setup)
+""",
+            setup=setup,
+        )

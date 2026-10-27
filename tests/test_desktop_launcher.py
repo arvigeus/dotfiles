@@ -1,4 +1,5 @@
 """Exercise launcher search in Qt's JavaScript engine with native-entry identities."""
+
 import os
 from pathlib import Path
 import shutil
@@ -7,8 +8,11 @@ import tempfile
 import unittest
 
 
-LAUNCHER = (Path(__file__).resolve().parents[1] / 'modules/desktop/quickshell'
-            / 'symlinks/home/.config/quickshell/desktop/launcher')
+LAUNCHER = (
+    Path(__file__).resolve().parents[1]
+    / 'modules/desktop/quickshell'
+    / 'symlinks/home/.config/quickshell/desktop/launcher'
+)
 RUNNER = shutil.which('qmltestrunner6')
 if not RUNNER and Path('/usr/lib/qt6/bin/qmltestrunner').is_file():
     RUNNER = '/usr/lib/qt6/bin/qmltestrunner'
@@ -17,7 +21,7 @@ if not RUNNER and Path('/usr/lib/qt6/bin/qmltestrunner').is_file():
 @unittest.skipUnless(RUNNER, 'Qt 6 Quick Test is required')
 class LauncherSearchTests(unittest.TestCase):
     def test_search_and_catalogue_updates(self):
-        qml = '''import QtQuick
+        qml = """import QtQuick
 import QtTest
 import "Search.js" as Search
 TestCase {
@@ -69,12 +73,16 @@ TestCase {
         compare(Search.matches(Search.catalogue([alpha]), "renamed")[0], alpha);
     }
 }
-'''
+"""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copyfile(LAUNCHER / 'Search.js', root / 'Search.js')
             (root / 'tst_search.qml').write_text(qml)
             result = subprocess.run(
-                [RUNNER, '-input', directory], text=True, capture_output=True,
-                env={**os.environ, 'QT_QPA_PLATFORM': 'offscreen'}, timeout=30)
+                [RUNNER, '-input', directory],
+                text=True,
+                capture_output=True,
+                env={**os.environ, 'QT_QPA_PLATFORM': 'offscreen'},
+                timeout=30,
+            )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

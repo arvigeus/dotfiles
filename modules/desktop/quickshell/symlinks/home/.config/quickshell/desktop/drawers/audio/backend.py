@@ -2,6 +2,7 @@
 
 Volume, mute, defaults and application streams are handled natively by Quickshell.
 """
+
 import ctypes
 import json
 import math
@@ -15,7 +16,9 @@ import sys
 import time
 
 
-CONFIG_DIR = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'devices/audio'
+CONFIG_DIR = (
+    Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'devices/audio'
+)
 # Port switches can emit only an endpoint change, including changes made by
 # WirePlumber or another mixer. Debounce all device events; publish() suppresses
 # inventory that is unchanged by native volume/mute updates.
@@ -24,9 +27,13 @@ DEBOUNCE = 0.15
 
 
 def command(*args):
-    result = subprocess.run(['pactl', *map(str, args)], capture_output=True, text=True, timeout=5)
+    result = subprocess.run(
+        ['pactl', *map(str, args)], capture_output=True, text=True, timeout=5
+    )
     if result.returncode:
-        raise ValueError('Audio service unavailable or the device changed. Refresh and try again.')
+        raise ValueError(
+            'Audio service unavailable or the device changed. Refresh and try again.'
+        )
     return result.stdout
 
 
@@ -49,25 +56,52 @@ def read_config(path):
     if not isinstance(config, dict) or not isinstance(config.get('rules', []), list):
         raise ValueError('expected an object containing rules')
     profiles = config.get('profiles', {})
-    if not isinstance(profiles, dict) or any(not isinstance(label, str) or not label.strip() for label in profiles.values()):
+    if not isinstance(profiles, dict) or any(
+        not isinstance(label, str) or not label.strip() for label in profiles.values()
+    ):
         raise ValueError('profile names must be non-empty strings')
     for rule in config.get('rules', []):
-        if not isinstance(rule, dict) or not isinstance(rule.get('label'), str) or not rule['label'].strip():
+        if (
+            not isinstance(rule, dict)
+            or not isinstance(rule.get('label'), str)
+            or not rule['label'].strip()
+        ):
             raise ValueError('each rule needs a label')
-        if 'deviceLabel' in rule and (not isinstance(rule['deviceLabel'], str) or not rule['deviceLabel'].strip()):
+        if 'deviceLabel' in rule and (
+            not isinstance(rule['deviceLabel'], str) or not rule['deviceLabel'].strip()
+        ):
             raise ValueError('deviceLabel must be a non-empty string')
         if not rule.get('match') and not rule.get('contains'):
             raise ValueError('each rule needs match or contains properties')
         for key in ('match', 'contains'):
-            if not isinstance(rule.get(key, {}), dict) or any(not isinstance(v, str) for v in rule.get(key, {}).values()):
+            if not isinstance(rule.get(key, {}), dict) or any(
+                not isinstance(v, str) for v in rule.get(key, {}).values()
+            ):
                 raise ValueError('matching values must be strings')
-        if rule.get('icon', 'volume-2') not in ('volume-2', 'headphones', 'monitor', 'bluetooth', 'speaker', 'mic', 'mic-off'):
+        if rule.get('icon', 'volume-2') not in (
+            'volume-2',
+            'headphones',
+            'monitor',
+            'bluetooth',
+            'speaker',
+            'mic',
+            'mic-off',
+        ):
             raise ValueError('unknown device icon')
         limit = rule.get('maxVolume', 150)
-        if isinstance(limit, bool) or not isinstance(limit, (int, float)) or not math.isfinite(limit) or not 1 <= limit <= 150:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, (int, float))
+            or not math.isfinite(limit)
+            or not 1 <= limit <= 150
+        ):
             raise ValueError('maxVolume must be between 1 and 150')
         priority = rule.get('priority', 0)
-        if isinstance(priority, bool) or not isinstance(priority, (int, float)) or not math.isfinite(priority):
+        if (
+            isinstance(priority, bool)
+            or not isinstance(priority, (int, float))
+            or not math.isfinite(priority)
+        ):
             raise ValueError('rule priority must be a finite number')
     return config
 
@@ -76,17 +110,25 @@ def load_config(directory=CONFIG_DIR):
     config = {'rules': [], 'profiles': {}}
     warnings = []
     try:
-        paths = sorted(p for p in directory.iterdir() if p.suffix == '.json' and p.is_file())
+        paths = sorted(
+            p for p in directory.iterdir() if p.suffix == '.json' and p.is_file()
+        )
     except FileNotFoundError:
         return config, ''
     except OSError as error:
-        return config, f'Could not read {directory}: {error}. Using reported device names.'
+        return (
+            config,
+            f'Could not read {directory}: {error}. Using reported device names.',
+        )
     for path in paths:
         try:
             fragment = read_config(path)
             profiles = fragment.get('profiles', {})
-            conflicts = [name for name, label in profiles.items()
-                         if name in config['profiles'] and config['profiles'][name] != label]
+            conflicts = [
+                name
+                for name, label in profiles.items()
+                if name in config['profiles'] and config['profiles'][name] != label
+            ]
             if conflicts:
                 raise ValueError('conflicting profile labels: ' + ', '.join(conflicts))
             config['rules'].extend(fragment.get('rules', []))
@@ -97,16 +139,27 @@ def load_config(directory=CONFIG_DIR):
 
 
 def identity(sink, port):
-    return {**sink.get('properties', {}), **port.get('properties', {}),
-            'node.name': sink['name'], 'node.description': sink.get('description', ''),
-            'port.name': port.get('name', ''), 'port.description': port.get('description', '')}
+    return {
+        **sink.get('properties', {}),
+        **port.get('properties', {}),
+        'node.name': sink['name'],
+        'node.description': sink.get('description', ''),
+        'port.name': port.get('name', ''),
+        'port.description': port.get('description', ''),
+    }
 
 
 def matching_rules(node, port, config):
     props = identity(node, port)
-    rules = sorted(config.get('rules', []), key=lambda rule: rule.get('priority', 0), reverse=True)
-    return [r for r in rules if all(str(props.get(k, '')) == v for k, v in r.get('match', {}).items())
-            and all(v in str(props.get(k, '')) for k, v in r.get('contains', {}).items())]
+    rules = sorted(
+        config.get('rules', []), key=lambda rule: rule.get('priority', 0), reverse=True
+    )
+    return [
+        r
+        for r in rules
+        if all(str(props.get(k, '')) == v for k, v in r.get('match', {}).items())
+        and all(v in str(props.get(k, '')) for k, v in r.get('contains', {}).items())
+    ]
 
 
 def describe(sink, port, config):
@@ -114,22 +167,52 @@ def describe(sink, port, config):
     rule = next(iter(matching_rules(sink, port, config)), {})
     description = sink.get('description') or sink['name']
     port_name = port.get('description', '')
-    if port.get('name', '').startswith('hdmi-output-') and port['name'].rsplit('-', 1)[-1].isdigit():
-        connection = 'Display connection ' + str(int(port['name'].rsplit('-', 1)[-1]) + 1)
+    if (
+        port.get('name', '').startswith('hdmi-output-')
+        and port['name'].rsplit('-', 1)[-1].isdigit()
+    ):
+        connection = 'Display connection ' + str(
+            int(port['name'].rsplit('-', 1)[-1]) + 1
+        )
     elif sink['name'].rsplit('.', 1)[-1].startswith('pro-output-'):
-        connection = sink['name'].rsplit('.', 1)[-1].replace('pro-output-', 'Hardware output ')
+        connection = (
+            sink['name'].rsplit('.', 1)[-1].replace('pro-output-', 'Hardware output ')
+        )
     else:
-        connection = port_name or sink.get('properties', {}).get('device.profile.description') or sink['name'].rsplit('.', 1)[-1].replace('-', ' ')
-    label = rule.get('label', '').replace('{port}', connection) or (f'{description} · {port_name}' if port_name and port_name.lower() not in description.lower() else description)
+        connection = (
+            port_name
+            or sink.get('properties', {}).get('device.profile.description')
+            or sink['name'].rsplit('.', 1)[-1].replace('-', ' ')
+        )
+    label = rule.get('label', '').replace('{port}', connection) or (
+        f'{description} · {port_name}'
+        if port_name and port_name.lower() not in description.lower()
+        else description
+    )
     kind = str(port.get('type', '')).lower()
-    icon = rule.get('icon') or ('headphones' if kind in ('headphones', 'headset') else 'monitor' if kind in ('hdmi', 'displayport')
-                               else 'mic' if props.get('media.class') == 'Audio/Source' or kind in ('mic', 'microphone')
-                               else 'bluetooth' if sink['name'].startswith('bluez_') else 'speaker')
+    icon = rule.get('icon') or (
+        'headphones'
+        if kind in ('headphones', 'headset')
+        else 'monitor'
+        if kind in ('hdmi', 'displayport')
+        else 'mic'
+        if props.get('media.class') == 'Audio/Source' or kind in ('mic', 'microphone')
+        else 'bluetooth'
+        if sink['name'].startswith('bluez_')
+        else 'speaker'
+    )
     return dict(label=label, icon=icon, maxVolume=rule.get('maxVolume', 150))
 
 
 def volume(node):
-    return round(max((channel.get('value', 0) for channel in node.get('volume', {}).values()), default=0) / 65536 * 100)
+    return round(
+        max(
+            (channel.get('value', 0) for channel in node.get('volume', {}).values()),
+            default=0,
+        )
+        / 65536
+        * 100
+    )
 
 
 def limit_volume(kind, node, ceiling):
@@ -138,29 +221,50 @@ def limit_volume(kind, node, ceiling):
     peak = max(levels, default=0)
     cap = int(ceiling * 65536 / 100)
     if peak > cap:
-        command('set-' + kind + '-volume', node['name'] if kind == 'sink' else node['index'],
-                *(value * cap // peak for value in levels))
+        command(
+            'set-' + kind + '-volume',
+            node['name'] if kind == 'sink' else node['index'],
+            *(value * cap // peak for value in levels),
+        )
 
 
 def card_for(node, cards):
     props = node.get('properties', {})
-    return next((card for card in cards if card['name'] == props.get('device.name')
-                 or str(card['index']) == str(node.get('card', props.get('device.id')))), None)
+    return next(
+        (
+            card
+            for card in cards
+            if card['name'] == props.get('device.name')
+            or str(card['index']) == str(node.get('card', props.get('device.id')))
+        ),
+        None,
+    )
 
 
 def capture_source(node):
-    return node.get('properties', {}).get('device.class') != 'monitor' and not node['name'].endswith('.monitor')
+    return node.get('properties', {}).get('device.class') != 'monitor' and not node[
+        'name'
+    ].endswith('.monitor')
 
 
 def profile_parts(profile):
     parts = profile['name'].split('+')
     if all(part.startswith(('output:', 'input:')) for part in parts):
-        return tuple(sorted(p for p in parts if p.startswith('output:'))), tuple(sorted(p for p in parts if p.startswith('input:')))
+        return tuple(sorted(p for p in parts if p.startswith('output:'))), tuple(
+            sorted(p for p in parts if p.startswith('input:'))
+        )
     return ((profile['name'],) if profile.get('sinks', 0) else ()), ()
 
 
 def current_profile(card):
-    return next((p for p in entries(card.get('profiles', {})) if p['name'] == card.get('active_profile')), {})
+    return next(
+        (
+            p
+            for p in entries(card.get('profiles', {}))
+            if p['name'] == card.get('active_profile')
+        ),
+        {},
+    )
 
 
 def resolve_profile(card, playback=None, capture=None, port=None):
@@ -170,14 +274,25 @@ def resolve_profile(card, playback=None, capture=None, port=None):
     outputs, inputs = profile_parts(current)
     playback = outputs if playback is None else playback
     capture = bool(current.get('sources', 0)) if capture is None else capture
-    candidates = [p for p in entries(card.get('profiles', {}))
-                  if available(p.get('available')) and profile_parts(p)[0] == playback
-                  and bool(p.get('sources', 0)) == capture]
+    candidates = [
+        p
+        for p in entries(card.get('profiles', {}))
+        if available(p.get('available'))
+        and profile_parts(p)[0] == playback
+        and bool(p.get('sources', 0)) == capture
+    ]
     route = next((p for p in entries(card.get('ports', {})) if p['name'] == port), None)
     if route and route.get('profiles'):
         candidates = [p for p in candidates if p['name'] in route['profiles']]
-    return max(candidates, key=lambda p: (p['name'] == current['name'], profile_parts(p)[1] == inputs,
-                                         p.get('priority', 0)), default=None)
+    return max(
+        candidates,
+        key=lambda p: (
+            p['name'] == current['name'],
+            profile_parts(p)[1] == inputs,
+            p.get('priority', 0),
+        ),
+        default=None,
+    )
 
 
 def playback_profiles(card, config, port=None):
@@ -193,10 +308,19 @@ def playback_profiles(card, config, port=None):
         if name in modes:
             continue
         target = resolve_profile(card, outputs, port=port)
-        label = config.get('profiles', {}).get(name, profile.get('description', name).split(' + ')[0])
-        modes[name] = dict(name=name, label=label, selected=profile_parts(active)[0] == outputs,
-                           enabled=target is not None, description=profile.get('description', name),
-                           reason='' if target else 'This mode cannot preserve the current microphone or output connection.')
+        label = config.get('profiles', {}).get(
+            name, profile.get('description', name).split(' + ')[0]
+        )
+        modes[name] = dict(
+            name=name,
+            label=label,
+            selected=profile_parts(active)[0] == outputs,
+            enabled=target is not None,
+            description=profile.get('description', name),
+            reason=''
+            if target
+            else 'This mode cannot preserve the current microphone or output connection.',
+        )
     return list(modes.values())
 
 
@@ -205,7 +329,11 @@ def endpoint_match(old, candidates, allow_fallback=True):
     if exact:
         return exact[0]
     device = old.get('properties', {}).get('alsa.device')
-    same_device = [n for n in candidates if device is not None and n.get('properties', {}).get('alsa.device') == device]
+    same_device = [
+        n
+        for n in candidates
+        if device is not None and n.get('properties', {}).get('alsa.device') == device
+    ]
     if len(same_device) == 1:
         return same_device[0]
     return candidates[0] if allow_fallback and len(candidates) == 1 else None
@@ -217,13 +345,22 @@ def select_port(direction, node, port):
     deadline = time.monotonic() + 2
     previous, stable_since = None, None
     while True:
-        updated = next((n for n in read(direction + 's') if n['name'] == node['name']), None)
+        updated = next(
+            (n for n in read(direction + 's') if n['name'] == node['name']), None
+        )
         if not updated:
-            raise ValueError('The audio device was disconnected while changing connections.')
+            raise ValueError(
+                'The audio device was disconnected while changing connections.'
+            )
         now = time.monotonic()
         # WirePlumber restores route properties asynchronously. Require a quiet
         # interval on the requested route before applying volume/mute overrides.
-        levels = tuple(sorted((name, channel.get('value')) for name, channel in updated.get('volume', {}).items()))
+        levels = tuple(
+            sorted(
+                (name, channel.get('value'))
+                for name, channel in updated.get('volume', {}).items()
+            )
+        )
         state = (updated.get('active_port'), updated.get('mute'), levels)
         if updated.get('active_port') != port or state != previous:
             stable_since = None
@@ -232,7 +369,9 @@ def select_port(direction, node, port):
         elif now - stable_since >= 0.12:
             return updated
         if now >= deadline:
-            raise ValueError('The audio connection did not finish changing. Refresh to retry.')
+            raise ValueError(
+                'The audio connection did not finish changing. Refresh to retry.'
+            )
         previous = state
         time.sleep(0.04)
 
@@ -242,48 +381,90 @@ def change_profile(card, target):
     if target['name'] == card['active_profile']:
         return
     info = json.loads(command('-f', 'json', 'info'))
-    before = {kind: [n for n in read(kind) if card_for(n, [card]) and (kind == 'sinks' or capture_source(n))]
-              for kind in ('sinks', 'sources')}
+    before = {
+        kind: [
+            n
+            for n in read(kind)
+            if card_for(n, [card]) and (kind == 'sinks' or capture_source(n))
+        ]
+        for kind in ('sinks', 'sources')
+    }
     streams = {kind: read(kind) for kind in ('sink-inputs', 'source-outputs')}
 
     def restore(profile):
         deadline = time.monotonic() + 2
         while True:
-            after = {kind: [n for n in read(kind) if card_for(n, [card]) and (kind == 'sinks' or capture_source(n))]
-                     for kind in ('sinks', 'sources')}
-            if len(after['sinks']) >= profile.get('sinks', 0) and len(after['sources']) >= profile.get('sources', 0):
+            after = {
+                kind: [
+                    n
+                    for n in read(kind)
+                    if card_for(n, [card]) and (kind == 'sinks' or capture_source(n))
+                ]
+                for kind in ('sinks', 'sources')
+            }
+            if len(after['sinks']) >= profile.get('sinks', 0) and len(
+                after['sources']
+            ) >= profile.get('sources', 0):
                 break
             if time.monotonic() >= deadline:
                 raise ValueError('The audio device did not finish changing mode.')
             time.sleep(0.04)
-        for kind, direction, stream_kind in (('sinks', 'sink', 'sink-inputs'), ('sources', 'source', 'source-outputs')):
+        for kind, direction, stream_kind in (
+            ('sinks', 'sink', 'sink-inputs'),
+            ('sources', 'source', 'source-outputs'),
+        ):
             restored = set()
             for old in before[kind]:
-                node = endpoint_match(old, [n for n in after[kind] if n['name'] not in restored],
-                                      allow_fallback=len(before[kind]) == 1)
+                node = endpoint_match(
+                    old,
+                    [n for n in after[kind] if n['name'] not in restored],
+                    allow_fallback=len(before[kind]) == 1,
+                )
                 if not node:
                     continue
                 restored.add(node['name'])
                 port = old.get('active_port')
-                if port and any(p['name'] == port and available(p.get('availability')) for p in entries(node.get('ports'))):
+                if port and any(
+                    p['name'] == port and available(p.get('availability'))
+                    for p in entries(node.get('ports'))
+                ):
                     node = select_port(direction, node, port)
                 levels = [v['value'] for v in old.get('volume', {}).values()]
                 if levels:
-                    levels = levels if len(levels) == len(node.get('volume', {})) else [str(volume(old)) + '%']
+                    levels = (
+                        levels
+                        if len(levels) == len(node.get('volume', {}))
+                        else [str(volume(old)) + '%']
+                    )
                     command('set-' + direction + '-volume', node['name'], *levels)
-                command('set-' + direction + '-mute', node['name'], '1' if old.get('mute') else '0')
+                command(
+                    'set-' + direction + '-mute',
+                    node['name'],
+                    '1' if old.get('mute') else '0',
+                )
                 if old['name'] == info.get('default_' + direction + '_name'):
                     command('set-default-' + direction, node['name'])
                 live = read(stream_kind)
                 for stream in streams[stream_kind]:
                     # PipeWire's Pulse indices are object serials and are never reused.
-                    if stream.get(direction) == old['index'] and any(s['index'] == stream['index'] for s in live):
-                        command('move-' + stream_kind[:-1], stream['index'], node['name'])
+                    if stream.get(direction) == old['index'] and any(
+                        s['index'] == stream['index'] for s in live
+                    ):
+                        command(
+                            'move-' + stream_kind[:-1], stream['index'], node['name']
+                        )
             if kind == 'sources':
                 for node in after[kind]:
                     if node['name'] not in restored:
-                        port = next((p for p in entries(node.get('ports')) if p['name'] == node.get('active_port')
-                                     and available(p.get('availability'))), None)
+                        port = next(
+                            (
+                                p
+                                for p in entries(node.get('ports'))
+                                if p['name'] == node.get('active_port')
+                                and available(p.get('availability'))
+                            ),
+                            None,
+                        )
                         if port:
                             select_port('source', node, port['name'])
                         command('set-source-mute', node['name'], '1')
@@ -291,7 +472,10 @@ def change_profile(card, target):
         # reacting to newly created nodes on this card.
         for kind, direction in (('sinks', 'sink'), ('sources', 'source')):
             wanted = info.get('default_' + direction + '_name')
-            if any(n['name'] == wanted and (kind == 'sinks' or capture_source(n)) for n in read(kind)):
+            if any(
+                n['name'] == wanted and (kind == 'sinks' or capture_source(n))
+                for n in read(kind)
+            ):
                 command('set-default-' + direction, wanted)
         return after
 
@@ -303,15 +487,25 @@ def change_profile(card, target):
             command('set-card-profile', card['name'], card['active_profile'])
             restore(current_profile(card))
         except (ValueError, OSError, subprocess.SubprocessError):
-            raise ValueError('The audio mode change failed and could not be restored. Refresh the devices.') from error
-        raise ValueError('The audio mode change failed; the previous mode was restored.') from error
+            raise ValueError(
+                'The audio mode change failed and could not be restored. Refresh the devices.'
+            ) from error
+        raise ValueError(
+            'The audio mode change failed; the previous mode was restored.'
+        ) from error
 
 
 def capture_ports(card):
     """Card ports are connections, not independent capture endpoints."""
-    return [p for p in entries(card.get('ports')) if p.get('direction') in ('input', 2)
-            or p.get('type') in ('Mic', 'Microphone')
-            or p['name'].startswith(('analog-input-', 'input:', 'headset-input', 'handsfree-input'))]
+    return [
+        p
+        for p in entries(card.get('ports'))
+        if p.get('direction') in ('input', 2)
+        or p.get('type') in ('Mic', 'Microphone')
+        or p['name'].startswith(
+            ('analog-input-', 'input:', 'headset-input', 'handsfree-input')
+        )
+    ]
 
 
 def input_inventory(sources, cards, config):
@@ -319,54 +513,137 @@ def input_inventory(sources, cards, config):
     for source in sources:
         card = card_for(source, cards)
         ports = entries(source.get('ports'))
-        active_port = next((p for p in ports if p['name'] == source.get('active_port')), {})
-        routes = [dict(name=p['name'], label=describe(source, p, config)['label'],
-                       selected=p['name'] == source.get('active_port'))
-                  for p in ports if available(p.get('availability'))]
-        inputs.append(dict(key=source['name'], name=source['name'],
-                           deviceKey=card['name'] if card else source['name'],
-                           port=source.get('active_port', ''), routes=routes,
-                           portLabel=active_port.get('description', ''),
-                           available=not ports or bool(routes), **describe(source, active_port, config)))
+        active_port = next(
+            (p for p in ports if p['name'] == source.get('active_port')), {}
+        )
+        routes = [
+            dict(
+                name=p['name'],
+                label=describe(source, p, config)['label'],
+                selected=p['name'] == source.get('active_port'),
+            )
+            for p in ports
+            if available(p.get('availability'))
+        ]
+        inputs.append(
+            dict(
+                key=source['name'],
+                name=source['name'],
+                deviceKey=card['name'] if card else source['name'],
+                port=source.get('active_port', ''),
+                routes=routes,
+                portLabel=active_port.get('description', ''),
+                available=not ports or bool(routes),
+                **describe(source, active_port, config),
+            )
+        )
     for card in cards:
         owned = [n for n in inputs if n['deviceKey'] == card['name']]
-        if not owned and not any(p.get('sources', 0) for p in entries(card.get('profiles'))):
+        if not owned and not any(
+            p.get('sources', 0) for p in entries(card.get('profiles'))
+        ):
             continue
         ports = capture_ports(card)
-        connected = sorted((p for p in ports if available(p.get('availability'))),
-                           key=lambda p: -p.get('priority', 0))
+        connected = sorted(
+            (p for p in ports if available(p.get('availability'))),
+            key=lambda p: -p.get('priority', 0),
+        )
         enabled = bool(current_profile(card).get('sources', 0)) or bool(owned)
         # Disabled devices have no source yet; keep hardware availability separate.
         target = resolve_profile(card, capture=not enabled)
-        port = next((p['name'] for p in connected if resolve_profile(card, capture=True, port=p['name'])), '') if not enabled else ''
+        port = (
+            next(
+                (
+                    p['name']
+                    for p in connected
+                    if resolve_profile(card, capture=True, port=p['name'])
+                ),
+                '',
+            )
+            if not enabled
+            else ''
+        )
         if not enabled and ports and not port:
             target = None
-        node = dict(name=card['name'], description=card.get('properties', {}).get('device.description', card['name']),
-                    properties={**card.get('properties', {}), 'device.name': card['name'], 'media.class': 'Audio/Source'})
+        node = dict(
+            name=card['name'],
+            description=card.get('properties', {}).get(
+                'device.description', card['name']
+            ),
+            properties={
+                **card.get('properties', {}),
+                'device.name': card['name'],
+                'media.class': 'Audio/Source',
+            },
+        )
         # Presentation slots reserve input rows while capture is disabled. They
         # contain no live endpoint identity and cannot be used for audio actions.
         capture = resolve_profile(card, capture=True, port=port)
         if not capture:
-            capture = max((p for p in entries(card.get('profiles')) if p.get('sources', 0) and available(p.get('available'))),
-                          key=lambda p: p.get('priority', 0), default={})
-        routes = [dict(name=p['name'], label=describe(node, p, config)['label'], selected=p['name'] == port)
-                  for p in connected]
+            capture = max(
+                (
+                    p
+                    for p in entries(card.get('profiles'))
+                    if p.get('sources', 0) and available(p.get('available'))
+                ),
+                key=lambda p: p.get('priority', 0),
+                default={},
+            )
+        routes = [
+            dict(
+                name=p['name'],
+                label=describe(node, p, config)['label'],
+                selected=p['name'] == port,
+            )
+            for p in connected
+        ]
         slot_count = max(1, capture.get('sources', 0))
-        slots = [dict(key=card['name'] + '/input/' + str(i),
-                      label=describe(node, next((p for p in connected if p['name'] == port), {}), config)['label'] if slot_count == 1 else 'Input ' + str(i + 1),
-                      routes=routes if slot_count == 1 else []) for i in range(slot_count)]
-        device = dict(key=card['name'], card=card['name'], profile=card.get('active_profile', ''),
-                      label=describe(node, {}, config)['label'], port=port, enabled=enabled,
-                      available=any(n['available'] for n in owned) or not ports or bool(connected),
-                      canToggle=target is not None, inputSlots=slots,
-                      toggleReason='' if target else 'Changing microphone availability requires a different playback mode. Use mute or advanced settings.')
+        slots = [
+            dict(
+                key=card['name'] + '/input/' + str(i),
+                label=describe(
+                    node, next((p for p in connected if p['name'] == port), {}), config
+                )['label']
+                if slot_count == 1
+                else 'Input ' + str(i + 1),
+                routes=routes if slot_count == 1 else [],
+            )
+            for i in range(slot_count)
+        ]
+        device = dict(
+            key=card['name'],
+            card=card['name'],
+            profile=card.get('active_profile', ''),
+            label=describe(node, {}, config)['label'],
+            port=port,
+            enabled=enabled,
+            available=any(n['available'] for n in owned)
+            or not ports
+            or bool(connected),
+            canToggle=target is not None,
+            inputSlots=slots,
+            toggleReason=''
+            if target
+            else 'Changing microphone availability requires a different playback mode. Use mute or advanced settings.',
+        )
         devices.append(device)
     for source in inputs:
         if any(d['key'] == source['deviceKey'] for d in devices):
             continue
-        devices.append(dict(key=source['deviceKey'], card='', profile='', label=source['label'], port='',
-                            enabled=True, available=source['available'], canToggle=False, inputSlots=[],
-                            toggleReason='This input does not support disabling. Use mute instead.'))
+        devices.append(
+            dict(
+                key=source['deviceKey'],
+                card='',
+                profile='',
+                label=source['label'],
+                port='',
+                enabled=True,
+                available=source['available'],
+                canToggle=False,
+                inputSlots=[],
+                toggleReason='This input does not support disabling. Use mute instead.',
+            )
+        )
     # Stable device order: making a default must not move the slider under a pointer.
     devices.sort(key=lambda d: (d['label'].lower(), d['key']))
     inputs.sort(key=lambda n: (n['label'].lower(), n['key']))
@@ -379,28 +656,64 @@ def output_inventory(sinks, cards, config):
         card = card_for(sink, cards)
         ports = entries(sink.get('ports'))
         active = next((p for p in ports if p['name'] == sink.get('active_port')), {})
-        routes = [dict(name=p['name'], label=describe(sink, p, config)['label'],
-                       selected=p['name'] == sink.get('active_port'))
-                  for p in ports if available(p.get('availability'))]
-        outputs.append(dict(key=sink['name'], name=sink['name'],
-                            deviceKey=card['name'] if card else sink['name'],
-                            port=sink.get('active_port', ''), portLabel=active.get('description', ''), routes=routes,
-                            available=not ports or bool(routes), **describe(sink, active, config)))
+        routes = [
+            dict(
+                name=p['name'],
+                label=describe(sink, p, config)['label'],
+                selected=p['name'] == sink.get('active_port'),
+            )
+            for p in ports
+            if available(p.get('availability'))
+        ]
+        outputs.append(
+            dict(
+                key=sink['name'],
+                name=sink['name'],
+                deviceKey=card['name'] if card else sink['name'],
+                port=sink.get('active_port', ''),
+                portLabel=active.get('description', ''),
+                routes=routes,
+                available=not ports or bool(routes),
+                **describe(sink, active, config),
+            )
+        )
     for output in outputs:
         if any(d['key'] == output['deviceKey'] for d in devices):
             continue
         card = next((c for c in cards if c['name'] == output['deviceKey']), None)
         if card:
-            node = dict(name=card['name'], properties={**card.get('properties', {}), 'device.name': card['name']})
-            label = next((r['deviceLabel'] for r in matching_rules(node, {}, config) if 'deviceLabel' in r),
-                         card.get('properties', {}).get('device.description', card['name']))
+            node = dict(
+                name=card['name'],
+                properties={**card.get('properties', {}), 'device.name': card['name']},
+            )
+            label = next(
+                (
+                    r['deviceLabel']
+                    for r in matching_rules(node, {}, config)
+                    if 'deviceLabel' in r
+                ),
+                card.get('properties', {}).get('device.description', card['name']),
+            )
             owned = [o for o in outputs if o['deviceKey'] == card['name']]
-            modes = playback_profiles(card, config, owned[0]['port'] if len(owned) == 1 else None)
+            modes = playback_profiles(
+                card, config, owned[0]['port'] if len(owned) == 1 else None
+            )
         else:
             label, modes = output['label'], []
-        devices.append(dict(key=output['deviceKey'], label=label, card=card['name'] if card else '',
-                            profile=card.get('active_profile', '') if card else '', profiles=modes,
-                            available=any(o['available'] for o in outputs if o['deviceKey'] == output['deviceKey'])))
+        devices.append(
+            dict(
+                key=output['deviceKey'],
+                label=label,
+                card=card['name'] if card else '',
+                profile=card.get('active_profile', '') if card else '',
+                profiles=modes,
+                available=any(
+                    o['available']
+                    for o in outputs
+                    if o['deviceKey'] == output['deviceKey']
+                ),
+            )
+        )
     devices.sort(key=lambda d: (d['label'].lower(), d['key']))
     outputs.sort(key=lambda o: (o['label'].lower(), o['key']))
     return outputs, devices
@@ -412,44 +725,78 @@ def snapshot(config_dir=CONFIG_DIR):
     sources = [n for n in read('sources') if capture_source(n)]
     outputs, output_devices = output_inventory(sinks, cards, config)
     inputs, input_devices = input_inventory(sources, cards, config)
-    return dict(available=True, outputs=outputs, outputDevices=output_devices,
-                inputs=inputs, inputDevices=input_devices, warning=warning)
+    return dict(
+        available=True,
+        outputs=outputs,
+        outputDevices=output_devices,
+        inputs=inputs,
+        inputDevices=input_devices,
+        warning=warning,
+    )
 
 
 def control(request, config_dir=CONFIG_DIR):
     op = request.get('op')
     if op == 'profile':
-        card = next((c for c in read('cards') if c['name'] == request.get('card')), None)
+        card = next(
+            (c for c in read('cards') if c['name'] == request.get('card')), None
+        )
         if not card or card.get('active_profile') != request.get('previous'):
             raise ValueError('The audio profile changed. Refresh before trying again.')
         owned = [sink for sink in read('sinks') if card_for(sink, [card])]
         if not owned:
             raise ValueError('This audio device was disconnected.')
-        profile = resolve_profile(card, tuple(request.get('profile', '').split('+')),
-                                  port=owned[0].get('active_port') if len(owned) == 1 else None)
+        profile = resolve_profile(
+            card,
+            tuple(request.get('profile', '').split('+')),
+            port=owned[0].get('active_port') if len(owned) == 1 else None,
+        )
         if not profile or not profile.get('sinks'):
             raise ValueError('This playback profile is unavailable.')
         change_profile(card, profile)
     elif op == 'output-port':
-        sink = next((node for node in read('sinks') if node['name'] == request.get('name')), None)
+        sink = next(
+            (node for node in read('sinks') if node['name'] == request.get('name')),
+            None,
+        )
         if not sink:
             raise ValueError('This output was disconnected. Choose another device.')
-        port = next((p for p in entries(sink.get('ports')) if p['name'] == request.get('port')), None)
+        port = next(
+            (p for p in entries(sink.get('ports')) if p['name'] == request.get('port')),
+            None,
+        )
         if not port or not available(port.get('availability')):
             raise ValueError('This output connection is disconnected.')
         config, _ = load_config(config_dir)
         # The new route may restore a louder remembered level than it allows.
-        cap = min(describe(sink, port, config)['maxVolume'], 150 if request.get('boost') is True else 100)
+        cap = min(
+            describe(sink, port, config)['maxVolume'],
+            150 if request.get('boost') is True else 100,
+        )
         muted = bool(sink.get('mute'))
         limit_volume('sink', sink, cap)
         updated = select_port('sink', sink, port['name'])
         limit_volume('sink', updated, cap)
         command('set-sink-mute', sink['name'], '1' if muted else '0')
     elif op == 'input-port':
-        source = next((n for n in read('sources') if n['name'] == request.get('name') and capture_source(n)), None)
+        source = next(
+            (
+                n
+                for n in read('sources')
+                if n['name'] == request.get('name') and capture_source(n)
+            ),
+            None,
+        )
         if not source:
             raise ValueError('This microphone is disconnected.')
-        port = next((p for p in entries(source.get('ports')) if p['name'] == request.get('port')), None)
+        port = next(
+            (
+                p
+                for p in entries(source.get('ports'))
+                if p['name'] == request.get('port')
+            ),
+            None,
+        )
         if not port or not available(port.get('availability')):
             raise ValueError('This microphone connection is disconnected.')
         muted = bool(source.get('mute'))
@@ -459,48 +806,84 @@ def control(request, config_dir=CONFIG_DIR):
         enabled = request.get('enabled')
         if not isinstance(enabled, bool):
             raise ValueError('Expected a microphone input enabled state.')
-        card = next((c for c in read('cards') if c['name'] == request.get('card')), None)
+        card = next(
+            (c for c in read('cards') if c['name'] == request.get('card')), None
+        )
         if not card or card.get('active_profile') != request.get('previous'):
             raise ValueError('The audio profile changed. Refresh before trying again.')
         port_name = request.get('port', '') if enabled else ''
         if port_name:
-            port = next((p for p in capture_ports(card) if p['name'] == port_name), None)
+            port = next(
+                (p for p in capture_ports(card) if p['name'] == port_name), None
+            )
             if not port or not available(port.get('availability')):
                 raise ValueError('This microphone connection is disconnected.')
         target = resolve_profile(card, capture=enabled, port=port_name)
         if not target:
-            raise ValueError('This device cannot change input availability while keeping its playback mode. Use mute or advanced settings.')
+            raise ValueError(
+                'This device cannot change input availability while keeping its playback mode. Use mute or advanced settings.'
+            )
         change_profile(card, target)
         if enabled and port_name:
-            candidates = [n for n in read('sources') if capture_source(n) and card_for(n, [card])]
-            source = next((n for n in candidates if any(p['name'] == port_name for p in entries(n.get('ports')))), None)
+            candidates = [
+                n for n in read('sources') if capture_source(n) and card_for(n, [card])
+            ]
+            source = next(
+                (
+                    n
+                    for n in candidates
+                    if any(p['name'] == port_name for p in entries(n.get('ports')))
+                ),
+                None,
+            )
             if not source:
-                raise ValueError('The microphone did not become available. Refresh to retry.')
+                raise ValueError(
+                    'The microphone did not become available. Refresh to retry.'
+                )
             select_port('source', source, port_name)
             command('set-source-mute', source['name'], '1')
         # Enabling availability neither unmutes nor selects a new default.
     elif op == 'move':
         # Quickshell exposes links read-only; PipeWire's Pulse index is the stream's object serial.
-        kind = {'stream': 'sink-input', 'recording': 'source-output'}.get(request.get('kind'))
+        kind = {'stream': 'sink-input', 'recording': 'source-output'}.get(
+            request.get('kind')
+        )
         serial, destination = request.get('serial'), request.get('destination')
-        if not kind or isinstance(serial, bool) or not isinstance(serial, int) or not isinstance(destination, str):
+        if (
+            not kind
+            or isinstance(serial, bool)
+            or not isinstance(serial, int)
+            or not isinstance(destination, str)
+        ):
             raise ValueError('Choose an application stream and destination.')
         try:
             command('move-' + kind, serial, destination)
         except ValueError:
-            raise ValueError('The application stream or its destination is gone. Refresh and try again.') from None
+            raise ValueError(
+                'The application stream or its destination is gone. Refresh and try again.'
+            ) from None
     else:
         raise ValueError('Unknown audio action.')
 
 
 def failure(error):
-    return str(error) if isinstance(error, ValueError) else 'Could not contact the audio service. Refresh to retry.'
+    return (
+        str(error)
+        if isinstance(error, ValueError)
+        else 'Could not contact the audio service. Refresh to retry.'
+    )
 
 
 def inventory(config_dir=CONFIG_DIR):
     try:
         return dict(ok=True, data=snapshot(config_dir))
-    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as error:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        subprocess.SubprocessError,
+    ) as error:
         return dict(ok=False, error=failure(error))
 
 
@@ -521,8 +904,12 @@ def watch(config_dir=CONFIG_DIR, retry=2):
             last = line
 
     while True:
-        events = subprocess.Popen(['pactl', 'subscribe'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                  preexec_fn=exit_with_parent)
+        events = subprocess.Popen(
+            ['pactl', 'subscribe'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            preexec_fn=exit_with_parent,
+        )
         try:
             publish()
             pending, due = b'', None
@@ -559,7 +946,14 @@ def main():
     try:
         control(json.loads(sys.stdin.readline()))
         result = dict(ok=True)
-    except (OSError, ValueError, TypeError, KeyError, AttributeError, subprocess.SubprocessError) as error:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        subprocess.SubprocessError,
+    ) as error:
         result = dict(ok=False, error=failure(error))
     print(json.dumps(result), flush=True)
 

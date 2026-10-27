@@ -1,5 +1,5 @@
-import QtQuick
 import "../ui"
+import QtQuick
 
 // Add a DrawerPage file and one catalogue entry. Bar callers use its stable key;
 // shortcut registers a Hyprland global shortcut (desktop:<shortcut>).

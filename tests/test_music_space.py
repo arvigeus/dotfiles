@@ -1,4 +1,5 @@
 """Music shares the retained host and list presentation, with owned hidden playback."""
+
 import unittest
 import support
 from test_movies_space import setup as movies_setup
@@ -7,9 +8,12 @@ from test_movies_space import setup as movies_setup
 def setup(root):
     movies_setup(root)
     import shutil
-    shutil.copytree(support.DESKTOP/"integrations",root/"integrations",dirs_exist_ok=True)
+
+    shutil.copytree(
+        support.DESKTOP / 'integrations', root / 'integrations', dirs_exist_ok=True
+    )
     path = root / 'spaces/music/backend.py'
-    fixture = '''
+    fixture = """
 _fixture_song = dict(id="1",kind="song",source="apple",title="Fixture song",artist="Fixture artist",album="Fixture album",duration=120)
 _original_dispatch = dispatch
 def dispatch(args):
@@ -23,8 +27,8 @@ def dispatch(args):
         time.sleep(.15)
         return dict(command=["sleep","60"],ipcPath="")
     return _original_dispatch(args)
-'''
-    (root/'spaces/music/cloud_fixture.py').write_text('''import json,sys
+"""
+    (root / 'spaces/music/cloud_fixture.py').write_text("""import json,sys
 song=dict(id="cloud1",kind="song",source="nextcloud",account="fixture",title="Saved song",artist="Artist",artistIds=["a1"],album="Album",albumId="b1",duration=120)
 for line in sys.stdin:
  r=json.loads(line);op=r["op"];result={}
@@ -44,10 +48,19 @@ for line in sys.stdin:
  elif op=="genres":result=[dict(id="Rock",name="Rock")]
  if isinstance(result,dict) and op!="index-status":result.update(index=dict(ready=True,indexing=False,version="fixture"),cached=True)
  print(json.dumps(dict(id=r["id"],result=result)),flush=True)
-''')
-    (root/'spaces/music/artwork.py').write_text("import json,sys\nfor line in sys.stdin:\n r=json.loads(line);print(json.dumps(dict(id=r['id'],result='')),flush=True)\n")
-    main=root/'spaces/music/Main.qml'
-    main.write_text(main.read_text().replace('backend: "cloud.py"','backend: "cloud_fixture.py"').replace('property var deliverNotification: (title,body) => Quickshell.execDetached([','property var deliverNotification: (title,body) => console.log(['))
+""")
+    (root / 'spaces/music/artwork.py').write_text(
+        "import json,sys\nfor line in sys.stdin:\n r=json.loads(line);print(json.dumps(dict(id=r['id'],result='')),flush=True)\n"
+    )
+    main = root / 'spaces/music/Main.qml'
+    main.write_text(
+        main.read_text()
+        .replace('backend: "cloud.py"', 'backend: "cloud_fixture.py"')
+        .replace(
+            'property var deliverNotification: (title,body) => Quickshell.execDetached([',
+            'property var deliverNotification: (title,body) => console.log([',
+        )
+    )
     source = path.read_text()
     path.write_text(source.replace('\ndef main():', fixture + '\ndef main():'))
 
@@ -55,8 +68,12 @@ for line in sys.stdin:
 @unittest.skipUnless(support.QS, 'Quickshell required')
 class MusicSpaceTests(unittest.TestCase):
     run_qml = support.run_qml
-    def test_two_tabs_context_search_infinite_loading_navigation_pickers_and_lifecycle(self):
-        self.run_qml('''import QtQuick
+
+    def test_two_tabs_context_search_infinite_loading_navigation_pickers_and_lifecycle(
+        self,
+    ):
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -137,17 +154,24 @@ ShellRoot {
   if(root.step===15){check(page!==root.retained&&page.section==="library","fresh instance failed");SpaceState.close("music");SpaceState.close("movies");console.log("DISPLAY_PASS");Qt.quit();}
  }catch(error){console.error("DISPLAY_FAIL",error.message+" "+error.stack);Qt.quit();}finally{driver.restart();}}}
  Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at "+root.step);Qt.quit();}}
-}''', setup=setup)
-
+}""",
+            setup=setup,
+        )
 
     def test_information_view_edit_cover_save_and_move_are_separate(self):
         def info_setup(root):
             setup(root)
             from PySide6.QtGui import QImage
-            image=QImage(64,64,QImage.Format.Format_RGB32);image.fill(0xff0066aa)
-            image.save(str(root/'cover.png'));(root/'covers').mkdir();image.save(str(root/'covers/cover.png'))
-            (root/'spaces/music/artwork.py').write_text("import json,sys\nfrom pathlib import Path\nfor line in sys.stdin:\n r=json.loads(line);print(json.dumps(dict(id=r['id'],result=(Path(__file__).parents[2]/'cover.png').as_uri())),flush=True)\n")
-            (root/'spaces/music/local_files.py').write_text("""import json,sys
+
+            image = QImage(64, 64, QImage.Format.Format_RGB32)
+            image.fill(0xFF0066AA)
+            image.save(str(root / 'cover.png'))
+            (root / 'covers').mkdir()
+            image.save(str(root / 'covers/cover.png'))
+            (root / 'spaces/music/artwork.py').write_text(
+                "import json,sys\nfrom pathlib import Path\nfor line in sys.stdin:\n r=json.loads(line);print(json.dumps(dict(id=r['id'],result=(Path(__file__).parents[2]/'cover.png').as_uri())),flush=True)\n"
+            )
+            (root / 'spaces/music/local_files.py').write_text("""import json,sys
 jobs=[];tags={"title":"Saved song","artist":"Artist","album":"Album","lyrics":""}
 for line in sys.stdin:
  r=json.loads(line);op=r['op'];result={}
@@ -163,7 +187,9 @@ for line in sys.stdin:
   identifier=str(len(jobs));jobs.append(dict(job_id=identifier,title='Fixture',state='finished',result=value));result=dict(job_id=identifier)
  print(json.dumps(dict(id=r['id'],result=result)),flush=True)
 """)
-        self.run_qml("""//@ pragma UseQApplication
+
+        self.run_qml(
+            """//@ pragma UseQApplication
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
@@ -270,10 +296,15 @@ ShellRoot {
   }
  }catch(error){console.error("DISPLAY_FAIL",error.message+" "+error.stack);Qt.quit();}finally{driver.restart();}}}
  Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at "+root.step);Qt.quit();}}
-}""",setup=info_setup)
+}""",
+            setup=info_setup,
+        )
 
-    def test_switching_songs_ignores_stale_lyrics_without_blocking_the_next_lookup(self):
-        self.run_qml('''import QtQuick
+    def test_switching_songs_ignores_stale_lyrics_without_blocking_the_next_lookup(
+        self,
+    ):
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "ui"
 import "spaces/music"
@@ -296,10 +327,15 @@ ShellRoot {
   if(info.draft.lyrics!=="Second lyrics"||info.lookingUp)throw new Error("current lyrics missing");
   console.log("DISPLAY_PASS");Qt.quit();
  }catch(error){console.error("DISPLAY_FAIL",error.message);Qt.quit();}}}
-}''',setup=setup)
+}""",
+            setup=setup,
+        )
 
-    def test_reopening_an_interrupted_preview_retries_without_accepting_stale_data(self):
-        self.run_qml('''import QtQuick
+    def test_reopening_an_interrupted_preview_retries_without_accepting_stale_data(
+        self,
+    ):
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "spaces/music"
 ShellRoot {
@@ -322,10 +358,13 @@ ShellRoot {
   if(info.reading||info.editing||info.draft.title!=="Current title"||info.relativePath!=="correct.flac")throw new Error("Stale preview won or viewing enabled edits");
   console.log("DISPLAY_PASS");Qt.quit();
  }catch(error){console.error("DISPLAY_FAIL",error.message);Qt.quit();}}}
-}''',setup=setup)
+}""",
+            setup=setup,
+        )
 
     def test_stopped_file_worker_settles_accepted_jobs(self):
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "spaces/music"
 ShellRoot {
@@ -339,26 +378,43 @@ ShellRoot {
   if(service.activeJobCount||service.jobs.length)throw new Error("worker exit retained active jobs");
   console.log("DISPLAY_PASS");Qt.quit();
  }catch(error){console.error("DISPLAY_FAIL",error.message);Qt.quit();}}}
-}''',setup=setup)
+}""",
+            setup=setup,
+        )
+
 
 def playback_setup(root):
     import wave
+
     movies_setup(root)
     import shutil
-    shutil.copytree(support.DESKTOP/"integrations",root/"integrations",dirs_exist_ok=True)
-    for name in ('first','second'):
-        with wave.open(str(root/(name+'.wav')),'wb') as audio:
-            audio.setnchannels(1);audio.setsampwidth(2);audio.setframerate(8000);audio.writeframes(b'\0\0'*16000)
-    path=root/'spaces/music/backend.py'
-    source=path.read_text().replace('    command.extend(("--user-agent=" + user_agent, "--", stream_url))','    command.extend(("--ao=null", "--user-agent=" + user_agent, "--", stream_url))')
+
+    shutil.copytree(
+        support.DESKTOP / 'integrations', root / 'integrations', dirs_exist_ok=True
+    )
+    for name in ('first', 'second'):
+        with wave.open(str(root / (name + '.wav')), 'wb') as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(8000)
+            audio.writeframes(b'\0\0' * 16000)
+    path = root / 'spaces/music/backend.py'
+    source = path.read_text().replace(
+        '    command.extend(("--user-agent=" + user_agent, "--", stream_url))',
+        '    command.extend(("--ao=null", "--user-agent=" + user_agent, "--", stream_url))',
+    )
     path.write_text(source)
 
 
 @unittest.skipUnless(support.QS, 'Quickshell required')
 class MusicPlaybackTests(unittest.TestCase):
-    run_qml=support.run_qml
-    def test_real_mpv_pause_seek_volume_hidden_queue_completion_and_process_cleanup(self):
-        self.run_qml('''import QtQuick
+    run_qml = support.run_qml
+
+    def test_real_mpv_pause_seek_volume_hidden_queue_completion_and_process_cleanup(
+        self,
+    ):
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "spaces/music"
 ShellRoot {
@@ -386,4 +442,6 @@ ShellRoot {
   if(root.step===6){if(playback.playerProcess)return;check(playback.playMessage==="Queue finished.","hidden queue did not finish: "+playback.playMessage);playback.stopPlayback();check(!playback.currentTrack&&playback.queueSongs.length===0,"stop did not clear queue");console.log("DISPLAY_PASS");Qt.quit();}
  }catch(error){console.error("DISPLAY_FAIL",error.message);Qt.quit();}}}
  Timer {interval:10000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at "+root.step);Qt.quit();}}
-}''',setup=playback_setup)
+}""",
+            setup=playback_setup,
+        )

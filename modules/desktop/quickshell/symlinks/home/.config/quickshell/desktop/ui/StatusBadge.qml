@@ -37,7 +37,9 @@ Item {
             color: root.highlighted ? Theme.accentText : Theme.text
             font.pixelSize: Theme.smallFontSize - 2
             font.weight: Font.DemiBold
-            font.features: ({ "tnum": 1 })
+            font.features: ({
+                    "tnum": 1
+                })
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight

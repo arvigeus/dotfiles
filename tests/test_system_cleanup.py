@@ -1,4 +1,5 @@
 """Cleanup targeting and hold interactions. All mutations use temporary files or mocks."""
+
 import importlib.util
 import json
 import os
@@ -10,16 +11,27 @@ from unittest.mock import patch
 
 import support
 
-SPEC = importlib.util.spec_from_file_location('desktop_cleanup', support.DESKTOP / 'drawers/disks/cleanup.py')
+SPEC = importlib.util.spec_from_file_location(
+    'desktop_cleanup', support.DESKTOP / 'drawers/disks/cleanup.py'
+)
 cleanup = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(cleanup)
 
 
 class CleanupTests(unittest.TestCase):
     def test_paths_follow_dotfiles_environment_and_never_cover_whole_cache(self):
-        with patch.dict(os.environ, {'HOME': '/tmp/cleanup-home', 'XDG_CACHE_HOME': '/tmp/cleanup-home/.local/cache',
-                                     'CARGO_HOME': '/tmp/cargo', 'MISE_DATA_DIR': '/tmp/mise',
-                                     'npm_config_cache': '/tmp/npm', 'PIP_CACHE_DIR': '/tmp/pip'}, clear=True):
+        with patch.dict(
+            os.environ,
+            {
+                'HOME': '/tmp/cleanup-home',
+                'XDG_CACHE_HOME': '/tmp/cleanup-home/.local/cache',
+                'CARGO_HOME': '/tmp/cargo',
+                'MISE_DATA_DIR': '/tmp/mise',
+                'npm_config_cache': '/tmp/npm',
+                'PIP_CACHE_DIR': '/tmp/pip',
+            },
+            clear=True,
+        ):
             rows = {row['id']: row for row in cleanup.catalog()}
         self.assertEqual(rows['cargo']['paths'], [Path('/tmp/cargo/registry/cache')])
         # Tools with their own cache commands resolve their configured locations themselves.
@@ -29,21 +41,34 @@ class CleanupTests(unittest.TestCase):
         for row in rows.values():
             for path in row.get('paths', []):
                 self.assertNotEqual(path, Path('/tmp/cleanup-home/.local/cache'))
-        self.assertFalse(any('system' in row.get('command', []) and 'prune' in row['command'] for row in rows.values()))
+        self.assertFalse(
+            any(
+                'system' in row.get('command', []) and 'prune' in row['command']
+                for row in rows.values()
+            )
+        )
 
     def test_inventory_only_checks_presence_and_does_not_execute_commands(self):
-        with patch.object(cleanup, 'run') as run, patch.object(cleanup.shutil, 'which', return_value=None):
+        with (
+            patch.object(cleanup, 'run') as run,
+            patch.object(cleanup.shutil, 'which', return_value=None),
+        ):
             rows = cleanup.inventory()
-        self.assertFalse(next(row for row in rows if row['id'] == 'podman')['available'])
+        self.assertFalse(
+            next(row for row in rows if row['id'] == 'podman')['available']
+        )
         run.assert_not_called()
 
     def test_cache_clear_keeps_root_and_does_not_follow_links(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            cache = root / 'cache'; cache.mkdir()
-            outside = root / 'personal'; outside.mkdir()
+            cache = root / 'cache'
+            cache.mkdir()
+            outside = root / 'personal'
+            outside.mkdir()
             (outside / 'keep').write_text('important')
-            (cache / 'nested').mkdir(); (cache / 'nested/file').write_text('download')
+            (cache / 'nested').mkdir()
+            (cache / 'nested/file').write_text('download')
             (cache / 'link').symlink_to(outside, target_is_directory=True)
             cleanup.clear_path(cache)
             self.assertEqual(list(cache.iterdir()), [])
@@ -55,7 +80,14 @@ class CleanupTests(unittest.TestCase):
             cleanup.clear_path(root / 'missing')
 
     def test_rejects_home_data_and_config_ancestors(self):
-        for path in [Path('/'), Path.home(), Path.home() / '.cache/..', Path.home().parent, Path.home() / '.config', Path.home() / '.local/share']:
+        for path in [
+            Path('/'),
+            Path.home(),
+            Path.home() / '.cache/..',
+            Path.home().parent,
+            Path.home() / '.config',
+            Path.home() / '.local/share',
+        ]:
             with self.subTest(path=path), self.assertRaises(ValueError):
                 cleanup.clear_path(path)
 
@@ -63,30 +95,56 @@ class CleanupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'clone/pkg').mkdir(parents=True)
-            for name in ['PKGBUILD', 'patch.diff', 'source.tar.gz', 'thing.pkg.tar.zst', 'thing.pkg.tar.zst.sig']:
+            for name in [
+                'PKGBUILD',
+                'patch.diff',
+                'source.tar.gz',
+                'thing.pkg.tar.zst',
+                'thing.pkg.tar.zst.sig',
+            ]:
                 (root / 'clone/pkg' / name).write_text('data')
             cleanup.clear_path(root, archives=True)
-            self.assertEqual(sorted(p.name for p in (root / 'clone/pkg').iterdir()), ['PKGBUILD', 'patch.diff', 'source.tar.gz'])
+            self.assertEqual(
+                sorted(p.name for p in (root / 'clone/pkg').iterdir()),
+                ['PKGBUILD', 'patch.diff', 'source.tar.gz'],
+            )
 
     def test_validates_entire_request_before_mutating(self):
-        with patch.object(cleanup, 'run') as run, patch.object(cleanup, 'clear_path') as clear:
+        with (
+            patch.object(cleanup, 'run') as run,
+            patch.object(cleanup, 'clear_path') as clear,
+        ):
             for selected in [None, [], 'npm', ['npm', 'invalid'], ['npm', 'npm'], [{}]]:
                 with self.subTest(selected=selected), self.assertRaises(ValueError):
                     cleanup.clean(selected, lambda _: None)
-            run.assert_not_called(); clear.assert_not_called()
+            run.assert_not_called()
+            clear.assert_not_called()
 
     def test_partial_failure_continues_and_reports_each_category(self):
-        with patch.object(cleanup, 'run', side_effect=[RuntimeError('permission denied'), 'done']) as run:
+        with patch.object(
+            cleanup, 'run', side_effect=[RuntimeError('permission denied'), 'done']
+        ) as run:
             result = cleanup.clean(['pnpm', 'uv'], lambda _: None)
         self.assertFalse(result['ok'])
         self.assertEqual([row['ok'] for row in result['results']], [False, True])
         self.assertEqual(run.call_count, 2)
-        self.assertEqual(result['results'][0]['error'], 'Some cached files could not be removed because you do not have permission.')
+        self.assertEqual(
+            result['results'][0]['error'],
+            'Some cached files could not be removed because you do not have permission.',
+        )
 
     def test_errors_are_readable_without_terminal_diagnostics(self):
         cases = [
-            (RuntimeError('Error executing command as another user: Not authorized\nThis incident has been reported.'), 'Administrator approval was not granted.'),
-            (PermissionError(13, 'Permission denied', 'pkg'), 'Some cached files could not be removed'),
+            (
+                RuntimeError(
+                    'Error executing command as another user: Not authorized\nThis incident has been reported.'
+                ),
+                'Administrator approval was not granted.',
+            ),
+            (
+                PermissionError(13, 'Permission denied', 'pkg'),
+                'Some cached files could not be removed',
+            ),
             (subprocess.TimeoutExpired(['pnpm'], 600), 'Cleanup took too long.'),
             (RuntimeError('a terminal diagnostic'), 'Cleanup could not finish.'),
         ]
@@ -105,18 +163,29 @@ class CleanupTests(unittest.TestCase):
     def test_tool_removal_runs_after_package_manager_cleanup(self):
         with patch.object(cleanup, 'run') as run:
             cleanup.clean(['mise-tools', 'pnpm'], lambda _: None)
-        self.assertEqual([call.args[0] for call in run.call_args_list], ['pnpm', 'mise'])
+        self.assertEqual(
+            [call.args[0] for call in run.call_args_list], ['pnpm', 'mise']
+        )
 
     def test_dotfiles_defaults_clean_configured_paths_and_leave_legacy_folders(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
-            configured = ['.local/cache/thumbnails', '.local/cache/mesa_shader_cache',
-                          '.local/share/cargo/registry/cache']
-            preserved = ['.cache/thumbnails', '.cargo/registry/cache', '.npm/_cacache',
-                         '.local/share/cargo/git/checkouts', '.local/share/cargo/registry/src',
-                         '.local/share/cargo/bin']
+            configured = [
+                '.local/cache/thumbnails',
+                '.local/cache/mesa_shader_cache',
+                '.local/share/cargo/registry/cache',
+            ]
+            preserved = [
+                '.cache/thumbnails',
+                '.cargo/registry/cache',
+                '.npm/_cacache',
+                '.local/share/cargo/git/checkouts',
+                '.local/share/cargo/registry/src',
+                '.local/share/cargo/bin',
+            ]
             for name in configured + preserved:
-                path = home / name; path.mkdir(parents=True)
+                path = home / name
+                path.mkdir(parents=True)
                 (path / 'fixture').write_text('keep or download')
             with patch.dict(os.environ, {'HOME': str(home)}, clear=True):
                 available = {row['id']: row['available'] for row in cleanup.inventory()}
@@ -124,29 +193,52 @@ class CleanupTests(unittest.TestCase):
                 self.assertTrue(all(available[key] for key in selected))
                 result = cleanup.clean(selected, lambda _: None)
             self.assertTrue(result['ok'], result)
-            self.assertTrue(all((home / name).is_dir() and not list((home / name).iterdir()) for name in configured))
-            self.assertTrue(all((home / name / 'fixture').exists() for name in preserved))
+            self.assertTrue(
+                all(
+                    (home / name).is_dir() and not list((home / name).iterdir())
+                    for name in configured
+                )
+            )
+            self.assertTrue(
+                all((home / name / 'fixture').exists() for name in preserved)
+            )
 
     def test_podman_removes_only_pulled_images_and_tolerates_in_use_refusals(self):
-        local, used, unused = 'a'*64, 'b'*64, 'c'*64
-        images = [{'Id': local, 'RepoDigests': []}, {'Id': used, 'RepoDigests': ['registry.test/repo@sha256:1']},
-                  {'Id': unused, 'RepoDigests': ['registry.test/repo@sha256:2']}, {'Id': '--all', 'RepoDigests': ['x']}]
+        local, used, unused = 'a' * 64, 'b' * 64, 'c' * 64
+        images = [
+            {'Id': local, 'RepoDigests': []},
+            {'Id': used, 'RepoDigests': ['registry.test/repo@sha256:1']},
+            {'Id': unused, 'RepoDigests': ['registry.test/repo@sha256:2']},
+            {'Id': '--all', 'RepoDigests': ['x']},
+        ]
+
         def fake(args, **kwargs):
-            if args[1] == 'images': return subprocess.CompletedProcess(args, 0, json.dumps(images), '')
-            return subprocess.CompletedProcess(args, 2 if args[-1] == used else 0, '', 'image is in use by a container')
+            if args[1] == 'images':
+                return subprocess.CompletedProcess(args, 0, json.dumps(images), '')
+            return subprocess.CompletedProcess(
+                args, 2 if args[-1] == used else 0, '', 'image is in use by a container'
+            )
+
         with patch.object(cleanup.subprocess, 'run', side_effect=fake) as command:
             cleanup.podman_images()
-        removals = [call.args[0] for call in command.call_args_list if call.args[0][1] == 'rmi']
+        removals = [
+            call.args[0] for call in command.call_args_list if call.args[0][1] == 'rmi'
+        ]
         self.assertEqual(removals, [('podman', 'rmi', used), ('podman', 'rmi', unused)])
-        with patch.object(cleanup.subprocess, 'run', return_value=subprocess.CompletedProcess([], 125, '', 'storage broken')):
-            with self.assertRaises(RuntimeError): cleanup.run('podman', 'rmi', unused, accept=(0, 1, 2))
+        with patch.object(
+            cleanup.subprocess,
+            'run',
+            return_value=subprocess.CompletedProcess([], 125, '', 'storage broken'),
+        ):
+            with self.assertRaises(RuntimeError):
+                cleanup.run('podman', 'rmi', unused, accept=(0, 1, 2))
 
 
 class CleanupQmlTests(unittest.TestCase):
     run_qml = support.run_qml
 
     def test_select_all_partial_selection_clear_and_admin_hint(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -192,10 +284,10 @@ ShellRoot {
   else {check(!all.enabled,"Select all enabled while busy");console.log("DISPLAY_PASS");Qt.quit();}
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e.stack);Qt.quit();}}}
-}''')
+}""")
 
     def test_shared_button_content_is_centered_and_fits_at_both_widths(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import "ui"
@@ -235,10 +327,10 @@ ShellRoot {
   else {console.log("DISPLAY_PASS");Qt.quit();}
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e.stack);Qt.quit();}}}
-}''')
+}""")
 
     def test_pointer_hold_fires_once_and_leaving_cancels(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import QtTest
 import Quickshell
 import "ui"
@@ -260,11 +352,12 @@ ShellRoot {
   else {console.log("DISPLAY_PASS");Qt.quit();}
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e.stack);Qt.quit();}}}
-}''')
+}""")
 
     def test_full_catalog_scroll_and_visual_layout(self):
         rows = cleanup.inventory()
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -300,10 +393,11 @@ ShellRoot {
   else {console.log("DISPLAY_PASS");Qt.quit();}
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e.stack);Qt.quit();}}}
-}'''.replace('ROWS', json.dumps(rows)))
+}""".replace('ROWS', json.dumps(rows))
+        )
 
     def test_popup_selection_hold_cancel_keyboard_narrow_layout_and_dismissal(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -364,19 +458,21 @@ ShellRoot {
   else {check(!control.popupOpen,"drawer dismissal left popup open");check(mock.calls===1,"deactivation confirmed hold");console.log("DISPLAY_PASS");Qt.quit();}
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e.stack);Qt.quit();}}}
-}''')
+}""")
 
     def test_cleanup_service_survives_owner_dismissal_and_notifies_once(self):
         def setup(root):
-            (root / 'drawers/disks/cleanup.py').write_text('''import json,sys,time
+            (root / 'drawers/disks/cleanup.py').write_text("""import json,sys,time
 request=json.loads(sys.stdin.readline())
 if request['op']=='scan': print(json.dumps(dict(ok=True,entries=[])),flush=True)
 else:
  print(json.dumps(dict(progress='Mock cache')),flush=True)
  time.sleep(.7)
  print(json.dumps(dict(ok=False,results=[dict(id='npm',title='npm',ok=True),dict(id='uv',title='uv',ok=False,error='denied')])),flush=True)
-''')
-        self.run_qml('''import QtQuick
+""")
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "drawers/disks"
 ShellRoot {
@@ -394,16 +490,20 @@ ShellRoot {
   if(notices.length!==1)throw new Error("discovery repeated cleanup notification");
   console.log("DISPLAY_PASS");Qt.quit();
  }catch(e){console.error("DISPLAY_FAIL",e.stack);Qt.quit();}}}
-}''', setup=setup)
+}""",
+            setup=setup,
+        )
 
     def test_success_and_worker_exit_each_send_one_readable_notification(self):
         def setup(root):
-            (root / 'drawers/disks/cleanup.py').write_text('''import json,sys
+            (root / 'drawers/disks/cleanup.py').write_text("""import json,sys
 request=json.loads(sys.stdin.readline())
 if request['selected']==['success']:
  print(json.dumps(dict(ok=True,results=[dict(id='success',title='Download cache',ok=True)])),flush=True)
-''')
-        self.run_qml('''import QtQuick
+""")
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "drawers/disks"
 ShellRoot {
@@ -420,7 +520,9 @@ ShellRoot {
    console.log("DISPLAY_PASS");Qt.quit();
   }
  }catch(e){console.error("DISPLAY_FAIL",e.stack);Qt.quit();}}}
-}''', setup=setup)
+}""",
+            setup=setup,
+        )
 
 
 if __name__ == '__main__':

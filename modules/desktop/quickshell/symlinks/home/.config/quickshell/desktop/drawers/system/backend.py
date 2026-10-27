@@ -1,4 +1,5 @@
 """Read-only system overview and explicit interactive terminal actions."""
+
 import argparse
 import json
 import os
@@ -12,8 +13,13 @@ import subprocess
 
 def command(argv):
     try:
-        result = subprocess.run(argv, capture_output=True, text=True, timeout=3,
-                                env=dict(os.environ, LC_ALL='C', SYSTEMD_COLORS='0'))
+        result = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=3,
+            env=dict(os.environ, LC_ALL='C', SYSTEMD_COLORS='0'),
+        )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise RuntimeError(f'{argv[0]} is unavailable or timed out.') from error
     if result.returncode:
@@ -29,10 +35,13 @@ def updater():
 
 def boot_times(text):
     first = text.splitlines()[0] if text else ''
-    phases = [dict(label=label.capitalize(), duration=duration.strip())
-              for duration, label in re.findall(
-                  r'([^+]+?)\s+\((firmware|loader|kernel|initrd|userspace)\)',
-                  first.removeprefix('Startup finished in '))]
+    phases = [
+        dict(label=label.capitalize(), duration=duration.strip())
+        for duration, label in re.findall(
+            r'([^+]+?)\s+\((firmware|loader|kernel|initrd|userspace)\)',
+            first.removeprefix('Startup finished in '),
+        )
+    ]
     total = first.rsplit(' = ', 1)[1].rstrip(' .') if ' = ' in first else ''
     return dict(phases=phases, total=total, summary=text)
 
@@ -57,27 +66,52 @@ def snapshot(section='info'):
             errors[key] = str(error)
             return [] if json_output else ''
 
-    state = dict(errors=errors, terminalAvailable=bool(shutil.which('xdg-terminal-exec')))
+    state = dict(
+        errors=errors, terminalAvailable=bool(shutil.which('xdg-terminal-exec'))
+    )
     if section == 'info':
         state.update(system_info())
     elif section == 'boot':
-        state.update(boot=boot_times(read('boot', ['systemd-analyze', 'time'])),
-                     slow=slow_units(read('slow', ['systemd-analyze', 'blame', '--no-pager'])))
+        state.update(
+            boot=boot_times(read('boot', ['systemd-analyze', 'time'])),
+            slow=slow_units(read('slow', ['systemd-analyze', 'blame', '--no-pager'])),
+        )
     elif section == 'services':
         scopes = []
         timers = []
         for scope in ('system', 'user'):
             prefix = ['systemctl'] + (['--user'] if scope == 'user' else [])
-            failed = read(scope, prefix + ['list-units', '--failed', '--all', '--output=json', '--no-pager'], True)
-            scopes.append(dict(scope=scope, failed=[dict(unit=row['unit'], description=row.get('description', ''))
-                                                    for row in failed if isinstance(row, dict) and row.get('unit')]))
-            rows = read(scope + 'Timers', prefix + ['list-timers', '--all', '--output=json', '--no-pager'], True)
+            failed = read(
+                scope,
+                prefix
+                + ['list-units', '--failed', '--all', '--output=json', '--no-pager'],
+                True,
+            )
+            scopes.append(
+                dict(
+                    scope=scope,
+                    failed=[
+                        dict(unit=row['unit'], description=row.get('description', ''))
+                        for row in failed
+                        if isinstance(row, dict) and row.get('unit')
+                    ],
+                )
+            )
+            rows = read(
+                scope + 'Timers',
+                prefix + ['list-timers', '--all', '--output=json', '--no-pager'],
+                True,
+            )
             for row in rows:
                 if not isinstance(row, dict):
                     continue
                 next_time = row.get('next')
                 if isinstance(next_time, (int, float)) and 0 < next_time < 2**63:
-                    timers.append(dict(unit=row.get('unit', ''), scope=scope, next=next_time / 1000))
+                    timers.append(
+                        dict(
+                            unit=row.get('unit', ''), scope=scope, next=next_time / 1000
+                        )
+                    )
         timers.sort(key=lambda row: row['next'])
         state.update(scopes=scopes, timers=timers[:5])
     else:
@@ -97,8 +131,12 @@ def system_info():
     # After a kernel upgrade, the running kernel's modules directory is gone.
     modules = Path('/usr/lib/modules')
     kernel_changed = modules.is_dir() and not (modules / platform.release()).is_dir()
-    return dict(os=release.get('PRETTY_NAME', platform.system()), kernel=platform.release(),
-                uptime=uptime, kernelChanged=kernel_changed)
+    return dict(
+        os=release.get('PRETTY_NAME', platform.system()),
+        kernel=platform.release(),
+        uptime=uptime,
+        kernelChanged=kernel_changed,
+    )
 
 
 def action_command(action, scope='system', unit=''):
@@ -109,15 +147,27 @@ def action_command(action, scope='system', unit=''):
         return argv
     if action != 'logs' or scope not in ('system', 'user'):
         raise ValueError('Unsupported action or scope.')
-    if unit and (unit.startswith('-') or not re.fullmatch(r'[A-Za-z0-9:_.@\\-]+', unit)):
+    if unit and (
+        unit.startswith('-') or not re.fullmatch(r'[A-Za-z0-9:_.@\\-]+', unit)
+    ):
         raise ValueError('Invalid unit name.')
-    return ['journalctl'] + (['--user'] if scope == 'user' else []) + ['-b', '-n', '200'] + (['--unit=' + unit] if unit else ['-p', 'warning'])
+    return (
+        ['journalctl']
+        + (['--user'] if scope == 'user' else [])
+        + ['-b', '-n', '200']
+        + (['--unit=' + unit] if unit else ['-p', 'warning'])
+    )
 
 
 def maintenance_available():
-    return dict(signing=bool(shutil.which('sudo') and shutil.which('pacman-key')
-                             and any(Path('/usr/share/pacman/keyrings').glob('*.gpg'))),
-                health=bool(shutil.which('pacman')))
+    return dict(
+        signing=bool(
+            shutil.which('sudo')
+            and shutil.which('pacman-key')
+            and any(Path('/usr/share/pacman/keyrings').glob('*.gpg'))
+        ),
+        health=bool(shutil.which('pacman')),
+    )
 
 
 def run_terminal(argv, **kwargs):
@@ -127,10 +177,15 @@ def run_terminal(argv, **kwargs):
 
 def repair_signing():
     if not maintenance_available()['signing']:
-        raise ValueError('Signing repair requires sudo, pacman-key and installed signing keyrings.')
-    print('Reloading installed signing keyrings and rebuilding trust.\n'
-          'Custom keys and local signatures are kept.\n'
-          'Use Update system afterwards to install newer keyring package versions.', flush=True)
+        raise ValueError(
+            'Signing repair requires sudo, pacman-key and installed signing keyrings.'
+        )
+    print(
+        'Reloading installed signing keyrings and rebuilding trust.\n'
+        'Custom keys and local signatures are kept.\n'
+        'Use Update system afterwards to install newer keyring package versions.',
+        flush=True,
+    )
     for operation in ('--init', '--populate', '--updatedb'):
         result = run_terminal(['sudo', '--', 'pacman-key', operation])
         if result.returncode:
@@ -141,23 +196,34 @@ def repair_signing():
 def check_package_health(offer_repair=True):
     if not maintenance_available()['health']:
         raise ValueError('Package health checks require pacman.')
-    print('Checking the package database and missing package files.\n'
-          'These checks do not change packages or verify file contents.', flush=True)
+    print(
+        'Checking the package database and missing package files.\n'
+        'These checks do not change packages or verify file contents.',
+        flush=True,
+    )
     database = run_terminal(['pacman', '-Dk'])
     files = run_terminal(['pacman', '-Qkq'], capture_output=True, text=True)
     print(files.stdout, end='', flush=True)
     print(files.stderr, end='', flush=True)
     status = int(bool(database.returncode or files.returncode))
     if not status:
-        print('\nNo database inconsistencies or missing package files found.', flush=True)
+        print(
+            '\nNo database inconsistencies or missing package files found.', flush=True
+        )
         return 0
     print('\nChecks reported problems; review the output above.', flush=True)
     # Quiet check output is one package/path pair per missing file. Only offer
     # packages still present in enabled repositories; foreign packages need their
     # original source. Never turn arbitrary diagnostic text into install targets.
-    missing = sorted({parts[0] for line in files.stdout.splitlines()
-                      if len(parts := line.split(maxsplit=1)) == 2 and parts[1].startswith('/')
-                      and re.fullmatch(r'[A-Za-z0-9@._+][A-Za-z0-9@._+\-]*', parts[0])})
+    missing = sorted(
+        {
+            parts[0]
+            for line in files.stdout.splitlines()
+            if len(parts := line.split(maxsplit=1)) == 2
+            and parts[1].startswith('/')
+            and re.fullmatch(r'[A-Za-z0-9@._+][A-Za-z0-9@._+\-]*', parts[0])
+        }
+    )
     if not missing or not offer_repair:
         return status
     try:
@@ -168,7 +234,11 @@ def check_package_health(offer_repair=True):
     targets = [name for name in missing if name in native]
     foreign = [name for name in missing if name not in native]
     if foreign:
-        print('Packages requiring repair from their original source: ' + ', '.join(foreign), flush=True)
+        print(
+            'Packages requiring repair from their original source: '
+            + ', '.join(foreign),
+            flush=True,
+        )
     if not targets or not shutil.which('sudo'):
         return status
     print('\nRepository packages with missing files: ' + ', '.join(targets), flush=True)
@@ -192,8 +262,12 @@ def run_action(action, scope='system', unit=''):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--action', choices=('update', 'logs', 'repair-signing', 'check-packages'))
-    parser.add_argument('--section', choices=('info', 'boot', 'services'), default='info')
+    parser.add_argument(
+        '--action', choices=('update', 'logs', 'repair-signing', 'check-packages')
+    )
+    parser.add_argument(
+        '--section', choices=('info', 'boot', 'services'), default='info'
+    )
     parser.add_argument('--scope', choices=('system', 'user'), default='system')
     parser.add_argument('--unit', default='')
     args = parser.parse_args()

@@ -1,4 +1,5 @@
 """Media dialogs inherit the desktop palette and accept a single input."""
+
 import os
 from pathlib import Path
 import shutil
@@ -14,36 +15,56 @@ class MediaDialogTests(unittest.TestCase):
     def test_single_file_launchers(self):
         for kind in ('audio', 'video'):
             module = REPO / f'modules/media/tools/{kind}'
-            desktop = module / f'files/usr/local/share/applications/{kind}-tools.desktop'
+            desktop = (
+                module / f'files/usr/local/share/applications/{kind}-tools.desktop'
+            )
             self.assertIn(f'Exec=/usr/local/bin/{kind}-tools %f\n', desktop.read_text())
-            subprocess.run(['desktop-file-validate', str(desktop)], check=True, capture_output=True)
+            subprocess.run(
+                ['desktop-file-validate', str(desktop)], check=True, capture_output=True
+            )
             library = module / f'files/usr/local/lib/{kind}-tools'
             name = 'gui' if kind == 'audio' else 'video_gui'
             env = dict(os.environ, QT_QPA_PLATFORM='offscreen', PYTHONPATH=str(library))
-            script = f'''
+            script = f"""
 from unittest.mock import patch
 import {name} as gui
 with patch.object(gui.QFileDialog, 'getOpenFileName', return_value=('', '')) as picker:
     with patch('sys.argv', ['{kind}-tools']):
         assert gui.main() == 0
     assert picker.call_count == 1
-'''
-            result = subprocess.run([sys.executable, '-c', script], env=env,
-                                    capture_output=True, text=True, timeout=15)
+"""
+            result = subprocess.run(
+                [sys.executable, '-c', script],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
             self.assertEqual(result.returncode, 0, result.stderr)
 
-    @unittest.skipUnless(shutil.which('dbus-run-session'), 'An isolated session bus is required')
+    @unittest.skipUnless(
+        shutil.which('dbus-run-session'), 'An isolated session bus is required'
+    )
     def test_native_palette_at_startup_and_after_mode_changes(self):
-        if not Path('/usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so').exists():
+        if not Path(
+            '/usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so'
+        ).exists():
             self.skipTest('The KDE Qt platform theme is required')
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            env = dict(os.environ, MEDIA_TEST_REPO=str(REPO), HOME=str(root),
-                       XDG_CONFIG_HOME=str(root / 'config'), XDG_DATA_HOME=str(root / 'data'),
-                       XDG_STATE_HOME=str(root / 'state'), QT_QPA_PLATFORM='offscreen',
-                       QT_QPA_PLATFORMTHEME='kde', UNION_STYLE_NAME='dotfiles')
+            env = dict(
+                os.environ,
+                MEDIA_TEST_REPO=str(REPO),
+                HOME=str(root),
+                XDG_CONFIG_HOME=str(root / 'config'),
+                XDG_DATA_HOME=str(root / 'data'),
+                XDG_STATE_HOME=str(root / 'state'),
+                QT_QPA_PLATFORM='offscreen',
+                QT_QPA_PLATFORMTHEME='kde',
+                UNION_STYLE_NAME='dotfiles',
+            )
             env.pop('QT_STYLE_OVERRIDE', None)
-            script = '''
+            script = """
 import importlib.util, os, sys, time
 from pathlib import Path
 from PySide6.QtDBus import QDBusConnection, QDBusMessage
@@ -80,9 +101,14 @@ for mode in ('dark', 'light', 'dark'):
             assert widget.palette().color(QPalette.Window).name() == colors['background']
             assert widget.palette().color(QPalette.Text).name() == colors['text']
 for window in windows: window.close()
-'''
-            result = subprocess.run(['dbus-run-session', '--', sys.executable, '-c', script],
-                                    env=env, capture_output=True, text=True, timeout=30)
+"""
+            result = subprocess.run(
+                ['dbus-run-session', '--', sys.executable, '-c', script],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
 

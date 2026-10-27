@@ -27,8 +27,18 @@ Singleton {
     // Background reads never dim or disable controls. A user action can queue
     // behind a read, then runs before the next refresh.
     readonly property bool busy: queuedAction !== null || (working && pending !== "status")
-    property var state: ({ profiles: [], active: [], details: ({}),
-        warp: { available: false, connected: false, running: false, state: qsTr("Checking…"), mode: "" } })
+    property var state: ({
+            profiles: [],
+            active: [],
+            details: ({}),
+            warp: {
+                available: false,
+                connected: false,
+                running: false,
+                state: qsTr("Checking…"),
+                mode: ""
+            }
+        })
     signal completed(string operation, bool success)
 
     // A separate application owns the picker, independent of the layer-shell
@@ -49,45 +59,69 @@ Singleton {
         warpMode = mode;
         preferences.setValue("warpMode", mode);
         preferences.sync();
-        if (state.warp?.running) run("warp", {action: "mode", mode}, "warp");
+        if (state.warp?.running)
+            run("warp", {
+                action: "mode",
+                mode
+            }, "warp");
     }
     function run(operation: string, values = {}, key = ""): void {
         if (process.running || request) {
-            if (operation === "status") refreshQueued = true;
-            else if (!busy) queuedAction = {operation, values, key};
+            if (operation === "status")
+                refreshQueued = true;
+            else if (!busy)
+                queuedAction = {
+                    operation,
+                    values,
+                    key
+                };
             return;
         }
-        if (operation !== "status") dismissError();
+        if (operation !== "status")
+            dismissError();
         pending = operation;
         pendingKey = key;
-        actionContext = {operation, key, uuid: values.uuid || "", action: values.action,
-            mode: values.mode};
-        request = Object.assign({op: operation}, values);
+        actionContext = {
+            operation,
+            key,
+            uuid: values.uuid || "",
+            action: values.action,
+            mode: values.mode
+        };
+        request = Object.assign({
+            op: operation
+        }, values);
         received = false;
         process.running = true;
     }
-    function refresh(): void { run("status"); }
-    function dismissError(): void { error = ""; failure = null; }
+    function refresh(): void {
+        run("status");
+    }
+    function dismissError(): void {
+        error = "";
+        failure = null;
+    }
     function applySnapshot(snapshot): void {
         if (failure) {
             const op = failure.operation;
             const profile = snapshot.profiles?.find(p => p.uuid === failure.uuid);
-            const recovered = op === "status"
-                || (op === "connect" && profile?.state === "activated")
-                || (op === "disconnect" && !profile?.active)
-                || (op === "warp" && (failure.action === "connect" ? snapshot.warp?.connected
-                    : failure.action === "mode" ? snapshot.warp?.mode === failure.mode : !snapshot.warp?.running));
-            if (recovered) dismissError();
+            const recovered = op === "status" || (op === "connect" && profile?.state === "activated") || (op === "disconnect" && !profile?.active) || (op === "warp" && (failure.action === "connect" ? snapshot.warp?.connected : failure.action === "mode" ? snapshot.warp?.mode === failure.mode : !snapshot.warp?.running));
+            if (recovered)
+                dismissError();
         }
         // Reuse unchanged collections so models and popovers ignore identical reads.
         let changed = false;
         for (const key of Object.keys(snapshot)) {
-            if (JSON.stringify(snapshot[key]) === JSON.stringify(state[key])) snapshot[key] = state[key];
-            else changed = true;
+            if (JSON.stringify(snapshot[key]) === JSON.stringify(state[key]))
+                snapshot[key] = state[key];
+            else
+                changed = true;
         }
-        if (changed) state = Object.assign({}, state, snapshot);
+        if (changed)
+            state = Object.assign({}, state, snapshot);
     }
-    onObservingChanged: if (observing) refresh()
+    onObservingChanged: if (observing)
+        refresh()
 
     Process {
         id: process
@@ -146,6 +180,7 @@ Singleton {
         interval: root.state.warp?.running && !root.state.warp?.connected ? 2000 : 10000
         repeat: true
         running: root.observing
-        onTriggered: if (!root.working) root.refresh()
+        onTriggered: if (!root.working)
+            root.refresh()
     }
 }

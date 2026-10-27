@@ -1,5 +1,7 @@
 {
-    "packages": ["efibootmgr"],
+    "packages": [
+        "efibootmgr"
+    ],
     "bootloader_config": {
         "bootloader": "Efistub",
         "removable": false,

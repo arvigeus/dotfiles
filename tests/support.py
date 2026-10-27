@@ -1,4 +1,5 @@
 """Shared fixtures: repository paths, helper loaders and the isolated QML runner."""
+
 import copy
 import importlib.util
 import os
@@ -33,9 +34,23 @@ backend = load('desktop_displays', DESKTOP / 'drawers/displays/backend.py')
 
 
 def display(name='eDP-1', **values):
-    return dict(dict(name=name, identity=[name, 'Test', '', '', '123'], label='Test display',
-                     enabled=True, mode='1920x1080@60.00Hz', modes=['1920x1080@60.00Hz', '1920x1080@120.00Hz', '1280x720@60.00Hz'],
-                     scale=1, transform=0, x=0, y=0, mirror='none', dpms=True), **values)
+    return dict(
+        dict(
+            name=name,
+            identity=[name, 'Test', '', '', '123'],
+            label='Test display',
+            enabled=True,
+            mode='1920x1080@60.00Hz',
+            modes=['1920x1080@60.00Hz', '1920x1080@120.00Hz', '1280x720@60.00Hz'],
+            scale=1,
+            transform=0,
+            x=0,
+            y=0,
+            mirror='none',
+            dpms=True,
+        ),
+        **values,
+    )
 
 
 def described(name, description, **values):
@@ -43,7 +58,9 @@ def described(name, description, **values):
 
 
 def state(rows):
-    return dict(available=True, displays=copy.deepcopy(rows), token=backend.fingerprint(rows))
+    return dict(
+        available=True, displays=copy.deepcopy(rows), token=backend.fingerprint(rows)
+    )
 
 
 def copy_theme_ui(root):
@@ -53,7 +70,9 @@ def copy_theme_ui(root):
     shutil.copy(PALETTE, palette)
     for name in ('Theme.qml', 'theme.py'):
         path = root / 'ui' / name
-        path.write_text(path.read_text().replace('/etc/desktop-palette.json', str(palette)))
+        path.write_text(
+            path.read_text().replace('/etc/desktop-palette.json', str(palette))
+        )
 
 
 def run_qml(test, body, setup=None):
@@ -64,22 +83,54 @@ def run_qml(test, body, setup=None):
         for name in ('icons', 'drawers', 'spaces'):
             shutil.copytree(DESKTOP / name, root / name)
         (root / 'runtime').mkdir(mode=0o700)
-        config = root / 'config/quickshell/desktop'; config.mkdir(parents=True)
+        config = root / 'config/quickshell/desktop'
+        config.mkdir(parents=True)
         (config / 'theme-mode').write_text('dark\n')
-        (root / 'drawers/displays/brightness.py').write_text('import json,sys; json.loads(sys.stdin.readline()); print(json.dumps(dict(ok=True,values=[])))')
-        if setup: setup(root)
+        (root / 'drawers/displays/brightness.py').write_text(
+            'import json,sys; json.loads(sys.stdin.readline()); print(json.dumps(dict(ok=True,values=[])))'
+        )
+        if setup:
+            setup(root)
         (root / 'shell.qml').write_text(body)
-        env = {**os.environ, 'QT_QPA_PLATFORM': os.environ.get('DISPLAY_PREVIEW_PLATFORM', 'offscreen'),
-               'XDG_CONFIG_HOME': str(root / 'config'), 'XDG_RUNTIME_DIR': str(root / 'runtime'),
-               'XDG_STATE_HOME': str(root / 'state'), 'XDG_DATA_HOME': str(root / 'data'), 'XDG_CACHE_HOME': str(root / 'cache'), 'PIPEWIRE_REMOTE': 'dotfiles-tests-unavailable',
-               'PYTHONPATH': os.pathsep.join(filter(None, (str(AUDIO_LIB), os.environ.get('PYTHONPATH'))))}
-        if env['QT_QPA_PLATFORM'] != 'offscreen': env['XDG_RUNTIME_DIR'] = os.environ['XDG_RUNTIME_DIR']
+        env = {
+            **os.environ,
+            'QT_QPA_PLATFORM': os.environ.get('DISPLAY_PREVIEW_PLATFORM', 'offscreen'),
+            'XDG_CONFIG_HOME': str(root / 'config'),
+            'XDG_RUNTIME_DIR': str(root / 'runtime'),
+            'XDG_STATE_HOME': str(root / 'state'),
+            'XDG_DATA_HOME': str(root / 'data'),
+            'XDG_CACHE_HOME': str(root / 'cache'),
+            'PIPEWIRE_REMOTE': 'dotfiles-tests-unavailable',
+            'PYTHONPATH': os.pathsep.join(
+                filter(None, (str(AUDIO_LIB), os.environ.get('PYTHONPATH')))
+            ),
+        }
+        if env['QT_QPA_PLATFORM'] != 'offscreen':
+            env['XDG_RUNTIME_DIR'] = os.environ['XDG_RUNTIME_DIR']
         env.pop('HYPRLAND_INSTANCE_SIGNATURE', None)
-        if env['QT_QPA_PLATFORM'] == 'offscreen': env.pop('WAYLAND_DISPLAY', None)
-        result = subprocess.run([QS, '--no-color', '-p', str(root / 'shell.qml')], env=env, check=False, capture_output=True, text=True, timeout=15)
+        if env['QT_QPA_PLATFORM'] == 'offscreen':
+            env.pop('WAYLAND_DISPLAY', None)
+        result = subprocess.run(
+            [QS, '--no-color', '-p', str(root / 'shell.qml')],
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
     log = result.stdout + result.stderr
     test.assertEqual(result.returncode, 0, log)
     test.assertIn('DISPLAY_PASS', log)
-    for error in ('DISPLAY_FAIL', 'TypeError', 'ReferenceError', 'Binding loop', 'Unable to assign', 'polish() loop', 'Polish loop', 'Failed to load', 'coerced to void'):
+    for error in (
+        'DISPLAY_FAIL',
+        'TypeError',
+        'ReferenceError',
+        'Binding loop',
+        'Unable to assign',
+        'polish() loop',
+        'Polish loop',
+        'Failed to load',
+        'coerced to void',
+    ):
         test.assertNotIn(error, log)
     return log

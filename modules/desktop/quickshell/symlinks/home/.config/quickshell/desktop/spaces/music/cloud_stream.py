@@ -1,4 +1,5 @@
 """Revocable loopback streams; credentials and provider URLs stay in Python."""
+
 import hashlib
 import re
 import secrets
@@ -36,7 +37,7 @@ class ProviderSession:
         return self.base + '/' + key + ('/' if directory else '')
 
     def resolve(self, path):
-        suffix = path[len(urlsplit(self.base).path):]
+        suffix = path[len(urlsplit(self.base).path) :]
         if not suffix:
             return self.url
         key, _, tail = suffix.lstrip('/').partition('/')
@@ -57,7 +58,11 @@ class ProviderSession:
     @staticmethod
     def validate_url(url):
         parsed = urlsplit(url)
-        if parsed.scheme not in ('http', 'https') or not parsed.netloc or any(char in url for char in '\r\n\0'):
+        if (
+            parsed.scheme not in ('http', 'https')
+            or not parsed.netloc
+            or any(char in url for char in '\r\n\0')
+        ):
             raise MusicError('The provider playlist contains an unsupported media URL.')
 
     def manifest(self, response, content_type):
@@ -78,17 +83,29 @@ class ProviderSession:
             for element in root.iter():
                 if element.tag == namespace + 'BaseURL':
                     value = (element.text or '').strip()
-                    element.text = self.reference(value, value.endswith('/')) if urlsplit(value).scheme else value
+                    element.text = (
+                        self.reference(value, value.endswith('/'))
+                        if urlsplit(value).scheme
+                        else value
+                    )
                 for key in ('media', 'initialization', 'sourceURL'):
                     url = element.get(key, '')
                     if urlsplit(url).scheme:
                         directory = urljoin(url, '.')
-                        element.set(key, self.reference(directory, True) + url[len(directory):])
+                        element.set(
+                            key, self.reference(directory, True) + url[len(directory) :]
+                        )
             return ET.tostring(root, encoding='utf-8', xml_declaration=True)
         lines = []
         for line in data.decode('utf-8-sig').splitlines():
             if line.startswith('#'):
-                line = re.sub(r'URI="([^"]+)"', lambda match: 'URI="' + self.reference(urljoin(base, match[1])) + '"', line)
+                line = re.sub(
+                    r'URI="([^"]+)"',
+                    lambda match: (
+                        'URI="' + self.reference(urljoin(base, match[1])) + '"'
+                    ),
+                    line,
+                )
             elif line.strip():
                 line = self.reference(urljoin(base, line.strip()))
             lines.append(line)
@@ -137,18 +154,46 @@ class StreamBroker:
                             self.send_error(404)
                             return
                         client, track = entry
-                        upstream = client.open('stream', {'id': track, 'format': 'raw'}, headers)
+                        upstream = client.open(
+                            'stream', {'id': track, 'format': 'raw'}, headers
+                        )
                     content_type = str(upstream.headers.get('Content-Type', '')).lower()
                     manifest = None
                     if isinstance(entry, ProviderSession):
                         suffix = urlsplit(upstream.geturl()).path.lower()
-                        if suffix.endswith('.m3u8'):content_type = 'application/vnd.apple.mpegurl'
-                        elif suffix.endswith('.mpd'):content_type = 'application/dash+xml'
-                    if isinstance(entry, ProviderSession) and ('mpegurl' in content_type or 'dash+xml' in content_type):
+                        if suffix.endswith('.m3u8'):
+                            content_type = 'application/vnd.apple.mpegurl'
+                        elif suffix.endswith('.mpd'):
+                            content_type = 'application/dash+xml'
+                    if isinstance(entry, ProviderSession) and (
+                        'mpegurl' in content_type or 'dash+xml' in content_type
+                    ):
                         manifest = entry.manifest(upstream, content_type)
-                    elif not content_type.startswith(('audio/', 'application/octet-stream', 'video/')) and not (
-                        isinstance(entry, ProviderSession) and (content_type.startswith('text/vtt') or
-                        urlsplit(upstream.geturl()).path.lower().endswith(('.ts', '.m4s', '.aac', '.mp4', '.m4a', '.mp3', '.ogg', '.opus', '.wav', '.flac', '.webm')))):
+                    elif not content_type.startswith(
+                        ('audio/', 'application/octet-stream', 'video/')
+                    ) and not (
+                        isinstance(entry, ProviderSession)
+                        and (
+                            content_type.startswith('text/vtt')
+                            or urlsplit(upstream.geturl())
+                            .path.lower()
+                            .endswith(
+                                (
+                                    '.ts',
+                                    '.m4s',
+                                    '.aac',
+                                    '.mp4',
+                                    '.m4a',
+                                    '.mp3',
+                                    '.ogg',
+                                    '.opus',
+                                    '.wav',
+                                    '.flac',
+                                    '.webm',
+                                )
+                            )
+                        )
+                    ):
                         self.send_error(502)
                         return
                     with owner.lock:
@@ -157,7 +202,12 @@ class StreamBroker:
                             return
                         owner.responses[upstream] = path
                     self.send_response(upstream.status)
-                    for key in ('Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges'):
+                    for key in (
+                        'Content-Type',
+                        'Content-Length',
+                        'Content-Range',
+                        'Accept-Ranges',
+                    ):
                         if manifest is not None and key != 'Content-Type':
                             continue
                         if value := upstream.headers.get(key):
@@ -183,13 +233,19 @@ class StreamBroker:
 
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         self.server.daemon_threads = True
-        self.thread = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': .05}, daemon=True)
+        self.thread = threading.Thread(
+            target=self.server.serve_forever,
+            kwargs={'poll_interval': 0.05},
+            daemon=True,
+        )
         self.thread.start()
 
     def url(self, item):
         client = self.client_factory()
         if item.get('account') != client.account_id:
-            raise MusicError('Refresh My Library before playing an item from another account.')
+            raise MusicError(
+                'Refresh My Library before playing an item from another account.'
+            )
         track = identity(item.get('id'))
         with self.lock:
             self.start()
@@ -199,7 +255,11 @@ class StreamBroker:
 
     def provider_url(self, url, headers):
         parsed = urlsplit(url)
-        if parsed.scheme not in ('https', 'http') or not parsed.netloc or any(c in url for c in '\r\n\0'):
+        if (
+            parsed.scheme not in ('https', 'http')
+            or not parsed.netloc
+            or any(c in url for c in '\r\n\0')
+        ):
             raise MusicError('The provider returned an invalid stream URL.')
         with self.lock:
             self.start()
@@ -224,7 +284,11 @@ class StreamBroker:
         with self.lock:
             path = self.paths.pop(str(ipc), None)
             self.tickets.pop(path, None)
-            responses = [response for response, ticket in self.responses.items() if ticket == path]
+            responses = [
+                response
+                for response, ticket in self.responses.items()
+                if ticket == path
+            ]
         for response in responses:
             self.close_response(response)
 

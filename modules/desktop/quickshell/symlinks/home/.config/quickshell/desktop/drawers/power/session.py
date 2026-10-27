@@ -3,6 +3,7 @@
 
 Quickshell reports UPower's OnBattery as {"op": "power", "onBattery": bool|null}.
 """
+
 import fcntl
 import json
 import os
@@ -15,7 +16,10 @@ import time
 
 import backend
 
-STATE = Path(os.environ.get('XDG_STATE_HOME', Path.home() / '.local/state')) / 'quickshell/power'
+STATE = (
+    Path(os.environ.get('XDG_STATE_HOME', Path.home() / '.local/state'))
+    / 'quickshell/power'
+)
 
 
 class Session:
@@ -29,12 +33,20 @@ class Session:
             saved = json.loads(self.path.read_text())
             if isinstance(saved, dict):
                 once = saved.get('once')
-                if (isinstance(once, dict) and isinstance(once.get('key'), str)
-                        and type(once.get('previous')) is int and 0 <= once['previous'] < 100
-                        and isinstance(once.get('boot'), str)):
+                if (
+                    isinstance(once, dict)
+                    and isinstance(once.get('key'), str)
+                    and type(once.get('previous')) is int
+                    and 0 <= once['previous'] < 100
+                    and isinstance(once.get('boot'), str)
+                ):
                     self.data['once'] = once
                 recording = saved.get('recording')
-                if isinstance(recording, dict) and isinstance(recording.get('path'), str) and Path(recording['path']).is_absolute():
+                if (
+                    isinstance(recording, dict)
+                    and isinstance(recording.get('path'), str)
+                    and Path(recording['path']).is_absolute()
+                ):
                     self.data['recording'] = recording
                 migrate = saved != self.data
         except (OSError, ValueError):
@@ -66,9 +78,7 @@ class Session:
         self.dirty = False
 
     def state(self):
-        return dict(self.data, error=self.error,
-                    recordAvailable=self.record_available)
-
+        return dict(self.data, error=self.error, recordAvailable=self.record_available)
 
     def restore_charge(self):
         once = self.data['once']
@@ -77,10 +87,19 @@ class Session:
         rows, _ = self.controller.hardware()
         row = next((r for r in rows if r['key'] == once['key']), None)
         if not row or row.get('limit') is None:
-            raise ValueError('Battery care is unavailable; the previous charge limit is still pending restoration.')
+            raise ValueError(
+                'Battery care is unavailable; the previous charge limit is still pending restoration.'
+            )
         if row['limit'] == 100:
-            self.controller.handle(dict(op='charge-limit', key=row['key'], identity=row['identity'],
-                                        previous=100, value=once['previous']))
+            self.controller.handle(
+                dict(
+                    op='charge-limit',
+                    key=row['key'],
+                    identity=row['identity'],
+                    previous=100,
+                    value=once['previous'],
+                )
+            )
         # Respect a limit changed outside this utility.
         self.data['once'] = None
         self.save()
@@ -106,20 +125,39 @@ class Session:
             if self.data['once']:
                 raise ValueError('A one-time full charge is already active.')
             if self.on_battery is not False:
-                raise ValueError('Connect external power before starting a one-time full charge.')
+                raise ValueError(
+                    'Connect external power before starting a one-time full charge.'
+                )
             rows, _ = self.controller.hardware()
             row = next((r for r in rows if r['key'] == request.get('key')), None)
-            if not row or row.get('limit') is None or row['limit'] >= 100 or row.get('maximum', 0) < 100:
+            if (
+                not row
+                or row.get('limit') is None
+                or row['limit'] >= 100
+                or row.get('maximum', 0) < 100
+            ):
                 raise ValueError('One-time full charging is unavailable.')
             if any(row.get(k) != request.get(k) for k in ('identity', 'limit')):
                 raise ValueError('The charge limit changed. Refresh and try again.')
-            self.data['once'] = dict(key=row['key'], previous=row['limit'], boot=self.boot)
+            self.data['once'] = dict(
+                key=row['key'], previous=row['limit'], boot=self.boot
+            )
             self.save()  # Write restoration intent before changing hardware.
             try:
-                self.controller.handle(dict(op='charge-limit', key=row['key'], identity=row['identity'], previous=row['limit'], value=100))
+                self.controller.handle(
+                    dict(
+                        op='charge-limit',
+                        key=row['key'],
+                        identity=row['identity'],
+                        previous=row['limit'],
+                        value=100,
+                    )
+                )
             except Exception:
                 rows, _ = self.controller.hardware()
-                actual = next((r.get('limit') for r in rows if r['key'] == row['key']), None)
+                actual = next(
+                    (r.get('limit') for r in rows if r['key'] == row['key']), None
+                )
                 if actual is not None and actual != 100:
                     self.data['once'] = None
                     self.save()
@@ -138,18 +176,38 @@ class Session:
     def record(self, request):
         if self.child or not self.record_available:
             raise ValueError('Performance recording is unavailable or already running.')
-        path = self.directory / ('recording-' + time.strftime('%Y%m%d-%H%M%S') + '-' + str(time.time_ns() % 1000000))
+        path = self.directory / (
+            'recording-'
+            + time.strftime('%Y%m%d-%H%M%S')
+            + '-'
+            + str(time.time_ns() % 1000000)
+        )
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.log = (self.directory / 'recording.log').open('w')
         try:
             # Battery-safe default: no GPU sensor reads, no synthetic workload.
-            self.child = subprocess.Popen(['power-study', '--until-stopped', '--warmup', '0',
-                '--interval', '2', '--output', str(path), 'desktop'], stdout=self.log, stderr=self.log)
+            self.child = subprocess.Popen(
+                [
+                    'power-study',
+                    '--until-stopped',
+                    '--warmup',
+                    '0',
+                    '--interval',
+                    '2',
+                    '--output',
+                    str(path),
+                    'desktop',
+                ],
+                stdout=self.log,
+                stderr=self.log,
+            )
         except Exception:
             self.log.close()
             self.log = None
             raise
-        self.data['recording'] = dict(running=True, path=str(path), summary=None, error='')
+        self.data['recording'] = dict(
+            running=True, path=str(path), summary=None, error=''
+        )
         self.save()
 
     def read_recording(self):
@@ -164,7 +222,9 @@ class Session:
             row['error'] = ''
         except (OSError, ValueError):
             row['summary'] = None
-            row['error'] = 'Recording ended without a summary. Open the recording folder for details.'
+            row['error'] = (
+                'Recording ended without a summary. Open the recording folder for details.'
+            )
 
     def poll_recording(self):
         if not self.child or self.child.poll() is None:
@@ -195,6 +255,7 @@ class Session:
 
 def main():
     from gi.repository import GLib, GLibUnix
+
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
     lock = (STATE / 'session.lock').open('w')
     try:
@@ -206,7 +267,10 @@ def main():
     pending = {'recording': 0}
 
     def emit(reply=False):
-        print(json.dumps(dict(state=session.state(), reply=reply), allow_nan=False), flush=True)
+        print(
+            json.dumps(dict(state=session.state(), reply=reply), allow_nan=False),
+            flush=True,
+        )
         if session.child and not pending['recording']:
             pending['recording'] = GLib.timeout_add_seconds(2, recording)
 
@@ -231,6 +295,7 @@ def main():
     # Nonblocking stdin prevents a partial JSON line from blocking the recording poll.
     os.set_blocking(sys.stdin.fileno(), False)
     buffer = bytearray()
+
     def command(_fd, condition):
         if condition & GLib.IOCondition.IN:
             chunk = os.read(sys.stdin.fileno(), 65536)
@@ -249,15 +314,24 @@ def main():
                     session.error = str(error)
                     # A failed readback may still have applied a change.
                     reconcile()
-                emit(reply=not isinstance(request, dict) or request.get('op') != 'power')
+                emit(
+                    reply=not isinstance(request, dict) or request.get('op') != 'power'
+                )
         if condition & (GLib.IOCondition.HUP | GLib.IOCondition.ERR):
             loop.quit()
             return False
         return True
-    GLib.io_add_watch(sys.stdin.fileno(), GLib.IOCondition.IN | GLib.IOCondition.HUP | GLib.IOCondition.ERR, command)
+
+    GLib.io_add_watch(
+        sys.stdin.fileno(),
+        GLib.IOCondition.IN | GLib.IOCondition.HUP | GLib.IOCondition.ERR,
+        command,
+    )
+
     def stop(*_):
         loop.quit()
         return False
+
     for signum in (signal.SIGTERM, signal.SIGINT):
         GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, signum, stop)
     try:
@@ -286,6 +360,7 @@ def supervise():
             os.kill(pid, signum)
         except ProcessLookupError:
             pass
+
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, forward)
     _, status = os.waitpid(pid, 0)

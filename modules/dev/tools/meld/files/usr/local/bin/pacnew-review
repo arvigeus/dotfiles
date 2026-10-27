@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # sudoedit keeps Meld in the user's graphical session and copies edits back.
-if (( EUID == 0 )); then
+if ((EUID == 0)); then
     echo 'Run pacnew-review as your regular desktop user.' >&2
     exit 1
 fi
 export DIFFPROG=meld
 # Headless and noninteractive runs can report files without launching a GUI.
-if [[ ! -t 0 || ( -z ${WAYLAND_DISPLAY:-} && -z ${DISPLAY:-} ) ]]; then
+if [[ ! -t 0 || (-z ${WAYLAND_DISPLAY:-} && -z ${DISPLAY:-}) ]]; then
     exec pacdiff --output "$@"
 fi
 # pacdiff recursively searches CacheDir even for a two-way View. Pacman's

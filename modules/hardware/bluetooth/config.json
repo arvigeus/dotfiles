@@ -4,7 +4,11 @@
             "enabled": true
         }
     },
-    "extra": {"masked_user_services": ["app-blueman@autostart.service"]},
+    "extra": {
+        "masked_user_services": [
+            "app-blueman@autostart.service"
+        ]
+    },
     "packages": [
         "blueman"
     ]

@@ -20,41 +20,55 @@ Item {
     property bool processReady: false
     property var startupRequests: []
     signal failed(string message)
-    signal ready()
+    signal ready
 
     function settle(id, result, error, errorCode) {
         const pending = callbacks[id];
         delete callbacks[id];
-        if (!pending) return;
+        if (!pending)
+            return;
         pendingCount--;
-        try { pending.callback(result, error || "", errorCode || ""); }
-        catch (exception) {
+        try {
+            pending.callback(result, error || "", errorCode || "");
+        } catch (exception) {
             console.error(serviceName + " response handler failed:", exception);
             failed(serviceName + " could not display that response. Retry the request.");
         }
     }
     function failPending(message) {
-        for (const id of Object.keys(callbacks)) settle(id, null, message);
+        for (const id of Object.keys(callbacks))
+            settle(id, null, message);
     }
     function request(op, args, callback, timeoutMs) {
         const id = ++serial;
-        callbacks[id] = {callback: callback || function() {},
-                         deadline: timeoutMs === 0 ? Infinity : Date.now() + (timeoutMs || timeout)};
+        callbacks[id] = {
+            callback: callback || function () {},
+            deadline: timeoutMs === 0 ? Infinity : Date.now() + (timeoutMs || timeout)
+        };
         pendingCount++;
         if (stopped) {
             settle(id, null, serviceName + " service stopped. Close this module using the X in Spaces, then reopen it.");
             return id;
         }
-        const line = JSON.stringify(Object.assign({}, args || {}, {id: id, op: op})) + "\n";
-        if (processReady) worker.write(line);
+        const line = JSON.stringify(Object.assign({}, args || {}, {
+            id: id,
+            op: op
+        })) + "\n";
+        if (processReady)
+            worker.write(line);
         else {
-            startupRequests.push({id: id, line: line});
+            startupRequests.push({
+                id: id,
+                line: line
+            });
             worker.running = true;
         }
         return id;
     }
     Timer {
-        interval: 1000; repeat: true; running: !root.stopped && root.pendingCount > 0
+        interval: 1000
+        repeat: true
+        running: !root.stopped && root.pendingCount > 0
         onTriggered: {
             const now = Date.now();
             for (const id of Object.keys(root.callbacks))
@@ -71,18 +85,23 @@ Item {
             const requests = root.startupRequests;
             root.startupRequests = [];
             for (const request of requests)
-                if (root.callbacks[request.id]) worker.write(request.line);
+                if (root.callbacks[request.id])
+                    worker.write(request.line);
             root.ready();
         }
         stdinEnabled: true
-        stderr: SplitParser { onRead: data => console.warn(root.serviceName + " helper reported an error") }
+        stderr: SplitParser {
+            onRead: data => console.warn(root.serviceName + " helper reported an error")
+        }
         stdout: SplitParser {
             onRead: data => {
-                if (!String(data).trim()) return;
+                if (!String(data).trim())
+                    return;
                 let response;
                 try {
                     response = JSON.parse(data);
-                    if (!response || response.id === undefined) throw new Error("missing response id");
+                    if (!response || response.id === undefined)
+                        throw new Error("missing response id");
                 } catch (exception) {
                     const message = root.serviceName + " returned an unreadable response. Retry the request.";
                     root.failPending(message);

@@ -1,4 +1,5 @@
 """Network boundaries and the production Wi-Fi drawer, without changing host networking."""
+
 import importlib.util
 import json
 import os
@@ -13,7 +14,9 @@ from support import copy_theme_ui
 
 REPO = Path(__file__).resolve().parents[1]
 DESKTOP = REPO / 'modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop'
-SPEC = importlib.util.spec_from_file_location('desktop_network', DESKTOP / 'drawers/network/backend.py')
+SPEC = importlib.util.spec_from_file_location(
+    'desktop_network', DESKTOP / 'drawers/network/backend.py'
+)
 backend = importlib.util.module_from_spec(SPEC)
 _bytecode_disabled = sys.dont_write_bytecode
 sys.dont_write_bytecode = True
@@ -22,6 +25,7 @@ sys.dont_write_bytecode = _bytecode_disabled
 QS = shutil.which('qs')
 try:
     import gi
+
     gi.require_version('NM', '1.0')
     from gi.repository import NM
 except (ImportError, ValueError):
@@ -30,24 +34,40 @@ except (ImportError, ValueError):
 
 class WireguardImportTests(unittest.TestCase):
     def test_picker_cancel_does_not_launch_editor(self):
-        with patch.object(backend.subprocess, 'run', return_value=Mock(returncode=1, stdout='')) as run:
+        with patch.object(
+            backend.subprocess, 'run', return_value=Mock(returncode=1, stdout='')
+        ) as run:
             backend.import_wireguard()
         self.assertEqual(run.call_count, 1)
         self.assertEqual(run.call_args.args[0][:2], ['zenity', '--file-selection'])
 
     def test_selected_filename_is_one_argument_and_contents_are_not_read(self):
         filename = '/tmp/WireGuard configs/iPhone #% ✓ $(touch unexpected).conf'
-        with patch.object(backend.subprocess, 'run', side_effect=[
-                Mock(returncode=0, stdout=filename + '\n'), Mock(returncode=0)]) as run:
+        with patch.object(
+            backend.subprocess,
+            'run',
+            side_effect=[
+                Mock(returncode=0, stdout=filename + '\n'),
+                Mock(returncode=0),
+            ],
+        ) as run:
             backend.import_wireguard()
         self.assertEqual(run.call_count, 2)
-        self.assertEqual(run.call_args.args[0],
-                         ['nm-connection-editor', '--type', 'wireguard', '--import', filename])
+        self.assertEqual(
+            run.call_args.args[0],
+            ['nm-connection-editor', '--type', 'wireguard', '--import', filename],
+        )
 
     def test_editor_failure_shows_generic_error_without_diagnostics(self):
-        with patch.object(backend.subprocess, 'run', side_effect=[
+        with patch.object(
+            backend.subprocess,
+            'run',
+            side_effect=[
                 Mock(returncode=0, stdout='/tmp/test.conf\n'),
-                Mock(returncode=1, stderr='private-key'), Mock(returncode=0)]) as run:
+                Mock(returncode=1, stderr='private-key'),
+                Mock(returncode=0),
+            ],
+        ) as run:
             backend.import_wireguard()
         self.assertEqual(run.call_args.args[0][:2], ['zenity', '--error'])
         self.assertNotIn('private-key', str(run.call_args))
@@ -55,98 +75,195 @@ class WireguardImportTests(unittest.TestCase):
 
 class WarpTests(unittest.TestCase):
     def test_connected_status_and_mode_reads_accept_terms(self):
-        with patch.object(backend.shutil, 'which', return_value='/usr/bin/warp-cli'), \
-                patch.object(backend, 'command', side_effect=[
+        with (
+            patch.object(backend.shutil, 'which', return_value='/usr/bin/warp-cli'),
+            patch.object(
+                backend,
+                'command',
+                side_effect=[
                     Mock(returncode=0, stdout='active\n'),
-                    Mock(returncode=0, stdout='Status update: Connected\nNetwork: healthy\n'),
-                    Mock(returncode=0, stdout='(User) Mode: WarpWithDnsOverHttps\n')]) as command:
+                    Mock(
+                        returncode=0,
+                        stdout='Status update: Connected\nNetwork: healthy\n',
+                    ),
+                    Mock(returncode=0, stdout='(User) Mode: WarpWithDnsOverHttps\n'),
+                ],
+            ) as command,
+        ):
             state = backend.warp_status()
         self.assertTrue(state['running'])
         self.assertTrue(state['connected'])
         self.assertEqual(state['mode'], 'warp+doh')
-        self.assertEqual(command.call_args_list[1].args[0], ['warp-cli', '--accept-tos', '--no-ansi', 'status'])
-        self.assertEqual(command.call_args_list[2].args[0], ['warp-cli', '--accept-tos', '--no-ansi', 'settings'])
+        self.assertEqual(
+            command.call_args_list[1].args[0],
+            ['warp-cli', '--accept-tos', '--no-ansi', 'status'],
+        )
+        self.assertEqual(
+            command.call_args_list[2].args[0],
+            ['warp-cli', '--accept-tos', '--no-ansi', 'settings'],
+        )
 
     def test_stopped_status_does_not_query_cli_or_start_daemon(self):
-        with patch.object(backend.shutil, 'which', return_value='/usr/bin/warp-cli'), \
-                patch.object(backend, 'command', return_value=Mock(stdout='inactive\n')) as command:
+        with (
+            patch.object(backend.shutil, 'which', return_value='/usr/bin/warp-cli'),
+            patch.object(
+                backend, 'command', return_value=Mock(stdout='inactive\n')
+            ) as command,
+        ):
             state = backend.warp_status()
         self.assertFalse(state['running'])
         self.assertFalse(state['connected'])
         self.assertEqual(command.call_count, 1)
 
     def test_first_connection_waits_for_daemon_and_registers_when_missing(self):
-        replies = [Mock(stdout='{"code":"FailedToConnectToDaemon"}', stderr=''),
-                   Mock(stdout='{"code":"MissingRegistration"}', stderr=''),
-                   Mock(returncode=1, stdout='{"code":"MissingRegistration"}', stderr='')]
-        with patch.object(backend, 'checked') as checked, patch.object(backend, 'command', side_effect=replies), patch.object(backend.time, 'sleep'):
+        replies = [
+            Mock(stdout='{"code":"FailedToConnectToDaemon"}', stderr=''),
+            Mock(stdout='{"code":"MissingRegistration"}', stderr=''),
+            Mock(returncode=1, stdout='{"code":"MissingRegistration"}', stderr=''),
+        ]
+        with (
+            patch.object(backend, 'checked') as checked,
+            patch.object(backend, 'command', side_effect=replies),
+            patch.object(backend.time, 'sleep'),
+        ):
             backend.warp_control({'action': 'connect', 'mode': 'doh'})
-        self.assertEqual(checked.call_args_list[0].args[0], ['systemctl', '--no-ask-password', 'start', 'warp-svc.service'])
-        self.assertEqual([c.args[0] for c in checked.call_args_list[1:]], [
-            ['warp-cli', '--accept-tos', 'registration', 'new'],
-            ['warp-cli', '--accept-tos', 'mode', 'doh'],
-            ['warp-cli', '--accept-tos', 'connect']])
+        self.assertEqual(
+            checked.call_args_list[0].args[0],
+            ['systemctl', '--no-ask-password', 'start', 'warp-svc.service'],
+        )
+        self.assertEqual(
+            [c.args[0] for c in checked.call_args_list[1:]],
+            [
+                ['warp-cli', '--accept-tos', 'registration', 'new'],
+                ['warp-cli', '--accept-tos', 'mode', 'doh'],
+                ['warp-cli', '--accept-tos', 'connect'],
+            ],
+        )
 
     def test_existing_registration_is_reused_even_with_stale_register_request(self):
-        with patch.object(backend, 'checked') as checked, patch.object(backend, 'command', return_value=Mock(returncode=0, stdout='{}', stderr='')):
-            backend.warp_control({'action': 'connect', 'mode': 'tunnel_only', 'register': True})
+        with (
+            patch.object(backend, 'checked') as checked,
+            patch.object(
+                backend,
+                'command',
+                return_value=Mock(returncode=0, stdout='{}', stderr=''),
+            ),
+        ):
+            backend.warp_control(
+                {'action': 'connect', 'mode': 'tunnel_only', 'register': True}
+            )
             calls = [c.args[0] for c in checked.call_args_list]
             self.assertFalse(any('new' in argv or 'delete' in argv for argv in calls))
             self.assertIn(['warp-cli', '--accept-tos', 'mode', 'tunnel_only'], calls)
             checked.reset_mock()
             backend.warp_control({'action': 'disconnect'})
-            self.assertEqual(checked.call_args_list[-1].args[0], ['systemctl', '--no-ask-password', 'stop', 'warp-svc.service'])
+            self.assertEqual(
+                checked.call_args_list[-1].args[0],
+                ['systemctl', '--no-ask-password', 'stop', 'warp-svc.service'],
+            )
 
     def test_failed_connection_stops_daemon(self):
         def fail_connect(argv, timeout=20):
             if argv == ['warp-cli', '--accept-tos', 'connect']:
                 raise ValueError('Connection failed')
             return ''
-        with patch.object(backend, 'checked', side_effect=fail_connect) as checked, \
-                patch.object(backend, 'command', return_value=Mock(returncode=0, stdout='{}', stderr='')):
+
+        with (
+            patch.object(backend, 'checked', side_effect=fail_connect) as checked,
+            patch.object(
+                backend,
+                'command',
+                return_value=Mock(returncode=0, stdout='{}', stderr=''),
+            ),
+        ):
             with self.assertRaisesRegex(ValueError, 'Could not connect WARP'):
                 backend.warp_control({'action': 'connect', 'mode': 'warp+doh'})
-            self.assertEqual(checked.call_args_list[-1].args[0],
-                             ['systemctl', '--no-ask-password', 'stop', 'warp-svc.service'])
+            self.assertEqual(
+                checked.call_args_list[-1].args[0],
+                ['systemctl', '--no-ask-password', 'stop', 'warp-svc.service'],
+            )
 
     def test_unknown_registration_failure_does_not_create_or_connect(self):
-        with patch.object(backend, 'checked') as checked, patch.object(backend, 'command', side_effect=[
-                Mock(returncode=0, stdout='{}', stderr=''),
-                Mock(returncode=1, stdout='{"code":"OtherFailure"}', stderr='private-data')]):
+        with (
+            patch.object(backend, 'checked') as checked,
+            patch.object(
+                backend,
+                'command',
+                side_effect=[
+                    Mock(returncode=0, stdout='{}', stderr=''),
+                    Mock(
+                        returncode=1,
+                        stdout='{"code":"OtherFailure"}',
+                        stderr='private-data',
+                    ),
+                ],
+            ),
+        ):
             with self.assertRaisesRegex(ValueError, 'Could not read WARP registration'):
                 backend.warp_control({'action': 'connect'})
-        self.assertEqual([c.args[0] for c in checked.call_args_list], [
-            ['systemctl', '--no-ask-password', 'start', 'warp-svc.service'],
-            ['systemctl', '--no-ask-password', 'stop', 'warp-svc.service']])
+        self.assertEqual(
+            [c.args[0] for c in checked.call_args_list],
+            [
+                ['systemctl', '--no-ask-password', 'start', 'warp-svc.service'],
+                ['systemctl', '--no-ask-password', 'stop', 'warp-svc.service'],
+            ],
+        )
 
     def test_disconnect_stops_service_even_when_cli_times_out(self):
-        with patch.object(backend, 'checked') as checked, patch.object(backend, 'command', side_effect=ValueError('timeout')):
+        with (
+            patch.object(backend, 'checked') as checked,
+            patch.object(backend, 'command', side_effect=ValueError('timeout')),
+        ):
             backend.warp_control({'action': 'disconnect'})
-        checked.assert_called_once_with(['systemctl', '--no-ask-password', 'stop', 'warp-svc.service'], 45)
+        checked.assert_called_once_with(
+            ['systemctl', '--no-ask-password', 'stop', 'warp-svc.service'], 45
+        )
 
     def test_startup_timeout_stops_service_without_registering(self):
-        with patch.object(backend, 'checked') as checked, patch.object(backend, 'command',
-                return_value=Mock(stdout='{"code":"FailedToConnectToDaemon"}', stderr='')), patch.object(backend.time, 'sleep'):
+        with (
+            patch.object(backend, 'checked') as checked,
+            patch.object(
+                backend,
+                'command',
+                return_value=Mock(
+                    stdout='{"code":"FailedToConnectToDaemon"}', stderr=''
+                ),
+            ),
+            patch.object(backend.time, 'sleep'),
+        ):
             with self.assertRaisesRegex(ValueError, 'did not become ready'):
                 backend.warp_control({'action': 'connect'})
         self.assertEqual(len(checked.call_args_list), 2)
-        self.assertEqual(checked.call_args_list[-1].args[0], ['systemctl', '--no-ask-password', 'stop', 'warp-svc.service'])
+        self.assertEqual(
+            checked.call_args_list[-1].args[0],
+            ['systemctl', '--no-ask-password', 'stop', 'warp-svc.service'],
+        )
 
     def test_mode_changes_do_not_start_or_register_daemon(self):
         with patch.object(backend, 'checked') as checked:
             for mode in backend.WARP_MODES:
                 backend.warp_control({'action': 'mode', 'mode': mode})
             self.assertEqual(len(checked.call_args_list), 7)
-            self.assertTrue(all(c.args[0][:3] == ['warp-cli', '--accept-tos', 'mode'] for c in checked.call_args_list))
+            self.assertTrue(
+                all(
+                    c.args[0][:3] == ['warp-cli', '--accept-tos', 'mode']
+                    for c in checked.call_args_list
+                )
+            )
             with self.assertRaisesRegex(ValueError, 'supported WARP mode'):
                 backend.warp_control({'action': 'mode', 'mode': 'invalid'})
         self.assertEqual(backend.warp_mode('WarpWithDnsOverHttps'), 'warp+doh')
         self.assertEqual(backend.warp_mode('WarpWithDnsOverTls'), 'warp+dot')
 
-    @unittest.skipUnless(shutil.which('node'), 'Node is required to evaluate the polkit rule')
+    @unittest.skipUnless(
+        shutil.which('node'), 'Node is required to evaluate the polkit rule'
+    )
     def test_warp_policy_only_allows_local_active_wheel_start_stop(self):
-        policy = REPO / 'modules/internet/cloudflare/files/etc/polkit-1/rules.d/50-desktop-warp.rules'
-        script = '''const fs = require('fs'), vm = require('vm');
+        policy = (
+            REPO
+            / 'modules/internet/cloudflare/files/etc/polkit-1/rules.d/50-desktop-warp.rules'
+        )
+        script = """const fs = require('fs'), vm = require('vm');
 let rule;
 vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
  polkit: {addRule: callback => rule = callback, Result: {YES: 'yes'}}
@@ -159,12 +276,23 @@ if (!allowed('warp-svc.service', 'start') || !allowed('warp-svc.service', 'stop'
  || allowed('warp-svc.service', 'start', false) || allowed('warp-svc.service', 'start', true, false)
  || allowed('warp-svc.service', 'start', true, true, 'org.freedesktop.systemd1.manage-unit-files')
  || allowed('warp-svc.service', 'start', true, true, 'org.freedesktop.systemd1.manage-units', false)) process.exit(1);
-'''
-        result = subprocess.run(['node', '-e', script, str(policy)], capture_output=True, text=True, check=False)
+"""
+        result = subprocess.run(
+            ['node', '-e', script, str(policy)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_cli_errors_never_expose_output(self):
-        with patch.object(backend, 'command', return_value=Mock(returncode=1, stderr='private-key-and-password', stdout='')):
+        with patch.object(
+            backend,
+            'command',
+            return_value=Mock(
+                returncode=1, stderr='private-key-and-password', stdout=''
+            ),
+        ):
             with self.assertRaises(ValueError) as error:
                 backend.checked(['nmcli'])
         self.assertNotIn('private-key', str(error.exception))
@@ -175,9 +303,13 @@ class NetworkTests(unittest.TestCase):
     def network(self):
         n = backend.Network.__new__(backend.Network)
         from gi.repository import GLib, Gio
+
         n.NM, n.GLib, n.Gio = NM, GLib, Gio
         device = Mock(get_device_type=lambda: NM.DeviceType.WIFI)
-        n.client = Mock(get_active_connections=lambda: [], get_device_by_iface=Mock(return_value=device))
+        n.client = Mock(
+            get_active_connections=lambda: [],
+            get_device_by_iface=Mock(return_value=device),
+        )
         n.call = Mock(return_value=Mock())
         n.wait_active = Mock()
         return n
@@ -187,18 +319,31 @@ class NetworkTests(unittest.TestCase):
         secret = 'test-private-password'
         ssid = '  cafe:back\\slash  '
         with patch.object(backend, 'command') as command:
-            n.join({'ssid': ssid, 'security': 'wpa-psk', 'password': secret, 'interface': 'wlan0'})
+            n.join(
+                {
+                    'ssid': ssid,
+                    'security': 'wpa-psk',
+                    'password': secret,
+                    'interface': 'wlan0',
+                }
+            )
         self.assertEqual(n.call.call_args.args[1], 'add_and_activate_connection_async')
         connection = n.call.call_args.args[2]
-        self.assertEqual(bytes(connection.get_setting_wireless().get_ssid().get_data()).decode(), ssid)
+        self.assertEqual(
+            bytes(connection.get_setting_wireless().get_ssid().get_data()).decode(),
+            ssid,
+        )
         self.assertTrue(connection.get_setting_connection().get_autoconnect())
         self.assertEqual(connection.get_setting_connection().get_num_permissions(), 1)
         self.assertEqual(connection.get_setting_wireless_security().get_psk(), secret)
         command.assert_not_called()
 
     def test_validation_does_not_create_profiles(self):
-        for request in [{'ssid': 'x' * 33}, {'ssid': 'cafe', 'security': 'wpa-psk', 'password': 'short'},
-                        {'ssid': 'cafe', 'security': 'enterprise'}]:
+        for request in [
+            {'ssid': 'x' * 33},
+            {'ssid': 'cafe', 'security': 'wpa-psk', 'password': 'short'},
+            {'ssid': 'cafe', 'security': 'enterprise'},
+        ]:
             n = self.network()
             with self.assertRaises(ValueError):
                 n.join(dict(request, interface='wlan0'))
@@ -206,34 +351,70 @@ class NetworkTests(unittest.TestCase):
 
     def test_profile_activation_is_limited_to_vpn_profiles(self):
         n = self.network()
-        n.client.get_connection_by_uuid = lambda _: Mock(get_connection_type=lambda: '802-11-wireless')
+        n.client.get_connection_by_uuid = lambda _: Mock(
+            get_connection_type=lambda: '802-11-wireless'
+        )
         with self.assertRaisesRegex(ValueError, 'no longer available'):
             n.activate('saved')
         n.call.assert_not_called()
         vpn = Mock(get_connection_type=lambda: 'wireguard')
         n.client.get_connection_by_uuid = lambda _: vpn
         n.activate('vpn')
-        self.assertEqual(n.call.call_args.args, (n.client, 'activate_connection_async', vpn, None, None))
+        self.assertEqual(
+            n.call.call_args.args,
+            (n.client, 'activate_connection_async', vpn, None, None),
+        )
         n.wait_active.assert_called_once()
 
     def test_snapshot_lists_vpn_profiles_active_ids_and_details(self):
         n = self.network()
-        active = Mock(get_uuid=lambda: 'vpn', get_state=lambda: NM.ActiveConnectionState.ACTIVATED)
+        active = Mock(
+            get_uuid=lambda: 'vpn', get_state=lambda: NM.ActiveConnectionState.ACTIVATED
+        )
         n.client.get_active_connections = lambda: [active]
         n.client.get_connections = lambda: [
-            Mock(get_connection_type=lambda: 'wireguard', get_uuid=lambda: 'vpn', get_id=lambda: 'Work'),
-            Mock(get_connection_type=lambda: '802-11-wireless', get_uuid=lambda: 'home', get_id=lambda: 'Home')]
+            Mock(
+                get_connection_type=lambda: 'wireguard',
+                get_uuid=lambda: 'vpn',
+                get_id=lambda: 'Work',
+            ),
+            Mock(
+                get_connection_type=lambda: '802-11-wireless',
+                get_uuid=lambda: 'home',
+                get_id=lambda: 'Home',
+            ),
+        ]
         address = Mock(get_address=lambda: '192.0.2.2', get_prefix=lambda: 24)
-        config = Mock(get_addresses=lambda: [address], get_gateway=lambda: '192.0.2.1', get_nameservers=lambda: ['192.0.2.1'])
-        n.client.get_devices = lambda: [Mock(get_device_type=lambda: NM.DeviceType.WIFI, get_iface=lambda: 'wlan0',
-                                             get_active_connection=lambda: Mock(get_id=lambda: 'Home'),
-                                             get_ip4_config=lambda: config, get_ip6_config=lambda: None)]
+        config = Mock(
+            get_addresses=lambda: [address],
+            get_gateway=lambda: '192.0.2.1',
+            get_nameservers=lambda: ['192.0.2.1'],
+        )
+        n.client.get_devices = lambda: [
+            Mock(
+                get_device_type=lambda: NM.DeviceType.WIFI,
+                get_iface=lambda: 'wlan0',
+                get_active_connection=lambda: Mock(get_id=lambda: 'Home'),
+                get_ip4_config=lambda: config,
+                get_ip6_config=lambda: None,
+            )
+        ]
         snapshot = n.snapshot()
         self.assertEqual(snapshot['active'], ['vpn'])
         self.assertEqual([p['uuid'] for p in snapshot['profiles']], ['vpn'])
         self.assertEqual(snapshot['profiles'][0]['state'], 'activated')
-        self.assertEqual(snapshot['details']['wlan0'], {'connection': 'Home', 'ipv4': ['192.0.2.2/24'],
-                         'ipv4Gateway': '192.0.2.1', 'ipv4Dns': ['192.0.2.1'], 'ipv6': [], 'ipv6Gateway': '', 'ipv6Dns': []})
+        self.assertEqual(
+            snapshot['details']['wlan0'],
+            {
+                'connection': 'Home',
+                'ipv4': ['192.0.2.2/24'],
+                'ipv4Gateway': '192.0.2.1',
+                'ipv4Dns': ['192.0.2.1'],
+                'ipv6': [],
+                'ipv6Gateway': '',
+                'ipv6Dns': [],
+            },
+        )
 
     def test_unknown_operations_are_rejected_before_networkmanager(self):
         with patch.object(backend, 'Network') as network:
@@ -246,11 +427,37 @@ class NetworkTests(unittest.TestCase):
 @unittest.skipUnless(QS, 'Quickshell is required')
 class WifiDrawerTests(unittest.TestCase):
     def test_controls_errors_and_lifecycle(self):
-        state = dict(profiles=[dict(uuid='vpn', name='Work', kind='wireguard', active=False, state='disconnected')],
-                     active=['home'], details=dict(wlan0=dict(connection='Home', ipv4=['192.0.2.2/24'], ipv4Gateway='192.0.2.1',
-                                                             ipv4Dns=['192.0.2.1'], ipv6=[], ipv6Gateway='', ipv6Dns=[])),
-                     warp=dict(available=True, connected=False, running=False, state='Off · daemon stopped', mode=''))
-        qml = '''import QtQuick
+        state = dict(
+            profiles=[
+                dict(
+                    uuid='vpn',
+                    name='Work',
+                    kind='wireguard',
+                    active=False,
+                    state='disconnected',
+                )
+            ],
+            active=['home'],
+            details=dict(
+                wlan0=dict(
+                    connection='Home',
+                    ipv4=['192.0.2.2/24'],
+                    ipv4Gateway='192.0.2.1',
+                    ipv4Dns=['192.0.2.1'],
+                    ipv6=[],
+                    ipv6Gateway='',
+                    ipv6Dns=[],
+                )
+            ),
+            warp=dict(
+                available=True,
+                connected=False,
+                running=False,
+                state='Off · daemon stopped',
+                mode='',
+            ),
+        )
+        qml = """import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtTest
@@ -621,7 +828,7 @@ FloatingWindow {
   } catch (e) { console.error("WIFI_DRAWER_FAIL", window.stage, e.message); Qt.quit(); }
  } }
 }
-'''.replace('STATE', json.dumps(state))
+""".replace('STATE', json.dumps(state))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ('ui', 'icons', 'drawers'):
@@ -637,20 +844,43 @@ FloatingWindow {
             runtime = root / 'runtime'
             runtime.mkdir(mode=0o700)
             platform = os.environ.get('WIFI_PREVIEW_PLATFORM', 'offscreen')
-            env = {**os.environ, 'QT_QPA_PLATFORM': platform, 'XDG_CONFIG_HOME': str(root / 'config'),
-                   'WIFI_TRAFFIC_ROOT': str(root / 'net'),
-                   'XDG_RUNTIME_DIR': str(runtime) if platform == 'offscreen' else os.environ['XDG_RUNTIME_DIR']}
-            for key in (('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE') if platform == 'offscreen' else ('HYPRLAND_INSTANCE_SIGNATURE',)):
+            env = {
+                **os.environ,
+                'QT_QPA_PLATFORM': platform,
+                'XDG_CONFIG_HOME': str(root / 'config'),
+                'WIFI_TRAFFIC_ROOT': str(root / 'net'),
+                'XDG_RUNTIME_DIR': str(runtime)
+                if platform == 'offscreen'
+                else os.environ['XDG_RUNTIME_DIR'],
+            }
+            for key in (
+                ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE')
+                if platform == 'offscreen'
+                else ('HYPRLAND_INSTANCE_SIGNATURE',)
+            ):
                 env.pop(key, None)
-            result = subprocess.run([QS, '--no-color', '-p', str(root / 'shell.qml')], env=env, text=True, capture_output=True, timeout=20)
+            result = subprocess.run(
+                [QS, '--no-color', '-p', str(root / 'shell.qml')],
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=20,
+            )
         log = result.stdout + result.stderr
-        if os.environ.get("WIFI_PREVIEW_PLATFORM"):
+        if os.environ.get('WIFI_PREVIEW_PLATFORM'):
             print(log)
         self.assertEqual(result.returncode, 0, log)
         self.assertIn('WIFI_DRAWER_PASS', log)
-        for error in ('WIFI_DRAWER_FAIL', 'TypeError', 'ReferenceError', 'Binding loop', 'Unable to assign', 'polish() loop', 'Polish loop'):
+        for error in (
+            'WIFI_DRAWER_FAIL',
+            'TypeError',
+            'ReferenceError',
+            'Binding loop',
+            'Unable to assign',
+            'polish() loop',
+            'Polish loop',
+        ):
             self.assertNotIn(error, log)
-
 
     def test_speed_test_process_results_failure_and_cancellation(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -664,7 +894,7 @@ if mode=='invalid': print('not json')
 else: print(json.dumps([{'download':123.45,'upload':67.89,'ping':12.5,'jitter':0.7,
  'server':{'name':'Test server'},'timestamp':'2026-10-15T05:00:00Z', 'client':{'ip':'private-client-ip'}}]))
 """)
-            (root / 'shell.qml').write_text(r'''import QtQuick
+            (root / 'shell.qml').write_text(r"""import QtQuick
 import Quickshell
 import "network"
 ShellRoot {
@@ -705,18 +935,32 @@ ShellRoot {
   } catch (e) { console.error("SPEED_TEST_FAIL", e.message); Qt.quit(); }
  } }
 }
-''')
+""")
             runtime = root / 'runtime'
             runtime.mkdir(mode=0o700)
-            env = {**os.environ, 'QT_QPA_PLATFORM': 'offscreen', 'XDG_RUNTIME_DIR': str(runtime)}
+            env = {
+                **os.environ,
+                'QT_QPA_PLATFORM': 'offscreen',
+                'XDG_RUNTIME_DIR': str(runtime),
+            }
             env.pop('WAYLAND_DISPLAY', None)
-            result = subprocess.run([QS, '--no-color', '-p', str(root / 'shell.qml')], env=env,
-                                    text=True, capture_output=True, timeout=10)
+            result = subprocess.run(
+                [QS, '--no-color', '-p', str(root / 'shell.qml')],
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=10,
+            )
         log = result.stdout + result.stderr
         self.assertIn('SPEED_TEST_PASS', log)
-        for error in ('SPEED_TEST_FAIL', 'TypeError', 'ReferenceError', 'Binding loop', 'Unable to assign'):
+        for error in (
+            'SPEED_TEST_FAIL',
+            'TypeError',
+            'ReferenceError',
+            'Binding loop',
+            'Unable to assign',
+        ):
             self.assertNotIn(error, log)
-
 
     def test_bar_signal_and_radio_updates_without_drawer(self):
         qml = """import QtQuick
@@ -755,15 +999,29 @@ ShellRoot {
             (root / 'shell.qml').write_text(qml)
             runtime = root / 'runtime'
             runtime.mkdir(mode=0o700)
-            env = {**os.environ, 'QT_QPA_PLATFORM': 'offscreen', 'XDG_RUNTIME_DIR': str(runtime)}
+            env = {
+                **os.environ,
+                'QT_QPA_PLATFORM': 'offscreen',
+                'XDG_RUNTIME_DIR': str(runtime),
+            }
             env.pop('WAYLAND_DISPLAY', None)
-            result = subprocess.run([QS, '--no-color', '-p', str(root / 'shell.qml')], env=env,
-                                    text=True, capture_output=True, timeout=10)
+            result = subprocess.run(
+                [QS, '--no-color', '-p', str(root / 'shell.qml')],
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=10,
+            )
         log = result.stdout + result.stderr
         self.assertIn('NETWORK_BAR_PASS', log)
-        for error in ('NETWORK_BAR_FAIL', 'TypeError', 'ReferenceError', 'Binding loop', 'Unable to assign'):
+        for error in (
+            'NETWORK_BAR_FAIL',
+            'TypeError',
+            'ReferenceError',
+            'Binding loop',
+            'Unable to assign',
+        ):
             self.assertNotIn(error, log)
-
 
     def test_service_protocol_survives_dismissal(self):
         # Replace only the OS boundary, then exercise the actual singleton and
@@ -772,13 +1030,13 @@ ShellRoot {
             root = Path(directory)
             shutil.copytree(DESKTOP / 'drawers/network', root / 'drawers/network')
             copy_theme_ui(root)
-            (root / 'ui/Apps.qml').write_text('''pragma Singleton
+            (root / 'ui/Apps.qml').write_text("""pragma Singleton
 import Quickshell
 Singleton {
  property var lastLaunch: []
  function launch(argv) { lastLaunch = argv; }
 }
-''')
+""")
             (root / 'drawers/network/backend.py').write_text("""import json,sys,time
 from pathlib import Path
 r=json.loads(sys.stdin.readline())
@@ -786,7 +1044,7 @@ with (Path(__file__).parent/'operations').open('a') as f: f.write(r['op']+'\\n')
 time.sleep(0.5 if r['op']=='connect' else 0.3)
 print(json.dumps({'ok':True,'data':{'profiles':[{'uuid':'vpn','name':'Work','kind':'wireguard','active':False,'state':'disconnected'}],'active':[],'details':{}}}))
 """)
-            (root / 'shell.qml').write_text('''import QtQuick
+            (root / 'shell.qml').write_text("""import QtQuick
 import QtCore
 import Quickshell
 import "drawers/network"
@@ -844,13 +1102,23 @@ ShellRoot {
   } catch (e) { console.error("NETWORK_SERVICE_FAIL", e.message); Qt.quit(); }
  } }
 }
-''')
+""")
             runtime = root / 'runtime'
             runtime.mkdir(mode=0o700)
-            env = {**os.environ, 'QT_QPA_PLATFORM': 'offscreen', 'XDG_RUNTIME_DIR': str(runtime), 'XDG_CONFIG_HOME': str(root / 'config')}
+            env = {
+                **os.environ,
+                'QT_QPA_PLATFORM': 'offscreen',
+                'XDG_RUNTIME_DIR': str(runtime),
+                'XDG_CONFIG_HOME': str(root / 'config'),
+            }
             env.pop('WAYLAND_DISPLAY', None)
-            result = subprocess.run([QS, '--no-color', '-p', str(root / 'shell.qml')],
-                                    env=env, text=True, capture_output=True, timeout=10)
+            result = subprocess.run(
+                [QS, '--no-color', '-p', str(root / 'shell.qml')],
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=10,
+            )
             operations = (root / 'drawers/network/operations').read_text().splitlines()
         log = result.stdout + result.stderr
         self.assertIn('NETWORK_SERVICE_PASS', log)

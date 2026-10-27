@@ -1,4 +1,5 @@
 """Exercise the production launcher's mixed input without a live compositor."""
+
 import os
 from pathlib import Path
 import re
@@ -8,8 +9,11 @@ import tempfile
 import unittest
 
 
-DESKTOP = (Path(__file__).resolve().parents[1] / 'modules/desktop/quickshell'
-           / 'symlinks/home/.config/quickshell/desktop')
+DESKTOP = (
+    Path(__file__).resolve().parents[1]
+    / 'modules/desktop/quickshell'
+    / 'symlinks/home/.config/quickshell/desktop'
+)
 QS = shutil.which('qs')
 
 
@@ -25,28 +29,40 @@ class LauncherNavigationTests(unittest.TestCase):
             # are the unchanged production source running inside Quickshell.
             path = root / 'ui/InteractionWindow.qml'
             source = path.read_text().replace(
-                'PanelWindow {', 'FloatingWindow {\n    implicitWidth: 800; implicitHeight: 720', 1)
-            source = source.replace('    anchors { top: true; bottom: true; left: true; right: true }\n', '')
+                'PanelWindow {',
+                'FloatingWindow {\n    implicitWidth: 800; implicitHeight: 720',
+                1,
+            )
+            source = source.replace(
+                '    anchors { top: true; bottom: true; left: true; right: true }\n', ''
+            )
             source = source.replace('    exclusionMode: ExclusionMode.Ignore\n', '')
             source = re.sub(r'^    WlrLayershell\..*\n', '', source, flags=re.M)
             path.write_text(source)
             path = root / 'launcher/Launcher.qml'
             source = path.read_text()
             source = re.sub(r'^    WlrLayershell\..*\n', '', source, flags=re.M)
-            source = re.sub(r'    GlobalShortcut \{.*?\n    \}\n', '', source, count=1, flags=re.S)
+            source = re.sub(
+                r'    GlobalShortcut \{.*?\n    \}\n', '', source, count=1, flags=re.S
+            )
             # The activation fixture records the actual ID passed by activate().
-            source = source.replace('["uwsm", "app", "-t", "service", "--", entry.id + ".desktop"]',
-                                    '["/usr/bin/python3", Quickshell.env("LAUNCH_FIXTURE"), "--", entry.id]')
+            source = source.replace(
+                '["uwsm", "app", "-t", "service", "--", entry.id + ".desktop"]',
+                '["/usr/bin/python3", Quickshell.env("LAUNCH_FIXTURE"), "--", entry.id]',
+            )
             path.write_text(source)
             apps = root / 'data/applications'
             apps.mkdir(parents=True)
             for i in range(35):
                 (apps / f'item{i:02}.desktop').write_text(
-                    f'[Desktop Entry]\nType=Application\nName=Item {i:02}\nExec=/usr/bin/true\n')
+                    f'[Desktop Entry]\nType=Application\nName=Item {i:02}\nExec=/usr/bin/true\n'
+                )
             fixture = root / 'launch.py'
-            fixture.write_text('from pathlib import Path\nimport sys\n'
-                               'Path(__file__).with_name("launched-id").write_text(sys.argv[-1])\n')
-            (root / 'shell.qml').write_text('''import QtQuick
+            fixture.write_text(
+                'from pathlib import Path\nimport sys\n'
+                'Path(__file__).with_name("launched-id").write_text(sys.argv[-1])\n'
+            )
+            (root / 'shell.qml').write_text("""import QtQuick
 import QtTest
 import Quickshell
 import "launcher" as App
@@ -126,17 +142,27 @@ ShellRoot {
         } catch (e) { console.error("NAVIGATION_FAIL", stage, e.message); Qt.quit(); }
     } }
 }
-''')
+""")
             config = root / 'config/quickshell/desktop'
             config.mkdir(parents=True)
             (config / 'theme-mode').write_text('dark\n')
-            env = {**os.environ, 'QT_QPA_PLATFORM': 'offscreen',
-                   'XDG_CONFIG_HOME': str(root / 'config'), 'XDG_DATA_HOME': str(root / 'data'),
-                   'XDG_DATA_DIRS': str(root / 'empty'), 'LAUNCH_FIXTURE': str(fixture)}
+            env = {
+                **os.environ,
+                'QT_QPA_PLATFORM': 'offscreen',
+                'XDG_CONFIG_HOME': str(root / 'config'),
+                'XDG_DATA_HOME': str(root / 'data'),
+                'XDG_DATA_DIRS': str(root / 'empty'),
+                'LAUNCH_FIXTURE': str(fixture),
+            }
             for key in ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE'):
                 env.pop(key, None)
-            result = subprocess.run([QS, '--no-color', '-p', str(root / 'shell.qml')],
-                                    env=env, text=True, capture_output=True, timeout=15)
+            result = subprocess.run(
+                [QS, '--no-color', '-p', str(root / 'shell.qml')],
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=15,
+            )
             log = result.stdout + result.stderr
             self.assertEqual(result.returncode, 0, log)
             self.assertNotIn('NAVIGATION_FAIL', log)

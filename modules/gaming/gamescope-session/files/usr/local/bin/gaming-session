@@ -2,69 +2,75 @@
 set -Eeuo pipefail
 
 case ${1-} in
-"" | --check) ;;
-*) printf 'Usage: gaming-session [--check]\n' >&2; exit 2 ;;
+    "" | --check) ;;
+    *)
+        printf 'Usage: gaming-session [--check]\n' >&2
+        exit 2
+        ;;
 esac
-(( $# <= 1 )) || { printf 'Usage: gaming-session [--check]\n' >&2; exit 2; }
+(($# <= 1)) || {
+    printf 'Usage: gaming-session [--check]\n' >&2
+    exit 2
+}
 check_only=${1-}
 drm_root=${SYSTEM_GAMING_DRM_ROOT:-/sys/class/drm}
 
 trim() {
-	local value=$1
-	value=${value#"${value%%[![:space:]]*}"}
-	value=${value%"${value##*[![:space:]]}"}
-	printf '%s' "$value"
+    local value=$1
+    value=${value#"${value%%[![:space:]]*}"}
+    value=${value%"${value##*[![:space:]]}"}
+    printf '%s' "$value"
 }
 
 read_config() {
-	local path=$1 line key value
-	[[ -r $path ]] || return 0
-	while IFS= read -r line || [[ -n $line ]]; do
-		line=$(trim "$line")
-		[[ -n $line && $line != \#* ]] || continue
-		[[ $line == *=* ]] || {
-			printf 'Invalid gaming-session setting in %s: %s\n' "$path" "$line" >&2
-			return 1
-		}
-		key=$(trim "${line%%=*}")
-		value=$(trim "${line#*=}")
-		case $key in
-		SYSTEM_GAMING_GPU | SYSTEM_GAMING_HDR | SYSTEM_GAMING_OUTPUT)
-			printf -v "$key" '%s' "$value"
-			;;
-		*)
-			printf 'Unknown gaming-session setting in %s: %s\n' "$path" "$key" >&2
-			return 1
-			;;
-		esac
-	done <"$path"
+    local path=$1 line key value
+    [[ -r $path ]] || return 0
+    while IFS= read -r line || [[ -n $line ]]; do
+        line=$(trim "$line")
+        [[ -n $line && $line != \#* ]] || continue
+        [[ $line == *=* ]] || {
+            printf 'Invalid gaming-session setting in %s: %s\n' "$path" "$line" >&2
+            return 1
+        }
+        key=$(trim "${line%%=*}")
+        value=$(trim "${line#*=}")
+        case $key in
+            SYSTEM_GAMING_GPU | SYSTEM_GAMING_HDR | SYSTEM_GAMING_OUTPUT)
+                printf -v "$key" '%s' "$value"
+                ;;
+            *)
+                printf 'Unknown gaming-session setting in %s: %s\n' "$path" "$key" >&2
+                return 1
+                ;;
+        esac
+    done < "$path"
 }
 
 connected_outputs() {
-	local status path connector
-	local external=() internal=()
-	for status in "$drm_root"/card*-*/status; do
-		[[ -r $status && $(<"$status") == connected ]] || continue
-		path=${status%/status}
-		connector=${path##*/}
-		connector=${connector#*-}
-		case $connector in
-		eDP-* | DSI-* | LVDS-*) internal+=("$connector") ;;
-		*) external+=("$connector") ;;
-		esac
-	done
-	local ordered=("${external[@]}" "${internal[@]}")
-	((${#ordered[@]} > 0)) || return 0
-	local IFS=,
-	printf '%s' "${ordered[*]}"
+    local status path connector
+    local external=() internal=()
+    for status in "$drm_root"/card*-*/status; do
+        [[ -r $status && $(< "$status") == connected ]] || continue
+        path=${status%/status}
+        connector=${path##*/}
+        connector=${connector#*-}
+        case $connector in
+            eDP-* | DSI-* | LVDS-*) internal+=("$connector") ;;
+            *) external+=("$connector") ;;
+        esac
+    done
+    local ordered=("${external[@]}" "${internal[@]}")
+    ((${#ordered[@]} > 0)) || return 0
+    local IFS=,
+    printf '%s' "${ordered[*]}"
 }
 
 gpu_for_card() {
-	local card=$1 vendor device
-	[[ -r $card/device/vendor && -r $card/device/device ]] || return 1
-	vendor=$(<"$card/device/vendor")
-	device=$(<"$card/device/device")
-	printf '%s:%s' "${vendor#0x}" "${device#0x}"
+    local card=$1 vendor device
+    [[ -r $card/device/vendor && -r $card/device/device ]] || return 1
+    vendor=$(< "$card/device/vendor")
+    device=$(< "$card/device/device")
+    printf '%s:%s' "${vendor#0x}" "${device#0x}"
 }
 
 env_gpu_set=${SYSTEM_GAMING_GPU+x}
@@ -84,16 +90,19 @@ read_config "${SYSTEM_GAMING_USER_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/gami
 [[ -z $env_output_set ]] || SYSTEM_GAMING_OUTPUT=$env_output
 
 case $SYSTEM_GAMING_HDR in
-0 | 1) ;;
-*) printf 'SYSTEM_GAMING_HDR must be 0 or 1.\n' >&2; exit 2 ;;
+    0 | 1) ;;
+    *)
+        printf 'SYSTEM_GAMING_HDR must be 0 or 1.\n' >&2
+        exit 2
+        ;;
 esac
 if [[ $SYSTEM_GAMING_GPU != auto && ! $SYSTEM_GAMING_GPU =~ ^[[:xdigit:]]{4}:[[:xdigit:]]{4}$ ]]; then
-	printf 'SYSTEM_GAMING_GPU must be auto or a PCI vendor:device ID.\n' >&2
-	exit 2
+    printf 'SYSTEM_GAMING_GPU must be auto or a PCI vendor:device ID.\n' >&2
+    exit 2
 fi
 if [[ $SYSTEM_GAMING_OUTPUT != auto && ! $SYSTEM_GAMING_OUTPUT =~ ^[[:alnum:]_.:-]+(,[[:alnum:]_.:-]+)*$ ]]; then
-	printf 'SYSTEM_GAMING_OUTPUT must be auto or a comma-separated connector list.\n' >&2
-	exit 2
+    printf 'SYSTEM_GAMING_OUTPUT must be auto or a comma-separated connector list.\n' >&2
+    exit 2
 fi
 
 gamescope_bin=${SYSTEM_GAMING_GAMESCOPE:-gamescope}
@@ -107,40 +116,46 @@ IFS=, read -r -a candidates <<< "$output"
 gpu=
 outputs=()
 for connector in "${candidates[@]}"; do
-	for status in "$drm_root"/card*-"$connector"/status; do
-		[[ -r $status && $(<"$status") == connected ]] || continue
-		card=${status%/status}
-		card=${card##*/}
-		card=${card%%-*}
-		candidate=$(gpu_for_card "$drm_root/$card") || continue
-		[[ $SYSTEM_GAMING_GPU == auto || ${SYSTEM_GAMING_GPU,,} == "${candidate,,}" ]] || continue
-		[[ -n $gpu ]] || gpu=$candidate
-		[[ $gpu == "$candidate" ]] || continue
-		outputs+=("$connector")
-		break
-	done
+    for status in "$drm_root"/card*-"$connector"/status; do
+        [[ -r $status && $(< "$status") == connected ]] || continue
+        card=${status%/status}
+        card=${card##*/}
+        card=${card%%-*}
+        candidate=$(gpu_for_card "$drm_root/$card") || continue
+        [[ $SYSTEM_GAMING_GPU == auto || ${SYSTEM_GAMING_GPU,,} == "${candidate,,}" ]] || continue
+        [[ -n $gpu ]] || gpu=$candidate
+        [[ $gpu == "$candidate" ]] || continue
+        outputs+=("$connector")
+        break
+    done
 done
 if [[ -z $gpu ]]; then
-	printf 'No connected display matches Gamescope GPU %s and output %s. Use GPU auto or select a GPU wired to the display.\n' \
-		"$SYSTEM_GAMING_GPU" "$SYSTEM_GAMING_OUTPUT" >&2
-	exit 1
+    printf 'No connected display matches Gamescope GPU %s and output %s. Use GPU auto or select a GPU wired to the display.\n' \
+        "$SYSTEM_GAMING_GPU" "$SYSTEM_GAMING_OUTPUT" >&2
+    exit 1
 fi
-output=$(IFS=,; printf '%s' "${outputs[*]}")
+output=$(
+    IFS=,
+    printf '%s' "${outputs[*]}"
+)
 
 for executable in "$gamescope_bin" "$steam_bin" switcherooctl; do
-	command -v "$executable" >/dev/null || {
-		printf 'Gaming executable not found: %s\n' "$executable" >&2
-		exit 127
-	}
+    command -v "$executable" > /dev/null || {
+        printf 'Gaming executable not found: %s\n' "$executable" >&2
+        exit 127
+    }
 done
 if [[ $check_only == --check ]]; then
-	printf 'Gamescope GPU %s; connected outputs %s\n' "$gpu" "$output"
-	exit 0
+    printf 'Gamescope GPU %s; connected outputs %s\n' "$gpu" "$output"
+    exit 0
 fi
 
 args=(--backend drm --steam --xwayland-count 2 --adaptive-sync --mangoapp)
 if [[ -n ${SESSION_MODE_READY_FD:-} ]]; then
-    [[ $SESSION_MODE_READY_FD =~ ^[0-9]+$ ]] || { printf 'Invalid readiness descriptor.\n' >&2; exit 2; }
+    [[ $SESSION_MODE_READY_FD =~ ^[0-9]+$ ]] || {
+        printf 'Invalid readiness descriptor.\n' >&2
+        exit 2
+    }
     # Despite its name, Gamescope opens this argument as a path, not an FD number.
     args+=(--ready-fd "/proc/self/fd/$SESSION_MODE_READY_FD")
 fi
@@ -151,7 +166,7 @@ args+=(--prefer-output "$output" --prefer-vk-device "$gpu")
 runtime=${XDG_RUNTIME_DIR:?No user runtime directory}/gaming-session
 session_env=(
     XDG_CURRENT_DESKTOP=gamescope XDG_SESSION_DESKTOP=gamescope XDG_SESSION_TYPE=wayland
-    STEAM_MULTIPLE_XWAYLANDS=1 # --xwayland-count 2
+    STEAM_MULTIPLE_XWAYLANDS=1      # --xwayland-count 2
     STEAM_GAMESCOPE_VRR_SUPPORTED=1 # --adaptive-sync
     STEAM_GAMESCOPE_TEARING_SUPPORTED=1 STEAM_GAMESCOPE_HAS_TEARING_SUPPORT=1
     # --mangoapp: Steam writes the selected performance overlay level here.
@@ -168,15 +183,15 @@ fi
 # of the GPU that must scan out Gamescope's display.
 command=(env "${session_env[@]}" "$gamescope_bin" "${args[@]}" -- switcherooctl launch "$steam_bin" -gamepadui -steamos3)
 if [[ ${SYSTEM_GAMING_DRY_RUN:-0} == 1 ]]; then
-	printf '%q ' "${command[@]}"
-	printf '\n'
-	exit 0
+    printf '%q ' "${command[@]}"
+    printf '\n'
+    exit 0
 fi
 
 # Fresh files per session: the overlay stays hidden until Steam selects a level.
 mkdir -p -- "$runtime"
-printf 'no_display\n' >"$runtime/mangohud.conf"
-printf '1x1\n' >"$runtime/radv-vrs.conf"
+printf 'no_display\n' > "$runtime/mangohud.conf"
+printf '1x1\n' > "$runtime/radv-vrs.conf"
 # Keep startup and DRM failures available after returning to the desktop or rebooting.
 # systemd-cat execs the command and preserves the supervisor's readiness descriptor.
 exec systemd-cat --identifier=gaming-session -- "${command[@]}"

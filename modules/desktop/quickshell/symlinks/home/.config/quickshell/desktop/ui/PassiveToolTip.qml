@@ -11,8 +11,7 @@ PopupWindow {
     property bool above: false
     property bool ready: false
     readonly property bool hovered: target instanceof T.AbstractButton ? target.hovered : targetHover.hovered
-    readonly property bool requested: !!target && hovered && !(target instanceof T.AbstractButton && target.down)
-        && target.enabled && target.visible && text.length > 0
+    readonly property bool requested: !!target && hovered && !(target instanceof T.AbstractButton && target.down) && target.enabled && target.visible && text.length > 0
 
     HoverHandler {
         id: targetHover

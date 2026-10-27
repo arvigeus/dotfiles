@@ -1,5 +1,7 @@
 {
-    "packages": ["ttf-firacode-nerd"],
+    "packages": [
+        "ttf-firacode-nerd"
+    ],
     "app_config": {
         "fonts_config": {
             "fonts": [

@@ -17,7 +17,9 @@ Surface {
     property bool flat: false
     default property alias contents: body.data
     readonly property bool showContents: !collapsible || expanded
-    function toggle(): void { expanded = !expanded; }
+    function toggle(): void {
+        expanded = !expanded;
+    }
     Layout.fillWidth: true
     implicitHeight: layout.implicitHeight + (showContents && !flat ? 24 : 8)
     color: showContents && !flat ? Theme.surface : "transparent"
@@ -44,28 +46,62 @@ Surface {
                 text: root.title
                 Accessible.name: root.title
                 Accessible.role: root.collapsible ? Accessible.Button : Accessible.Heading
-                onClicked: if (root.collapsible) root.toggle()
+                onClicked: if (root.collapsible)
+                    root.toggle()
                 contentItem: RowLayout {
                     spacing: 8
                     Item {
                         visible: root.leading === null && root.iconName !== ""
-                        implicitWidth: Theme.controlHeight; implicitHeight: Theme.controlHeight
+                        implicitWidth: Theme.controlHeight
+                        implicitHeight: Theme.controlHeight
                         Icon {
                             anchors.centerIn: parent
-                            width: 20; height: 20
+                            width: 20
+                            height: 20
                             name: root.iconName
                             color: root.collapsible && (heading.hovered || heading.visualFocus) ? Theme.accent : Theme.muted
                         }
                     }
-                    ShellText { text: root.title; font.weight: Font.DemiBold; Layout.fillWidth: true; elide: Text.ElideRight }
-                    ShellText { text: root.summary; color: Theme.muted; font.pixelSize: Theme.smallFontSize; elide: Text.ElideRight; Layout.maximumWidth: 140 }
-                    Icon { visible: root.collapsible; name: root.expanded ? "chevron-up" : "chevron-down"; width: 16; height: 16; color: Theme.muted }
+                    ShellText {
+                        text: root.title
+                        font.weight: Font.DemiBold
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                    }
+                    ShellText {
+                        text: root.summary
+                        color: Theme.muted
+                        font.pixelSize: Theme.smallFontSize
+                        elide: Text.ElideRight
+                        Layout.maximumWidth: 140
+                    }
+                    Icon {
+                        visible: root.collapsible
+                        name: root.expanded ? "chevron-up" : "chevron-down"
+                        width: 16
+                        height: 16
+                        color: Theme.muted
+                    }
                 }
-                background: ButtonBackground { highlighted: root.collapsible && (heading.hovered || heading.visualFocus) }
-                PassiveToolTip { target: heading; text: root.hint; maximumLineCount: 18 }
+                background: ButtonBackground {
+                    highlighted: root.collapsible && (heading.hovered || heading.visualFocus)
+                }
+                PassiveToolTip {
+                    target: heading
+                    text: root.hint
+                    maximumLineCount: 18
+                }
             }
-            Loader { active: root.action !== null; sourceComponent: root.action }
+            Loader {
+                active: root.action !== null
+                sourceComponent: root.action
+            }
         }
-        ColumnLayout { id: body; visible: root.showContents; Layout.fillWidth: true; spacing: 8 }
+        ColumnLayout {
+            id: body
+            visible: root.showContents
+            Layout.fillWidth: true
+            spacing: 8
+        }
     }
 }

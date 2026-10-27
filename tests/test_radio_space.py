@@ -1,18 +1,18 @@
 """Radio runs through the retained fullscreen host and real owned worker."""
+
 import unittest
 import support
 from test_movies_space import setup as movies_setup
 from test_radio import STATION, fake_mpv
-import json
 import shutil
 
 
 def setup(root):
     movies_setup(root)
     shutil.copytree(support.DESKTOP / 'integrations', root / 'integrations')
-    player=fake_mpv(root)
-    path=root/'spaces/radio/backend.py'
-    fixture='''    import time
+    player = fake_mpv(root)
+    path = root / 'spaces/radio/backend.py'
+    fixture = """    import time
     fixture_station = STATION_LITERAL
     def fixture_api(path, params=None):
         if path == '/json/countries': return [dict(name="Vietnam",stationcount=110)]
@@ -24,16 +24,23 @@ def setup(root):
         return [dict(fixture_station,stationuuid="11111111-1111-1111-1111-"+str(i+1).zfill(12),name="Station "+str(i),homepage="https://station"+str(i)+".example.invalid",url="https://stream"+str(i)+".example.invalid/live",url_resolved="https://stream"+str(i)+".example.invalid/live",bitrate=128 if i%2 else 256) for i in range(offset,min(offset+100,110))]
     api.api_get = fixture_api
     shutil.which = lambda name: PLAYER_LITERAL
-'''.replace('STATION_LITERAL',repr(STATION)).replace('PLAYER_LITERAL',repr(str(player)))
-    path.write_text(path.read_text().replace('    backend = RadioBackend()\n',fixture+'    backend = RadioBackend()\n'))
+""".replace('STATION_LITERAL', repr(STATION)).replace(
+        'PLAYER_LITERAL', repr(str(player))
+    )
+    path.write_text(
+        path.read_text().replace(
+            '    backend = RadioBackend()\n', fixture + '    backend = RadioBackend()\n'
+        )
+    )
 
 
-@unittest.skipUnless(support.QS,'Quickshell is required')
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class RadioSpaceTests(unittest.TestCase):
-    run_qml=support.run_qml
+    run_qml = support.run_qml
 
     def test_toolbar_list_filters_playback_hide_resume_close_and_races(self):
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -133,15 +140,23 @@ ShellRoot {
   }
  }catch(error){console.error("DISPLAY_FAIL",error.message+" "+error.stack);Qt.quit();}finally{driver.restart();}}}
  Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at "+root.step);Qt.quit();}}
-}''',setup=setup)
+}""",
+            setup=setup,
+        )
 
-    def test_cloud_sync_preserves_hidden_favorites_and_keeps_playback_worker_responsive(self):
+    def test_cloud_sync_preserves_hidden_favorites_and_keeps_playback_worker_responsive(
+        self,
+    ):
         def prepare(root):
             setup(root)
-            backend=root/'spaces/radio/backend.py'
-            backend.write_text(backend.read_text().replace('syncConfigured=configured()', 'syncConfigured=True'))
-            favorite_worker=root/'spaces/radio/favorites.py'
-            fixture='''    import time
+            backend = root / 'spaces/radio/backend.py'
+            backend.write_text(
+                backend.read_text().replace(
+                    'syncConfigured=configured()', 'syncConfigured=True'
+                )
+            )
+            favorite_worker = root / 'spaces/radio/favorites.py'
+            fixture = """    import time
     class FixtureCloud:
         account_id = "fixture-account"
         def stations(self):
@@ -150,9 +165,15 @@ ShellRoot {
         def request(self, *args, **kwargs):
             raise AssertionError("Import must not write to the cloud")
     store = FavoritesStore(client_factory=FixtureCloud)
-'''
-            favorite_worker.write_text(favorite_worker.read_text().replace('    store = FavoritesStore()\n',fixture))
-        self.run_qml('''import QtQuick
+"""
+            favorite_worker.write_text(
+                favorite_worker.read_text().replace(
+                    '    store = FavoritesStore()\n', fixture
+                )
+            )
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "ui"
 ShellRoot {
@@ -198,4 +219,6 @@ ShellRoot {
   }
  }catch(error){console.error("DISPLAY_FAIL",error.message+" "+error.stack);Qt.quit();}}}
  Timer {interval:6000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at "+root.step);Qt.quit();}}
-}''',setup=prepare)
+}""",
+            setup=prepare,
+        )

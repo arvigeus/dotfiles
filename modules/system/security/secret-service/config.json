@@ -5,7 +5,9 @@
         "kconfig"
     ],
     "extra": {
-        "user_services": ["gnome-keyring-daemon.service"],
+        "user_services": [
+            "gnome-keyring-daemon.service"
+        ],
         "private": {
             "files": [
                 "home/.local/share/keyrings"

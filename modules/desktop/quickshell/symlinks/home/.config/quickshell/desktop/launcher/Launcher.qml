@@ -23,7 +23,9 @@ InteractionWindow {
     readonly property var candidates: Search.catalogue(DesktopEntries.applications.values)
     readonly property var matches: Search.matches(candidates, searchQuery, favoriteIds)
 
-    Favorites { id: favorites }
+    Favorites {
+        id: favorites
+    }
 
     WlrLayershell.namespace: "desktop-launcher"
     initialFocus: search
@@ -77,8 +79,7 @@ InteractionWindow {
     }
 
     function updatePointerSelection(position: point): void {
-        const moved = pointerPositionKnown
-            && (position.x !== lastPointerPosition.x || position.y !== lastPointerPosition.y);
+        const moved = pointerPositionKnown && (position.x !== lastPointerPosition.x || position.y !== lastPointerPosition.y);
         lastPointerPosition = position;
         pointerPositionKnown = true;
         if (!moved || launching || results.dragging || resultsScrollBar.pressed)
@@ -102,8 +103,10 @@ InteractionWindow {
         blocking: false
         // Observe the fixed window, not moving delegates. Mapping establishes a
         // baseline; only pointer motion can replace the keyboard's Enter target.
-        onPointChanged: if (point.id >= 0) root.updatePointerSelection(point.position)
-        onHoveredChanged: if (!hovered) root.pointerPositionKnown = false
+        onPointChanged: if (point.id >= 0)
+            root.updatePointerSelection(point.position)
+        onHoveredChanged: if (!hovered)
+            root.pointerPositionKnown = false
     }
 
     function activate(index: int): void {
@@ -126,7 +129,9 @@ InteractionWindow {
         id: launch
         property string applicationName: ""
         property int launchSession: 0
-        stderr: StdioCollector { id: launchErrors }
+        stderr: StdioCollector {
+            id: launchErrors
+        }
         onExited: (exitCode, exitStatus) => {
             root.launching = false;
             if (launchSession !== root.session || !root.opened)
@@ -134,18 +139,18 @@ InteractionWindow {
             if (exitCode === 0 && exitStatus === 0) {
                 root.dismiss();
             } else {
-                root.errorMessage = qsTr("Could not open %1. %2")
-                    .arg(applicationName).arg(launchErrors.text.trim());
+                root.errorMessage = qsTr("Could not open %1. %2").arg(applicationName).arg(launchErrors.text.trim());
             }
         }
         // FailedToStart does not emit exited in Quickshell 0.3.2.
-        onRunningChanged: if (!running) Qt.callLater(() => {
-            if (!root.launching)
-                return;
-            root.launching = false;
-            if (launch.launchSession === root.session && root.opened)
-                root.errorMessage = qsTr("Application launching is unavailable. Check the desktop shell logs.");
-        })
+        onRunningChanged: if (!running)
+            Qt.callLater(() => {
+                if (!root.launching)
+                    return;
+                root.launching = false;
+                if (launch.launchSession === root.session && root.opened)
+                    root.errorMessage = qsTr("Application launching is unavailable. Check the desktop shell logs.");
+            })
     }
 
     Surface {
@@ -156,7 +161,10 @@ InteractionWindow {
         y: Math.max(Theme.paddingLarge, Math.min(root.height * 0.14, 160))
 
         // Consume blank card clicks before they reach the outside dismissal area.
-        MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons }
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+        }
 
         ColumnLayout {
             anchors.fill: parent
@@ -172,9 +180,12 @@ InteractionWindow {
                 Item {
                     Layout.preferredWidth: 32
                     Layout.preferredHeight: 32
-                    Icon { anchors.centerIn: parent; name: "search" }
+                    Icon {
+                        anchors.centerIn: parent
+                        name: "search"
+                    }
                 }
-                    SearchInput {
+                SearchInput {
                     id: search
                     objectName: "applicationSearch"
                     Layout.fillWidth: true
@@ -216,9 +227,13 @@ InteractionWindow {
                 spacing: Theme.spacingSmall
                 // An unmapped PanelWindow uses placeholder geometry. Build rows
                 // only while mapped, avoiding icon work at invalid hidden sizes.
-                model: ScriptModel { values: root.visible ? root.matches : [] }
+                model: ScriptModel {
+                    values: root.visible ? root.matches : []
+                }
                 currentIndex: -1
-                ScrollBar.vertical: ScrollBar { id: resultsScrollBar }
+                ScrollBar.vertical: ScrollBar {
+                    id: resultsScrollBar
+                }
 
                 delegate: Button {
                     id: resultButton
@@ -271,9 +286,10 @@ InteractionWindow {
                             hoverEnabled: true
                             focusPolicy: Qt.NoFocus
                             readonly property bool favorite: root.favoriteIds.includes(resultButton.modelData?.id)
-                            text: favorite ? qsTr("Remove %1 from favorites").arg(resultButton.text)
-                                : qsTr("Add %1 to favorites").arg(resultButton.text)
-                            PassiveToolTip { target: favoriteButton }
+                            text: favorite ? qsTr("Remove %1 from favorites").arg(resultButton.text) : qsTr("Add %1 to favorites").arg(resultButton.text)
+                            PassiveToolTip {
+                                target: favoriteButton
+                            }
                             onPressed: results.currentIndex = resultButton.index
                             onClicked: root.toggleFavorite(resultButton.modelData?.id || "")
                             contentItem: Icon {

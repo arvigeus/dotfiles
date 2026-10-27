@@ -1,69 +1,69 @@
 {
-  "rules": [
-    {
-      "match": {
-        "device.name": "alsa_card.pci-0000_07_00.6",
-        "port.name": "analog-input-internal-mic"
-      },
-      "label": "Built-in microphone",
-      "icon": "mic"
-    },
-    {
-      "match": {
-        "device.name": "alsa_card.pci-0000_07_00.6",
-        "port.name": "analog-input-mic"
-      },
-      "label": "Headset microphone",
-      "icon": "mic"
-    },
-    {
-      "match": {
-        "device.name": "alsa_card.pci-0000_07_00.6",
-        "media.class": "Audio/Source"
-      },
-      "label": "Laptop microphone",
-      "icon": "mic"
-    },
-    {
-      "match": {
-        "device.name": "alsa_card.pci-0000_07_00.6",
-        "port.name": "analog-output-speaker"
-      },
-      "label": "Laptop speakers",
-      "icon": "speaker"
-    },
-    {
-      "match": {
-        "device.name": "alsa_card.pci-0000_07_00.6",
-        "port.name": "analog-output-headphones"
-      },
-      "label": "Headphones (laptop jack)",
-      "icon": "headphones",
-      "maxVolume": 100
-    },
-    {
-      "match": {
-        "device.name": "alsa_card.pci-0000_07_00.6"
-      },
-      "label": "Laptop audio (all channels)",
-      "icon": "speaker",
-      "deviceLabel": "Laptop audio"
-    },
-    {
-      "match": {
-        "device.name": "alsa_card.pci-0000_03_00.1"
-      },
-      "label": "Display audio (dedicated graphics) \u00b7 {port}",
-      "icon": "monitor",
-      "deviceLabel": "Display audio (dedicated graphics)"
-    },
-    {
-      "match": {
-        "device.name": "alsa_card.pci-0000_07_00.1"
-      },
-      "label": "Display audio (integrated graphics) \u00b7 {port}",
-      "icon": "monitor",
-      "deviceLabel": "Display audio (integrated graphics)"
-    }
-  ]
+    "rules": [
+        {
+            "match": {
+                "device.name": "alsa_card.pci-0000_07_00.6",
+                "port.name": "analog-input-internal-mic"
+            },
+            "label": "Built-in microphone",
+            "icon": "mic"
+        },
+        {
+            "match": {
+                "device.name": "alsa_card.pci-0000_07_00.6",
+                "port.name": "analog-input-mic"
+            },
+            "label": "Headset microphone",
+            "icon": "mic"
+        },
+        {
+            "match": {
+                "device.name": "alsa_card.pci-0000_07_00.6",
+                "media.class": "Audio/Source"
+            },
+            "label": "Laptop microphone",
+            "icon": "mic"
+        },
+        {
+            "match": {
+                "device.name": "alsa_card.pci-0000_07_00.6",
+                "port.name": "analog-output-speaker"
+            },
+            "label": "Laptop speakers",
+            "icon": "speaker"
+        },
+        {
+            "match": {
+                "device.name": "alsa_card.pci-0000_07_00.6",
+                "port.name": "analog-output-headphones"
+            },
+            "label": "Headphones (laptop jack)",
+            "icon": "headphones",
+            "maxVolume": 100
+        },
+        {
+            "match": {
+                "device.name": "alsa_card.pci-0000_07_00.6"
+            },
+            "label": "Laptop audio (all channels)",
+            "icon": "speaker",
+            "deviceLabel": "Laptop audio"
+        },
+        {
+            "match": {
+                "device.name": "alsa_card.pci-0000_03_00.1"
+            },
+            "label": "Display audio (dedicated graphics) \u00b7 {port}",
+            "icon": "monitor",
+            "deviceLabel": "Display audio (dedicated graphics)"
+        },
+        {
+            "match": {
+                "device.name": "alsa_card.pci-0000_07_00.1"
+            },
+            "label": "Display audio (integrated graphics) \u00b7 {port}",
+            "icon": "monitor",
+            "deviceLabel": "Display audio (integrated graphics)"
+        }
+    ]
 }

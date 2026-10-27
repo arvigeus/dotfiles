@@ -1,3 +1,5 @@
 {
-  "packages": ["ripgrep"]
+    "packages": [
+        "ripgrep"
+    ]
 }

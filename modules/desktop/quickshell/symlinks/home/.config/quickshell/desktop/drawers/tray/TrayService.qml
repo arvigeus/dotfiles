@@ -14,10 +14,10 @@ QtObject {
 
     function identifiers(value: string): var {
         const name = value.trim().toLowerCase().replace(/\.desktop$/, "");
-        if (!name) return [];
+        if (!name)
+            return [];
         // Match desktop IDs as well as display names, without substring guesses.
-        return /^[a-z0-9_-]+(?:\.[a-z0-9_-]+){2,}$/.test(name)
-            ? [name, name.slice(name.lastIndexOf(".") + 1)] : [name];
+        return /^[a-z0-9_-]+(?:\.[a-z0-9_-]+){2,}$/.test(name) ? [name, name.slice(name.lastIndexOf(".") + 1)] : [name];
     }
 
     function matches(item: var, record: var): bool {
@@ -35,6 +35,7 @@ QtObject {
     }
 
     function acknowledge(item: var): void {
-        for (const record of unseenFor(item)) notifications.markSeen(record.id);
+        for (const record of unseenFor(item))
+            notifications.markSeen(record.id);
     }
 }

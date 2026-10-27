@@ -1,6 +1,6 @@
+import "../ui"
 import QtQuick
 import Quickshell.Services.UPower
-import "../ui"
 
 QtObject {
     property var device: UPower.displayDevice

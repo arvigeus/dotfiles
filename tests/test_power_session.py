@@ -1,4 +1,5 @@
 """Recoverable charge-once/recording actions and production drawer layouts."""
+
 import copy
 import json
 import importlib.util
@@ -17,7 +18,9 @@ import test_power_drawers as fixtures
 
 backend = fixtures.backend
 with patch.dict(sys.modules, {'backend': backend}):
-    session = fixtures.load('power_utilities', support.DESKTOP / 'drawers/power/session.py')
+    session = fixtures.load(
+        'power_utilities', support.DESKTOP / 'drawers/power/session.py'
+    )
 
 
 class UtilitiesTests(unittest.TestCase):
@@ -41,7 +44,14 @@ class UtilitiesTests(unittest.TestCase):
         self.row['limit'] = request['value']
 
     def once(self):
-        self.utility.handle(dict(op='charge-once', key=self.row['key'], identity=self.row['identity'], limit=self.row['limit']))
+        self.utility.handle(
+            dict(
+                op='charge-once',
+                key=self.row['key'],
+                identity=self.row['identity'],
+                limit=self.row['limit'],
+            )
+        )
 
     def test_charge_once_survives_reload_and_restores_after_unplug(self):
         self.once()
@@ -56,10 +66,12 @@ class UtilitiesTests(unittest.TestCase):
 
     def test_intent_precedes_charge_mutation_and_reboot_restores_it(self):
         original = self.controller.handle.side_effect
+
         def checked(request):
             saved = json.loads(self.utility.path.read_text())
             self.assertEqual(saved['once']['previous'], 80)
             original(request)
+
         self.controller.handle.side_effect = checked
         self.once()
         self.controller.handle.side_effect = original
@@ -84,7 +96,9 @@ class UtilitiesTests(unittest.TestCase):
         self.assertIsNone(self.utility.data['once'])
 
     def test_malformed_saved_actions_do_not_prevent_startup(self):
-        self.utility.path.write_text(json.dumps(dict(once={'previous': 'invalid'}, recording={'running': True})))
+        self.utility.path.write_text(
+            json.dumps(dict(once={'previous': 'invalid'}, recording={'running': True}))
+        )
         reloaded = session.Session(self.root, self.controller)
         self.power(False, reloaded)
         self.assertIsNone(reloaded.data['once'])
@@ -93,7 +107,9 @@ class UtilitiesTests(unittest.TestCase):
 
     def test_invalid_recording_summary_is_not_published(self):
         (self.root / 'summary.json').write_text('[]')
-        self.utility.path.write_text(json.dumps(dict(recording=dict(path=str(self.root), summary=['invalid']))))
+        self.utility.path.write_text(
+            json.dumps(dict(recording=dict(path=str(self.root), summary=['invalid'])))
+        )
         reloaded = session.Session(self.root, self.controller)
         self.assertIsNone(reloaded.data['recording']['summary'])
         self.assertIn('without a summary', reloaded.data['recording']['error'])
@@ -113,7 +129,9 @@ class UtilitiesTests(unittest.TestCase):
 
     def test_stale_charge_once_and_unplugged_start_do_not_write(self):
         with self.assertRaisesRegex(ValueError, 'changed'):
-            self.utility.handle(dict(op='charge-once', key=self.row['key'], identity='stale', limit=80))
+            self.utility.handle(
+                dict(op='charge-once', key=self.row['key'], identity='stale', limit=80)
+            )
         self.power(None)
         with self.assertRaisesRegex(ValueError, 'Connect'):
             self.once()
@@ -130,6 +148,7 @@ class UtilitiesTests(unittest.TestCase):
         def changed_but_unconfirmed(request):
             self.row['limit'] = 100
             raise ValueError('readback failed')
+
         self.controller.handle.side_effect = changed_but_unconfirmed
         with self.assertRaisesRegex(ValueError, 'readback'):
             self.once()
@@ -145,10 +164,21 @@ class UtilitiesTests(unittest.TestCase):
             self.utility.handle(dict(op='profile', value='performance'))
 
     def test_removed_settings_are_pruned_without_changing_hardware(self):
-        self.utility.path.write_text(json.dumps(dict(history=[dict(time=1000)], notification=dict(percentage=80),
-            temporary=dict(target='performance'), once=None, recording=None)))
+        self.utility.path.write_text(
+            json.dumps(
+                dict(
+                    history=[dict(time=1000)],
+                    notification=dict(percentage=80),
+                    temporary=dict(target='performance'),
+                    once=None,
+                    recording=None,
+                )
+            )
+        )
         reloaded = session.Session(self.root, self.controller)
-        self.assertEqual(set(json.loads(reloaded.path.read_text())), {'once', 'recording'})
+        self.assertEqual(
+            set(json.loads(reloaded.path.read_text())), {'once', 'recording'}
+        )
         self.controller.handle.assert_not_called()
 
     def test_recording_runs_until_stopped_and_excludes_gpu_sensors(self):
@@ -174,7 +204,9 @@ class UtilitiesTests(unittest.TestCase):
             self.utility.handle(dict(op='record'))
         output = Path(self.utility.data['recording']['path'])
         output.mkdir()
-        (output / 'summary.json').write_text(json.dumps(dict(samples=12, measured_seconds=24)))
+        (output / 'summary.json').write_text(
+            json.dumps(dict(samples=12, measured_seconds=24))
+        )
         child.poll.return_value = 0
         child.returncode = 0
         self.assertTrue(self.utility.poll_recording())
@@ -192,7 +224,7 @@ class ProcessLifecycleTests(unittest.TestCase):
             binary = root / 'bin'
             binary.mkdir()
             recorder = binary / 'power-study'
-            recorder.write_text('''#!/usr/bin/python3
+            recorder.write_text("""#!/usr/bin/python3
 import json,signal,sys,time
 from pathlib import Path
 output=Path(sys.argv[sys.argv.index('--output')+1]);output.mkdir()
@@ -202,12 +234,13 @@ def stop(*_):
 signal.signal(signal.SIGTERM,stop)
 (output/'ready').write_text('ready')
 time.sleep(30)
-''')
+""")
             recorder.chmod(0o755)
             # Real GLib main loop/stdio/supervisor and Session persistence; only
             # daemon data and the bounded recorder executable are substituted.
             runner = root / 'runner.py'
-            runner.write_text('''import sys
+            runner.write_text(
+                """import sys
 from unittest.mock import Mock
 sys.path.insert(0, SOURCE)
 import session,backend
@@ -217,29 +250,49 @@ original=session.Session
 session.Session=lambda: original(controller=controller)
 Gio.bus_get_sync=lambda *a: Mock()
 raise SystemExit(session.supervise())
-'''.replace('SOURCE', repr(str(support.DESKTOP / 'drawers/power'))))
-            child = subprocess.Popen([sys.executable, '-B', '-u', str(runner)],
-                env=dict(os.environ, XDG_STATE_HOME=str(root / 'state'), PATH=str(binary) + os.pathsep + os.environ['PATH']),
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+""".replace('SOURCE', repr(str(support.DESKTOP / 'drawers/power')))
+            )
+            child = subprocess.Popen(
+                [sys.executable, '-B', '-u', str(runner)],
+                env=dict(
+                    os.environ,
+                    XDG_STATE_HOME=str(root / 'state'),
+                    PATH=str(binary) + os.pathsep + os.environ['PATH'],
+                ),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
             try:
-                self.assertTrue(select.select([child.stdout], [], [], 5)[0], 'helper startup timed out')
+                self.assertTrue(
+                    select.select([child.stdout], [], [], 5)[0],
+                    'helper startup timed out',
+                )
                 self.assertFalse(json.loads(child.stdout.readline())['state']['error'])
                 child.stdin.write('{"op":"record"}\n')
                 child.stdin.flush()
-                self.assertTrue(select.select([child.stdout], [], [], 5)[0], 'record response timed out')
+                self.assertTrue(
+                    select.select([child.stdout], [], [], 5)[0],
+                    'record response timed out',
+                )
                 response = json.loads(child.stdout.readline())
                 self.assertTrue(response['state']['recording']['running'])
                 output = Path(response['state']['recording']['path'])
                 deadline = time.monotonic() + 3
                 while not (output / 'ready').exists() and time.monotonic() < deadline:
-                    time.sleep(.02)
-                self.assertTrue((output / 'ready').exists(), 'recorder startup timed out')
+                    time.sleep(0.02)
+                self.assertTrue(
+                    (output / 'ready').exists(), 'recorder startup timed out'
+                )
                 child.kill()  # QProcess destroys its direct child with SIGKILL.
                 child.stdin.close()
                 child.stdin = None
                 _, errors = child.communicate(timeout=5)
                 self.assertNotIn('Traceback', errors)
-                saved = json.loads((root / 'state/quickshell/power/session.json').read_text())
+                saved = json.loads(
+                    (root / 'state/quickshell/power/session.json').read_text()
+                )
                 self.assertEqual(set(saved), {'once', 'recording'})
                 self.assertFalse(saved['recording']['running'])
                 self.assertTrue(saved['recording']['summary']['interrupted'])
@@ -260,8 +313,12 @@ class UtilitiesQmlTests(fixtures.PowerQmlTests):
 
     def test_session_transport_owns_mutations_after_drawer_dismissal(self):
         def setup(root):
-            (root / 'drawers/power/backend.py').write_text('import json,sys\nstate=DATA\nfor line in sys.stdin:\n json.loads(line)\n print(json.dumps(dict(ok=True,data=state,error="")),flush=True)\n'.replace('DATA', repr(fixtures.snapshot())))
-            (root / 'drawers/power/session.py').write_text('''import json,sys,time
+            (root / 'drawers/power/backend.py').write_text(
+                'import json,sys\nstate=DATA\nfor line in sys.stdin:\n json.loads(line)\n print(json.dumps(dict(ok=True,data=state,error="")),flush=True)\n'.replace(
+                    'DATA', repr(fixtures.snapshot())
+                )
+            )
+            (root / 'drawers/power/session.py').write_text("""import json,sys,time
 state=dict(once=None,recording=None,recordAvailable=False,error="",lastOperation="",power="unset")
 print(json.dumps(dict(state=state,reply=False)),flush=True)
 for line in sys.stdin:
@@ -269,8 +326,10 @@ for line in sys.stdin:
  if request['op']=='power': state['power']=request['onBattery']
  else: time.sleep(.1); state['lastOperation']=request['op']
  print(json.dumps(dict(state=state,reply=request['op']!='power')),flush=True)
-''')
-        self.run_qml('''import QtQuick
+""")
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "drawers/power"
 ShellRoot {
@@ -292,11 +351,14 @@ ShellRoot {
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer {interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }
-''', setup)
+""",
+            setup,
+        )
 
     def test_sections_device_cards_and_bottom_actions(self):
         data = fixtures.snapshot()
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -407,7 +469,8 @@ UPOWER
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer {interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }
-'''.replace('UPOWER', fixtures.UPOWER).replace('DATA', json.dumps(data)))
+""".replace('UPOWER', fixtures.UPOWER).replace('DATA', json.dumps(data))
+        )
 
 
 if __name__ == '__main__':

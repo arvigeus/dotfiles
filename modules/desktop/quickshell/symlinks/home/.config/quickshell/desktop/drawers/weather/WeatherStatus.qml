@@ -15,49 +15,79 @@ Singleton {
         const value = snapshot.weather?.current?.temperature;
         return typeof value === "number" && isFinite(value) ? Conditions.temperature(value) : "";
     }
-    readonly property string iconName: snapshot.weather?.current
-        ? Conditions.icon(snapshot.weather.current.code, snapshot.weather.current.isDay) : "cloud"
+    readonly property string iconName: snapshot.weather?.current ? Conditions.icon(snapshot.weather.current.code, snapshot.weather.current.isDay) : "cloud"
     readonly property string description: {
         const place = snapshot.location;
         const current = snapshot.weather?.current;
-        if (!place) return qsTr("Open Time and weather for saved places and forecasts.");
-        if (!current) return place.name + " · " + qsTr("Weather unavailable. Retrying shortly.");
+        if (!place)
+            return qsTr("Open Time and weather for saved places and forecasts.");
+        if (!current)
+            return place.name + " · " + qsTr("Weather unavailable. Retrying shortly.");
         const metrics = [];
-        if (current.feelsLike != null) metrics.push(qsTr("Feels %1").arg(Conditions.temperature(current.feelsLike)));
-        if (current.wind != null) metrics.push(qsTr("Wind %1 km/h").arg(Math.round(current.wind)));
-        if (current.humidity != null) metrics.push(qsTr("%1 humidity").arg(Conditions.percent(current.humidity)));
-        return [place.name + " · " + Conditions.description(current.code) + " · " + Conditions.temperature(current.temperature) + "C",
-            metrics.join(" · "),
-            snapshot.stale ? qsTr("Outdated · updated %1").arg(snapshot.updated) : qsTr("Updated %1").arg(snapshot.updated)].filter(Boolean).join("\n");
+        if (current.feelsLike != null)
+            metrics.push(qsTr("Feels %1").arg(Conditions.temperature(current.feelsLike)));
+        if (current.wind != null)
+            metrics.push(qsTr("Wind %1 km/h").arg(Math.round(current.wind)));
+        if (current.humidity != null)
+            metrics.push(qsTr("%1 humidity").arg(Conditions.percent(current.humidity)));
+        return [place.name + " · " + Conditions.description(current.code) + " · " + Conditions.temperature(current.temperature) + "C", metrics.join(" · "), snapshot.stale ? qsTr("Outdated · updated %1").arg(snapshot.updated) : qsTr("Updated %1").arg(snapshot.updated)].filter(Boolean).join("\n");
     }
     function refresh(): void {
-        if (worker.running) { pending = true; return; }
-        worker.stdinEnabled = true; worker.running = true;
+        if (worker.running) {
+            pending = true;
+            return;
+        }
+        worker.stdinEnabled = true;
+        worker.running = true;
     }
     Component.onCompleted: refresh()
     FileView {
         id: locationConfig
         path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/quickshell/desktop/weather.json"
-        watchChanges: true; preload: true
-        onFileChanged: { reload(); root.lastFailure = 0; root.refresh(); }
+        watchChanges: true
+        preload: true
+        onFileChanged: {
+            reload();
+            root.lastFailure = 0;
+            root.refresh();
+        }
     }
-    Timer { id: updates; interval: 60000; repeat: true; running: true; onTriggered: root.refresh() }
+    Timer {
+        id: updates
+        interval: 60000
+        repeat: true
+        running: true
+        onTriggered: root.refresh()
+    }
     Process {
         id: worker
         command: ["python3", Quickshell.shellPath("drawers/weather/backend.py")]
-        onStarted: { write(JSON.stringify({op: "island", refresh: Date.now() - root.lastFailure >= 300000}) + "\n"); stdinEnabled = false; }
+        onStarted: {
+            write(JSON.stringify({
+                op: "island",
+                refresh: Date.now() - root.lastFailure >= 300000
+            }) + "\n");
+            stdinEnabled = false;
+        }
         stdout: StdioCollector {
             onStreamFinished: {
-                if (root.pending) return;
+                if (root.pending)
+                    return;
                 try {
                     root.snapshot = JSON.parse(text);
-                    if (root.snapshot.error && root.snapshot.due) root.lastFailure = Date.now();
-                    else if (!root.snapshot.due) root.lastFailure = 0;
+                    if (root.snapshot.error && root.snapshot.due)
+                        root.lastFailure = Date.now();
+                    else if (!root.snapshot.due)
+                        root.lastFailure = 0;
+                } catch (_) {
+                    root.snapshot = {};
                 }
-                catch (_) { root.snapshot = {}; }
             }
         }
         stderr: StdioCollector {}
-        onExited: if (root.pending) { root.pending = false; Qt.callLater(root.refresh); }
+        onExited: if (root.pending) {
+            root.pending = false;
+            Qt.callLater(root.refresh);
+        }
     }
 }

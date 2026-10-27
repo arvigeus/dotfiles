@@ -1,4 +1,5 @@
 """Movies runs through the real SpaceHost with isolated media workers."""
+
 import re
 import unittest
 import support
@@ -6,23 +7,46 @@ import support
 
 def setup(root):
     path = root / 'ui/InteractionWindow.qml'
-    source = path.read_text().replace('PanelWindow {', 'FloatingWindow {\n implicitWidth: 1440; implicitHeight: 900', 1)
-    source = source.replace('    anchors { top: true; bottom: true; left: true; right: true }\n', '')
+    source = path.read_text().replace(
+        'PanelWindow {',
+        'FloatingWindow {\n implicitWidth: 1440; implicitHeight: 900',
+        1,
+    )
+    source = source.replace(
+        '    anchors { top: true; bottom: true; left: true; right: true }\n', ''
+    )
     source = source.replace('    exclusionMode: ExclusionMode.Ignore\n', '')
     source = re.sub(r'^    WlrLayershell\..*\n', '', source, flags=re.M)
     path.write_text(source)
     # Real catalogue, aliases and worker transport; seeded cache avoids APIs.
     import sys
+
     sys.path.insert(0, str(support.DESKTOP))
     from spaces.movies.backend import Backend
-    backend = Backend(root/'config/quickshell/desktop/spaces/movies/media.json', root/'data/quickshell/desktop/spaces/movies', root/'cache')
-    movie = dict(id='tt001',imdbId='tt001',kind='movie',title='Fixture movie',year='2024',overview='A saved movie',poster='',backdrop='')
-    backend.put(backend.browse_key('movie','',{},''),dict(items=[movie],next=''))
+
+    backend = Backend(
+        root / 'config/quickshell/desktop/spaces/movies/media.json',
+        root / 'data/quickshell/desktop/spaces/movies',
+        root / 'cache',
+    )
+    movie = dict(
+        id='tt001',
+        imdbId='tt001',
+        kind='movie',
+        title='Fixture movie',
+        year='2024',
+        overview='A saved movie',
+        poster='',
+        backdrop='',
+    )
+    backend.put(backend.browse_key('movie', '', {}, ''), dict(items=[movie], next=''))
     backend.save_title(movie)
     backend.put('detail:tt001', movie)
-    backend.put('art:tt001', dict(title=movie,warnings=[],version=3))
+    backend.put('art:tt001', dict(title=movie, warnings=[], version=3))
     # Providers and qBittorrent are not contacted by the fixture.
-    (root/'spaces/movies/torrent_backend.py').write_text("import json,sys\nfor line in sys.stdin:\n r=json.loads(line);print(json.dumps(dict(id=r['id'],result=[])),flush=True)\n")
+    (root / 'spaces/movies/torrent_backend.py').write_text(
+        "import json,sys\nfor line in sys.stdin:\n r=json.loads(line);print(json.dumps(dict(id=r['id'],result=[])),flush=True)\n"
+    )
 
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
@@ -30,7 +54,8 @@ class MoviesSpaceTests(unittest.TestCase):
     run_qml = support.run_qml
 
     def test_real_host_hide_restore_close_and_native_page(self):
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -103,13 +128,16 @@ ShellRoot {
   if(root.step===4){if(!host.currentPage||host.currentPage.loading)return;if(!host.currentPage.personal.favorite)return;check(host.currentPage!==root.retained,"fresh open reused disposed page");SpaceState.close("movies");console.log("DISPLAY_PASS");Qt.quit();}
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}finally{driver.start();}} }
  Timer { interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();} }
-}''', setup=setup)
+}""",
+            setup=setup,
+        )
 
     def test_tab_loading_survives_late_responses_and_tracks_the_visible_tab(self):
         def delayed_setup(root):
             setup(root)
             # Use the real transport and backend with deterministic delayed reads.
-            (root / 'spaces/movies/backend.py').write_text('''import sys,time
+            (root / 'spaces/movies/backend.py').write_text(
+                """import sys,time
 sys.path.insert(0, %r)
 from spaces.movies.backend import Backend
 from spaces.movies.worker import serve
@@ -122,8 +150,12 @@ def handle(request):
  if op=='person':time.sleep(0.3);return {'name':'Fixture actor','credits':[]}
  return backend.handle(request)
 serve(handle)
-''' % str(support.DESKTOP))
-        self.run_qml('''import QtQuick
+"""
+                % str(support.DESKTOP)
+            )
+
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import Quickshell
 import "ui"
@@ -152,12 +184,15 @@ ShellRoot {
   if(root.step===5){if(page.extraLoading)return;check(!status.visible,"finished filmography kept spinner");SpaceState.close("movies");console.log("DISPLAY_PASS");Qt.quit();}
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}} }
  Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup=delayed_setup)
+}""",
+            setup=delayed_setup,
+        )
 
     def test_gallery_spinner_and_artwork_cache_survive_delegate_recreation(self):
         def cache_setup(root):
             setup(root)
-            (root / 'spaces/movies/image_cache.py').write_text('''import io,sys,time
+            (root / 'spaces/movies/image_cache.py').write_text(
+                """import io,sys,time
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,%r)
@@ -171,8 +206,12 @@ def download(*args,**kwargs):
  return Response(b'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="red"/></svg>')
 with patch('spaces.movies.image_cache.urllib.request.urlopen',side_effect=download):
  serve(ArtworkCache().handle)
-''' % (str(support.DESKTOP), str(root / 'downloads')))
-        self.run_qml('''import QtQuick
+"""
+                % (str(support.DESKTOP), str(root / 'downloads'))
+            )
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import Quickshell.Io
 import "ui"
@@ -211,13 +250,18 @@ ShellRoot {
   }
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup=cache_setup)
+}""",
+            setup=cache_setup,
+        )
 
     def test_movie_has_one_spinner_until_images_and_inventory_finish(self):
         def delayed_setup(root):
             setup(root)
-            (root / 'art.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="240"><rect width="160" height="240" fill="orange"/></svg>')
-            (root / 'spaces/movies/backend.py').write_text('''import sys,time
+            (root / 'art.svg').write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="240"><rect width="160" height="240" fill="orange"/></svg>'
+            )
+            (root / 'spaces/movies/backend.py').write_text(
+                """import sys,time
 sys.path.insert(0,%r)
 from spaces.movies.backend import Backend
 from spaces.movies.worker import serve
@@ -232,16 +276,23 @@ def handle(request):
   return {'title':title,'warnings':[]} if op=='artwork' else title
  return backend.handle(request)
 serve(handle,workers=8)
-''' % str(support.DESKTOP))
-            (root / 'spaces/movies/image_cache.py').write_text('''import sys,time
+"""
+                % str(support.DESKTOP)
+            )
+            (root / 'spaces/movies/image_cache.py').write_text(
+                """import sys,time
 sys.path.insert(0,%r)
 from spaces.movies.worker import serve
 def handle(request):
  time.sleep(.35 if request['url'].endswith('logo') else .8)
  return %r
 serve(handle)
-''' % (str(support.DESKTOP), (root / 'art.svg').as_uri()))
-        self.run_qml('''import QtQuick
+"""
+                % (str(support.DESKTOP), (root / 'art.svg').as_uri())
+            )
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "ui"
 ShellRoot {
@@ -271,13 +322,23 @@ ShellRoot {
   SpaceState.close("movies");console.log("DISPLAY_PASS");Qt.quit();
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup=delayed_setup)
+}""",
+            setup=delayed_setup,
+        )
 
     def test_backdrop_uses_current_poster_for_slow_failed_and_superseded_images(self):
         def backdrop_setup(root):
-            for name, color in [('old', 'red'), ('poster', 'orange'), ('next-poster', 'green')]:
-                (root / (name + '.svg')).write_text('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="240"><rect width="160" height="240" fill="%s"/></svg>' % color)
-            (root / 'spaces/movies/image_cache.py').write_text('''import sys,time
+            for name, color in [
+                ('old', 'red'),
+                ('poster', 'orange'),
+                ('next-poster', 'green'),
+            ]:
+                (root / (name + '.svg')).write_text(
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="240"><rect width="160" height="240" fill="%s"/></svg>'
+                    % color
+                )
+            (root / 'spaces/movies/image_cache.py').write_text(
+                """import sys,time
 sys.path.insert(0,%r)
 from spaces.movies.worker import serve
 def handle(request):
@@ -286,8 +347,12 @@ def handle(request):
  if 'failed' in url:raise ValueError('Fixture image unavailable')
  return %r
 serve(handle)
-''' % (str(support.DESKTOP), (root / 'old.svg').as_uri()))
-        self.run_qml('''import QtQuick
+"""
+                % (str(support.DESKTOP), (root / 'old.svg').as_uri())
+            )
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "spaces/movies"
 ShellRoot {
@@ -315,18 +380,22 @@ ShellRoot {
   if(root.step===8){if(Date.now()-root.started<2400||backdrop.loading)return;check(backdrop.usingPoster&&!image.hasImage,"failed backdrop lost poster fallback");check(poster.displayedSource.toString().endsWith("/poster.svg"),"failed backdrop has wrong fallback");console.log("DISPLAY_PASS");Qt.quit();}
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup=backdrop_setup)
+}""",
+            setup=backdrop_setup,
+        )
 
     def test_recent_metadata_is_reused_and_explicit_refresh_bypasses_it(self):
         def metadata_setup(root):
             setup(root)
-            (root / 'spaces/movies/backend.py').write_text('''import json,sys,time
+            (root / 'spaces/movies/backend.py').write_text("""import json,sys,time
 count=0
 for line in sys.stdin:
  r=json.loads(line);count+=1;time.sleep(.05)
  print(json.dumps({'id':r['id'],'result':{'networkReads':count}}),flush=True)
-''')
-        self.run_qml('''import QtQuick
+""")
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "spaces/movies"
 ShellRoot {
@@ -343,4 +412,6 @@ ShellRoot {
   if(root.step===3){if(root.results.length<4)return;check(root.results[3]===2,"explicit refresh reused old metadata");console.log("DISPLAY_PASS");Qt.quit();}
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup=metadata_setup)
+}""",
+            setup=metadata_setup,
+        )

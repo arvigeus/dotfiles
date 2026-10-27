@@ -26,18 +26,21 @@ DrawerPage {
     }
 
     function statusFor(item: var): string {
-        if (item && TrayService.needsAttention(item)) return qsTr("Needs attention");
+        if (item && TrayService.needsAttention(item))
+            return qsTr("Needs attention");
         return item?.status === Status.Passive ? qsTr("Idle") : qsTr("Running");
     }
 
     function closeMenu(): void {
-        if (nativeMenu.visible) nativeMenu.close();
+        if (nativeMenu.visible)
+            nativeMenu.close();
         menuItem = null;
         menuButton = null;
     }
 
     function showMenu(item: var, button: Item): void {
-        if (!hasItem(item) || !item.hasMenu || !item.menu) return;
+        if (!hasItem(item) || !item.hasMenu || !item.menu)
+            return;
         closeMenu();
         menuItem = item;
         menuButton = button;
@@ -45,26 +48,34 @@ DrawerPage {
     }
 
     function activate(item: var, button: Item, secondary: bool): void {
-        if (!hasItem(item)) return;
+        if (!hasItem(item))
+            return;
         if (!secondary && item.onlyMenu) {
             showMenu(item, button);
             return;
         }
         closeMenu();
-        if (!secondary) TrayService.acknowledge(item);
+        if (!secondary)
+            TrayService.acknowledge(item);
         closeRequested();
-        if (secondary) item.secondaryActivate();
-        else item.activate();
+        if (secondary)
+            item.secondaryActivate();
+        else
+            item.activate();
     }
 
-    onActiveChanged: if (!active) closeMenu()
-    onItemsChanged: if (menuItem && !items.includes(menuItem)) closeMenu()
-    Component.onDestruction: if (nativeMenu.visible) nativeMenu.close()
+    onActiveChanged: if (!active)
+        closeMenu()
+    onItemsChanged: if (menuItem && !items.includes(menuItem))
+        closeMenu()
+    Component.onDestruction: if (nativeMenu.visible)
+        nativeMenu.close()
 
     Connections {
         target: root.menuItem
         function onHasMenuChanged(): void {
-            if (!root.menuItem?.hasMenu) root.closeMenu();
+            if (!root.menuItem?.hasMenu)
+                root.closeMenu();
         }
     }
 
@@ -77,7 +88,8 @@ DrawerPage {
         anchor.edges: Edges.Bottom | Edges.Right
         anchor.gravity: Edges.Bottom | Edges.Left
         onClosed: {
-            if (root.active && root.menuButton?.enabled) root.menuButton.forceActiveFocus();
+            if (root.active && root.menuButton?.enabled)
+                root.menuButton.forceActiveFocus();
             root.menuItem = null;
             root.menuButton = null;
         }
@@ -106,12 +118,16 @@ DrawerPage {
             keyNavigationEnabled: true
             activeFocusOnTab: true
 
-            Keys.onReturnPressed: if (currentItem) currentItem.activateItem()
-            Keys.onEnterPressed: if (currentItem) currentItem.activateItem()
-            Keys.onSpacePressed: if (currentItem) currentItem.activateItem()
+            Keys.onReturnPressed: if (currentItem)
+                currentItem.activateItem()
+            Keys.onEnterPressed: if (currentItem)
+                currentItem.activateItem()
+            Keys.onSpacePressed: if (currentItem)
+                currentItem.activateItem()
             Keys.onPressed: event => {
                 if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
-                    if (currentItem) currentItem.openMenu();
+                    if (currentItem)
+                        currentItem.openMenu();
                     event.accepted = true;
                 }
             }
@@ -121,17 +137,23 @@ DrawerPage {
                 required property var modelData
                 required property int index
                 readonly property bool attention: TrayService.needsAttention(modelData)
-                readonly property bool highlighted: rowHover.hovered || select.visualFocus || menu.visualFocus
-                    || (list.activeFocus && list.currentIndex === index)
+                readonly property bool highlighted: rowHover.hovered || select.visualFocus || menu.visualFocus || (list.activeFocus && list.currentIndex === index)
                 objectName: "trayItem:" + modelData.id
                 width: ListView.view.width
                 implicitHeight: 64
                 height: implicitHeight
 
-                function activateItem(): void { root.activate(modelData, select, false); }
-                function openMenu(): void { root.showMenu(modelData, menu); }
+                function activateItem(): void {
+                    root.activate(modelData, select, false);
+                }
+                function openMenu(): void {
+                    root.showMenu(modelData, menu);
+                }
 
-                HoverHandler { id: rowHover; enabled: root.active }
+                HoverHandler {
+                    id: rowHover
+                    enabled: root.active
+                }
                 ButtonBackground {
                     objectName: "trayBackground:" + card.modelData.id
                     anchors.fill: parent
@@ -158,7 +180,8 @@ DrawerPage {
                         text: root.nameFor(card.modelData)
                         Accessible.name: text
                         Accessible.description: root.statusFor(card.modelData)
-                        onActiveFocusChanged: if (activeFocus) list.currentIndex = card.index
+                        onActiveFocusChanged: if (activeFocus)
+                            list.currentIndex = card.index
                         onClicked: card.activateItem()
                         Keys.onReturnPressed: card.activateItem()
                         Keys.onEnterPressed: card.activateItem()
@@ -211,21 +234,27 @@ DrawerPage {
                         }
                         PassiveToolTip {
                             target: select
-                            text: [select.text, card.modelData.tooltipTitle, card.modelData.tooltipDescription]
-                                .filter((value, index, values) => !!value && values.indexOf(value) === index).join("\n")
+                            text: [select.text, card.modelData.tooltipTitle, card.modelData.tooltipDescription].filter((value, index, values) => !!value && values.indexOf(value) === index).join("\n")
                         }
                         MouseArea {
                             anchors.fill: parent
                             acceptedButtons: Qt.RightButton | Qt.MiddleButton
                             onClicked: event => {
-                                if (event.button === Qt.RightButton) card.openMenu();
-                                else root.activate(card.modelData, select, true);
+                                if (event.button === Qt.RightButton)
+                                    card.openMenu();
+                                else
+                                    root.activate(card.modelData, select, true);
                             }
                             onWheel: event => {
-                                if (!root.hasItem(card.modelData)) { event.accepted = false; return; }
+                                if (!root.hasItem(card.modelData)) {
+                                    event.accepted = false;
+                                    return;
+                                }
                                 const delta = event.angleDelta;
-                                if (delta.y) card.modelData.scroll(delta.y, false);
-                                if (delta.x) card.modelData.scroll(delta.x, true);
+                                if (delta.y)
+                                    card.modelData.scroll(delta.y, false);
+                                if (delta.x)
+                                    card.modelData.scroll(delta.x, true);
                                 event.accepted = !!(delta.x || delta.y);
                             }
                         }
@@ -247,7 +276,9 @@ DrawerPage {
                             color: menu.hovered || menu.visualFocus ? Theme.accent : Theme.muted
                         }
                         background: Item {}
-                        PassiveToolTip { target: menu }
+                        PassiveToolTip {
+                            target: menu
+                        }
                         onClicked: card.openMenu()
                     }
                 }

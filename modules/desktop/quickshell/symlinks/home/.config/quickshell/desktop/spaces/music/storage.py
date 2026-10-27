@@ -1,4 +1,5 @@
 """Music-owned private snapshots and scoped player sockets."""
+
 import json
 import os
 import tempfile
@@ -32,7 +33,9 @@ def read_json(path, default):
     except FileNotFoundError:
         return default
     except (OSError, ValueError):
-        raise MusicError('Music could not read its saved records. The existing file was preserved.') from None
+        raise MusicError(
+            'Music could not read its saved records. The existing file was preserved.'
+        ) from None
 
 
 class MusicIpc(MpvIpc):

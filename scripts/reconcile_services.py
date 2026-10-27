@@ -1,4 +1,5 @@
 """Reconcile globally enabled/masked user units declared by the modules."""
+
 import json
 from pathlib import Path
 import subprocess
@@ -37,6 +38,8 @@ def apply_user(extra, state, run=None):
 
 if __name__ == '__main__':
     try:
-        apply_user(json.loads(Path(sys.argv[1]).read_text())['extra'], State(Path(sys.argv[2])))
+        apply_user(
+            json.loads(Path(sys.argv[1]).read_text())['extra'], State(Path(sys.argv[2]))
+        )
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         raise SystemExit(str(error)) from error

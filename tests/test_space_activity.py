@@ -1,4 +1,5 @@
 """Current Space work stays visible, readable and absent when idle."""
+
 import json
 from pathlib import Path
 import tempfile
@@ -7,7 +8,7 @@ import unittest
 import support
 
 
-@unittest.skipUnless(support.QS, "Quickshell is required")
+@unittest.skipUnless(support.QS, 'Quickshell is required')
 class SpaceActivityTests(unittest.TestCase):
     run_qml = support.run_qml
 
@@ -91,9 +92,11 @@ FloatingWindow {
 
     def test_spinner_renders_red_after_becoming_busy(self):
         from PySide6.QtGui import QImage
+
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'spinner.png'
-            self.run_qml("""import QtQuick
+            self.run_qml(
+                """import QtQuick
 import Quickshell
 import "spaces/movies"
 FloatingWindow {
@@ -106,16 +109,22 @@ FloatingWindow {
   if(stage===0){activity.tasks=[activity.task(true,"work","Loading…")];stage++;return;}
   driver.stop();sample.grabToImage(result=>{result.saveToFile(OUTPUT);console.log("DISPLAY_PASS");Qt.quit();});
  }}
-}""".replace('OUTPUT', json.dumps(str(path))))
+}""".replace('OUTPUT', json.dumps(str(path)))
+            )
             image = QImage(str(path))
             self.assertFalse(image.isNull())
-            red = sum(image.pixelColor(x,y).alpha() > 128
-                      and image.pixelColor(x,y).red() > 150
-                      and image.pixelColor(x,y).green() < 80
-                      and image.pixelColor(x,y).blue() < 80
-                      for x in range(30,58) for y in range(30,58))
-            self.assertGreater(red, 30, 'The active ring did not render with the Space accent color')
+            red = sum(
+                image.pixelColor(x, y).alpha() > 128
+                and image.pixelColor(x, y).red() > 150
+                and image.pixelColor(x, y).green() < 80
+                and image.pixelColor(x, y).blue() < 80
+                for x in range(30, 58)
+                for y in range(30, 58)
+            )
+            self.assertGreater(
+                red, 30, 'The active ring did not render with the Space accent color'
+            )
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

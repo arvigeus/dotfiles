@@ -1,4 +1,5 @@
 """Project maintenance acts only on explicitly selected temporary repositories."""
+
 import importlib.machinery
 import importlib.util
 import subprocess
@@ -7,8 +8,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-PATH = Path(__file__).resolve().parents[1] / 'modules/dev/tools/projects/files/usr/local/bin/project-tools'
-SPEC = importlib.util.spec_from_loader('project_tools', importlib.machinery.SourceFileLoader('project_tools', str(PATH)))
+PATH = (
+    Path(__file__).resolve().parents[1]
+    / 'modules/dev/tools/projects/files/usr/local/bin/project-tools'
+)
+SPEC = importlib.util.spec_from_loader(
+    'project_tools', importlib.machinery.SourceFileLoader('project_tools', str(PATH))
+)
 project = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(project)
 
@@ -24,13 +30,17 @@ class ProjectMaintenanceTests(unittest.TestCase):
         self.git('config', 'user.name', 'Test')
         self.git('config', 'commit.gpgSign', 'false')
         self.git('config', 'core.hooksPath', '/dev/null')
-        (self.root / '.gitignore').write_text('build/\n.env\n.env.*\nmise.local.toml\n.direnv/\n')
+        (self.root / '.gitignore').write_text(
+            'build/\n.env\n.env.*\nmise.local.toml\n.direnv/\n'
+        )
         (self.root / 'tracked.txt').write_text('committed')
         self.git('add', '.')
         self.git('commit', '-qm', 'initial')
 
     def git(self, *arguments):
-        return subprocess.check_output(['git', '-C', str(self.root), *arguments], text=True).strip()
+        return subprocess.check_output(
+            ['git', '-C', str(self.root), *arguments], text=True
+        ).strip()
 
     def prepare_files(self):
         (self.root / 'build').mkdir()
@@ -106,21 +116,32 @@ class ProjectMaintenanceTests(unittest.TestCase):
 
     def test_failed_fetch_never_changes_working_files(self):
         self.configure_upstream()
-        self.git('remote', 'set-url', 'origin', str(Path(self.tmp.name) / 'missing.git'))
+        self.git(
+            'remote', 'set-url', 'origin', str(Path(self.tmp.name) / 'missing.git')
+        )
         self.prepare_files()
         before = self.git('status', '--porcelain')
-        with patch('builtins.input') as prompt, self.assertRaises(subprocess.CalledProcessError):
+        with (
+            patch('builtins.input') as prompt,
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
             project.perform('reset', self.root)
         prompt.assert_not_called()
         self.assertEqual(self.git('status', '--porcelain'), before)
         self.assertEqual((self.root / 'tracked.txt').read_text(), 'edited')
 
     def test_selected_task_is_revalidated_and_passed_as_one_argument(self):
-        with patch.object(project, 'repository', return_value=self.root), \
-                patch.object(project, 'tasks', return_value=['check:server']), \
-                patch.object(project.subprocess, 'run', return_value=Mock(returncode=0)) as run:
+        with (
+            patch.object(project, 'repository', return_value=self.root),
+            patch.object(project, 'tasks', return_value=['check:server']),
+            patch.object(
+                project.subprocess, 'run', return_value=Mock(returncode=0)
+            ) as run,
+        ):
             self.assertEqual(project.perform('task', self.root, 'check:server'), 0)
-            run.assert_called_once_with(['mise', 'run', 'check:server'], cwd=self.root, check=False)
+            run.assert_called_once_with(
+                ['mise', 'run', 'check:server'], cwd=self.root, check=False
+            )
             with self.assertRaisesRegex(ValueError, 'no longer available'):
                 project.perform('task', self.root, 'removed-task')
             self.assertEqual(run.call_count, 1)
@@ -134,6 +155,7 @@ class ProjectMaintenanceTests(unittest.TestCase):
 
     def test_native_git_sync_fetches_pushes_and_only_fast_forwards(self):
         import project_inspector as inspector
+
         remote = self.configure_upstream()
         (self.root / 'tracked.txt').write_text('local update')
         self.git('commit', '-qam', 'local update')
@@ -141,38 +163,58 @@ class ProjectMaintenanceTests(unittest.TestCase):
         self.assertEqual(project.git_action('push', self.root), 0)
         other = Path(self.tmp.name) / 'other'
         subprocess.run(['git', 'clone', '-q', str(remote), str(other)], check=True)
+
         def other_git(*args):
-            return subprocess.check_output(['git', '-C', str(other), *args], text=True).strip()
-        for key, value in [('user.name', 'Test'), ('user.email', 'test@example.invalid'),
-                           ('commit.gpgSign', 'false'), ('core.hooksPath', '/dev/null')]:
+            return subprocess.check_output(
+                ['git', '-C', str(other), *args], text=True
+            ).strip()
+
+        for key, value in [
+            ('user.name', 'Test'),
+            ('user.email', 'test@example.invalid'),
+            ('commit.gpgSign', 'false'),
+            ('core.hooksPath', '/dev/null'),
+        ]:
             other_git('config', key, value)
         (other / 'remote.txt').write_text('upstream update')
-        other_git('add', '.'); other_git('commit', '-qm', 'remote update'); other_git('push', '-q')
+        other_git('add', '.')
+        other_git('commit', '-qm', 'remote update')
+        other_git('push', '-q')
         self.assertEqual(project.git_action('fetch', self.root), 0)
         self.assertEqual(inspector.sync_action(inspector.git_status(self.root)), 'pull')
         self.assertEqual(project.git_action('pull', self.root), 0)
         self.assertTrue((self.root / 'remote.txt').exists())
         # A local and a remote commit produce divergence, never an automatic merge.
         (self.root / 'local.txt').write_text('local')
-        self.git('add', '.'); self.git('commit', '-qm', 'local change')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'local change')
         (other / 'remote.txt').write_text('another upstream update')
-        other_git('commit', '-qam', 'another remote update'); other_git('push', '-q')
+        other_git('commit', '-qam', 'another remote update')
+        other_git('push', '-q')
         project.git_action('fetch', self.root)
-        self.assertEqual(inspector.sync_action(inspector.git_status(self.root)), 'fetch')
+        self.assertEqual(
+            inspector.sync_action(inspector.git_status(self.root)), 'fetch'
+        )
         before = self.git('rev-parse', 'HEAD')
         for action in ['push', 'pull']:
-            with self.assertRaises(ValueError): project.git_action(action, self.root)
+            with self.assertRaises(ValueError):
+                project.git_action(action, self.root)
         self.assertEqual(self.git('rev-parse', 'HEAD'), before)
 
-    def test_commit_uses_native_signing_and_keeps_staged_changes_on_signer_failure(self):
+    def test_commit_uses_native_signing_and_keeps_staged_changes_on_signer_failure(
+        self,
+    ):
         with self.assertRaisesRegex(ValueError, 'Stage'):
             project.git_action('commit', self.root)
-        (self.root / 'tracked.txt').write_text('staged change'); self.git('add', 'tracked.txt')
+        (self.root / 'tracked.txt').write_text('staged change')
+        self.git('add', 'tracked.txt')
         editor = Path(self.tmp.name) / 'editor'
-        editor.write_text('#!/bin/sh\nprintf "Test commit\\n" > "$1"\n'); editor.chmod(0o755)
+        editor.write_text('#!/bin/sh\nprintf "Test commit\\n" > "$1"\n')
+        editor.chmod(0o755)
         signer = Path(self.tmp.name) / 'signer'
         marker = Path(self.tmp.name) / 'signer-called'
-        signer.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 1\n'); signer.chmod(0o755)
+        signer.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 1\n')
+        signer.chmod(0o755)
         self.git('config', 'core.editor', str(editor))
         self.git('config', 'commit.gpgSign', 'true')
         self.git('config', 'gpg.format', 'openpgp')

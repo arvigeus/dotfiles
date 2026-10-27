@@ -1,12 +1,60 @@
 {
     "version": 1,
     "presets": [
-        {"id": "aac-320", "name": "M4A · AAC 320 kbps", "description": "AAC in an M4A container. 320 kbps total; preserves channel layout.", "extension": "m4a", "codec": "aac", "bitrate": "320k"},
-        {"id": "mp3-192", "name": "MP3 · 192 kbps", "description": "Widely compatible, constant bitrate.", "extension": "mp3", "codec": "libmp3lame", "bitrate": "192k"},
-        {"id": "mp3-320", "name": "MP3 · 320 kbps", "description": "High bitrate MP3, constant bitrate.", "extension": "mp3", "codec": "libmp3lame", "bitrate": "320k"},
-        {"id": "flac", "name": "FLAC · lossless", "description": "Lossless encoding at compression level 5. Cannot restore quality lost in the input.", "extension": "flac", "codec": "flac", "compression": 5},
-        {"id": "opus-192", "name": "Opus · 192 kbps", "description": "Efficient variable bitrate audio.", "extension": "opus", "codec": "libopus", "bitrate": "192k"},
-        {"id": "vorbis-q6", "name": "Ogg Vorbis · quality 6", "description": "Quality-based variable bitrate audio.", "extension": "ogg", "codec": "libvorbis", "quality": 6},
-        {"id": "wav-16", "name": "WAV · PCM 16-bit", "description": "Uncompressed 16-bit audio.", "extension": "wav", "codec": "pcm_s16le"}
+        {
+            "id": "aac-320",
+            "name": "M4A \u00b7 AAC 320 kbps",
+            "description": "AAC in an M4A container. 320 kbps total; preserves channel layout.",
+            "extension": "m4a",
+            "codec": "aac",
+            "bitrate": "320k"
+        },
+        {
+            "id": "mp3-192",
+            "name": "MP3 \u00b7 192 kbps",
+            "description": "Widely compatible, constant bitrate.",
+            "extension": "mp3",
+            "codec": "libmp3lame",
+            "bitrate": "192k"
+        },
+        {
+            "id": "mp3-320",
+            "name": "MP3 \u00b7 320 kbps",
+            "description": "High bitrate MP3, constant bitrate.",
+            "extension": "mp3",
+            "codec": "libmp3lame",
+            "bitrate": "320k"
+        },
+        {
+            "id": "flac",
+            "name": "FLAC \u00b7 lossless",
+            "description": "Lossless encoding at compression level 5. Cannot restore quality lost in the input.",
+            "extension": "flac",
+            "codec": "flac",
+            "compression": 5
+        },
+        {
+            "id": "opus-192",
+            "name": "Opus \u00b7 192 kbps",
+            "description": "Efficient variable bitrate audio.",
+            "extension": "opus",
+            "codec": "libopus",
+            "bitrate": "192k"
+        },
+        {
+            "id": "vorbis-q6",
+            "name": "Ogg Vorbis \u00b7 quality 6",
+            "description": "Quality-based variable bitrate audio.",
+            "extension": "ogg",
+            "codec": "libvorbis",
+            "quality": 6
+        },
+        {
+            "id": "wav-16",
+            "name": "WAV \u00b7 PCM 16-bit",
+            "description": "Uncompressed 16-bit audio.",
+            "extension": "wav",
+            "codec": "pcm_s16le"
+        }
     ]
 }

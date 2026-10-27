@@ -38,7 +38,6 @@ Scope {
     }
 
     Connections {
-
         id: outputs
         target: Quickshell
         function onScreensChanged(): void {

@@ -1,4 +1,5 @@
 """Series uses the Movies presentation with independent workers and lifecycle."""
+
 import json
 from pathlib import Path
 import sys
@@ -14,20 +15,47 @@ from spaces.movies.backend import Backend
 
 def setup(root):
     movies_setup(root)
-    backend = Backend(root/'config/quickshell/desktop/spaces/series/media.json',
-                      root/'data/quickshell/desktop/spaces/series', root/'cache')
-    show = dict(id='tt101', imdbId='tt101', kind='tv', title='Fixture series', year='2024',
-                plot='A saved series', poster='', backdrop='',
-                ratings=[dict(source='TMDB', value=84), dict(source='IMDb', value=7.9),
-                         dict(source='Rotten Tomatoes', value=90), dict(source='Metacritic', value=66)])
+    backend = Backend(
+        root / 'config/quickshell/desktop/spaces/series/media.json',
+        root / 'data/quickshell/desktop/spaces/series',
+        root / 'cache',
+    )
+    show = dict(
+        id='tt101',
+        imdbId='tt101',
+        kind='tv',
+        title='Fixture series',
+        year='2024',
+        plot='A saved series',
+        poster='',
+        backdrop='',
+        ratings=[
+            dict(source='TMDB', value=84),
+            dict(source='IMDb', value=7.9),
+            dict(source='Rotten Tomatoes', value=90),
+            dict(source='Metacritic', value=66),
+        ],
+    )
     backend.put(backend.browse_key('tv', '', {}, ''), dict(items=[show], next=''))
     backend.save_title(show)
     backend.put('detail:tt101', show)
     backend.put('art:tt101', dict(title=show, warnings=[], version=3))
     backend.put('episodes:' + json.dumps(['tt101', None, '']), dict(seasons=['1', '2']))
     for season in ('1', '2'):
-        backend.put('episodes:' + json.dumps(['tt101', season, '']),
-                    dict(items=[dict(season=season, number=1, title='Season ' + season + ' premiere', plot='Fixture synopsis')], next=''))
+        backend.put(
+            'episodes:' + json.dumps(['tt101', season, '']),
+            dict(
+                items=[
+                    dict(
+                        season=season,
+                        number=1,
+                        title='Season ' + season + ' premiere',
+                        plot='Fixture synopsis',
+                    )
+                ],
+                next='',
+            ),
+        )
 
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
@@ -39,7 +67,8 @@ class SeriesSpaceTests(unittest.TestCase):
 
         def delayed_setup(root):
             setup(root)
-            (root / 'spaces/movies/backend.py').write_text('''import sys,time
+            (root / 'spaces/movies/backend.py').write_text(
+                """import sys,time
 sys.path.insert(0,%r)
 from spaces.movies.backend import Backend
 from spaces.movies.worker import serve
@@ -48,11 +77,16 @@ def handle(request):
  if request['op']=='episodes' and request.get('season') is not None:time.sleep(1.5)
  return backend.handle(request)
 serve(handle,workers=8)
-''' % str(support.DESKTOP))
+"""
+                % str(support.DESKTOP)
+            )
 
         with tempfile.TemporaryDirectory() as directory:
-            pictures = [Path(directory) / name for name in ('loading.png', 'restored.png')]
-            self.run_qml('''import QtQuick
+            pictures = [
+                Path(directory) / name for name in ('loading.png', 'restored.png')
+            ]
+            self.run_qml(
+                """import QtQuick
 import QtTest
 import Quickshell
 import "ui"
@@ -117,20 +151,29 @@ ShellRoot {
   }
  }catch(error){console.error("DISPLAY_FAIL",step,error.message);Qt.quit();}finally{driver.restart();}}}
  Timer{interval:10000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",step);Qt.quit();}}
-}'''.replace('LOADING_IMAGE', json.dumps(str(pictures[0])))
-                 .replace('RESTORED_IMAGE', json.dumps(str(pictures[1]))), setup=delayed_setup)
+}""".replace('LOADING_IMAGE', json.dumps(str(pictures[0]))).replace(
+                    'RESTORED_IMAGE', json.dumps(str(pictures[1]))
+                ),
+                setup=delayed_setup,
+            )
             for path in pictures:
                 image = QImage(str(path))
                 self.assertFalse(image.isNull(), path.name)
-                red = sum(image.pixelColor(x,y).alpha() > 128
-                          and image.pixelColor(x,y).red() > 150
-                          and image.pixelColor(x,y).green() < 80
-                          and image.pixelColor(x,y).blue() < 80
-                          for x in range(image.width()) for y in range(image.height()))
-                self.assertGreater(red, 30, f'{path.name}: visible/running spinner rendered blank')
+                red = sum(
+                    image.pixelColor(x, y).alpha() > 128
+                    and image.pixelColor(x, y).red() > 150
+                    and image.pixelColor(x, y).green() < 80
+                    and image.pixelColor(x, y).blue() < 80
+                    for x in range(image.width())
+                    for y in range(image.height())
+                )
+                self.assertGreater(
+                    red, 30, f'{path.name}: visible/running spinner rendered blank'
+                )
 
     def test_seasons_ratings_and_independent_hide_restore_close(self):
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -217,4 +260,6 @@ ShellRoot {
   }
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}''', setup=setup)
+}""",
+            setup=setup,
+        )

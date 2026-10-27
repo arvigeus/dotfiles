@@ -5,7 +5,13 @@ import "../movies"
 
 Item {
     id: root
-    function dismissTransient() { if(!popup.visible) return false; popup.close(); tagSearchDelay.stop(); return true; }
+    function dismissTransient() {
+        if (!popup.visible)
+            return false;
+        popup.close();
+        tagSearchDelay.stop();
+        return true;
+    }
 
     property alias popup: popup
     property var options: []
@@ -27,32 +33,57 @@ Item {
     function matchingOptions(searchText, allOptions, foundTags, resultsFor, isSearching) {
         const all = allOptions || [];
         const query = String(searchText || "").trim();
-        if (!query) return all;
+        if (!query)
+            return all;
 
         const folded = query.toLowerCase();
         const normalizedResultsFor = String(resultsFor || "").toLowerCase();
         if (normalizedResultsFor === folded && isSearching)
-            return [{label: "Searching Wallhaven tags…", value: "", selectable: false}];
+            return [
+                {
+                    label: "Searching Wallhaven tags…",
+                    value: "",
+                    selectable: false
+                }
+            ];
 
         if (normalizedResultsFor === folded && foundTags.length) {
-            return foundTags.map(tag => ({label: tag.name, value: "id:" + tag.id, tagName: tag.name}));
+            return foundTags.map(tag => ({
+                        label: tag.name,
+                        value: "id:" + tag.id,
+                        tagName: tag.name
+                    }));
         }
 
-        const matches = all.filter(option => String(option.value || "") !== "" &&
-            (String(option.label || "").toLowerCase().includes(folded) ||
-             String(option.value || "").toLowerCase().includes(folded)));
+        const matches = all.filter(option => String(option.value || "") !== "" && (String(option.label || "").toLowerCase().includes(folded) || String(option.value || "").toLowerCase().includes(folded)));
         if (normalizedResultsFor === folded)
-            return [{label: "Use \"" + query + "\"", value: query, custom: true}];
+            return [
+                {
+                    label: "Use \"" + query + "\"",
+                    value: query,
+                    custom: true
+                }
+            ];
         if (!matches.length && isSearching)
-            return [{label: "Searching Wallhaven tags…", value: "", selectable: false}];
-        if (!matches.some(option => String(option.value || "").toLowerCase() === folded ||
-                                    String(option.label || "").toLowerCase() === folded))
-            matches.push({label: "Use \"" + query + "\"", value: query, custom: true});
+            return [
+                {
+                    label: "Searching Wallhaven tags…",
+                    value: "",
+                    selectable: false
+                }
+            ];
+        if (!matches.some(option => String(option.value || "").toLowerCase() === folded || String(option.label || "").toLowerCase() === folded))
+            matches.push({
+                label: "Use \"" + query + "\"",
+                value: query,
+                custom: true
+            });
         return matches;
     }
 
     function displayValue() {
-        if (selectedLabel) return selectedLabel;
+        if (selectedLabel)
+            return selectedLabel;
         const option = (options || []).find(item => String(item.value || "") === value);
         return option ? option.label : value;
     }
@@ -72,16 +103,12 @@ Item {
             return;
         }
         const folded = query.toLowerCase();
-        const exactTag = searchResultsQuery.toLowerCase() === folded
-            ? searchResults.find(tag => String(tag.name || "").toLowerCase() === folded)
-            : null;
+        const exactTag = searchResultsQuery.toLowerCase() === folded ? searchResults.find(tag => String(tag.name || "").toLowerCase() === folded) : null;
         if (exactTag) {
             choose("id:" + exactTag.id, exactTag.name);
             return;
         }
-        const exact = (options || []).find(option =>
-            String(option.value || "").toLowerCase() === folded ||
-            String(option.label || "").toLowerCase() === folded);
+        const exact = (options || []).find(option => String(option.value || "").toLowerCase() === folded || String(option.label || "").toLowerCase() === folded);
         choose(exact ? exact.value : query, exact ? exact.label : query);
     }
 
@@ -96,13 +123,12 @@ Item {
                 popup.close();
                 return;
             }
-            searchField.text = root.value
-                ? (root.selectedLabel || (String(root.value).startsWith("id:") ? "" : root.value))
-                : "";
+            searchField.text = root.value ? (root.selectedLabel || (String(root.value).startsWith("id:") ? "" : root.value)) : "";
             popup.open();
             Qt.callLater(() => {
                 searchField.forceActiveFocus();
-                if (searchField.text.trim()) tagSearchDelay.restart();
+                if (searchField.text.trim())
+                    tagSearchDelay.restart();
             });
         }
 
@@ -112,7 +138,8 @@ Item {
                 Layout.fillWidth: true
                 text: root.value ? (root.selectedLabel || root.displayValue()) : root.emptyText
                 color: root.value ? MovieStyle.text : MovieStyle.muted
-                font.family: MovieStyle.fontFamily; font.pixelSize: MovieStyle.fontSize
+                font.family: MovieStyle.fontFamily
+                font.pixelSize: MovieStyle.fontSize
                 elide: Text.ElideRight
                 verticalAlignment: Text.AlignVCenter
                 textFormat: Text.PlainText
@@ -162,7 +189,8 @@ Item {
                     rightPadding: 42
                     placeholderText: root.placeholderText
                     Accessible.name: "Search Wallhaven tags"
-                    onTextChanged: if (popup.opened) tagSearchDelay.restart()
+                    onTextChanged: if (popup.opened)
+                        tagSearchDelay.restart()
                     onAccepted: root.chooseTypedSearch()
                 }
 
@@ -206,7 +234,8 @@ Item {
                     contentItem: Text {
                         text: modelData.label
                         color: MovieStyle.text
-                        font.family: MovieStyle.fontFamily; font.pixelSize: MovieStyle.fontSize
+                        font.family: MovieStyle.fontFamily
+                        font.pixelSize: MovieStyle.fontSize
                         elide: Text.ElideRight
                         verticalAlignment: Text.AlignVCenter
                         textFormat: Text.PlainText

@@ -26,9 +26,7 @@ InteractionWindow {
     // ownership still follows opened, so a closing drawer cannot take input.
     // Keep this true while open too: opened/keepVisible must not both become
     // false during handoff to closing, which would destroy/recreate lazy content.
-    readonly property bool keepVisible: slideProgress > 0
-        && (interactionState.activeSurface === null || interactionState.activeSurface === root)
-        && Quickshell.screens.includes(presentationScreen)
+    readonly property bool keepVisible: slideProgress > 0 && (interactionState.activeSurface === null || interactionState.activeSurface === root) && Quickshell.screens.includes(presentationScreen)
     property ShellScreen presentationScreen: null
 
     targetScreen: opened ? interactionState.screen : keepVisible ? presentationScreen : null
@@ -76,8 +74,10 @@ InteractionWindow {
     onOpenedChanged: {
         if (opened)
             presentationScreen = interactionState.screen;
-        if (opened) Qt.callLater(animatePresentation);
-        else animatePresentation();
+        if (opened)
+            Qt.callLater(animatePresentation);
+        else
+            animatePresentation();
     }
 
     function animatePresentation(): void {
@@ -106,7 +106,8 @@ InteractionWindow {
         property: "slideProgress"
         duration: 200
         easing.type: Easing.OutCubic
-        onFinished: if (!root.opened) root.presentationScreen = null
+        onFinished: if (!root.opened)
+            root.presentationScreen = null
     }
 
     Connections {
@@ -129,21 +130,25 @@ InteractionWindow {
 
     Connections {
         target: root.currentPage
-        function onCloseRequested(): void { root.dismiss(); }
+        function onCloseRequested(): void {
+            root.dismiss();
+        }
     }
 
     Surface {
         id: card
         objectName: "drawerCard"
-        x: root.leftEdge ? -width * (1 - root.slideProgress)
-            : root.width - width * root.slideProgress
+        x: root.leftEdge ? -width * (1 - root.slideProgress) : root.width - width * root.slideProgress
         width: Math.min(Theme.drawerWidth, root.width)
         height: root.height
         radius: 0
         color: Theme.background
         enabled: root.opened
 
-        MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons }
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+        }
 
         ColumnLayout {
             anchors.fill: parent
@@ -180,8 +185,7 @@ InteractionWindow {
                     onClicked: root.dismiss()
                     contentItem: Icon {
                         name: "x"
-                        color: closeButton.down ? Theme.muted
-                            : closeButton.hovered || closeButton.visualFocus ? Theme.accent : Theme.text
+                        color: closeButton.down ? Theme.muted : closeButton.hovered || closeButton.visualFocus ? Theme.accent : Theme.text
                     }
                     background: Rectangle {
                         color: "transparent"
@@ -190,11 +194,17 @@ InteractionWindow {
                         border.width: closeButton.visualFocus ? 1 : 0
                         border.color: Theme.accent
                     }
-                    PassiveToolTip { target: closeButton }
+                    PassiveToolTip {
+                        target: closeButton
+                    }
                 }
             }
 
-            Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.border }
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: 1
+                color: Theme.border
+            }
 
             Item {
                 Layout.fillWidth: true
@@ -208,7 +218,8 @@ InteractionWindow {
                     active: root.opened || root.keepVisible
                     asynchronous: true
                     source: root.currentDrawer?.source ?? ""
-                    onStatusChanged: if (root.opened) Qt.callLater(root.animatePresentation)
+                    onStatusChanged: if (root.opened)
+                        Qt.callLater(root.animatePresentation)
                     onLoaded: if (root.currentPage) {
                         root.currentPage.screen = Qt.binding(() => root.targetScreen);
                         root.currentPage.active = Qt.binding(() => root.opened);

@@ -1,4 +1,5 @@
 """The Series worker namespace covers metadata, torrents and subtitles together."""
+
 import os
 from pathlib import Path
 import subprocess
@@ -15,8 +16,10 @@ class SeriesMediaTests(unittest.TestCase):
             root = Path(directory)
             shared = root / 'config/quickshell/desktop/integrations/torrents.json'
             shared.parent.mkdir(parents=True)
-            shared.write_text('{"url":"https://example.invalid","password":"fixture-shared"}')
-            script = '''
+            shared.write_text(
+                '{"url":"https://example.invalid","password":"fixture-shared"}'
+            )
+            script = """
 import os
 from pathlib import Path
 from spaces.movies.torrent_backend import TorrentBackend
@@ -26,22 +29,34 @@ assert backend.config_path == Path(os.environ["XDG_CONFIG_HOME"]) / "quickshell/
 assert backend.config()["password"] == "fixture-shared"
 assert backend.data.name == space
 assert backend.job_tag("fixture") == space + "-job-fixture"
-'''
+"""
             for space in ('movies', 'series', 'games'):
                 with self.subTest(space=space):
-                    obsolete = root / f'config/quickshell/desktop/spaces/{space}/torrents.json'
+                    obsolete = (
+                        root / f'config/quickshell/desktop/spaces/{space}/torrents.json'
+                    )
                     obsolete.parent.mkdir(parents=True)
                     obsolete.write_text('{"password":"fixture-unused"}')
-                    result = subprocess.run([sys.executable, '-c', script], cwd=support.DESKTOP,
-                        env={**os.environ, 'QUICKSHELL_MEDIA_SPACE':space,
-                             'XDG_CONFIG_HOME':str(root/'config'), 'XDG_DATA_HOME':str(root/'data')},
-                        capture_output=True, text=True)
-                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    result = subprocess.run(
+                        [sys.executable, '-c', script],
+                        cwd=support.DESKTOP,
+                        env={
+                            **os.environ,
+                            'QUICKSHELL_MEDIA_SPACE': space,
+                            'XDG_CONFIG_HOME': str(root / 'config'),
+                            'XDG_DATA_HOME': str(root / 'data'),
+                        },
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        result.returncode, 0, result.stdout + result.stderr
+                    )
 
     def test_owned_workers_share_series_records_without_touching_movies(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            script = '''
+            script = """
 import json, os
 from pathlib import Path
 from spaces.movies.backend import Backend
@@ -72,10 +87,19 @@ assert media.personal("tt101")["favorite"]
 assert media.play(dict(title=show,season=2,episode=3))["command"][-1] == str(path)
 assert media.play(dict(title=show,season=2,episode=3,online=True))["url"] == "https://example.invalid/tt101/2/3"
 assert not (DATA.parent / "movies").exists()
-'''
-            result = subprocess.run([sys.executable, '-c', script], cwd=support.DESKTOP,
-                env={**os.environ, 'QUICKSHELL_MEDIA_SPACE':'series',
-                     'XDG_CONFIG_HOME':str(root/'config'), 'XDG_DATA_HOME':str(root/'data'),
-                     'XDG_CACHE_HOME':str(root/'cache'), 'XDG_VIDEOS_DIR':str(root/'Videos')},
-                capture_output=True, text=True)
+"""
+            result = subprocess.run(
+                [sys.executable, '-c', script],
+                cwd=support.DESKTOP,
+                env={
+                    **os.environ,
+                    'QUICKSHELL_MEDIA_SPACE': 'series',
+                    'XDG_CONFIG_HOME': str(root / 'config'),
+                    'XDG_DATA_HOME': str(root / 'data'),
+                    'XDG_CACHE_HOME': str(root / 'cache'),
+                    'XDG_VIDEOS_DIR': str(root / 'Videos'),
+                },
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

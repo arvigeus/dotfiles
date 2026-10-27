@@ -1,4 +1,5 @@
 """Exercise the native dialogs, their worker protocol and rename review flow."""
+
 import os
 from pathlib import Path
 import subprocess
@@ -6,15 +7,20 @@ import sys
 import tempfile
 import unittest
 
-REPO=Path(__file__).resolve().parents[1]
-MODULES=['modules/files/tools/common','modules/files/tools/general','modules/files/tools/encryption','modules/media/tools/pdf']
-LIBS=[REPO/module/'files/usr/local/lib/desktop-file-tools' for module in MODULES]
+REPO = Path(__file__).resolve().parents[1]
+MODULES = [
+    'modules/files/tools/common',
+    'modules/files/tools/general',
+    'modules/files/tools/encryption',
+    'modules/media/tools/pdf',
+]
+LIBS = [REPO / module / 'files/usr/local/lib/desktop-file-tools' for module in MODULES]
 
 
 class FileToolDialogsTests(unittest.TestCase):
     def test_pdf_drafts_preview_navigate_and_export(self):
         with tempfile.TemporaryDirectory() as directory:
-            script='''import os,time
+            script = """import os,time
 from pathlib import Path
 import pikepdf
 from PySide6.QtCore import QItemSelectionModel
@@ -87,14 +93,24 @@ with patch('pdf_drafts.QMessageBox.question',return_value=QMessageBox.StandardBu
  w.close()
 until(lambda:not w.active,w)
 assert not w.isVisible() and (root/'Close-save.pdf').exists() and not draft.exists()
-'''
-            result=subprocess.run([sys.executable,'-c',script],env=dict(os.environ,QT_QPA_PLATFORM='offscreen',
-                PYTHONPATH=os.pathsep.join(map(str,LIBS)),TOOLS_FIXTURE=directory),capture_output=True,text=True,timeout=100)
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+"""
+            result = subprocess.run(
+                [sys.executable, '-c', script],
+                env=dict(
+                    os.environ,
+                    QT_QPA_PLATFORM='offscreen',
+                    PYTHONPATH=os.pathsep.join(map(str, LIBS)),
+                    TOOLS_FIXTURE=directory,
+                ),
+                capture_output=True,
+                text=True,
+                timeout=100,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_pdf_editor_toolbar_popovers_and_export_profiles(self):
         with tempfile.TemporaryDirectory() as directory:
-            script='''import os,time
+            script = """import os,time
 from pathlib import Path
 from unittest.mock import patch
 import pikepdf
@@ -190,14 +206,24 @@ w.signatures_button.click();wait(w)
 assert w.results_panel.isVisible() and w.results.topLevelItemCount() and w.preview_page.isVisible()
 assert w.selected()==before and source.read_bytes()==original and len(w.history)==history
 w.close()
-'''
-            result=subprocess.run([sys.executable,'-c',script],env=dict(os.environ,QT_QPA_PLATFORM='offscreen',
-                PYTHONPATH=os.pathsep.join(map(str,LIBS)),TOOLS_FIXTURE=directory),capture_output=True,text=True,timeout=120)
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+"""
+            result = subprocess.run(
+                [sys.executable, '-c', script],
+                env=dict(
+                    os.environ,
+                    QT_QPA_PLATFORM='offscreen',
+                    PYTHONPATH=os.pathsep.join(map(str, LIBS)),
+                    TOOLS_FIXTURE=directory,
+                ),
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_real_dialogs_run_jobs_review_renames_and_copy_contents(self):
         with tempfile.TemporaryDirectory() as directory:
-            script='''
+            script = """
 import os,time
 from pathlib import Path
 from PySide6.QtCore import QTimer
@@ -243,10 +269,21 @@ while w.process.errorString()=='Unknown error' and time.monotonic()<deadline:app
 assert not w.active
 assert w.run_button.isEnabled()
 w.close()
-'''
-            result=subprocess.run([sys.executable,'-c',script],env=dict(os.environ,QT_QPA_PLATFORM='offscreen',
-                PYTHONPATH=os.pathsep.join(map(str,LIBS)),TOOLS_FIXTURE=directory),capture_output=True,text=True,timeout=40)
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+"""
+            result = subprocess.run(
+                [sys.executable, '-c', script],
+                env=dict(
+                    os.environ,
+                    QT_QPA_PLATFORM='offscreen',
+                    PYTHONPATH=os.pathsep.join(map(str, LIBS)),
+                    TOOLS_FIXTURE=directory,
+                ),
+                capture_output=True,
+                text=True,
+                timeout=40,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
-if __name__=='__main__':unittest.main()
+if __name__ == '__main__':
+    unittest.main()

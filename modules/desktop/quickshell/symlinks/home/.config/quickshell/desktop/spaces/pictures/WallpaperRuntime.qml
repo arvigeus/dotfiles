@@ -27,8 +27,7 @@ Item {
     FileView {
         id: setting
         readonly property string configuredRoot: Quickshell.env("XDG_CONFIG_HOME") || ""
-        path: (configuredRoot.startsWith("/") ? configuredRoot : Quickshell.env("HOME") + "/.config")
-            + "/quickshell/desktop/spaces/pictures/wallpaper.json"
+        path: (configuredRoot.startsWith("/") ? configuredRoot : Quickshell.env("HOME") + "/.config") + "/quickshell/desktop/spaces/pictures/wallpaper.json"
         preload: true
         blockLoading: false
         printErrors: false
@@ -36,7 +35,9 @@ Item {
         onFileChanged: reload()
         onLoaded: {
             let data = {};
-            try { data = JSON.parse(text()); } catch (exception) {}
+            try {
+                data = JSON.parse(text());
+            } catch (exception) {}
             root.configure(["wallpaper_engine", "video"].includes(data.mode), String(data.selection || ""));
         }
         onLoadFailed: root.configure(false, "")
@@ -50,17 +51,28 @@ Item {
         printErrors: false
         watchChanges: true
         onFileChanged: reload()
-        onLoaded: { root.ownershipReady = true; root.reconcileOwnership(); }
-        onLoadFailed: { root.ownershipReady = true; root.reconcileOwnership(); }
+        onLoaded: {
+            root.ownershipReady = true;
+            root.reconcileOwnership();
+        }
+        onLoadFailed: {
+            root.ownershipReady = true;
+            root.reconcileOwnership();
+        }
     }
 
     function reconcileOwnership() {
-        if (!configurationReady || !ownershipReady || ownershipChecked) return;
+        if (!configurationReady || !ownershipReady || ownershipChecked)
+            return;
         ownershipChecked = true;
-        if (animated || stopping || failed) return;
+        if (animated || stopping || failed)
+            return;
         let data = {};
-        try { data = JSON.parse(ownership.text()); } catch (exception) {}
-        if (!data.owner) return;
+        try {
+            data = JSON.parse(ownership.text());
+        } catch (exception) {}
+        if (!data.owner)
+            return;
         // A crash followed by a static choice still needs one cleanup worker.
         stopping = true;
         refresh.restart();
@@ -69,7 +81,8 @@ Item {
     function configure(animated, selection) {
         configurationReady = true;
         Qt.callLater(root.reconcileOwnership);
-        if (root.animated === animated && root.selection === selection) return;
+        if (root.animated === animated && root.selection === selection)
+            return;
         generation++;
         root.selection = selection;
         root.stopping = !animated && (root.animated || !!runtime.item || root.retrying);
@@ -82,22 +95,32 @@ Item {
         refresh.restart();
     }
     function sync() {
-        if (!runtime.item) return;
-        if (pending) { refreshAgain = true; return; }
+        if (!runtime.item)
+            return;
+        if (pending) {
+            refreshAgain = true;
+            return;
+        }
         pending = true;
         const requestedGeneration = generation;
         runtime.item.request("sync", {}, (result, error) => {
             pending = false;
             if (requestedGeneration === generation) {
                 screens = error || !result ? [] : result.screens || [];
-                if (error || (result && result.error)) console.warn("Wallpaper playback:", error || result.error);
-                if (!animated && !error) stopping = false;
-                if (!animated && error) { stopping = false; failed = true; }
+                if (error || (result && result.error))
+                    console.warn("Wallpaper playback:", error || result.error);
+                if (!animated && !error)
+                    stopping = false;
+                if (!animated && error) {
+                    stopping = false;
+                    failed = true;
+                }
                 if (animated && error && workerRestarts < 3) {
                     retry.interval = 1000 * Math.pow(2, workerRestarts++);
                     retrying = true;
                     retry.restart();
-                } else if (animated && (error || (result && result.error))) failed = true;
+                } else if (animated && (error || (result && result.error)))
+                    failed = true;
             }
             if (refreshAgain || requestedGeneration !== generation) {
                 refreshAgain = false;
@@ -109,7 +132,8 @@ Item {
         id: runtime
         active: (root.animated && !root.failed && !root.retrying) || root.stopping
         sourceComponent: Worker {
-            backendDirectory: "spaces/pictures"; spaceId: "pictures"
+            backendDirectory: "spaces/pictures"
+            spaceId: "pictures"
             objectName: "wallpaperRuntimeWorker"
             backend: "wallpaper_engine.py"
             serviceName: "Wallpaper playback"
@@ -120,14 +144,16 @@ Item {
         target: Hyprland
         enabled: root.animated && !root.failed && !root.retrying
         function onRawEvent(event) {
-            if (["fullscreen", "workspace", "workspacev2", "activespecial", "activespecialv2",
-                 "focusedmon", "monitoradded", "monitoraddedv2", "monitorremoved",
-                 "configreloaded"].includes(event.name)) {
+            if (["fullscreen", "workspace", "workspacev2", "activespecial", "activespecialv2", "focusedmon", "monitoradded", "monitoraddedv2", "monitorremoved", "configreloaded"].includes(event.name)) {
                 refresh.restart();
             }
         }
     }
-    Timer { id: refresh; interval: 300; onTriggered: root.sync() }
+    Timer {
+        id: refresh
+        interval: 300
+        onTriggered: root.sync()
+    }
     Timer {
         id: retry
         onTriggered: {

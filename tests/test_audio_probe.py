@@ -1,4 +1,5 @@
 """Exercise real test workers with fake audio clients; never access host audio."""
+
 import importlib.util
 import io
 import json
@@ -14,7 +15,12 @@ import wave
 
 import test_audio_drawer as drawer_tests
 
-DESKTOP, SINK, STREAM, backend = drawer_tests.DESKTOP, drawer_tests.SINK, drawer_tests.STREAM, drawer_tests.backend
+DESKTOP, SINK, STREAM, backend = (
+    drawer_tests.DESKTOP,
+    drawer_tests.SINK,
+    drawer_tests.STREAM,
+    drawer_tests.backend,
+)
 
 
 WORKER = DESKTOP / 'drawers/audio/probe.py'
@@ -31,13 +37,25 @@ class ProbeTests(unittest.TestCase):
         muted = dict(SINK, name='muted', mute=True)
         unplugged = dict(SINK, name='gone', active_port='jack')
         runner = probe.Probe()
-        with patch.object(backend, 'load_config', return_value=({}, '')), \
-                patch.object(backend, 'read', return_value=[first, second, muted, unplugged]), \
-                patch.object(probe, 'channel_audio', return_value=b'wav'), \
-                patch.object(probe, 'report'), patch.object(runner, 'play') as play:
+        with (
+            patch.object(backend, 'load_config', return_value=({}, '')),
+            patch.object(
+                backend, 'read', return_value=[first, second, muted, unplugged]
+            ),
+            patch.object(probe, 'channel_audio', return_value=b'wav'),
+            patch.object(probe, 'report'),
+            patch.object(runner, 'play') as play,
+        ):
             runner.speakers()
-        self.assertEqual([(call.args[0], call.kwargs['channel']) for call in play.call_args_list],
-                         [('laptop', 'front-left'), ('laptop', 'front-right'), ('display', 'front-center'), ('display', 'lfe')])
+        self.assertEqual(
+            [(call.args[0], call.kwargs['channel']) for call in play.call_args_list],
+            [
+                ('laptop', 'front-left'),
+                ('laptop', 'front-right'),
+                ('display', 'front-center'),
+                ('display', 'lfe'),
+            ],
+        )
 
     def test_tone_fallback_is_a_bounded_mono_wave(self):
         for channel in ('lfe', 'top-front-left', 'aux0'):
@@ -45,7 +63,10 @@ class ProbeTests(unittest.TestCase):
                 self.assertEqual(wav.getnchannels(), 1)
                 self.assertEqual(wav.getframerate(), probe.RATE)
                 self.assertLess(wav.getnframes(), probe.RATE)
-        with tempfile.TemporaryDirectory() as directory, patch.object(probe, 'SAMPLES', Path(directory)):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(probe, 'SAMPLES', Path(directory)),
+        ):
             with self.assertRaisesRegex(ValueError, 'alsa-utils'):
                 probe.channel_audio('front-left')
             sample = Path(directory) / 'Front_Left.wav'
@@ -54,13 +75,16 @@ class ProbeTests(unittest.TestCase):
 
     def test_monitors_and_muted_inputs_cannot_start_recording(self):
         for source in (dict(SINK, name='speaker.monitor'), dict(SINK, mute=True)):
-            with patch.object(backend, 'read', return_value=[source]), patch.object(probe.subprocess, 'Popen') as spawn:
+            with (
+                patch.object(backend, 'read', return_value=[source]),
+                patch.object(probe.subprocess, 'Popen') as spawn,
+            ):
                 with self.assertRaises(ValueError):
                     probe.Probe().record(source['name'])
                 spawn.assert_not_called()
 
 
-FAKE_CLIENT = r'''#!/usr/bin/env python3
+FAKE_CLIENT = r"""#!/usr/bin/env python3
 import json,os,signal,sys,time
 from pathlib import Path
 name=Path(sys.argv[0]).name
@@ -87,7 +111,7 @@ elif name=='paplay':
   log('play-data',size=len(data))
   time.sleep(float(os.environ.get('FAKE_PLAY_DELAY','0.05')))
  finally: log('play-stop')
-'''
+"""
 
 
 class ProbeProcessTests(unittest.TestCase):
@@ -100,10 +124,17 @@ class ProbeProcessTests(unittest.TestCase):
         client.chmod(0o755)
         for name in ('pactl', 'parec', 'paplay'):
             (self.root / name).symlink_to(client)
-        self.state = dict(sinks=[dict(SINK, channel_map='aux0,aux1')], sources=[dict(SINK, name='mic')])
+        self.state = dict(
+            sinks=[dict(SINK, channel_map='aux0,aux1')],
+            sources=[dict(SINK, name='mic')],
+        )
         self.save_state()
-        self.env = {**os.environ, 'PATH': str(self.root) + os.pathsep + os.environ['PATH'],
-                    'FAKE_AUDIO': str(self.root), 'XDG_CONFIG_HOME': str(self.root / 'config')}
+        self.env = {
+            **os.environ,
+            'PATH': str(self.root) + os.pathsep + os.environ['PATH'],
+            'FAKE_AUDIO': str(self.root),
+            'XDG_CONFIG_HOME': str(self.root / 'config'),
+        }
 
     def save_state(self):
         temporary = self.root / 'state.tmp'
@@ -112,7 +143,11 @@ class ProbeProcessTests(unittest.TestCase):
 
     def events(self):
         path = self.root / 'events'
-        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+        return (
+            [json.loads(line) for line in path.read_text().splitlines()]
+            if path.exists()
+            else []
+        )
 
     def wait_event(self, name):
         deadline = time.monotonic() + 5
@@ -125,17 +160,30 @@ class ProbeProcessTests(unittest.TestCase):
     def start(self, op, record_seconds=None):
         command = [sys.executable, '-B', str(WORKER)]
         if record_seconds is not None:
-            command = [sys.executable, '-B', '-c',
-                       f'import sys;sys.path.insert(0,{str(WORKER.parent)!r});import probe;probe.RECORD_SECONDS={record_seconds};probe.main()']
-        process = subprocess.Popen(command, env=self.env,
-                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            command = [
+                sys.executable,
+                '-B',
+                '-c',
+                f'import sys;sys.path.insert(0,{str(WORKER.parent)!r});import probe;probe.RECORD_SECONDS={record_seconds};probe.main()',
+            ]
+        process = subprocess.Popen(
+            command,
+            env=self.env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
         def cleanup():
             if process.poll() is None:
                 process.terminate()
                 try:
                     process.communicate(timeout=3)
                 except subprocess.TimeoutExpired:
-                    process.kill(); process.communicate()
+                    process.kill()
+                    process.communicate()
+
         self.addCleanup(cleanup)
         process.stdin.write(json.dumps(dict(op=op)) + '\n')
         process.stdin.flush()
@@ -158,7 +206,12 @@ class ProbeProcessTests(unittest.TestCase):
         self.assertIn('--device=laptop', play['args'])
         self.assertIn('--raw', play['args'])
         with self.assertRaises(ProcessLookupError):
-            os.kill(next(event['pid'] for event in events if event['event'] == 'record-start'), 0)
+            os.kill(
+                next(
+                    event['pid'] for event in events if event['event'] == 'record-start'
+                ),
+                0,
+            )
 
     def test_cancel_and_stdin_closure_discard_recording(self):
         for cancel in (True, False):
@@ -173,8 +226,14 @@ class ProbeProcessTests(unittest.TestCase):
                 self.assertNotIn('play-start', [e['event'] for e in self.events()])
 
     def test_release_sent_with_request_is_not_lost(self):
-        result = subprocess.run([sys.executable, '-B', str(WORKER)], env=self.env,
-                                input='{"op":"microphone"}\nrelease\n', text=True, capture_output=True, timeout=5)
+        result = subprocess.run(
+            [sys.executable, '-B', str(WORKER)],
+            env=self.env,
+            input='{"op":"microphone"}\nrelease\n',
+            text=True,
+            capture_output=True,
+            timeout=5,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('"phase": "done"', result.stdout)
 
@@ -190,8 +249,14 @@ class ProbeProcessTests(unittest.TestCase):
         self.assertLessEqual(played['size'], probe.RATE * 2)
 
     def test_channel_clients_target_each_channel_without_remixing(self):
-        result = subprocess.run([sys.executable, '-B', str(WORKER)], env=self.env,
-                                input='{"op":"speakers"}\n', text=True, capture_output=True, timeout=5)
+        result = subprocess.run(
+            [sys.executable, '-B', str(WORKER)],
+            env=self.env,
+            input='{"op":"speakers"}\n',
+            text=True,
+            capture_output=True,
+            timeout=5,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('"phase": "done"', result.stdout)
         plays = [e for e in self.events() if e['event'] == 'play-start']
@@ -218,7 +283,7 @@ class ProbeUiTests(unittest.TestCase):
 
     def test_worker_early_release_cancel_failure_and_restart(self):
         def setup(root):
-            (root / 'fake-probe.py').write_text('''import json,sys,time
+            (root / 'fake-probe.py').write_text("""import json,sys,time
 request=json.loads(sys.stdin.readline())
 if request['op']=='microphone':
  print(json.dumps({'phase':'recording'}),flush=True)
@@ -230,8 +295,10 @@ elif request['op']=='speakers':
  print(json.dumps({'phase':'speakers','detail':'Left'}),flush=True)
  time.sleep(10)
 elif request['op']=='error': print(json.dumps({'phase':'error','error':'Test device disconnected'}),flush=True)
-''')
-        self.run_qml(r'''import QtQuick
+""")
+
+        self.run_qml(
+            r"""import QtQuick
 import Quickshell
 import "drawers/audio"
 ShellRoot {
@@ -258,13 +325,23 @@ ShellRoot {
   } catch(error) {console.error("AUDIO_FAIL",error.message);Qt.quit();}
  } }
 }
-''', setup)
+""",
+            setup,
+        )
 
     def test_footer_mouse_keyboard_release_and_drawer_cancellation(self):
         outputs, devices = backend.output_inventory([SINK], [], {})
         source = dict(outputs[0], key='mic', name='mic', label='Built-in microphone')
-        state = dict(available=True, outputs=outputs, outputDevices=devices, inputs=[source], inputDevices=[], warning='')
-        self.run_qml(r'''import QtQuick
+        state = dict(
+            available=True,
+            outputs=outputs,
+            outputDevices=devices,
+            inputs=[source],
+            inputDevices=[],
+            warning='',
+        )
+        self.run_qml(
+            r"""import QtQuick
 import QtTest
 import Quickshell
 import "drawers"
@@ -355,7 +432,10 @@ FAKE_SERVICE component Tester: QtObject {
   } catch(error) {console.error("AUDIO_FAIL",error.message);Qt.quit();}
  } }
 }
-'''.replace('FAKE_SERVICE', drawer_tests.FAKE_SERVICE).replace('STATE', json.dumps(state)).replace('PREVIEW_DIR', json.dumps(os.environ.get('AUDIO_PREVIEW_DIR', ''))))
+""".replace('FAKE_SERVICE', drawer_tests.FAKE_SERVICE)
+            .replace('STATE', json.dumps(state))
+            .replace('PREVIEW_DIR', json.dumps(os.environ.get('AUDIO_PREVIEW_DIR', '')))
+        )
 
 
 if __name__ == '__main__':

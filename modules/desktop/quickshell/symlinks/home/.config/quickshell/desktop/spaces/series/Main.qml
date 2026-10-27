@@ -1,3 +1,5 @@
 import "../movies"
 
-MediaBrowser { kind: "tv" }
+MediaBrowser {
+    kind: "tv"
+}

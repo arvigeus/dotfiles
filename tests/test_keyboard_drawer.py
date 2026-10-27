@@ -1,8 +1,7 @@
 """Production language switching and drawer interactions without host changes."""
+
 import importlib.util
 import json
-import os
-from pathlib import Path
 import shutil
 import unittest
 from unittest.mock import patch
@@ -18,34 +17,69 @@ SPEC.loader.exec_module(backend)
 class KeyboardBackendTests(unittest.TestCase):
     def test_provider_uses_argument_array_and_reads_do_not_start_services(self):
         state = dict(available=True, language='en', secondary='vi', running=True)
-        with patch.object(backend, 'provider', return_value=['controller', 'argument with spaces']), patch.object(backend, 'command', return_value=json.dumps(state)) as command:
+        with (
+            patch.object(
+                backend, 'provider', return_value=['controller', 'argument with spaces']
+            ),
+            patch.object(backend, 'command', return_value=json.dumps(state)) as command,
+        ):
             self.assertEqual(backend.request('status', 'laptop'), state)
-            command.assert_called_once_with(['controller', 'argument with spaces', 'status', 'laptop'])
+            command.assert_called_once_with(
+                ['controller', 'argument with spaces', 'status', 'laptop']
+            )
             self.assertEqual(backend.request('select', 'vi'), state)
-            self.assertEqual(command.call_args.args[0], ['controller', 'argument with spaces', 'select', 'vi'])
+            self.assertEqual(
+                command.call_args.args[0],
+                ['controller', 'argument with spaces', 'select', 'vi'],
+            )
 
     def test_bad_provider_and_invalid_requests_preserve_confirmed_state(self):
-        for state in ({}, dict(error='Input unavailable'), dict(available='yes', language='en', secondary='bg'), []):
-            with self.subTest(state=state), patch.object(backend, 'provider', return_value=['controller']), patch.object(backend, 'command', return_value=json.dumps(state)), self.assertRaises(ValueError):
+        for state in (
+            {},
+            dict(error='Input unavailable'),
+            dict(available='yes', language='en', secondary='bg'),
+            [],
+        ):
+            with (
+                self.subTest(state=state),
+                patch.object(backend, 'provider', return_value=['controller']),
+                patch.object(backend, 'command', return_value=json.dumps(state)),
+                self.assertRaises(ValueError),
+            ):
                 backend.request('status')
         with patch.object(backend, 'command') as command:
             for action, code in [('delete', ''), ('select', 'xx')]:
-                with self.assertRaises(ValueError): backend.request(action, code)
+                with self.assertRaises(ValueError):
+                    backend.request(action, code)
             command.assert_not_called()
 
     def test_fallback_follows_event_keyboard_and_validates_layout(self):
-        devices = dict(keyboards=[dict(name='usb', main=True, layout='us,bg', active_layout_index=0),
-                                  dict(name='laptop', layout='us,bg', active_layout_index=1)])
-        with patch.object(backend, 'provider', return_value=None), patch.object(backend, 'command', return_value=json.dumps(devices)) as command:
+        devices = dict(
+            keyboards=[
+                dict(name='usb', main=True, layout='us,bg', active_layout_index=0),
+                dict(name='laptop', layout='us,bg', active_layout_index=1),
+            ]
+        )
+        with (
+            patch.object(backend, 'provider', return_value=None),
+            patch.object(
+                backend, 'command', return_value=json.dumps(devices)
+            ) as command,
+        ):
             self.assertEqual(backend.request('status', 'laptop')['language'], 'bg')
             self.assertEqual(backend.request('status')['language'], 'en')
             self.assertFalse(backend.request('status')['available'])
-            with self.assertRaisesRegex(ValueError, 'Vietnamese'): backend.request('select', 'vi')
+            with self.assertRaisesRegex(ValueError, 'Vietnamese'):
+                backend.request('select', 'vi')
             backend.request('select', 'bg')
-            self.assertIn(unittest.mock.call(['hyprctl', 'switchxkblayout', 'all', '1']), command.call_args_list)
+            self.assertIn(
+                unittest.mock.call(['hyprctl', 'switchxkblayout', 'all', '1']),
+                command.call_args_list,
+            )
             devices['keyboards'][0]['layout'] = 'us'
             command.return_value = json.dumps(devices)
-            with self.assertRaisesRegex(ValueError, 'not configured'): backend.request('select', 'bg')
+            with self.assertRaisesRegex(ValueError, 'not configured'):
+                backend.request('select', 'bg')
 
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
@@ -53,11 +87,13 @@ class KeyboardQmlTests(unittest.TestCase):
     def run_qml(self, body, setup=None):
         def prepare(root):
             shutil.copytree(support.DESKTOP / 'bar', root / 'bar')
-            if setup: setup(root)
+            if setup:
+                setup(root)
+
         return support.run_qml(self, body, prepare)
 
     def test_languages_secondary_checkmarks_reference_typing_and_bar(self):
-        self.run_qml('''import QtQuick
+        self.run_qml("""import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -179,11 +215,11 @@ ShellRoot {
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }
-''')
+""")
 
     def test_serial_requests_survive_dismissal_and_track_layout_events(self):
         def setup(root):
-            (root / 'drawers/keyboard/backend.py').write_text('''import sys,json,time
+            (root / 'drawers/keyboard/backend.py').write_text("""import sys,json,time
 from pathlib import Path
 p=Path(__file__).with_name('state.json')
 s=json.loads(p.read_text()) if p.exists() else dict(available=True,language='en',secondary='bg')
@@ -193,8 +229,10 @@ if a=='select':
  if c!='en':s['secondary']=c
  p.write_text(json.dumps(s))
 print(json.dumps(s))
-''')
-        self.run_qml('''import QtQuick
+""")
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "drawers/keyboard"
 import "drawers"
@@ -219,7 +257,9 @@ ShellRoot {
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }
-''', setup)
+""",
+            setup,
+        )
 
     def test_failed_selection_keeps_confirmed_state_and_error_after_refresh(self):
         def setup(root):
@@ -236,7 +276,9 @@ if a=='select':
  p.write_text(json.dumps(s))
 print(json.dumps(s))
 """)
-        self.run_qml('''import QtQuick
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "drawers/keyboard"
 ShellRoot {
@@ -255,7 +297,9 @@ ShellRoot {
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }
-''', setup)
+""",
+            setup,
+        )
 
 
 if __name__ == '__main__':

@@ -1,4 +1,5 @@
 """The real Qt dialog saves, converts, reports failures and cancels safely."""
+
 import os
 import subprocess
 import sys
@@ -14,10 +15,16 @@ CONFIG = REPO / 'modules/media/tools/audio/files/home/.config/audio-tools/preset
 class AudioDialogTests(unittest.TestCase):
     def run_dialog(self, script, source_suffix='.flac'):
         with tempfile.TemporaryDirectory() as folder:
-            env = dict(os.environ, QT_QPA_PLATFORM='offscreen', AUDIO_TEST_DIR=folder,
-                       AUDIO_TEST_CONFIG=str(CONFIG), AUDIO_TEST_SUFFIX=source_suffix,
-                       PYTHONPATH=str(LIB), XDG_CONFIG_HOME=str(Path(folder) / 'config'))
-            setup = '''
+            env = dict(
+                os.environ,
+                QT_QPA_PLATFORM='offscreen',
+                AUDIO_TEST_DIR=folder,
+                AUDIO_TEST_CONFIG=str(CONFIG),
+                AUDIO_TEST_SUFFIX=source_suffix,
+                PYTHONPATH=str(LIB),
+                XDG_CONFIG_HOME=str(Path(folder) / 'config'),
+            )
+            setup = """
 import os, subprocess, time
 from pathlib import Path
 from PySide6.QtCore import QProcess, QTimer
@@ -38,13 +45,19 @@ def wait_for(condition):
   if time.monotonic() > deadline: raise AssertionError('Dialog timed out: ' + w.status.text())
   time.sleep(0.005)
 wait_for(lambda: source in w.info)
-'''
-            result = subprocess.run([sys.executable, '-c', setup + script], env=env,
-                                    capture_output=True, text=True, timeout=45, check=False)
+"""
+            result = subprocess.run(
+                [sys.executable, '-c', setup + script],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=45,
+                check=False,
+            )
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
     def test_tag_save_conversion_and_error_keep_the_dialog_responsive(self):
-        self.run_dialog('''
+        self.run_dialog("""
 # Artwork is a clickable preview next to the heading, with a separate delete icon.
 from unittest.mock import patch
 from PySide6.QtWidgets import QPushButton
@@ -85,10 +98,10 @@ assert w.drafts[source]['title'] == 'Retain this draft'
 assert w.info[source]['tags']['title'] == 'New title'
 assert not list(root.glob('.audio-tools-*'))
 w.drafts.clear(); w.stop_probe(); w.close()
-''')
+""")
 
     def test_cancel_removes_partial_output_and_keeps_source(self):
-        self.run_dialog('''
+        self.run_dialog("""
 import sys
 real = gui.conversion
 def delayed(*args):
@@ -108,10 +121,11 @@ assert source.read_bytes() == original
 assert not (root / 'song [aac-320].m4a').exists()
 assert not list(root.glob('.audio-tools-*'))
 w.stop_probe(); w.close()
-''')
+""")
 
     def test_opus_tags_with_existing_cover_save_in_the_real_dialog(self):
-        self.run_dialog('''
+        self.run_dialog(
+            """
 import base64
 from mutagen.flac import Picture
 from mutagen.oggopus import OggOpus
@@ -137,10 +151,12 @@ assert w.info[source]['artwork'] == 1
 assert OggOpus(source)['metadata_block_picture'] == original_cover
 assert not list(root.glob('.audio-tools-*'))
 w.stop_probe(); w.close()
-''', source_suffix='.opus')
+""",
+            source_suffix='.opus',
+        )
 
     def test_single_file_save_changes_only_edited_fields(self):
-        self.run_dialog('''
+        self.run_dialog("""
 from PySide6.QtWidgets import QListWidget, QPushButton, QSplitter
 assert not w.findChildren(QListWidget) and not w.findChildren(QSplitter)
 assert not any('Add file' in b.text() for b in w.findChildren(QPushButton))
@@ -155,10 +171,12 @@ assert w.info[source]['tags']['title'] == 'Original'
 assert not list(root.glob('*.tags-backup*'))
 assert w.failures == 0, w.log.toPlainText()
 w.stop_probe(); w.close()
-''')
+""")
 
-    def test_fetch_lyrics_uses_shared_config_keeps_drafts_and_saves_without_changing_audio(self):
-        self.run_dialog('''
+    def test_fetch_lyrics_uses_shared_config_keeps_drafts_and_saves_without_changing_audio(
+        self,
+    ):
+        self.run_dialog("""
 import json, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
@@ -195,10 +213,10 @@ with patch.object(gui.QMessageBox, 'question', return_value=gui.QMessageBox.Stan
  w.lyrics_fetch.click()
 assert not w.lyrics_request and len(requests) == 1
 server.shutdown(); server.server_close(); w.stop_probe(); w.close()
-''')
+""")
 
     def test_lyrics_errors_cancellation_and_edits_do_not_replace_the_draft(self):
-        self.run_dialog('''
+        self.run_dialog("""
 import json, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
@@ -237,7 +255,7 @@ with patch.object(gui.QMessageBox, 'question', return_value=gui.QMessageBox.Stan
 assert w.lyrics_process.state() == QProcess.ProcessState.NotRunning
 assert source.read_bytes() == original
 server.shutdown(); server.server_close()
-''')
+""")
 
 
 if __name__ == '__main__':

@@ -1,4 +1,5 @@
 """UDisks targeting and production drawer interactions; no host storage mutations."""
+
 import copy
 import importlib.util
 import json
@@ -13,7 +14,9 @@ from unittest.mock import Mock, patch
 import support
 
 DESKTOP = support.DESKTOP
-SPEC = importlib.util.spec_from_file_location('desktop_disks', DESKTOP / 'drawers/disks/backend.py')
+SPEC = importlib.util.spec_from_file_location(
+    'desktop_disks', DESKTOP / 'drawers/disks/backend.py'
+)
 backend = importlib.util.module_from_spec(SPEC)
 _bytecode_disabled = sys.dont_write_bytecode
 sys.dont_write_bytecode = True
@@ -28,24 +31,53 @@ def encoded(value):
 
 
 def drive(**values):
-    return {backend.DRIVE: dict(dict(Model='Portable drive', Size=1000, Removable=True,
-                                    CanPowerOff=True, Ejectable=True, TimeDetected=123,
-                                    TimeMediaDetected=123, Serial='test', ConnectionBus='usb'), **values)}
+    return {
+        backend.DRIVE: dict(
+            dict(
+                Model='Portable drive',
+                Size=1000,
+                Removable=True,
+                CanPowerOff=True,
+                Ejectable=True,
+                TimeDetected=123,
+                TimeMediaDetected=123,
+                Serial='test',
+                ConnectionBus='usb',
+            ),
+            **values,
+        )
+    }
 
 
 def block(name, mounted=None, **values):
-    result = {backend.BLOCK: dict(dict(Device=encoded('/dev/' + name), DeviceNumber=1,
-                                       Drive=D, IdUUID=name, Size=1000, IdType='ext4',
-                                       CryptoBackingDevice='/'), **values)}
+    result = {
+        backend.BLOCK: dict(
+            dict(
+                Device=encoded('/dev/' + name),
+                DeviceNumber=1,
+                Drive=D,
+                IdUUID=name,
+                Size=1000,
+                IdType='ext4',
+                CryptoBackingDevice='/',
+            ),
+            **values,
+        )
+    }
     if mounted is not None:
         result[backend.FS] = dict(MountPoints=[encoded(p) for p in mounted])
     return result
 
 
 def objects():
-    return {D: drive(), B+'test1': block('test1', ['/media/Backup'], IdLabel='Backup'),
-            B+'test2': dict(block('test2', IdType='crypto_LUKS', IdLabel='Vault'),
-                           **{backend.CRYPT: dict(CleartextDevice='/')})}
+    return {
+        D: drive(),
+        B + 'test1': block('test1', ['/media/Backup'], IdLabel='Backup'),
+        B + 'test2': dict(
+            block('test2', IdType='crypto_LUKS', IdLabel='Vault'),
+            **{backend.CRYPT: dict(CleartextDevice='/')},
+        ),
+    }
 
 
 class StorageTests(unittest.TestCase):
@@ -55,29 +87,41 @@ class StorageTests(unittest.TestCase):
         self.storage.objects = Mock(side_effect=lambda: copy.deepcopy(self.data))
         self.storage.call = Mock(side_effect=self.mutate)
         self.slaves = patch.object(backend, 'slaves', return_value=[])
-        self.slaves.start(); self.addCleanup(self.slaves.stop)
+        self.slaves.start()
+        self.addCleanup(self.slaves.stop)
         stats = SimpleNamespace(f_blocks=100, f_frsize=10, f_bfree=30, f_bavail=20)
         self.stats = patch.object(backend.os, 'statvfs', return_value=stats)
-        self.stats.start(); self.addCleanup(self.stats.stop)
+        self.stats.start()
+        self.addCleanup(self.stats.stop)
 
     def mutate(self, path, interface, method, **fields):
-        if method == 'Unmount': self.data[path][backend.FS]['MountPoints'] = []
-        elif method == 'Mount': self.data[path][backend.FS]['MountPoints'] = [encoded('/media/Backup')]
+        if method == 'Unmount':
+            self.data[path][backend.FS]['MountPoints'] = []
+        elif method == 'Mount':
+            self.data[path][backend.FS]['MountPoints'] = [encoded('/media/Backup')]
         elif method == 'Lock':
             clear = self.data[path][backend.CRYPT]['CleartextDevice']
             self.data.pop(clear, None)
             self.data[path][backend.CRYPT]['CleartextDevice'] = '/'
 
-    def request(self, op, key=B+'test1'):
-        identity = self.storage.drive_identity(self.data, key) if op in ('eject', 'health') else self.storage.block_identity(self.data, key)
+    def request(self, op, key=B + 'test1'):
+        identity = (
+            self.storage.drive_identity(self.data, key)
+            if op in ('eject', 'health')
+            else self.storage.block_identity(self.data, key)
+        )
         return dict(op=op, key=key, identity=identity)
 
     def volumes(self):
         return self.storage.snapshot()['drives'][0]['volumes']
 
-    def test_inventory_uses_available_space_keeps_unknowns_and_never_checks_health(self):
+    def test_inventory_uses_available_space_keeps_unknowns_and_never_checks_health(
+        self,
+    ):
         rows = self.volumes()
-        self.assertEqual((rows[0]['capacity'], rows[0]['free'], rows[0]['used']), (1000, 200, 700))
+        self.assertEqual(
+            (rows[0]['capacity'], rows[0]['free'], rows[0]['used']), (1000, 200, 700)
+        )
         self.assertEqual(rows[0]['mounts'], ['/media/Backup'])
         self.assertTrue(rows[1]['locked'])
         self.assertIsNone(rows[1]['free'])
@@ -96,13 +140,18 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(volume['identity'], before['identity'])
         self.assertEqual(volume['mounts'], [])
         self.assertTrue(volume['canMount'])
-        self.storage.call.assert_called_once_with(B+'test1', backend.FS, 'Unmount')
+        self.storage.call.assert_called_once_with(B + 'test1', backend.FS, 'Unmount')
         self.storage.handle(self.request('mount'))
         self.assertEqual(self.volumes()[0]['mounts'], ['/media/Backup'])
 
-    def test_hidden_mounted_system_volume_is_visible_and_cannot_be_unmounted_or_ejected(self):
-        self.data[B+'test1'][backend.BLOCK]['HintIgnore'] = True
-        self.data[B+'test1'][backend.FS]['MountPoints'] = [encoded('/'), encoded('/home')]
+    def test_hidden_mounted_system_volume_is_visible_and_cannot_be_unmounted_or_ejected(
+        self,
+    ):
+        self.data[B + 'test1'][backend.BLOCK]['HintIgnore'] = True
+        self.data[B + 'test1'][backend.FS]['MountPoints'] = [
+            encoded('/'),
+            encoded('/home'),
+        ]
         self.assertFalse(self.volumes()[0]['canUnmount'])
         self.assertFalse(self.storage.snapshot()['drives'][0]['canEject'])
         for req in (self.request('unmount'), self.request('eject', D)):
@@ -110,11 +159,19 @@ class StorageTests(unittest.TestCase):
                 self.storage.handle(req)
         self.storage.call.assert_not_called()
 
-    def test_lvm_above_encryption_resolves_to_physical_drive_without_duplicate_container(self):
-        self.data[B+'test2'][backend.CRYPT]['CleartextDevice'] = B+'mapped'
-        self.data[B+'mapped'] = block('mapped', Drive='/', CryptoBackingDevice=B+'test2', IdType='LVM2_member')
-        self.data[B+'logical'] = block('logical', ['/'], Drive='/', IdType='btrfs')
-        with patch.object(backend, 'slaves', side_effect=lambda device: ['mapped'] if device == '/dev/logical' else []):
+    def test_lvm_above_encryption_resolves_to_physical_drive_without_duplicate_container(
+        self,
+    ):
+        self.data[B + 'test2'][backend.CRYPT]['CleartextDevice'] = B + 'mapped'
+        self.data[B + 'mapped'] = block(
+            'mapped', Drive='/', CryptoBackingDevice=B + 'test2', IdType='LVM2_member'
+        )
+        self.data[B + 'logical'] = block('logical', ['/'], Drive='/', IdType='btrfs')
+        with patch.object(
+            backend,
+            'slaves',
+            side_effect=lambda device: ['mapped'] if device == '/dev/logical' else [],
+        ):
             rows = self.volumes()
             self.assertEqual(len(rows), 2)
             system = next(r for r in rows if '/' in r['mounts'])
@@ -122,56 +179,95 @@ class StorageTests(unittest.TestCase):
             self.assertFalse(self.storage.snapshot()['drives'][0]['canEject'])
 
     def test_directly_unlocked_filesystem_keeps_parent_identity_and_mount_target(self):
-        self.data[B+'test2'][backend.CRYPT]['CleartextDevice'] = B+'mapped'
-        self.data[B+'mapped'] = block('mapped', [], Drive='/', CryptoBackingDevice=B+'test2')
-        row = next(r for r in self.volumes() if r['key'] == B+'test2')
-        self.assertFalse(row['locked']); self.assertTrue(row['canMount'])
+        self.data[B + 'test2'][backend.CRYPT]['CleartextDevice'] = B + 'mapped'
+        self.data[B + 'mapped'] = block(
+            'mapped', [], Drive='/', CryptoBackingDevice=B + 'test2'
+        )
+        row = next(r for r in self.volumes() if r['key'] == B + 'test2')
+        self.assertFalse(row['locked'])
+        self.assertTrue(row['canMount'])
         self.assertEqual(len(self.volumes()), 2)
-        self.storage.handle(self.request('mount', B+'test2'))
-        self.storage.call.assert_called_once_with(B+'mapped', backend.FS, 'Mount')
+        self.storage.handle(self.request('mount', B + 'test2'))
+        self.storage.call.assert_called_once_with(B + 'mapped', backend.FS, 'Mount')
 
     def test_ignored_encrypted_parent_does_not_hide_mounted_filesystem(self):
-        self.data[B+'test2'][backend.BLOCK]['HintIgnore'] = True
-        self.data[B+'test2'][backend.CRYPT]['CleartextDevice'] = B+'mapped'
-        self.data[B+'mapped'] = block('mapped', ['/media/Vault'], Drive='/', CryptoBackingDevice=B+'test2')
-        self.assertTrue(any(row['mounts'] == ['/media/Vault'] for row in self.volumes()))
+        self.data[B + 'test2'][backend.BLOCK]['HintIgnore'] = True
+        self.data[B + 'test2'][backend.CRYPT]['CleartextDevice'] = B + 'mapped'
+        self.data[B + 'mapped'] = block(
+            'mapped', ['/media/Vault'], Drive='/', CryptoBackingDevice=B + 'test2'
+        )
+        self.assertTrue(
+            any(row['mounts'] == ['/media/Vault'] for row in self.volumes())
+        )
 
     def test_real_dbus_unlock_signature_and_errors_do_not_echo_secrets(self):
         self.storage.bus = Mock()
-        self.storage.bus.call_sync.return_value = backend.GLib.Variant('(o)', (B+'mapped',))
-        backend.Storage.call(self.storage, B+'test2', backend.CRYPT, 'Unlock', password='private')
+        self.storage.bus.call_sync.return_value = backend.GLib.Variant(
+            '(o)', (B + 'mapped',)
+        )
+        backend.Storage.call(
+            self.storage, B + 'test2', backend.CRYPT, 'Unlock', password='private'
+        )
         args = self.storage.bus.call_sync.call_args.args
         self.assertEqual(args[4].get_type_string(), '(sa{sv})')
         self.assertEqual(args[4].unpack(), ('private', {}))
-        self.storage.bus.call_sync.side_effect = backend.GLib.Error('private diagnostic')
-        for code, expected in [('DeviceBusy', 'busy'), ('WouldWakeup', 'asleep'), ('Failed', 'Unlock failed')]:
-            with patch.object(backend.Gio.DBusError, 'get_remote_error', return_value=backend.BUS+'.Error.'+code):
+        self.storage.bus.call_sync.side_effect = backend.GLib.Error(
+            'private diagnostic'
+        )
+        for code, expected in [
+            ('DeviceBusy', 'busy'),
+            ('WouldWakeup', 'asleep'),
+            ('Failed', 'Unlock failed'),
+        ]:
+            with patch.object(
+                backend.Gio.DBusError,
+                'get_remote_error',
+                return_value=backend.BUS + '.Error.' + code,
+            ):
                 with self.assertRaisesRegex(backend.StorageError, expected) as error:
-                    backend.Storage.call(self.storage, B+'test2', backend.CRYPT, 'Unlock', password='private')
+                    backend.Storage.call(
+                        self.storage,
+                        B + 'test2',
+                        backend.CRYPT,
+                        'Unlock',
+                        password='private',
+                    )
                 self.assertNotIn('private', str(error.exception))
 
     def test_stale_hardware_media_and_filesystem_identity_never_mutate(self):
-        for field, new_value in (('Serial', 'replacement'), ('TimeDetected', 999), ('TimeMediaDetected', 999)):
+        for field, new_value in (
+            ('Serial', 'replacement'),
+            ('TimeDetected', 999),
+            ('TimeMediaDetected', 999),
+        ):
             request = self.request('eject', D)
             old = self.data[D][backend.DRIVE][field]
             self.data[D][backend.DRIVE][field] = new_value
-            with self.assertRaisesRegex(backend.StorageError, 'changed'): self.storage.handle(request)
+            with self.assertRaisesRegex(backend.StorageError, 'changed'):
+                self.storage.handle(request)
             self.data[D][backend.DRIVE][field] = old
         request = self.request('unmount')
-        self.data[B+'test1'][backend.BLOCK]['IdUUID'] = 'reformatted'
-        with self.assertRaisesRegex(backend.StorageError, 'changed'): self.storage.handle(request)
+        self.data[B + 'test1'][backend.BLOCK]['IdUUID'] = 'reformatted'
+        with self.assertRaisesRegex(backend.StorageError, 'changed'):
+            self.storage.handle(request)
         self.storage.call.assert_not_called()
 
     def test_unlock_sends_secret_only_to_dbus(self):
-        request = dict(self.request('unlock', B+'test2'), password='secret with spaces')
+        request = dict(
+            self.request('unlock', B + 'test2'), password='secret with spaces'
+        )
         result = self.storage.response(request)
         self.assertTrue(result['ok'], result)
         self.assertNotIn('secret with spaces', json.dumps(result))
-        self.storage.call.assert_called_once_with(B+'test2', backend.CRYPT, 'Unlock', password='secret with spaces')
+        self.storage.call.assert_called_once_with(
+            B + 'test2', backend.CRYPT, 'Unlock', password='secret with spaces'
+        )
 
     def test_failed_unlock_does_not_echo_password(self):
-        for identity in ('stale', self.storage.block_identity(self.data, B+'test2')):
-            request = dict(op='unlock', key=B+'test2', identity=identity, password='private')
+        for identity in ('stale', self.storage.block_identity(self.data, B + 'test2')):
+            request = dict(
+                op='unlock', key=B + 'test2', identity=identity, password='private'
+            )
             self.storage.call.side_effect = RuntimeError('private')
             result = self.storage.response(request)
             self.assertFalse(result['ok'])
@@ -180,56 +276,77 @@ class StorageTests(unittest.TestCase):
     def test_unmount_then_eject_never_forces_and_returns_device_confirmation(self):
         result = self.storage.handle(self.request('eject', D))
         self.assertIn('Portable drive', result['message'])
-        self.assertEqual([(c.args[0], c.args[2]) for c in self.storage.call.call_args_list],
-                         [(B+'test1', 'Unmount'), (D, 'PowerOff')])
+        self.assertEqual(
+            [(c.args[0], c.args[2]) for c in self.storage.call.call_args_list],
+            [(B + 'test1', 'Unmount'), (D, 'PowerOff')],
+        )
         self.assertTrue(all(not c.kwargs for c in self.storage.call.call_args_list))
 
     def test_busy_volume_stops_removal_and_keeps_refreshed_inventory(self):
         self.storage.call.side_effect = backend.StorageError('The device is busy.')
         result = self.storage.response(self.request('eject', D))
-        self.assertFalse(result['ok']); self.assertIn('busy', result['error'])
+        self.assertFalse(result['ok'])
+        self.assertIn('busy', result['error'])
         self.assertTrue(result['data']['drives'][0]['volumes'][0]['mounts'])
         self.assertEqual(self.storage.call.call_count, 1)
 
     def test_new_mapping_during_removal_is_not_unmounted_or_powered_off(self):
         def change(*args, **kwargs):
             self.mutate(*args, **kwargs)
-            self.data[B+'new'] = block('new', ['/media/New'])
+            self.data[B + 'new'] = block('new', ['/media/New'])
+
         self.storage.call.side_effect = change
         with self.assertRaisesRegex(backend.StorageError, 'contents changed'):
             self.storage.handle(self.request('eject', D))
         self.assertEqual(self.storage.call.call_count, 1)
 
     def test_removal_unmounts_and_locks_encrypted_filesystem_before_poweroff(self):
-        self.data[B+'test2'][backend.CRYPT]['CleartextDevice'] = B+'mapped'
-        self.data[B+'mapped'] = block('mapped', ['/media/Vault'], Drive='/', CryptoBackingDevice=B+'test2')
+        self.data[B + 'test2'][backend.CRYPT]['CleartextDevice'] = B + 'mapped'
+        self.data[B + 'mapped'] = block(
+            'mapped', ['/media/Vault'], Drive='/', CryptoBackingDevice=B + 'test2'
+        )
         self.storage.handle(self.request('eject', D))
         methods = [c.args[2] for c in self.storage.call.call_args_list]
         self.assertEqual(methods, ['Unmount', 'Unmount', 'Lock', 'PowerOff'])
 
     def test_shared_power_and_active_swap_block_removal_before_any_unmount(self):
         self.data[D][backend.DRIVE]['SiblingId'] = 'reader'
-        self.data[D+'2'] = drive(SiblingId='reader')
+        self.data[D + '2'] = drive(SiblingId='reader')
         self.assertFalse(self.storage.snapshot()['drives'][0]['canEject'])
         with self.assertRaisesRegex(backend.StorageError, 'Shares power'):
             self.storage.handle(self.request('eject', D))
-        del self.data[D+'2']
-        self.data[B+'swap'] = dict(block('swap'), **{backend.SWAP: dict(Active=True)})
+        del self.data[D + '2']
+        self.data[B + 'swap'] = dict(block('swap'), **{backend.SWAP: dict(Active=True)})
         with self.assertRaisesRegex(backend.StorageError, 'swap'):
             self.storage.handle(self.request('eject', D))
         self.storage.call.assert_not_called()
 
     def test_health_is_explicit_ata_avoids_wakeup_and_nvme_uses_controller(self):
-        self.data[D][backend.ATA] = dict(SmartSupported=True, SmartEnabled=True, SmartUpdated=123,
-                                        SmartTemperature=300, SmartPowerOnSeconds=7200,
-                                        SmartFailing=False, SmartNumBadSectors=2)
+        self.data[D][backend.ATA] = dict(
+            SmartSupported=True,
+            SmartEnabled=True,
+            SmartUpdated=123,
+            SmartTemperature=300,
+            SmartPowerOnSeconds=7200,
+            SmartFailing=False,
+            SmartNumBadSectors=2,
+        )
         result = self.storage.handle(self.request('health', D))['health']
-        self.assertTrue(result['warning']); self.assertEqual(result['temperature'], 27)
+        self.assertTrue(result['warning'])
+        self.assertEqual(result['temperature'], 27)
         self.assertEqual(result['hours'], 2)
-        self.assertTrue(self.storage.call.call_args.kwargs['options']['nowakeup'].unpack())
-        self.data[D][backend.NVME] = dict(SmartUpdated=123, SmartTemperature=0, SmartCriticalWarning=[], SmartPowerOnHours=12)
+        self.assertTrue(
+            self.storage.call.call_args.kwargs['options']['nowakeup'].unpack()
+        )
+        self.data[D][backend.NVME] = dict(
+            SmartUpdated=123,
+            SmartTemperature=0,
+            SmartCriticalWarning=[],
+            SmartPowerOnHours=12,
+        )
         result = self.storage.handle(self.request('health', D))['health']
-        self.assertFalse(result['warning']); self.assertIsNone(result['temperature'])
+        self.assertFalse(result['warning'])
+        self.assertIsNone(result['temperature'])
         self.assertEqual(self.storage.call.call_args.args[1], backend.NVME)
 
     def test_unknown_and_status_requests_never_mutate(self):
@@ -246,14 +363,25 @@ class DisksQmlTests(unittest.TestCase):
         storage = backend.Storage.__new__(backend.Storage)
         data = objects()
         internal = D + '_internal'
-        data[internal] = drive(Model='Internal SSD', Removable=False, CanPowerOff=False, Ejectable=False)
+        data[internal] = drive(
+            Model='Internal SSD', Removable=False, CanPowerOff=False, Ejectable=False
+        )
         data[internal][backend.NVME] = dict(SmartUpdated=123)
-        data[B+'system'] = block('system', ['/'], Drive=internal, IdLabel='System')
+        data[B + 'system'] = block('system', ['/'], Drive=internal, IdLabel='System')
         storage.objects = lambda: data
-        with patch.object(backend, 'slaves', return_value=[]), patch.object(backend.os, 'statvfs',
-                return_value=SimpleNamespace(f_blocks=100, f_frsize=10**9, f_bfree=30, f_bavail=30)):
+        with (
+            patch.object(backend, 'slaves', return_value=[]),
+            patch.object(
+                backend.os,
+                'statvfs',
+                return_value=SimpleNamespace(
+                    f_blocks=100, f_frsize=10**9, f_bfree=30, f_bavail=30
+                ),
+            ),
+        ):
             state = storage.snapshot()
-        self.run_qml('''import QtQuick
+        self.run_qml(
+            """import QtQuick
 import QtQuick.Controls
 import QtTest
 import Quickshell
@@ -377,32 +505,48 @@ ShellRoot {
   }else {console.log("DISPLAY_PASS");Qt.quit();}
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e.message);Qt.quit();}}}
-}'''.replace('STATE', json.dumps(state)).replace('BLOCK', B).replace('DRIVE', D))
+}""".replace('STATE', json.dumps(state))
+            .replace('BLOCK', B)
+            .replace('DRIVE', D)
+        )
 
-    def test_analyzer_and_directory_launches_close_drawer_and_preserve_literal_paths(self):
+    def test_analyzer_and_directory_launches_close_drawer_and_preserve_literal_paths(
+        self,
+    ):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             marker = root / 'launched'
             launcher = root / 'uwsm'
-            launcher.write_text('#!/bin/sh\n[ "$1" = app ] && [ "$2" = -t ] && [ "$3" = service ] && [ "$4" = -- ] || exit 1\nshift 4\nexec "$@"\n')
+            launcher.write_text(
+                '#!/bin/sh\n[ "$1" = app ] && [ "$2" = -t ] && [ "$3" = service ] && [ "$4" = -- ] || exit 1\nshift 4\nexec "$@"\n'
+            )
             launcher.chmod(0o700)
             executable = root / 'filelight'
-            executable.write_text('#!' + sys.executable + '\nimport json,sys\nfrom pathlib import Path\n'
-                                  f'Path({str(marker)!r}).write_text(json.dumps(sys.argv[1:]))\n')
+            executable.write_text(
+                '#!' + sys.executable + '\nimport json,sys\nfrom pathlib import Path\n'
+                f'Path({str(marker)!r}).write_text(json.dumps(sys.argv[1:]))\n'
+            )
             executable.chmod(0o700)
             folder_marker = root / 'folder'
             file_manager = root / 'dolphin'
-            file_manager.write_text('#!' + sys.executable + '\nimport json,sys\nfrom pathlib import Path\n'
-                                    f'Path({str(folder_marker)!r}).write_text(json.dumps(sys.argv[1:]))\n')
+            file_manager.write_text(
+                '#!' + sys.executable + '\nimport json,sys\nfrom pathlib import Path\n'
+                f'Path({str(folder_marker)!r}).write_text(json.dumps(sys.argv[1:]))\n'
+            )
             file_manager.chmod(0o700)
             editor_marker = root / 'editor'
             editor = root / 'partitionmanager'
-            editor.write_text('#!' + sys.executable + '\nimport json,sys\nfrom pathlib import Path\n'
-                              f'Path({str(editor_marker)!r}).write_text(json.dumps(sys.argv[1:]))\n')
+            editor.write_text(
+                '#!' + sys.executable + '\nimport json,sys\nfrom pathlib import Path\n'
+                f'Path({str(editor_marker)!r}).write_text(json.dumps(sys.argv[1:]))\n'
+            )
             editor.chmod(0o700)
             location = '/media/Backup #1/space\tand\nnewline;$(echo ignored)'
-            with patch.dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH']):
-                self.run_qml('''import QtQuick
+            with patch.dict(
+                os.environ, PATH=str(root) + os.pathsep + os.environ['PATH']
+            ):
+                self.run_qml(
+                    """import QtQuick
 import Quickshell
 import "drawers"
 import "ui"
@@ -446,22 +590,25 @@ ShellRoot {
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e.message);Qt.quit();}}}
 }
-'''.replace('LOCATION', json.dumps(location)))
+""".replace('LOCATION', json.dumps(location))
+                )
             self.assertEqual(json.loads(marker.read_text()), [])
             self.assertEqual(json.loads(folder_marker.read_text()), ['--', location])
             self.assertEqual(json.loads(editor_marker.read_text()), [])
 
     def test_service_finishes_action_after_dismissal_and_stops_observation(self):
         def setup(root):
-            (root / 'drawers/disks/backend.py').write_text('''import json,sys,time
+            (root / 'drawers/disks/backend.py').write_text("""import json,sys,time
 for line in sys.stdin:
  request=json.loads(line)
  if request['op']!='status': time.sleep(.5)
  result=dict(ok=True,error='',data=dict(drives=[],editorAvailable=False))
  if request['op']=='health': result.update(ok=False,error='The drive is asleep.')
  print(json.dumps(result),flush=True)
-''')
-        self.run_qml('''import QtQuick
+""")
+
+        self.run_qml(
+            """import QtQuick
 import Quickshell
 import "drawers/disks"
 ShellRoot {
@@ -486,4 +633,6 @@ ShellRoot {
   else {check(!DisksService.worker.running,"cold-start worker leaked");console.log("DISPLAY_PASS");Qt.quit();}
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e.message);Qt.quit();}}}
-}''', setup=setup)
+}""",
+            setup=setup,
+        )

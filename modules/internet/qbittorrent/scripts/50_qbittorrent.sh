@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 user=${1:?Username required}
-if pgrep -u "$user" -x 'qbittorrent|qbittorrent-nox' >/dev/null; then
+if pgrep -u "$user" -x 'qbittorrent|qbittorrent-nox' > /dev/null; then
     echo 'Close qBittorrent before applying its configuration.' >&2
     exit 1
 fi

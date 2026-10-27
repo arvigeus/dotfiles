@@ -29,8 +29,15 @@ def own_process_group(cleanup=None):
         signal.signal(signal.SIGALRM, terminate_group)
         signal.alarm(2)
         try:
-            if os.environ.get("QUICKSHELL_MEDIA_SPACE", "movies") in ("movies", "series", "games", "books", "music"):
+            if os.environ.get('QUICKSHELL_MEDIA_SPACE', 'movies') in (
+                'movies',
+                'series',
+                'games',
+                'books',
+                'music',
+            ):
                 from spaces.movies.local import cleanup_transfers
+
                 cleanup_transfers()
             if cleanup:
                 cleanup()
@@ -57,13 +64,13 @@ def serve(
     write_lock = threading.Lock()
     state_lock = threading.Lock()
     newest = {}
-    scope = scope or (lambda request: request["op"])
+    scope = scope or (lambda request: request['op'])
     slots = threading.BoundedSemaphore(capacity)
     read_slots = threading.BoundedSemaphore(capacity - min(8, capacity // 4))
 
     def emit(response):
         with write_lock:
-            output.write(json.dumps(response, ensure_ascii=False) + "\n")
+            output.write(json.dumps(response, ensure_ascii=False) + '\n')
             output.flush()
 
     def execute(request, key, token, is_control):
@@ -71,28 +78,28 @@ def serve(
             with state_lock:
                 superseded = token is not None and newest.get(key) is not token
             if superseded:
-                emit({"id": request["id"], "error": "Request superseded."})
+                emit({'id': request['id'], 'error': 'Request superseded.'})
                 return
             try:
-                response = {"id": request["id"], "result": handle(request)}
+                response = {'id': request['id'], 'result': handle(request)}
                 # Serialize inside the error boundary: a malformed backend result
                 # must settle its callback too, rather than vanish in a Future.
                 encoded = json.dumps(response, ensure_ascii=False)
             except errors as error:
-                response = {"id": request["id"], "error": str(error)}
-                if code := getattr(error, "code", None):
-                    response["error_code"] = code
+                response = {'id': request['id'], 'error': str(error)}
+                if code := getattr(error, 'code', None):
+                    response['error_code'] = code
                 encoded = json.dumps(response)
             except Exception:
-                _LOG.exception("Worker operation %s failed", request["op"])
+                _LOG.exception('Worker operation %s failed', request['op'])
                 encoded = json.dumps(
                     {
-                        "id": request["id"],
-                        "error": "The request could not be completed. Try again.",
+                        'id': request['id'],
+                        'error': 'The request could not be completed. Try again.',
                     }
                 )
             with write_lock:
-                output.write(encoded + "\n")
+                output.write(encoded + '\n')
                 output.flush()
         finally:
             if token is not None:
@@ -104,9 +111,11 @@ def serve(
                 read_slots.release()
 
     with (
-        ThreadPoolExecutor(max_workers=workers, thread_name_prefix="catalogue") as reads,
-        ThreadPoolExecutor(max_workers=1, thread_name_prefix="control") as writes,
-        ThreadPoolExecutor(max_workers=2, thread_name_prefix="artwork") as images,
+        ThreadPoolExecutor(
+            max_workers=workers, thread_name_prefix='catalogue'
+        ) as reads,
+        ThreadPoolExecutor(max_workers=1, thread_name_prefix='control') as writes,
+        ThreadPoolExecutor(max_workers=2, thread_name_prefix='artwork') as images,
     ):
         for line in stream:
             request = None
@@ -116,22 +125,22 @@ def serve(
                 request = json.loads(line)
                 if (
                     not isinstance(request, dict)
-                    or not isinstance(request.get("op"), str)
-                    or not request["op"]
-                    or type(request.get("id")) not in (int, str)
+                    or not isinstance(request.get('op'), str)
+                    or not request['op']
+                    or type(request.get('id')) not in (int, str)
                 ):
                     raise ValueError()
-                is_control = request["op"] in controls
+                is_control = request['op'] in controls
                 # Mutations are never superseded, even if also listed in latest.
-                token = object() if request["op"] in latest and not is_control else None
+                token = object() if request['op'] in latest and not is_control else None
                 key = scope(request) if token is not None else None
                 hash(key)
             except (ValueError, TypeError, KeyError):
-                identifier = request.get("id") if isinstance(request, dict) else None
+                identifier = request.get('id') if isinstance(request, dict) else None
                 emit(
                     {
-                        "id": identifier if type(identifier) in (int, str) else None,
-                        "error": "Invalid worker request.",
+                        'id': identifier if type(identifier) in (int, str) else None,
+                        'error': 'Invalid worker request.',
                     }
                 )
                 continue
@@ -140,11 +149,20 @@ def serve(
                 if read_acquired and not is_control:
                     read_slots.release()
                 emit(
-                    {"id": request["id"], "error": "Too many pending requests. Try again shortly."}
+                    {
+                        'id': request['id'],
+                        'error': 'Too many pending requests. Try again shortly.',
+                    }
                 )
                 continue
             if token is not None:
                 with state_lock:
                     newest[key] = token
-            executor = writes if is_control else images if request["op"] in background else reads
+            executor = (
+                writes
+                if is_control
+                else images
+                if request['op'] in background
+                else reads
+            )
             executor.submit(execute, request, key, token, is_control)

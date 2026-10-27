@@ -17,7 +17,8 @@ MenuItem {
         Icon {
             name: "check"
             opacity: root.marked ? 1 : 0
-            Layout.preferredWidth: 16; Layout.preferredHeight: 16
+            Layout.preferredWidth: 16
+            Layout.preferredHeight: 16
             color: root.highlighted ? Theme.accent : Theme.text
         }
         ShellText {
@@ -26,5 +27,8 @@ MenuItem {
             color: Theme.text
         }
     }
-    background: ButtonBackground { highlighted: root.highlighted; pressed: root.down }
+    background: ButtonBackground {
+        highlighted: root.highlighted
+        pressed: root.down
+    }
 }

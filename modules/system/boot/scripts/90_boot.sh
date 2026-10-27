@@ -3,10 +3,11 @@ set -Eeuo pipefail
 # Archinstall generates the device-specific command line and UKI presets.
 # Preserve its initramfs hooks and disk-unlock parameters.
 jq -e '.bootloader_config | .bootloader == "Efistub" and .uki == true' \
-    /run/system-configuration.json >/dev/null || {
-    echo 'Boot configuration requires EFI stub boot with UKIs.' >&2; exit 1;
+    /run/system-configuration.json > /dev/null || {
+    echo 'Boot configuration requires EFI stub boot with UKIs.' >&2
+    exit 1
 }
-python3 - /etc/kernel/cmdline /etc/mkinitcpio.d <<'PY_BOOT'
+python3 - /etc/kernel/cmdline /etc/mkinitcpio.d << 'PY_BOOT'
 from pathlib import Path
 import os
 import re
