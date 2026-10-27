@@ -5,7 +5,8 @@ configuration to an existing system. The aim is to keep this repository as the
 source of truth for the live system as well as the initial installation.
 
 This is a personal setup. Review the selected host and its settings before using
-it. Requires Python 3, jq, and archinstall 4.5. Package versions are not pinned.
+it. Requires Python 3, jq, and archinstall 4.5; apply's package preview uses
+PyALPM (`pyalpm`). Package versions are not pinned.
 
 ## Configure
 
@@ -55,19 +56,31 @@ Run as your regular user:
 
 ```sh
 ./validate.sh
+./apply.sh --dry-run
 ./apply.sh
 ```
 
 Validation runs archinstall's silent, offline dry-run. It does not execute custom
 commands or validate `extra`.
 
-Apply updates packages and settings and runs the module hooks. It skips disk,
+Apply installs missing packages, updates the system, reconciles managed files and
+services, and runs the module hooks. It skips disk,
 bootloader, account creation, and filesystem snapshot initialization. Reboot
 after applying to activate changed settings.
 
-Managed configuration is replaced on each apply. Omitted files, packages, and
-services are left in place; removal and migration are manual. There is no
-backward compatibility support: update your system when the configuration changes.
+Copied files use content comparisons, not timestamps. Clean managed files update
+automatically; local edits and differing files on the first apply get individual
+diff/replace/keep review. Skipped file conflicts return exit status 2. Replaced and
+removed files are backed up under `/var/lib/dotfiles/UID/backups/`.
+
+Extra pacman/AUR packages are offered one at a time, with declared dependencies protected.
+Keep anything you still need and add it to its module. Use
+`./apply.sh --no-package-review` to skip package removals. Non-interactive runs
+keep conflicting files and skip removals.
+
+Files and service enablement previously managed by apply are reconciled when
+removed from the configuration. Untracked files and unrelated services are left
+alone. See [reconciliation details](scripts/ARCHITECTURE.md#reconciliation).
 
 Hyprland starts automatically on TTY1; see the [desktop README](modules/desktop/hyprland/README.md)
 for the session, gaming mode and shortcuts.

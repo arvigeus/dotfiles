@@ -7,10 +7,10 @@ import subprocess
 import tempfile
 import unittest
 
+import support
 
-DESKTOP = (Path(__file__).resolve().parents[1] / 'modules/desktop/quickshell'
-           / 'symlinks/home/.config/quickshell/desktop')
-QS = shutil.which('qs')
+DESKTOP = support.DESKTOP
+QS = support.QS
 
 
 @unittest.skipUnless(QS, 'Quickshell is required')
@@ -18,7 +18,8 @@ class DesktopInteractionTests(unittest.TestCase):
     def test_replacement_dismissal_keyboard_and_preferences(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in ('ui', 'icons', 'drawers', 'launcher', 'bar', 'integrations'):
+            support.copy_theme_ui(root)
+            for name in ('icons', 'drawers', 'launcher', 'bar', 'integrations', 'spaces'):
                 shutil.copytree(DESKTOP / name, root / name)
             # Only native surface and shortcut registration need substitutes.
             # The owner, geometry, input, controls, persistence and launcher run
@@ -465,7 +466,7 @@ ShellRoot {
                 check(find(drawers.contentItem, "notificationsDrawer"), "notification controls missing");
                 check(["trayIsland", "toolsIsland", "systemIsland", "notificationsIsland"]
                     .every(name => find(bar.contentItem, name)), "missing islands");
-                NotificationCenter.state = {items:[{id:"badge-a",seen:false},{id:"badge-b",seen:false}],paused:false};
+                NotificationCenter.state = NotificationCenter.normalized({items:[{id:"badge-a",seen:false},{id:"badge-b",seen:false}],paused:false});
                 snapshot("bar-light");
                 const wifi = find(bar.contentItem, "wifiButton");
                 buttonWidthBefore = wifi.width;
@@ -478,7 +479,7 @@ ShellRoot {
                 const wifi = find(bar.contentItem, "wifiButton");
                 const bell = find(bar.contentItem, "notificationsButton");
                 check(bell.entry.badge === "2" && bell.entry.attention && bell.entry.description.includes("2 unseen"), "bell missed unseen count");
-                NotificationCenter.state = {items:Array.from({length:100}, (_, index) => ({id:"unseen-" + index,seen:false})),paused:false};
+                NotificationCenter.state = NotificationCenter.normalized({items:Array.from({length:100}, (_, index) => ({id:"unseen-" + index,seen:false})),paused:false});
                 check(bell.entry.badge === "99+" && bell.entry.description.includes("100 unseen"), "notification badge overflowed or lost its exact tooltip count");
                 NotificationCenter.state = {items:[],paused:true};
                 check(bell.entry.badge === "" && !bell.entry.attention && bell.entry.description.includes("Do Not Disturb"), "bell retained stale unread state");
@@ -542,6 +543,8 @@ ShellRoot {
             (root / 'runtime').mkdir(mode=0o700)
             env = {**os.environ, 'XDG_RUNTIME_DIR': str(root / 'runtime'), 'QT_QPA_PLATFORM': 'offscreen',
                    'XDG_CONFIG_HOME': str(root / 'config'), 'XDG_DATA_HOME': str(root / 'data'),
+                   'XDG_STATE_HOME': str(root / 'state'), 'XDG_CACHE_HOME': str(root / 'cache'),
+                   'PIPEWIRE_REMOTE': 'dotfiles-tests-unavailable',
                    'XDG_DATA_DIRS': str(root / 'empty')}
             for key in ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE'):
                 env.pop(key, None)

@@ -1,6 +1,11 @@
 {
     "packages": [
+        "btrfs-progs",
+        "lvm2",
+        "cryptsetup",
+        "snapper",
         "udisks2",
+        "smartmontools",
         "partitionmanager",
         "filelight"
     ]

@@ -5,6 +5,11 @@ and screen sharing. See [appearance integration](../../look-and-feel/ARCHITECTUR
 for shared palette/mode propagation. Troubleshooting commands and shortcuts are in
 [README.md](README.md).
 
+Desktop packages are native `packages` declarations in their owning modules,
+without archinstall's Desktop/Hyprland presets. Those presets bundle a second
+launcher, notification daemon and PolicyKit agent. Logind supplies seat access;
+the polkit module installs its dependency and this module enables hyprpolkitagent.
+
 ## Configuration loading
 
 `hyprland.lua` loads each component with Hyprland's `require()`, which searches
@@ -16,6 +21,12 @@ written by the Displays drawer, so confirmed layouts override host defaults.
 Settings equal to Hyprland's built-in defaults are omitted. Hyprland itself imports
 its environment into systemd and notifies UWSM of readiness; `XCURSOR_SIZE` is
 declared in `environment.d` because X11 clients otherwise choose their own size.
+
+Check Lua syntax with `luac -p` and live errors with `hyprctl configerrors`.
+Hyprland 0.56.2's offline `--verify-config` crashes on `hl.timer(...)`, including
+an otherwise empty configuration, so it cannot validate this configuration's
+recovery timer. Keep native timer behavior and recheck offline validation after
+upgrading Hyprland.
 
 ## Session ownership
 

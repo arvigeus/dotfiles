@@ -437,8 +437,6 @@ actual device interaction; isolated fixtures do not prove those paths.
 
 `account-tools` is a PySide6 application installed with this module. Its desktop
 entry is available in the launcher and the Spaces profile button launches it.
-The old `/usr/local/bin/mugshot` wrapper is removed during apply; no package is
-automatically uninstalled.
 
 `account_core.py` reads only the current UID via passwd/NSS and AccountsService.
 Group membership comes from `getgrouplist`, including the primary group, rather

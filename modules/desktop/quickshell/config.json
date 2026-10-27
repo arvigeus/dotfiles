@@ -25,6 +25,7 @@
         "rclone"
     ],
     "extra": {
+        "user_services": ["desktop-shell.service", "desktop-capture.socket", "cliphist@text.service", "cliphist@image.service"],
         "private": {
             "files": [
                 "home/.config/hypr/displays.lua",

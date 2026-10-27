@@ -63,7 +63,12 @@ class GenerationTests(unittest.TestCase):
                 files = {entry['target']: entry for entry in config['extra']['files']}
                 self.assertIn('libnotify', config['packages'])
                 self.assertNotIn('dunst', config['packages'])
-                self.assertIn('modules/desktop/notifications/scripts/90_cleanup.sh', config['extra']['scripts'])
+                self.assertNotIn('profile_config', config)
+                self.assertTrue({'hyprland', 'uwsm', 'kitty', 'grim', 'slurp', 'hyprpolkitagent',
+                                 'xdg-desktop-portal-hyprland', 'qt5-wayland', 'qt6-wayland',
+                                 'smartmontools', 'xdg-utils', 'vim', 'htop'} <= set(config['packages']))
+                self.assertFalse({'wofi', 'dunst', 'polkit-kde-agent'} & set(config['packages']))
+                self.assertFalse(any(script.endswith('/90_cleanup.sh') for script in config['extra']['scripts']))
                 self.assertIn('home/.local/share/dbus-1/services/org.freedesktop.Notifications.service', {entry['target'] for entry in config['extra']['symlinks']})
                 self.assertIn('archlinux-contrib', config['packages'])
                 self.assertIn('pacman-contrib', config['packages'])
@@ -249,6 +254,40 @@ class GenerationTests(unittest.TestCase):
             for kind in ('files', 'symlinks'):
                 self.assertEqual([entry['target'] for entry in generated['extra'][kind]],
                                  [f'home/.config/{kind}/backend.py'])
+
+    def test_invalid_explicit_assets_preserve_the_previous_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            shutil.copy(REPO / 'generate-config.py', repo)
+            host = repo / 'modules/hosts/vm'
+            host.mkdir(parents=True)
+            fragment = host / 'config.json'
+            (repo / 'host').write_text('vm\n')
+            (repo / 'first').write_text('first\n')
+            (repo / 'second').write_text('second\n')
+            fragment.write_text('{"hostname":"vm"}')
+            command = ['python3', str(repo / 'generate-config.py')]
+            subprocess.run(command, check=True, capture_output=True)
+            previous = (repo / 'user-configuration.json').read_bytes()
+
+            def asset(source, target):
+                return {'source': source, 'target': target, 'mode': '0644'}
+
+            for entries, error in (
+                ([asset('first', '/etc/example'), asset('second', '/etc/example')], 'Multiple modules provide'),
+                ([asset('first', 'home/.config/example'), asset('second', 'home/.config/example/child')], 'overlaps'),
+                ([asset('first', '/etc/../example')], 'Invalid asset path'),
+                ([asset('first', 'relative/example')], 'Invalid asset path'),
+                ([asset('first', '/etc/with\ttab')], 'Invalid asset path'),
+                ([asset('missing', '/etc/example')], 'Asset source must be a file'),
+                ([asset('/etc/passwd', '/etc/example')], 'Asset source must be a file'),
+            ):
+                with self.subTest(entries=entries):
+                    fragment.write_text(json.dumps({'hostname': 'vm', 'extra': {'files': entries}}))
+                    result = subprocess.run(command, capture_output=True, text=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(error, result.stderr)
+                    self.assertEqual((repo / 'user-configuration.json').read_bytes(), previous)
 
 
 if __name__ == '__main__':

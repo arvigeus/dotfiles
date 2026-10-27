@@ -5,9 +5,9 @@ modules into `user-configuration.json`, shared by installation and live apply.
 Entry points do not regenerate configuration or select modules.
 
 Prefer native archinstall settings for features it supports. Custom hooks cover
-remaining behavior. The configuration does not pin package versions, track
-previous system state, or automatically remove declarations that disappear.
-Breaking changes require manual migration; compatibility layers are not maintained.
+remaining behavior. Package versions are not pinned. Live apply records current
+file fingerprints and service ownership to reconcile future changes; it does not
+retain configuration migrations or infer ownership of unrelated system files.
 
 ## Modules
 
@@ -23,19 +23,21 @@ assets, or hooks is a module; discovery stops there. Configuration fragments are
 Objects merge recursively. Supported native lists and lists under `extra` are
 combined; duplicate entries are removed except for `custom_commands`. Conflicting
 scalar values fail generation. Native top-level options are checked during
-generation; `extra` has no custom schema validator.
+generation; `extra` settings are module-defined.
 
 `modules/hosts/<name>` owns machine identity and installation choices, including
 disk layout. `modules/hardware/devices/<name>` owns that machine's hardware
 settings and device aliases. Reusable accessories belong under
 `modules/hardware/peripherals/`; their matching rules can travel between hosts.
 
-Native archinstall fields control packages and services. `extra` holds custom
-metadata, including AUR/Cargo packages, Flatpak remotes/apps, assets, and hooks.
-`extra.packages`, `extra.services`, `extra.disabled_services`, and
-`extra.masked_services` record what native handlers (such as `app_config` or the
-desktop profile) or hooks install and enable. Nothing executes them yet; they
-keep those dependencies explicit for future reconciliation by live apply.
+Native archinstall fields control packages and services. Desktop dependencies
+are explicit module declarations rather than archinstall's bundled desktop
+presets; native application and network handlers still configure their services.
+`extra` holds custom metadata, including AUR/Cargo packages, Flatpak remotes/apps,
+assets, and hooks.
+`extra.user_services` and `extra.masked_user_services` control global user-unit
+enablement/masking; `extra.disabled_services` disables system units. Native
+`services`, application and network handlers own enabled system units.
 Declare shared script/build tools in their owning modules rather than repeating
 them in application modules.
 
@@ -76,11 +78,18 @@ actions. Avoid explicit service restarts; users reboot after applying changes.
 directory, `home/` targets the regular user's home and other paths target `/`.
 Keep application-rewritten configuration in `files/home/` to avoid checkout noise.
 Use plain installed filenames such as `bash.sh` or `fcitx.conf`.
+Generation checks explicit and discovered assets together: sources must be files
+inside the checkout, destinations must be normalized paths, and no destination
+may be duplicated or used as another asset's parent directory.
 
 Hooks write generated home configuration into a temporary staging home (`HOME`
 and the XDG variables point there). Home outputs are published with user
-ownership; generated outputs are regular files. Publishing replaces managed
-destinations and leaves omitted outputs alone.
+ownership; generated outputs are regular files. `file_write`/`file_append` also
+stage system outputs through `DOTFILES_SYSTEM_STAGE`; direct download hooks use
+the same staging prefix. Publication compares content/mode/link fingerprints
+against the last applied state, preserves local changes for review, and removes
+clean outputs whose owning declaration disappeared. Arbitrary runtime hook
+actions remain imperative; they cannot be rolled back as a filesystem transaction.
 
 ## Shell environment
 
@@ -121,8 +130,9 @@ runs early setup again after base installation, before application packages.
 Archinstall's single custom command then runs `scripts/configure.sh`.
 
 `apply.sh` validates the configuration, then uses a live adapter around
-archinstall's parser and native handlers. It applies packages, network, profile,
-console, and zram settings, followed by the same custom command. Installation-only
+archinstall's parser and native handlers. The adapter first collects packages,
+services and generated native files in a temporary root. It applies packages,
+network, profile, console, and zram settings, followed by the same custom command. Installation-only
 disk, bootloader, account, and snapshot operations are skipped. System locale is
 configured at installation; live apply leaves it unchanged. Login services are
 enabled without restarting the session.

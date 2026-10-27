@@ -198,27 +198,8 @@
             "btrustbiss",
             "sac-core",
             "appmanager",
+            "paru",
             "geekbench"
-        ],
-        "packages": [
-            "kitty",
-            "hyprland",
-            "uwsm",
-            "grim",
-            "slurp",
-            "pipewire",
-            "pipewire-alsa",
-            "pipewire-jack",
-            "pipewire-pulse",
-            "gst-plugin-pipewire",
-            "wireplumber",
-            "bluez",
-            "bluez-utils",
-            "networkmanager",
-            "iwd",
-            "tuned",
-            "tuned-ppd",
-            "firewalld"
         ],
         "flatpak": {
             "packages": [
@@ -464,6 +445,16 @@
                 }
             }
         },
+        "user_services": [
+            "hyprpolkitagent.service",
+            "hypridle.service",
+            "desktop-shell.service",
+            "desktop-capture.socket",
+            "cliphist@text.service",
+            "cliphist@image.service",
+            "power-session.path",
+            "gnome-keyring-daemon.service"
+        ],
         "private": {
             "files": [
                 "home/.config/hypr/displays.lua",
@@ -707,11 +698,9 @@
         "cargo_packages": [
             "tokei"
         ],
-        "services": [
-            "bluetooth.service",
-            "NetworkManager.service",
-            "tuned.service",
-            "firewalld.service"
+        "masked_user_services": [
+            "app-blueman@autostart.service",
+            "app-nm\\x2dapplet@autostart.service"
         ],
         "disabled_services": [
             "warp-svc.service"
@@ -3659,10 +3648,8 @@
             "modules/base/xdg/scripts/45_user-directories.sh",
             "modules/media/tools/audio/scripts/50_audio-tools.sh",
             "modules/base/bash/scripts/50_bash.sh",
-            "modules/hardware/bluetooth/scripts/50_bluetooth.sh",
             "modules/office/btrust/scripts/50_btrust.sh",
             "modules/browsers/chromium/scripts/50_chromium.sh",
-            "modules/internet/cloudflare/scripts/50_cloudflare.sh",
             "modules/ai/codex/scripts/50_codex.sh",
             "modules/files/dolphin/scripts/50_dolphin-databases.sh",
             "modules/files/dolphin/scripts/50_dolphin-preferences.sh",
@@ -3671,21 +3658,17 @@
             "modules/look-and-feel/icons/scripts/50_icons.sh",
             "modules/dev/tools/meld/scripts/50_meld.sh",
             "modules/media/video/mpv/scripts/50_mpv.sh",
-            "modules/hardware/network/scripts/50_network.sh",
             "modules/hardware/power/scripts/50_power.sh",
             "modules/dev/tools/projects/scripts/50_project-tools.sh",
             "modules/dev/languages/python/scripts/50_python.sh",
             "modules/internet/qbittorrent/scripts/50_qbittorrent.sh",
-            "modules/desktop/quickshell/scripts/50_quickshell.sh",
             "modules/gaming/games/roblox/scripts/50_roblox.sh",
             "modules/system/security/secret-service/scripts/50_secret-service.sh",
             "modules/desktop/hyprland/scripts/50_session.sh",
             "modules/system/security/sudo/scripts/50_sudo.sh",
             "modules/media/tools/video/scripts/50_video-tools.sh",
             "modules/dev/editors/vscode/scripts/50_vscode.sh",
-            "modules/system/boot/scripts/90_boot.sh",
-            "modules/desktop/hyprland/scripts/90_cleanup.sh",
-            "modules/desktop/notifications/scripts/90_cleanup.sh"
+            "modules/system/boot/scripts/90_boot.sh"
         ]
     },
     "hostname": "zephyrus",
@@ -3731,6 +3714,7 @@
         "7zip",
         "bash",
         "bash-completion",
+        "kitty",
         "xdg-terminal-exec",
         "bc",
         "less",
@@ -3742,17 +3726,23 @@
         "util-linux",
         "gawk",
         "glib2",
+        "xdg-utils",
         "xdg-user-dirs",
         "chromium",
         "firefox",
         "kdeconnect",
         "telegram-desktop",
+        "hyprland",
+        "uwsm",
         "hyprpolkitagent",
         "hypridle",
         "hyprsunset",
         "hyprlock",
         "satty",
         "ksnip",
+        "grim",
+        "slurp",
+        "xdg-desktop-portal-hyprland",
         "xdg-desktop-portal-gtk",
         "playerctl",
         "wl-clipboard",
@@ -3766,7 +3756,6 @@
         "python-icalendar",
         "python-recurring-ical-events",
         "gpu-screen-recorder",
-        "slurp",
         "v4l-utils",
         "cliphist",
         "pyside6",
@@ -3785,6 +3774,7 @@
         "micro",
         "nano",
         "nano-syntax-highlighting",
+        "vim",
         "code",
         "zed",
         "go",
@@ -3866,7 +3856,12 @@
         "evtest",
         "chaotic-aur/logiops",
         "solaar",
+        "btrfs-progs",
+        "lvm2",
+        "cryptsetup",
+        "snapper",
         "udisks2",
+        "smartmontools",
         "partitionmanager",
         "filelight",
         "wireless-regdb",
@@ -3886,6 +3881,8 @@
         "breeze-icons",
         "plasma-integration",
         "plasma5-integration",
+        "qt5-wayland",
+        "qt6-wayland",
         "koko",
         "inkscape",
         "fooyin",
@@ -3920,15 +3917,21 @@
         "okular",
         "ebook-tools",
         "archinstall",
+        "base",
+        "linux-firmware",
+        "mkinitcpio",
+        "efibootmgr",
         "pkgstats",
         "reflector",
         "flatpak",
+        "pyalpm",
         "pacman-contrib",
         "archlinux-contrib",
         "chaotic-keyring",
         "chaotic-mirrorlist",
         "chaotic-aur/topgrade",
         "btop",
+        "htop",
         "drm-info",
         "lm_sensors",
         "pciutils",
@@ -3953,20 +3956,6 @@
     "pacman_config": {
         "color": true,
         "parallel_downloads": 5
-    },
-    "profile_config": {
-        "profile": {
-            "custom_settings": {
-                "Hyprland": {
-                    "seat_access": "systemd-logind"
-                }
-            },
-            "details": [
-                "Hyprland"
-            ],
-            "main": "Desktop"
-        },
-        "greeter": null
     },
     "script": null,
     "services": [

@@ -95,21 +95,12 @@ payloads, temporary downloads, artwork, sockets or browser account sessions ente
 private backups. Database backup requires quiescent writes; `backup.sh` is a file
 snapshot rather than an application-consistent SQLite backup.
 
-The verified local private checkout is `/home/arvigeus/Projects/dotfiles-private`.
 `backup.sh` snapshots the selected module declarations to `modules/backup` with
 permissions. On a clean machine, install the public quickshell/ebook-reader/
 qBittorrent modules and run the private checkout's standalone `apply.sh` as the
 regular user. It creates parents, restores restrictive modes and preserves
 collisions under `.before-private-*`. Restore media separately and ensure saved
 local paths/mounts exist. Browser borrowing accounts require ordinary sign-in.
-
-The existing optional provider package/preferences were copied from the local
-reference configuration into Books' paths, without replacing populated new
-settings. No existing Books library database was found. The reference checkout
-is preserved and no migration/fallback hook is installed. The actual private
-snapshot is uncommitted; fresh-install recovery from a synchronized private
-source remains incomplete until its owner reviews, commits and synchronizes it.
-No private commit or remote upload is performed by this migration.
 
 ## Validation
 
@@ -127,13 +118,3 @@ the production worker. Fixtures use isolated state and no real account.
 Native multi-monitor scaling/hotplug, actual ebook reader handoff and live torrent
 completion still require interactive validation. Test fixtures do not prove those
 paths.
-
-Validation on 2026-10-25 passed 295 targeted completed-Space/private regression
-checks and 49 final Books checks, native Wayland rendering/lifecycle, light
-desktop behavior, live Open Library search/details and offline archinstall
-validation. Installed links and generated declarations match. The actual approved
-Books-only private snapshot restored six files with byte equality, owner-only
-modes, valid SQLite contents, provider discovery and collision preservation.
-Unrelated private snapshots/declarations were preserved. The snapshot remains
-uncommitted; no private commit or upload was performed. Live private-provider
-transfers remain unverified.

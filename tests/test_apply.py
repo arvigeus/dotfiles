@@ -13,7 +13,7 @@ class HomeTests(unittest.TestCase):
                                str(staging), str(home), str(os.getuid()), str(os.getgid())],
                               check=check, text=True, capture_output=True)
 
-    def test_links_generated_files_and_preserves_omitted_outputs(self):
+    def test_links_generated_files_preserve_local_edits_and_remove_clean_omitted_outputs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             home, stage = root / 'home', root / 'stage'
@@ -31,13 +31,15 @@ class HomeTests(unittest.TestCase):
             self.assertFalse((home / '.config/generated.conf').is_symlink())
             self.assertTrue((home / '.local/state/bash').is_dir())
             (home / '.config/generated.conf').write_text('drift\n')
-            self.publish(stage, home)
-            self.assertEqual((home / '.config/generated.conf').read_text(), 'generated\n')
+            result = self.publish(stage, home, check=False)
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual((home / '.config/generated.conf').read_text(), 'drift\n')
+            (home / '.config/generated.conf').write_text('generated\n')
             generated.unlink()
             link.unlink()
             self.publish(stage, home)
-            self.assertTrue((home / '.config/plain.conf').exists())
-            self.assertEqual((home / '.config/generated.conf').read_text(), 'generated\n')
+            self.assertFalse((home / '.config/plain.conf').exists())
+            self.assertFalse((home / '.config/generated.conf').exists())
             self.assertFalse((home / '.local/state/system-config').exists())
             self.assertEqual(config.read_text(), 'plain\n')
 

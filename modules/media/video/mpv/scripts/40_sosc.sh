@@ -10,5 +10,5 @@ curl --fail --location --silent --show-error --retry 3 \
     --output "$temporary/sosc.tar.gz"
 printf '%s  %s\n' "$checksum" "$temporary/sosc.tar.gz" | sha256sum --check --status
 tar -xzf "$temporary/sosc.tar.gz" -C "$temporary"
-install -Dm0644 "$temporary/sosc-$commit/osc.lua" /etc/mpv/scripts/osc.lua
-install -Dm0644 "$temporary/sosc-$commit/LICENSE" /usr/share/licenses/mpv-sosc/LICENSE
+install -Dm0644 "$temporary/sosc-$commit/osc.lua" "${DOTFILES_SYSTEM_STAGE:-}/etc/mpv/scripts/osc.lua"
+install -Dm0644 "$temporary/sosc-$commit/LICENSE" "${DOTFILES_SYSTEM_STAGE:-}/usr/share/licenses/mpv-sosc/LICENSE"

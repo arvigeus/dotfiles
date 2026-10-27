@@ -108,20 +108,6 @@ is retained with the original saved stream. Unmatched cloud stations retain a
 stable synthetic UUID and `source: nextcloud`; playback uses their saved HTTP URL
 directly rather than sending that synthetic UUID to Radio Browser.
 
-For the initial collection, eleven cloud stations were imported without changing
-the server. Nine station identities were then verified against catalogue and
-station-owned sources, including aliases and legacy relays. The two stations
-without a catalogue match remain custom favorites. Matches are portable current
-state; there is no compatibility or one-off migration hook.
-
-Live reconciliation corrected six names and seven stream addresses while keeping
-all eleven Music IDs. Kampot Radio and PassionFM remain custom; Bohuslav's
-unavailable catalogue stream keeps its original saved address. The actual private
-snapshot restored six Radio/shared-account files with identical contents and
-0600/0700 modes. Its restored Music key authenticated, and eleven favorites/nine
-matches reconciled read-only without cloud writes. The focused Radio and shared
-Nextcloud/calendar suites pass 27 and 31 tests respectively.
-
 ## Private state and installation
 
 The quickshell module owns three Radio `extra.private.files` paths:
@@ -140,19 +126,15 @@ live in an owner-only `quickshell-radio-UID` runtime directory. Neither is backe
 up. Nextcloud Music sync also uses the shared `nextcloud.json` and
 `nextcloud-music-api-key`, each declared once by the quickshell module. They share
 the existing Nextcloud integration directory with the DAV app password; Radio has
-no separate account configuration. The Music key was copied from the verified
-reference credential into a 0600 shared file without replacing the current
-account or DAV credential.
+no separate account configuration.
 
 `backup.sh` uses generated module declarations to snapshot these files into the
-verified `/home/arvigeus/Projects/dotfiles-private/modules/backup/` tree. On a clean
-machine install the public quickshell module, then run that private checkout's
+private checkout's `modules/backup/` tree. On a clean machine install the public
+quickshell module, then run that private checkout's
 standalone `apply.sh` as the regular user. It creates parents, restores modes and
 keeps collisions beside their replacements as `.before-private-*`. A valid restored
 Music key needs no additional authentication; a revoked key must be regenerated
-in Nextcloud Music settings and saved in the shared integration. The private checkout is uncommitted; recovery from
-a synchronized private source remains incomplete until its owner reviews,
-commits and synchronizes the snapshot. No private commit or upload is automatic.
+in Nextcloud Music settings and saved in the shared integration.
 
 ## Validation
 
@@ -185,16 +167,6 @@ Radio, retain its controls after stream removal and stop its session without
 affecting a second mpv player. The existing audio drawer suite covers the other
 association, device and routing behavior.
 
-Run `python3 -m unittest discover -s tests -p 'test_radio*.py' -v`. Live provider
-countries, genres, catalogue and stream resolution passed; a resolved stream
-decoded through mpv with null audio output. The actual local private snapshot
-passed standalone restore with matching contents and 0600/0700 modes.
+Run `python3 -m unittest discover -s tests -p 'test_radio*.py' -v`.
 Multi-monitor focus/hotplug and an audible listening session require interactive
 validation.
-
-The full isolated suite ran 923 tests: 918 passed, three were skipped, and two
-unrelated failures were reproduced against an archive of unchanged HEAD. The
-theme test expects the former `~/.vscode-oss` extension path; the desktop
-interaction fixture omits Pictures and reports undefined WallpaperService plus
-notification fixture warnings. Generated configuration validation and installed
-Radio link checks pass.

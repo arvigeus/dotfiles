@@ -6,7 +6,7 @@ import os
 import re
 import subprocess
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 REPO = Path(__file__).resolve().parent
 OUTPUT = REPO / 'user-configuration.json'
@@ -117,7 +117,6 @@ def hook(path):
 
 def collect(module_dirs, extra):
     """Add module assets and hooks to extra; every destination has one owner."""
-    destinations = {entry['target'] for kind in ('files', 'symlinks') for entry in extra[kind]}
     for directory in module_dirs:
         for kind in ('files', 'symlinks'):
             for source in sorted((directory / kind).rglob('*')):
@@ -125,9 +124,6 @@ def collect(module_dirs, extra):
                 if not source.is_file() or '__pycache__' in asset.parts or asset.suffix in ('.pyc', '.pyo'):
                     continue
                 target = asset.as_posix() if asset.parts[0] == 'home' else '/' + asset.as_posix()
-                if target in destinations:
-                    raise ValueError(f'Multiple modules provide {target}')
-                destinations.add(target)
                 entry = {'source': source.relative_to(REPO).as_posix(), 'target': target}
                 if kind == 'files':
                     entry['mode'] = '0755' if source.stat().st_mode & 0o111 else '0644'
@@ -139,6 +135,31 @@ def collect(module_dirs, extra):
     scripts = sorted((script for directory in module_dirs for script in (directory / 'scripts').glob('*.sh')),
                      key=lambda script: (script.name, script.relative_to(REPO).as_posix()))
     extra['scripts'] = [hook(script) for script in scripts]
+    validate_assets(extra)
+
+
+def validate_assets(extra):
+    """Check explicit and discovered assets before publishing the manifest."""
+    destinations = set()
+    for kind in ('files', 'symlinks'):
+        for entry in extra[kind]:
+            source, target = entry['source'], entry['target']
+            path = PurePosixPath(target)
+            if (path.as_posix() != target or '..' in path.parts
+                    or target in ('/', 'home') or target.startswith('//')
+                    or not (target.startswith('/') or target.startswith('home/'))
+                    or any(char in source + target for char in '\n\r\t\0')):
+                raise ValueError(f'Invalid asset path: {source!r} -> {target!r}')
+            asset = REPO / source
+            if (PurePosixPath(source).is_absolute() or not asset.is_file()
+                    or not asset.resolve().is_relative_to(REPO.resolve())):
+                raise ValueError(f'Asset source must be a file inside the checkout: {source}')
+            if target in destinations:
+                raise ValueError(f'Multiple modules provide {target}')
+            destinations.add(target)
+    for target in sorted(destinations):
+        if any(parent.as_posix() in destinations for parent in PurePosixPath(target).parents):
+            raise ValueError(f'Asset destination overlaps another file: {target}')
 
 
 def write_atomic(path, text):

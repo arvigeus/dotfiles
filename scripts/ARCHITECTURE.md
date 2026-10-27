@@ -2,7 +2,8 @@
 
 `apply-config.py` parses native settings with archinstall and applies them using
 its existing handlers with a small live-system adapter. Its `--dry-run` option
-shows the execution scope without running commands. It never constructs a disk
+inspects installed packages and managed file differences without running hooks,
+package transactions, or service changes. It never constructs a disk
 installer or performs installation-only disk, bootloader, or account operations.
 
 `copy-checkout.py` is an archinstall plugin. Its `on_install` hook copies the
@@ -36,7 +37,7 @@ system Cargo environment adds that directory's `bin` to the desktop PATH.
 
 Home files are published atomically with user ownership. `files/home/` configs and
 generated files are copied; `symlinks/home/` configs link to the checkout.
-Publishing does not write state manifests or remove omitted outputs.
+Publication and service ownership share the reconciliation state described below.
 
 `repository_policy.py` adapts native repository signature options to require
 trusted package signatures while allowing unsigned repository databases. This
@@ -45,7 +46,62 @@ Both the installation plugin and live adapter use it. `pre.sh` hooks run before
 native transactions and again inside the installed target after base
 installation, because pacstrap creates a fresh keyring with `-K`.
 
-`config-helpers.sh` provides atomic `file_write` and `file_append` for hooks.
+`config-helpers.sh` provides atomic `file_write DEST [COMMAND ARG…]` and
+`file_append` with the same arguments. A producer's failure discards its temporary
+output and preserves the destination. Use stdin only for literal here-documents;
+piping a producer into the helper hides its exit status until after publication.
+
+## Reconciliation
+
+Live apply holds an exclusive lock and freezes the generated JSON for the run.
+Preflight checks all asset sources, destinations and hook syntax before setup.
+Native archinstall handlers collect into a temporary root: their files use the
+same publication rules as assets and hook outputs. Pacman configuration is merged
+with the existing file, preserving unrelated settings; prior managed custom
+repository sections are replaced or removed. Reflector retains dynamic mirror
+ownership. Package transactions remain full `pacman -Syu --needed` upgrades.
+
+`reconcile.py` stores one current manifest at `/var/lib/dotfiles/UID/state.json`.
+Each ownership scope records SHA-256/mode for files or the exact symlink target.
+Missing files are installed; identical files retain their modification time.
+If a destination still matches its applied fingerprint, a changed source replaces
+it even when Git checkout timestamps are older. Differing untracked files and
+locally changed destinations require individual diff/replace/keep review. A kept
+conflict retains its prior ownership record and returns status 2, rather than
+claiming convergence. Initial installation can replace package/user defaults;
+the first live apply adopts matching files and reviews other existing files.
+
+Omitted tracked files are removed only when clean or explicitly approved. Empty
+directories and untracked files are not swept. Each replaced/removed entry is
+backed up under `backups/RUN/absolute/path` inside the state directory, with no
+automatic pruning. State and backups are private; publication is atomic per file
+and checkpoints after each successful operation. Failed/interrupted runs can be
+retried: matching content is adopted even if its state checkpoint was interrupted.
+There is no whole-system rollback for pacman, boot rebuilding or arbitrary hooks.
+
+`reconcile_packages.py` reads libalpm through PyALPM, resolving virtual providers
+and the transitive dependencies of declared native/AUR packages. The running
+kernel is protected too. Base, storage/boot tools and the AUR helper are explicit
+package declarations. Extra explicit packages and true orphans are review
+candidates; installed dependencies are never mistaken for extra applications.
+Each approved removal is a separate non-recursive `pacman -R`, retaining native
+dependency checks and `.pacsave` handling. Inventory is reread before each
+choice. Kept packages are offered again until declared or removed; no hidden
+exception list is saved. Without a terminal, removals are skipped.
+Flatpak/Cargo installations still use their native commands; their removal is
+outside the pacman/AUR review.
+
+Only tracked service enablement/masks are removed when declarations disappear.
+Unrelated units are untouched. Enabled system services are started without
+restarting active units; disabling a unit does not stop a live session. Global
+user-unit changes settle at the next login. Reboot remains the activation boundary
+for session and boot changes.
+
+Dry-run can preview declared assets/native files and package/service intent;
+generated hook outputs are known only after hooks run. In tests,
+`DOTFILES_STATE_DIR` selects a disposable state directory and `DOTFILES_CONFIG`
+selects the frozen JSON. These variables are passed to the executor, not stored in
+module configuration.
 
 ## Private backups
 

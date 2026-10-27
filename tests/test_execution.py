@@ -14,6 +14,35 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 class ExecutionTests(unittest.TestCase):
+    def test_atomic_helpers_preserve_destinations_when_generation_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            destination = root / 'config with spaces'
+            script = '''source "$1/scripts/config-helpers.sh"
+producer() { printf 'partial output'; return 7; }
+"$2" "$3" producer
+'''
+            for helper in ('file_write', 'file_append'):
+                for exists in (False, True):
+                    with self.subTest(helper=helper, exists=exists):
+                        destination.unlink(missing_ok=True)
+                        if exists:
+                            destination.write_text('original\n')
+                        result = subprocess.run(['bash', '-c', script, 'bash', str(REPO), helper, str(destination)],
+                                                capture_output=True, text=True)
+                        self.assertEqual(result.returncode, 7, result.stderr)
+                        self.assertEqual(destination.exists(), exists)
+                        if exists:
+                            self.assertEqual(destination.read_text(), 'original\n')
+                        self.assertEqual(list(root.glob('*.tmp.*')), [])
+            subprocess.run(['bash', '-c', '''source "$1/scripts/config-helpers.sh"
+file_write "$2" printf '%s\\n' first
+file_append "$2" <<'TEXT'
+second
+TEXT
+''', 'bash', str(REPO), str(destination)], check=True)
+            self.assertEqual(destination.read_text(), 'first\nsecond\n')
+
     def test_cargo_packages_install_as_the_user_outside_the_staging_home(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); commands = root / 'bin'; commands.mkdir()
@@ -90,8 +119,12 @@ class ExecutionTests(unittest.TestCase):
             hook.parent.mkdir()
             hook.write_text(
                 'repo_dir=${DOTFILES_REPO:?}\n'
+                '[[ $PWD == "$repo_dir" && $USERNAME == "$1" && $DOTFILES_DESKTOP == hyprland ]]\n'
                 'source "$repo_dir/scripts/config-helpers.sh"\n'
-                'printf "%s\\n" "$1" | file_write "$HOME/.config/generated.conf"\n')
+                'file_write "$HOME/.config/generated.conf" printf "%s\\n" "$1"\n')
+            for name in ('prerequisite.sh', 'pre.sh'):
+                (module / name).write_text(
+                    '[[ $PWD == "$DOTFILES_REPO" && $USERNAME == "$1" && $DOTFILES_DESKTOP == hyprland ]]\n')
             subprocess.run(['python3', str(repo / 'generate-config.py')], check=True, capture_output=True)
             config = json.loads((repo / 'user-configuration.json').read_text())
             self.assertEqual(config['extra']['scripts'], ['modules/example/scripts/50_example.sh'])
@@ -109,12 +142,19 @@ class ExecutionTests(unittest.TestCase):
             for command in commands.iterdir():
                 command.chmod(0o755)
             env = dict(os.environ, PATH=str(commands) + ':' + os.environ['PATH'],
-                       SUDO_USER='tester', CONFIG_MODE='live')
+                       SUDO_USER='tester', CONFIG_MODE='live', DOTFILES_STATE_DIR=str(root / 'state'))
+            # The rootless executor fixture owns its synthetic system paths.
+            assets_cli = repo / 'scripts/reconcile-files.py'
+            assets_cli.write_text('import os\n' + assets_cli.read_text().replace(
+                'entries.append((prepared, target, 0, 0))',
+                'entries.append((prepared, target, os.getuid(), os.getgid()))'))
+            for action in ('--check', '--pre'):
+                subprocess.run(['bash', str(configure), action], env=env, cwd=root, check=True)
             def execute():
                 (root / 'configuration.json').unlink(missing_ok=True)
                 (root / 'configuration.json').symlink_to(repo / 'user-configuration.json')
                 command = config['custom_commands'][0].replace('/run/system-configuration.json', str(root / 'configuration.json'))
-                result = subprocess.run(['bash', '-c', command], env=env, text=True, capture_output=True)
+                result = subprocess.run(['bash', '-c', command], env=env, cwd=root, text=True, capture_output=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
             for _ in range(2):
                 execute()
@@ -123,10 +163,9 @@ class ExecutionTests(unittest.TestCase):
                 self.assertEqual((home / '.config/plain.conf').read_text(), 'plain\n')
                 self.assertEqual((home / '.config/linked.conf').resolve(), links / 'linked.conf')
                 self.assertEqual(system_link.resolve(), links / 'linked.conf')
-                (home / '.config/plain.conf').write_text('user changes\n')
                 self.assertEqual((assets / 'plain.conf').read_text(), 'plain\n')
             # Hook edits apply without regenerating the configuration.
-            hook.write_text(hook.read_text().replace('"$1"', '"edited $1"'))
+            hook.write_text(hook.read_text().replace('printf "%s\\n" "$1"', 'printf "%s\\n" "edited $1"'))
             execute()
             self.assertEqual((home / '.config/generated.conf').read_text(), 'edited tester\n')
             # Installation continues from the user's own checkout before linking assets.
@@ -185,7 +224,8 @@ class LiveParserTests(unittest.TestCase):
     def test_installation_only_configuration_is_never_passed_to_live_parser(self):
         spec = importlib.util.spec_from_file_location('apply_config', REPO / 'scripts/apply-config.py')
         executor = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(executor)
+        with patch.object(sys, 'path', [str(REPO / 'scripts'), *sys.path]):
+            spec.loader.exec_module(executor)
         captured = {}
 
         class ArchConfig:

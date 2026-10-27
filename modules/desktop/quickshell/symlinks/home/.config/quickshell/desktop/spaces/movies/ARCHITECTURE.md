@@ -135,7 +135,6 @@ SQLite uses short transactions and per-request connections. The private engine
 backs up files, not online SQLite snapshots: close Movies before `backup.sh`.
 Cache entries in the database are included with personal records; image caches,
 large media, sockets and generated OpenSubtitles sessions are not portable inputs.
-No legacy database was present on this installation when Movies was migrated.
 
 ## Private configuration and provisioning
 
@@ -170,13 +169,6 @@ packages belong to their existing modules. Providers may expire keys/accounts;
 reauthenticate in media.json or torrents.json when required. Remote qBittorrent
 needs the same absolute download paths mounted locally. Media payloads and machine
 mounts are outside this configuration backup.
-
-The local source credentials were copied from the old configuration checkout only
-where no destination existed, with private permissions, leaving originals intact.
-No migration hook is retained. Actual private snapshots passed isolated standalone
-restore, equality, mode and collision checks. The private checkout remains
-uncommitted; fresh-install recovery from a synchronized Git source is incomplete
-until its owner reviews, commits and synchronizes it privately.
 
 ## Validation
 

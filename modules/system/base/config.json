@@ -11,7 +11,7 @@
     },
     "version": "4.5",
     "script": null,
-    "packages": [],
+    "packages": ["base", "linux-firmware", "mkinitcpio"],
     "services": [],
     "custom_commands": []
 }

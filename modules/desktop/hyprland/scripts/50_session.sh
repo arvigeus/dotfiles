@@ -13,6 +13,3 @@ ExecStart=-/usr/bin/agetty --autologin $USERNAME --noreset --noclear --noissue -
 EOF_CONFIG
 # UWSM's may-start check requires the graphical target even without a greeter.
 systemctl set-default graphical.target
-# The packaged user units are tied to graphical-session.target, reached by UWSM.
-systemctl --global enable hyprpolkitagent.service
-systemctl --global enable hypridle.service

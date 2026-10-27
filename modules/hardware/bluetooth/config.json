@@ -4,15 +4,7 @@
             "enabled": true
         }
     },
-    "extra": {
-        "packages": [
-            "bluez",
-            "bluez-utils"
-        ],
-        "services": [
-            "bluetooth.service"
-        ]
-    },
+    "extra": {"masked_user_services": ["app-blueman@autostart.service"]},
     "packages": [
         "blueman"
     ]

@@ -37,5 +37,3 @@ if updated != original:
             os.unlink(temporary)
 PY
 fi
-
-systemctl --global enable power-session.path

@@ -34,7 +34,8 @@ EOF
 	file_append "${MPV_CONF_DIR}/mpv.conf" <<'HEADER'
 # Auto-generated from https://github.com/iwalton3/default-shader-pack/blob/master/pack-next.json
 HEADER
-	jq -r --arg sd "${SHADERS_DIR}" '
+	# shellcheck disable=SC2016 # jq owns the variables in its program.
+	file_append "${MPV_CONF_DIR}/mpv.conf" jq -r --arg sd "${SHADERS_DIR}" '
     .["setting-groups"] as $g |
     .profiles | to_entries[] |
     select((.value.platforms // ["linux"]) | index("linux")) |
@@ -59,7 +60,7 @@ HEADER
         end
     ),
     ""
-' "${PACK_JSON}" | file_append "${MPV_CONF_DIR}/mpv.conf"
+' "${PACK_JSON}"
 
 	# Convenience aliases for long profile names
 	file_append "${MPV_CONF_DIR}/mpv.conf" <<'EOF'
@@ -92,13 +93,14 @@ EOF
 
 	# Generate input.conf menu entries for profiles without manual keybindings
 	BOUND_PROFILES="fsr-cas generic-high nnedi-very-high anime4k-high-a anime4k-high-b anime4k-high-c anime4k-high-aa anime4k-high-bb anime4k-high-ca"
-	jq -r --arg skip "$BOUND_PROFILES" '
+	# shellcheck disable=SC2016 # jq owns the variables in its program.
+	file_append "${MPV_CONF_DIR}/input.conf" jq -r --arg skip "$BOUND_PROFILES" '
     ($skip | split(" ")) as $skip_list |
     .profiles | to_entries[] |
     select((.value.platforms // ["linux"]) | index("linux")) |
     select(.key as $k | $skip_list | index($k) | not) |
     "# apply-profile \"\(.key)\"; show-text \"Profile: \(.value.displayname // .key)\" #! Profiles > \(.value.displayname // .key)"
-' "${PACK_JSON}" | file_append "${MPV_CONF_DIR}/input.conf"
+' "${PACK_JSON}"
 }
 
 configure

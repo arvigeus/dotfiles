@@ -1,10 +1,6 @@
 {
-    "extra": {
-        "packages": [
-            "kitty"
-        ]
-    },
     "packages": [
+        "kitty",
         "xdg-terminal-exec"
     ]
 }

@@ -1,6 +1,7 @@
 {
     "packages": [
         "btop",
+        "htop",
         "drm-info",
         "lm_sensors",
         "pciutils",

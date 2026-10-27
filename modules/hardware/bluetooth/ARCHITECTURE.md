@@ -1,7 +1,7 @@
 # Bluetooth
 
 This module installs Blueman for its advanced settings manager.
-`scripts/50_bluetooth.sh` globally masks the generated
+`extra.masked_user_services` globally masks the generated
 `app-blueman@autostart.service` login unit in `/etc/systemd/user`.
 BlueZ and the Blueman manager remain available.
 

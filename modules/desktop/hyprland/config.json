@@ -1,29 +1,20 @@
 {
-  "profile_config": {
-    "profile": {
-      "custom_settings": {
-        "Hyprland": {
-          "seat_access": "systemd-logind"
-        }
-      },
-      "details": ["Hyprland"],
-      "main": "Desktop"
-    },
-    "greeter": null
-  },
   "packages": [
+    "hyprland",
+    "uwsm",
     "hyprpolkitagent",
     "hypridle",
     "hyprsunset",
     "hyprlock",
     "satty",
     "ksnip",
+    "grim",
+    "slurp",
+    "xdg-desktop-portal-hyprland",
     "xdg-desktop-portal-gtk",
     "playerctl",
     "wl-clipboard"
   ],
   "services": ["getty@tty1.service"],
-  "extra": {
-    "packages": ["hyprland", "uwsm", "grim", "slurp"]
-  }
+  "extra": {"user_services": ["hyprpolkitagent.service", "hypridle.service"]}
 }

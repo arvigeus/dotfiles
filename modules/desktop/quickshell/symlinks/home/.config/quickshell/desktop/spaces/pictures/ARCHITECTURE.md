@@ -71,17 +71,12 @@ and artwork are regenerable under
 payloads also need independent storage/backup. Machine-specific Steam library
 paths and Proton overrides must match the fresh machine.
 
-`backup.sh` snapshots declared paths into the verified local
-`/home/arvigeus/Projects/dotfiles-private/modules/backup`. The private standalone
-`apply.sh` restores copies, creates private parents, preserves modes and renames
+`backup.sh` snapshots declared paths into the private checkout's `modules/backup`.
+The private standalone `apply.sh` restores copies, creates private parents,
+preserves modes and renames
 collisions beside their destinations. Restore private data in addition to the
 public quickshell module; public apply never hydrates secrets. Provider packages
 and their env files stay in the private repository, never in public examples.
-The Pictures package was copied from the existing private configuration without
-replacing nonempty destinations; provider paths are now module-relative. The old
-reference checkout is preserved. No migration or legacy fallback hook is installed.
-The snapshot must be reviewed, committed and synchronized privately before it can
-serve as an off-machine recovery source; this work never pushes private data.
 
 ## Providers and playback
 
@@ -148,15 +143,9 @@ Live Wallhaven downloads, native surfaces and lock configuration are checked
 separately. Actual locking, animation/decoding quality, multiple monitor scales,
 hotplug and native fullscreen/DPMS behavior still need interactive validation.
 
-Live checks on 2026-10-25 passed Wallhaven download/Apply, Bing's 15-item feed,
-native dark/light host lifecycle and decoded previews, active wallpaper layer
-surfaces, the managed lock-image path and offline configuration validation.
-The actual private snapshot restored eight Pictures files with matching contents
-and owner-only modes, excluding images. Its new changes are uncommitted.
-mpvpaper and AUR Wallpiper/portal 2.0.1 are installed. The inherited controller
-protocol was developed against Wallpiper 2.1; native compatibility of the current
-AUR packages is unverified. Wallpaper Engine and the configured Proton are absent
-on this machine, so Pictures reports setup requirements until installed/configured.
+The controller protocol targets Wallpiper 2.1; compatibility with the AUR
+Wallpiper/portal 2.0.1 packages requires native validation. Pictures reports setup
+requirements when Wallpaper Engine or the configured Proton is unavailable.
 
 `test_progressive_image.py` delays the original behind a small preview and verifies
 the original replaces it, decoding meets display width and backdrop/detail make

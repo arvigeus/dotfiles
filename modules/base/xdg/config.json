@@ -1,5 +1,6 @@
 {
     "packages": [
+        "xdg-utils",
         "xdg-user-dirs"
     ]
 }

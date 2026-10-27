@@ -159,29 +159,13 @@ stay owned by their launchers. Fresh installs must sign in again and reinstall o
 remount games. `proton_path` is machine-specific and must point to an installed
 Proton if supplied.
 
-The verified private checkout is `/home/arvigeus/Projects/dotfiles-private`.
 `backup.sh` reads the generated module selection and snapshots these paths into
 its generated `modules/backup`. Private `apply.sh` restores standalone copies,
 creates private parents, restores modes and preserves destination collisions.
 Close Games before a snapshot. The public quickshell, Steam, browser/XDG and
 qBittorrent modules supply runtime requirements; `gaming/launchers/legendary`
 declares Legendary from AUR and the repository UMU launcher. No new Python
-dependency is required. Games credentials are restored from
-`/home/arvigeus/Projects/zephyrus-config/zephyrus-shell/games.json`, filling only
-empty destination settings and preserving the source. The restored IGDB client
-ID/secret passed an authenticated catalogue read. Optional Steam ownership
-credentials are restored through the same private file. Legendary and UMU are
-installed on this system; Epic authentication still belongs to Legendary.
-
-The private repository has no committed HEAD. Synthetic backup → commit → clone
-→ standalone restore verifies the Games files and shared integration, modes,
-favorites and HLTB matches.
-Live module links and initial private settings are published, and the desktop
-shell has been reloaded. The actual `backup.sh` snapshot also passed isolated
-standalone restore, byte equality, 0600 file/0700 parent modes, SQLite integrity
-and collision-preservation checks for the Games files and shared integration.
-Synchronized fresh-install recovery remains incomplete until the owner reviews,
-commits and synchronizes the private checkout. No commit or upload is automatic.
+dependency is required. Epic authentication belongs to Legendary.
 
 ## Validation
 

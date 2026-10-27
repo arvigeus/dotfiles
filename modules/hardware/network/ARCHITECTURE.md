@@ -1,7 +1,7 @@
 # Networking
 
 This module installs `network-manager-applet` for its connection editor.
-`scripts/50_network.sh` globally masks the generated
+`extra.masked_user_services` globally masks the generated
 `app-nm\x2dapplet@autostart.service` login unit in `/etc/systemd/user`.
 NetworkManager and the connection editor remain available.
 

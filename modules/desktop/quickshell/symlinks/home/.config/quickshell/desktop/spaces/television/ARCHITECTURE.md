@@ -103,15 +103,11 @@ mpv sockets are under the owner-only `quickshell-television-UID` runtime directo
 Caches, sockets and streamed video are excluded from private backups. Television
 has no account, secret or machine-bound credential to recover.
 
-The verified private checkout is `/home/arvigeus/Projects/dotfiles-private`.
 `backup.sh` snapshots the generated declarations into its `modules/backup/` tree.
 On a clean system install the public quickshell module, then run the private
 checkout's standalone `apply.sh` as the regular user. It creates parents,
 restores file modes and preserves existing destinations as `.before-private-*`.
-The optional mpv module restores the managed player UI/configuration. The private
-snapshot remains uncommitted, so synchronized fresh-install recovery remains
-incomplete until its owner commits and synchronizes it. No private commit or
-upload is automatic.
+The optional mpv module restores the managed player UI/configuration.
 
 ## Validation
 
@@ -132,10 +128,5 @@ restore, all stream fields/preferences, restrictive permissions and collision
 preservation, with no account or cached directory required.
 
 Run `python3 -m unittest discover -s tests -p 'test_television*.py' -v`.
-The eleven Television checks and fifteen shared-host/Movies/Books/Radio
-regressions pass. The actual private snapshot also passes isolated standalone
-restore, byte equality, restrictive modes, collision preservation and fresh
-offline initialization. Generated configuration passes offline archinstall
-validation. Live provider reads and an NHK World-Japan video probe pass. Interactive native
-window focus, audible output and multi-monitor hotplug still require live use;
+Interactive native window focus, audible output and multi-monitor hotplug require live use;
 stream availability and regional restrictions vary by channel.

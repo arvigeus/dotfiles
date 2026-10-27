@@ -5,6 +5,9 @@ checksum=de090c7b9e40f10f225d9393f2cf73a660ad4edc21f6b333eea3190a8722e005
 target=/opt/gravity-mark/GravityMark.run
 # Compare the installed payload itself; no version/state manifest is needed.
 if [[ -f $target ]] && printf '%s  %s\n' "$checksum" "$target" | sha256sum --check --status; then
+    if [[ -n ${DOTFILES_SYSTEM_STAGE:-} ]]; then
+        install -Dm0755 "$target" "$DOTFILES_SYSTEM_STAGE$target"
+    fi
     exit 0
 fi
 temporary=$(mktemp -d)
@@ -14,4 +17,4 @@ curl --fail --location --silent --show-error --retry 3 \
     "https://tellusim.com/download/GravityMark_$version.run" \
     --output "$temporary/GravityMark.run"
 printf '%s  %s\n' "$checksum" "$temporary/GravityMark.run" | sha256sum --check --status
-install -Dm0755 "$temporary/GravityMark.run" "$target"
+install -Dm0755 "$temporary/GravityMark.run" "${DOTFILES_SYSTEM_STAGE:-}$target"

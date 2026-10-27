@@ -54,10 +54,7 @@ is destroyed. No credentials or personal records belong to this image cache.
 
 Series uses `series` qBittorrent tags, `.series.json` sidecar naming helpers and
 `seriesrelease` NFO metadata. Provider identifiers and personal record formats stay
-stable. Payloads use the XDG Videos `Series` directory. Existing portable inputs are
-copied only when the Series destination is absent; valid destination files are never
-overwritten. No one-off initialization/migration hook is retained in the repository.
-No existing TV records were present in the Movies database on this installation.
+stable. Payloads use the XDG Videos `Series` directory.
 
 ## Provisioning and recovery
 
@@ -73,8 +70,6 @@ collisions beside their destinations. Close both media Spaces before backup beca
 the engine snapshots files, not live SQLite databases. Media payloads, artwork,
 runtime sockets and generated OpenSubtitles sessions are excluded. Fresh install:
 apply the public modules, restore the private repository, then restore media/mounts.
-The local private checkout remains uncommitted; synchronized recovery is incomplete
-until the owner commits and synchronizes it privately.
 
 ## Validation
 
@@ -86,8 +81,5 @@ Series environment across all three backends, episode imports and local/provider
 playback resolution. `test_movies_private.py` verifies both Spaces’ declarations
 through synthetic backup → commit → clone → standalone restore, preserving private
 modes and aliases. Existing Movies/provider/worker tests cover the reused code.
-Actual private Series snapshots also passed isolated standalone restore, byte-equality
-and 0600/0700 permission checks. Live configured-provider checks loaded discovery,
-details, seasons and an episode page. Native Wayland checks verified full-output
-geometry, the live episode page and the cinematic palette in dark/light modes. Real playback/download completion and
-multi-monitor focus/hotplug require interactive validation.
+Real playback/download completion and multi-monitor focus/hotplug require
+interactive validation.
