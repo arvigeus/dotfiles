@@ -139,3 +139,13 @@ enabled without restarting the session.
 
 See [scripts/ARCHITECTURE.md](scripts/ARCHITECTURE.md) for executor, adapter and
 helper details.
+
+## Development checks
+
+`ci.sh` inspects tracked and unignored, untracked files. Its default mode is
+read-only; `--fix` formats files before running the same checks. It formats
+Python with Ruff, shell scripts with shfmt, QML with qmlformat, and JSON with
+Python's JSON encoder. It checks Python with Ruff, shell syntax and lint with
+Bash and ShellCheck, QML parsing through qmlformat, JSON syntax, and JSONC module
+fragments through the parser used by `generate-config.py`. Required commands are
+checked only when their file type is present.

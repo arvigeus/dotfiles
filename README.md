@@ -50,6 +50,12 @@ commands. Use `./vm.sh boot` to boot the installed disk without an ISO.
 The writable share also changes the host checkout. A persistent 64 GiB disk and
 UEFI settings live under `${XDG_STATE_HOME:-~/.local/state}/dotfiles-vm`.
 
+## Development checks
+
+Run `./ci.sh` to check source formatting and syntax, or `./ci.sh --fix` to format
+supported files first. See [development checks](ARCHITECTURE.md#development-checks)
+for the covered file types and tools.
+
 ## Apply to a live system
 
 Run as your regular user:
