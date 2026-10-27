@@ -345,7 +345,8 @@ ShellRoot {
  }
  function find(item,name){if(item.objectName===name)return item;for(let child of item.children??[]){const result=find(child,name);if(result)return result;}return null;}
  function check(value,message){if(!value)throw new Error(message);}
- function choose(name){const button=find(drawer,"displayOptions:"+name);button.clicked();button.menu.activate(drawer.optionsFor(drawer.displays.find(row=>row.name===name)).find(entry=>entry.key==="awake"));check(!button.menu.visible,"cog stayed open");}
+ function awakeControl(name){return find(find(drawer,"displayOptions:"+name).menu.contentItem,"displayAwake:"+name);}
+ function choose(name){const button=find(drawer,"displayOptions:"+name);button.clicked();awakeControl(name).clicked();check(button.menu.visible,"settings popover closed after a toggle");button.menu.close();}
  property int stage:0
  Timer {interval:180;repeat:true;running:true;onTriggered:{try{
   if(stage===0){
@@ -354,8 +355,8 @@ ShellRoot {
    check(comfort.state.nightEnabled,"night light toggle");
    choose("DP-1");
   }else if(stage===1){
-   check(drawer.optionsFor(drawer.displays[1])[0].marked,"cog checkmark missing");
-   check(!drawer.optionsFor(drawer.displays[0])[0].marked,"wrong display checked");
+   check(awakeControl("DP-1").checked,"cog checkmark missing");
+   check(!awakeControl("eDP-1").checked,"wrong display checked");
    check(String(find(status,"displaysButton").entry.iconColor)===String(Theme.text),"other display colored this bar");
    choose("eDP-1");
   }else if(stage===2){

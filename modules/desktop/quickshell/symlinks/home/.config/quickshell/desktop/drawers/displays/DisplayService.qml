@@ -35,6 +35,7 @@ Singleton {
     readonly property bool capped: powerMode === "power-saver" && !capSuppressed
     property bool outputsChanged: false
     property bool reloaded: false
+    property bool layoutPending: false
     // Test hooks for the helper processes and event debounce.
     readonly property alias worker: worker
     readonly property alias brightnessWorker: brightnessWorker
@@ -111,16 +112,17 @@ Singleton {
         eventDelay.restart();
     }
     function settle(): void {
-        const outputs = outputsChanged, policy = powerPending || (reloaded && capped);
+        const outputs = outputsChanged, restore = outputs || layoutPending, policy = powerPending || ((restore || reloaded) && capped);
         outputsChanged = false;
         reloaded = false;
-        if (outputs) {
+        if (restore)
             run("ensure");
+        if (outputs) {
             ComfortService.prune();
         }
         if (policy)
             run("power");
-        if (!outputs && !policy && observing)
+        if (!restore && !policy && observing)
             run("status");
     }
     function observe(owner, active: bool): void {
@@ -134,9 +136,6 @@ Singleton {
             identity: record.identity,
             values
         });
-    }
-    function save(): void {
-        run("save");
     }
     function run(op: string, values = {}): void {
         if (op === "status" && (request?.op === "status" || queue.some(item => item.op === "status")))
@@ -204,6 +203,8 @@ Singleton {
                         root.state = result.data;
                     if (result.pending !== undefined)
                         root.powerPending = result.pending;
+                    if (result.deferred !== undefined)
+                        root.layoutPending = result.deferred;
                     if (!result.ok)
                         root.error = result.error || qsTr("Could not change displays.");
                 } catch (_) {

@@ -54,6 +54,8 @@ Theme mode is a user preference in `theme-mode`, defaulting to dark; apply does
 not seed it. Production starts synchronization through `Theme.start()`;
 see [appearance integration](../../look-and-feel/ARCHITECTURE.md).
 `IconButton`, `ShellButton`, `ShellChoice` and `ShellMenuItem` share styling.
+`ShellChoice` uses the same checked menu rows as Cloudflare settings in a bounded,
+scrollable popup, retaining native ComboBox keyboard and model-role behavior.
 `Card` centralizes static card appearance: the surface fill, one-pixel border
 and control corner radius. Battery/power, disks, displays, keyboard backlights,
 audio devices/applications, Bluetooth, webcams and weather summary/hourly/forecast
@@ -301,18 +303,51 @@ Controls validate modes, scaling, transforms, mirrors, overlap and at least one
 independent enabled output. Replacements are verified before disabling the old
 screen; failures attempt to restore the previous connected setup.
 
-Confirmed changes persist as native `hl.monitor` rules in the user-owned
-`~/.config/hypr/displays.lua`, loaded after host defaults. Descriptions are used
-only when they uniquely identify a connected output; ambiguous descriptions fall
-back to connector names. Atomic writes preserve unrelated/disconnected rules.
-Hyprland owns reload/hotplug matching. External-tool changes require Save layout
-while the editor is still open: Hyprland 0.56.2 stores wlr-output-management
-overrides on the client's output manager, so closing wdisplays removes that
-override and subsequent monitor-rule evaluation uses the configured layout.
-If undocking leaves only disabled outputs, the helper temporarily enables one,
-preferring the internal panel; it does not persist that emergency fallback.
-On redocking, a saved panel-disable rule returns only after verifying a usable
-independent external output. This preserves dock-only preferences safely.
+The monitor cog is a persistent form popover for resolution, refresh, scale,
+orientation and mirroring; each edit applies and saves without closing the form.
+Resolution changes retain the nearest refresh and reset scale to 100% only when
+the old scale cannot produce whole logical pixels. Geometry changes preserve
+gaps to neighboring outputs before overlap validation.
+
+`display-tools` is an independent PySide6 arrangement app. Its desktop entry and
+the drawer header launch it through the normal application lifetime. It calls
+the same helper with QProcess, never blocks the UI, and subscribes to Hyprland's
+event socket for debounced updates. Its scene uses logical pixels after rotation
+and scale; dragging snaps edges within twelve view pixels (Shift disables it).
+Arrow keys move one logical pixel; Shift+arrows move ten. Coordinates are staged
+until Apply arrangement, which verifies and saves in one request. Unapplied edits
+survive external changes but cannot apply until reloaded; close/reload confirms
+discarding them. The Close button, window controls and Escape share that guard;
+a confirmed close completes the dialog through the base rejection path.
+The helper validates the complete snapshot token and accepts
+only coordinates from the arrangement app.
+
+User preferences live in `~/.config/hypr/display-profiles.json`, version 1, with
+a `profiles` object keyed by a hash of the sorted connected hardware identities.
+Every profile maps device keys to enabled/mode/scale/transform/x/y/mirror values;
+mirror sources are hardware keys, resolved to current connectors on restoration.
+Serial/make/model identify hardware across ports; unique descriptions are the
+fallback. Ambiguous or anonymous devices require the connector and therefore
+cannot reliably follow a port change. Disabled but connected devices belong to
+the set. Profiles match exact sets, never subsets. Only explicit settings edits
+or Apply arrangement update the source; hotplug, wake and Powersave never do.
+The private backup declaration covers this source file.
+
+`displays.lua` is the generated active profile, loaded after host defaults and
+reconstructed on startup/hotplug. It contains native `hl.monitor` rules for only
+the current set; other profiles stay in JSON. Rule selectors use descriptions
+only when unique by Hyprland's prefix matching, otherwise connectors. Both writers
+use atomic replacement; persistence failure restores the source/cache and live
+layout. The app and shell helpers serialize through a session-local flock,
+including snapshots, so independent instances cannot interleave writes.
+
+An unseen set starts enabled, independent and side by side without creating a
+saved profile. Startup/hotplug select saved preferences; native rules handle
+ordinary reloads. Dark panels defer restoration until the wake event. If
+undocking leaves only disabled outputs, emergency recovery enables one, preferring
+the internal panel, even when a saved profile is invalid. Replacements are verified
+before a saved panel-disable choice is applied. Unsupported saved modes report an
+actionable error and leave the source intact.
 
 Powersave caps enabled internal panels to an available mode at or below 60 Hz in
 live rules only; leaving Powersave restores their configured mode. Explicit

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Per-output controls; confirmed layouts persist as Hyprland rules in displays.lua."""
+"""Shared display controls and monitor-set profiles, applied through native rules."""
 
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import math
@@ -17,8 +19,8 @@ INTERNAL = re.compile(r'^(eDP|LVDS|DSI)-')
 RULE = re.compile(r'^\s*hl\.monitor\(\{\s*output\s*=\s*("(?:[^"\\\n]|\\.)*")')
 RULE_MODE = re.compile(r'\bmode\s*=\s*("(?:[^"\\\n]|\\.)*")')
 HEADER = [
-    '-- Display layout saved by the Displays drawer. Hyprland applies these rules',
-    '-- after the host defaults; delete a line to fall back to them.',
+    '-- Generated active display layout. Preferences live in display-profiles.json.',
+    '-- The display service selects the profile for the connected monitors.',
 ]
 
 
@@ -217,7 +219,7 @@ def validate(request, state):
                 and second['y'] < first['y'] + ah
             ):
                 raise ValueError(
-                    'Displays would overlap. Adjust the arrangement in wdisplays first.'
+                    'Displays would overlap. Adjust their positions in Display arrangement.'
                 )
     return checked
 
@@ -411,7 +413,7 @@ def preferred_mode(row):
             if parts[:2] == preferred[:2] and abs(parts[2] - preferred[2]) < 0.02:
                 return mode
     raise ValueError(
-        'The display did not report an available recommended mode. Use wdisplays to choose a resolution.'
+        'The display did not report an available recommended mode. Choose a resolution in its settings.'
     )
 
 
@@ -435,6 +437,12 @@ def prepare_change(request, state):
     rows = [dict(row) for row in state['displays']]
     target = next(row for row in rows if row['name'] == original['name'])
     target.update(values)
+    if 'mode' in values and 'scale' not in values and mode_parts(target['mode']):
+        if any(
+            abs(size / target['scale'] - round(size / target['scale'])) > 0.01
+            for size in mode_parts(target['mode'])[:2]
+        ):
+            target['scale'] = 1
     # Validate values before calculating geometry with them. Overlap is checked
     # after preserving the gaps to displays on the right/below a resized output.
     if target['enabled']:
@@ -518,6 +526,112 @@ def config_path():
     ) / 'hypr/displays.lua'
 
 
+def profiles_path():
+    return config_path().with_name('display-profiles.json')
+
+
+def device_keys(rows):
+    """Prefer hardware identity across ports; ambiguous/anonymous devices need a port."""
+    candidates = {}
+    for row in rows:
+        _, description, make, model, serial = row['identity']
+        if serial and serial.lower() not in ('unknown', 'none', '0'):
+            parts = ['serial', make, model, serial]
+        elif description:
+            parts = ['description', description]
+        else:
+            parts = ['connector', row['name'], make, model]
+        candidates[row['name']] = parts
+    result = {}
+    for name, parts in candidates.items():
+        if list(candidates.values()).count(parts) > 1:
+            parts = parts + ['connector', name]
+        result[name] = json.dumps(parts, ensure_ascii=True, separators=(',', ':'))
+    return result
+
+
+def profile_key(rows):
+    return hashlib.sha256(
+        json.dumps(sorted(device_keys(rows).values())).encode()
+    ).hexdigest()
+
+
+def read_profiles():
+    try:
+        data = json.loads(profiles_path().read_text())
+    except FileNotFoundError:
+        return dict(version=1, profiles={})
+    if (
+        not isinstance(data, dict)
+        or data.get('version') != 1
+        or not isinstance(data.get('profiles'), dict)
+    ):
+        raise ValueError('Unsupported display profiles file.')
+    return data
+
+
+def profile_rows(current):
+    """Resolve saved hardware/mirror identities against today's connectors and modes."""
+    rows = current['displays']
+    saved = read_profiles()['profiles'].get(profile_key(rows))
+    if saved is None:
+        return None
+    keys = device_keys(rows)
+    names = {key: name for name, key in keys.items()}
+    if not isinstance(saved, dict) or set(saved) != set(names):
+        raise ValueError('The saved monitor set is incomplete.')
+    resolved = []
+    for row in rows:
+        values = saved[keys[row['name']]]
+        if not isinstance(values, dict) or set(values) != {
+            'enabled',
+            'mode',
+            'scale',
+            'transform',
+            'x',
+            'y',
+            'mirror',
+        }:
+            raise ValueError('Invalid saved display settings.')
+        mirror = values['mirror']
+        if mirror is not None and mirror not in names:
+            raise ValueError('The saved mirror source is unavailable.')
+        mode = matching_mode(row, values['mode'])
+        if values['enabled'] and mode is None:
+            raise ValueError(
+                'A saved display mode is no longer available. Configure this monitor set again.'
+            )
+        resolved.append(
+            dict(
+                row,
+                **dict(
+                    values, mode=mode or row['mode'], mirror=names.get(mirror, 'none')
+                ),
+            )
+        )
+    return validate(dict(token=current['token'], displays=resolved), current)
+
+
+def compile_layout(rows):
+    output = '\n'.join(HEADER + [rule(row, selectors(rows)) for row in rows]) + '\n'
+    if '\n'.join(saved_lines()) + '\n' != output:
+        atomic_write(config_path(), output)
+
+
+@contextmanager
+def control_lock():
+    """The shell and independent editor share one mutation/snapshot queue."""
+    runtime = os.environ.get('XDG_RUNTIME_DIR', '')
+    instance = os.environ.get('HYPRLAND_INSTANCE_SIGNATURE', '')
+    if not os.path.isabs(runtime) or not instance or '/' in instance:
+        raise RuntimeError('A running Hyprland session is required.')
+    path = Path(runtime) / 'hypr' / instance / 'display-controls.lock'
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with path.open('a') as stream:
+        fcntl.flock(stream, fcntl.LOCK_EX)
+        yield
+
+
 def atomic_write(path, text):
     """Replace a file atomically (through symlinks), leaving no partial file behind."""
     path = Path(os.path.realpath(path))
@@ -529,6 +643,11 @@ def atomic_write(path, text):
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
         Path(temporary).unlink(missing_ok=True)
 
@@ -597,30 +716,44 @@ def configured_mode(row, lines, names):
 
 
 def persist(current, capped):
-    """Save the confirmed live layout as rules for the connected outputs."""
-    rows = current['displays']
+    """Only explicit edits save preferences; hotplug and power policy never do."""
+    rows = [dict(row) for row in current['displays']]
     names = selectors(rows)
     lines = saved_lines()
-    rules = {}
     for row in rows:
         internal = INTERNAL.match(row['name'])
         mode = configured_mode(row, lines, names) if capped and internal else None
-        rules[names[row['name']]] = rule(row, names, mode)
-    output, written = [], set()
-    for line in lines:
-        match = RULE.match(line)
-        selector = lua_unquote(match[1]) if match else None
-        if selector in rules:
-            if selector not in written:
-                output.append(rules[selector])
-                written.add(selector)
-            continue
-        output.append(line)
-    output = (output or list(HEADER)) + [
-        line for selector, line in rules.items() if selector not in written
-    ]
-    if output != lines:
-        atomic_write(config_path(), '\n'.join(output) + '\n')
+        if mode:
+            row['mode'] = mode
+    keys = device_keys(rows)
+    saved = {}
+    for row in rows:
+        saved[keys[row['name']]] = {
+            key: row[key] for key in ('enabled', 'mode', 'scale', 'transform', 'x', 'y')
+        } | dict(mirror=keys.get(row['mirror']))
+    data = read_profiles()
+    data['profiles'][profile_key(rows)] = saved
+    previous = {}
+    for path in (profiles_path(), config_path()):
+        previous[path] = path.read_text() if path.exists() else None
+    try:
+        atomic_write(profiles_path(), json.dumps(data, indent=2) + '\n')
+        compile_layout(rows)
+    except Exception:
+        for path, text in previous.items():
+            if text is None:
+                path.unlink(missing_ok=True)
+            elif path.read_text() != text:
+                atomic_write(path, text)
+        raise
+
+
+def save_change(current, before, capped):
+    try:
+        persist(current, capped)
+    except Exception:
+        restore(before)
+        raise
 
 
 def power(current, powersave):
@@ -651,39 +784,56 @@ def power(current, powersave):
     return apply_setup(rows, current), pending
 
 
-def ensure(current):
-    """Keep an undocked panel usable and restore its saved dock-only choice."""
+def ensure(current, capped=False):
+    """Restore exactly this monitor set, or place a new set safely side by side."""
     rows = current['displays']
     if not rows:
         return current
-    if any(row['enabled'] and row['mirror'] == 'none' for row in rows):
-        # Emergency enablement changes only live rules. On redocking, reapply a
-        # saved panel-disable choice only while a usable external output survives.
-        if any(
-            row['enabled']
-            and row['dpms']
-            and row['mirror'] == 'none'
-            and not INTERNAL.match(row['name'])
-            for row in rows
+    desired = profile_rows(current)
+    if desired is None:
+        desired, x = [], 0
+        for row in sorted(
+            rows,
+            key=lambda item: (not bool(INTERNAL.match(item['name'])), item['name']),
         ):
-            saved = {}
-            for line in saved_lines():
-                match = RULE.match(line)
-                if match:
-                    saved[lua_unquote(match[1])] = bool(
-                        re.search(r'\bdisabled\s*=\s*true\b', line)
-                    )
-            names = selectors(rows)
-            desired = [
-                dict(row, enabled=False)
-                if row['enabled']
-                and INTERNAL.match(row['name'])
-                and saved.get(names[row['name']])
-                else dict(row)
-                for row in rows
-            ]
-            if fingerprint(desired) != current['token']:
-                return apply_setup(desired, current)
+            if not row['modes']:
+                desired.append(dict(row, enabled=False))
+                continue
+            candidate = dict(row, enabled=True, mirror='none', x=x, y=0)
+            if not mode_parts(candidate['mode']):
+                candidate.update(mode=row['modes'][0], scale=1, transform=0)
+            if capped and INTERNAL.match(row['name']):
+                candidate['mode'] = (
+                    configured_mode(candidate, saved_lines(), selectors(rows))
+                    or candidate['mode']
+                )
+            desired.append(candidate)
+            x += dimensions(candidate)[0]
+        desired = validate(dict(token=current['token'], displays=desired), current)
+    # Do not wake dark panels or disable a replacement before it is verified.
+    if any(row['enabled'] and not row['dpms'] for row in rows):
+        return current
+    configured = desired
+    if capped:
+        desired = [
+            dict(row, mode=capped_mode(row) or row['mode'])
+            if INTERNAL.match(row['name']) and row['enabled']
+            else row
+            for row in desired
+        ]
+    # apply_setup compares by connector, not snapshot/list order.
+    by_name = {row['name']: row for row in desired}
+    desired = [by_name[row['name']] for row in rows]
+    if fingerprint(desired) != current['token']:
+        current = apply_setup(desired, current)
+    compile_layout(configured)
+    return current
+
+
+def emergency(current):
+    """Recover an otherwise dark session even when a profile is invalid/unavailable."""
+    rows = current['displays']
+    if any(row['enabled'] and row['mirror'] == 'none' for row in rows):
         return current
     target = next(
         (
@@ -713,23 +863,47 @@ def handle(request):
     if op == 'status':
         return dict(data=snapshot())
     if op == 'ensure':
-        return dict(data=ensure(snapshot()))
+        current = emergency(snapshot())
+        return dict(
+            data=ensure(current, capped),
+            deferred=any(
+                row['enabled'] and not row['dpms'] for row in current['displays']
+            ),
+        )
     if op == 'power':
         data, pending = power(snapshot(), capped)
         return dict(data=data, pending=pending)
     if op == 'change':
-        current = control(request)
-        persist(current, capped)
+        before = snapshot()
+        current = control(request, before)
+        save_change(current, before, capped)
         if not capped:
             return dict(data=current)
         data, pending = power(current, True)
         return dict(data=data, pending=pending)
-    if op == 'save':
-        current = snapshot()
-        validate(dict(token=current['token'], displays=current['displays']), current)
-        # Live rules follow the saved layout, so hotplug keeps external-tool edits too.
-        apply_rows(current['displays'], selectors(current['displays']))
-        persist(current, capped)
+    if op == 'arrange':
+        before = snapshot()
+        positions = request.get('positions')
+        if not isinstance(positions, dict) or set(positions) != {
+            row['name']
+            for row in before['displays']
+            if row['enabled'] and row['mirror'] == 'none'
+        }:
+            raise ValueError('The connected displays changed. Reload the arrangement.')
+        rows = []
+        for row in before['displays']:
+            values = positions.get(row['name'], {})
+            if (
+                not isinstance(values, dict)
+                or set(values) - {'x', 'y'}
+                or (row['name'] in positions and set(values) != {'x', 'y'})
+            ):
+                raise ValueError('Only display coordinates can be changed here.')
+            rows.append(dict(row, **values))
+        rows = validate(dict(token=request.get('token'), displays=rows), before)
+        current = apply_setup(rows, before)
+        # Arrangement never edits refresh: retain the uncapped panel preference.
+        save_change(current, before, True)
         return dict(data=current)
     raise ValueError('Unknown display operation.')
 
@@ -750,7 +924,8 @@ def main():
     line = sys.stdin.readline()
     if line:
         try:
-            result = response(json.loads(line))
+            with control_lock():
+                result = response(json.loads(line))
         except Exception as exc:
             result = dict(
                 ok=False,

@@ -252,7 +252,8 @@ ShellRoot {
   check(button && find(button,"displayRandomWallpaperIcon").name==="image","wallpaper base icon is missing");
   check(find(button,"displayWallpaperShuffleBadge"),"shuffle badge is missing");
   let actions=0;for(const child of header.item.children??[])if(typeof child.clicked==="function")actions++;
-  check(actions===3,"Displays still has a separate Pictures action");
+  check(actions===2&&!find(header.item,"displaySave"),"Displays header has unexpected actions");
+  check(find(header.item,"displaySettings").text==="Configure display arrangement","arrangement entry is missing");
   button.clicked();check(wallpapers.calls===1,"badged action does not randomize wallpaper");
   check(!SpaceState.runningIds.includes("pictures"),"wallpaper action opened Pictures");
   wallpapers.busy=true;check(!button.enabled,"busy action remains enabled");

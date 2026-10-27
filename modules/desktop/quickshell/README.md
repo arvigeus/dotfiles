@@ -103,10 +103,15 @@ connections active. See [firewall access](../../system/security/firewall/README.
 
 ## Displays and keyboard
 
-Display changes apply immediately and persist in `~/.config/hypr/displays.lua`.
-After applying changes in wdisplays, leave it open and choose **Save current
-layout** in Displays before closing the editor. Dock-only panel choices return
-on redocking; undocking temporarily re-enables the panel when necessary.
+Each monitor's cog opens resolution, refresh, scale, orientation and mirroring
+settings. Changes apply and save immediately. **Configure display arrangement**
+opens a dedicated app (`display-tools`): drag monitors or enter exact coordinates,
+then **Apply arrangement** to apply and save together. Edges snap; hold Shift to
+move freely.
+
+Each connected monitor combination remembers its own settings and arrangement,
+including disabled displays. Reconnecting restores that setup automatically;
+new combinations start side by side. Undocking keeps the laptop panel usable.
 Brightness is not restored from the layout. Powersave normally caps the internal
 panel to 60 Hz; choosing another refresh overrides that until the next mode change.
 

@@ -112,7 +112,7 @@ through GNOME interface settings loads the correct palette. GTK settings.ini
 files supply startup defaults. GTK 3 top-level CSD shadow extents and resize
 margins are disabled; Hyprland supplies the window shadow and border resizing.
 This keeps window drawing and pointer coordinates aligned when changing display
-scale, including in wdisplays. The rule is generated in both `gtk.css` and
+scale. The rule is generated in both `gtk.css` and
 `gtk-dark.css` for each named theme; GTK's dark preference can select the latter
 independently of the theme name. Popup decorations and GTK 4 are unchanged.
 Hyprland 0.56.2 has related

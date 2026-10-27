@@ -7,6 +7,7 @@ import Quickshell
 import "../ui"
 import "../ui/Models.js" as Models
 import "displays"
+import "displays/Layout.js" as DisplayLayout
 import "../spaces/pictures"
 
 DrawerPage {
@@ -32,7 +33,7 @@ DrawerPage {
             closeRequested();
     }
     function openEditor(): void {
-        Apps.launch(["wdisplays"]);
+        Apps.launch(["display-tools"]);
         root.closeRequested();
     }
     function outputLabel(name: string): string {
@@ -47,57 +48,6 @@ DrawerPage {
     function rateLabel(mode: string): string {
         const rate = Number(mode.split("@")[1]?.replace("Hz", "") ?? 0);
         return rate.toLocaleString(Qt.locale(), "f", Number.isInteger(rate) ? 0 : 2) + " Hz";
-    }
-    function optionsFor(record): var {
-        const heading = text => ({
-                    kind: "heading",
-                    key: "heading:" + text,
-                    text
-                });
-        const separator = key => ({
-                    kind: "separator",
-                    key: "separator:" + key
-                });
-        const option = (key, text, marked, values) => ({
-                    kind: "option",
-                    key,
-                    text,
-                    marked,
-                    values
-                });
-        return [
-            {
-                kind: "awake",
-                key: "awake",
-                text: qsTr("Keep awake"),
-                marked: comfortService.awakeFor(record.name)
-            },
-            {
-                kind: "action",
-                key: "recommended",
-                text: qsTr("Use recommended resolution"),
-                action: "recommended"
-            },
-            separator("Refresh rate"), heading(qsTr("Refresh rate"))].concat(record.modes.filter(mode => mode.split("@")[0] === record.mode.split("@")[0]).map(mode => option("rate:" + mode, rateLabel(mode), record.mode === mode, {
-                mode
-            }))).concat([separator("Mirroring"), heading(qsTr("Mirroring")), option("extend", qsTr("Independent display"), record.mirror === "none", {
-                mirror: "none"
-            })]).concat(displays.filter(row => row.enabled && row.name !== record.name && row.mirror === "none").map(row => option("mirror:" + row.name, qsTr("Mirror %1").arg(row.label), record.mirror === row.name, {
-                mirror: row.name
-            }))).concat([separator("Test display"), heading(qsTr("Test display")),
-            {
-                kind: "action",
-                key: "test:patterns",
-                text: qsTr("Test patterns"),
-                action: "patterns"
-            },
-            {
-                kind: "action",
-                key: "test:motion",
-                text: qsTr("Motion test"),
-                action: "motion"
-            }
-        ]);
     }
     Connections {
         target: root.service
@@ -158,17 +108,10 @@ DrawerPage {
             }
         }
         IconButton {
-            objectName: "displaySave"
-            iconName: "hard-drive-download"
-            text: qsTr("Save current layout")
-            hint: qsTr("Save the current arrangement and scale. Save applied wdisplays changes before closing the editor.")
-            enabled: root.canEdit
-            onClicked: root.service.save()
-        }
-        IconButton {
             objectName: "displaySettings"
             iconName: "pencil"
-            text: qsTr("Arrange displays in wdisplays")
+            text: qsTr("Configure display arrangement")
+            hint: qsTr("Open Display arrangement to position monitors and save this monitor set.")
             enabled: !root.service.busy
             onClicked: root.openEditor()
         }
@@ -285,181 +228,135 @@ DrawerPage {
                         else
                             options.open();
                     }
-                    Popup {
+                    InfoPopover {
                         id: options
                         objectName: "displayPopup:" + card.record.name
-                        popupType: Popup.Item
-                        parent: optionsButton
-                        x: optionsButton.width - width
-                        y: optionsButton.height
-                        width: Math.min(320, root.width)
-                        padding: 6
-                        // Use the window's available height, including the space
-                        // above the drawer body, so short menus need no scrollbar.
-                        margins: 8
-                        height: Math.max(0, Math.min(itemsHeight + topPadding + bottomPadding, 560, (Overlay.overlay?.height ?? root.height) - 16))
-                        focus: true
-                        // Exclude the cog so a second click toggles the popup closed.
-                        closePolicy: Popup.CloseOnPressOutsideParent
-                        background: Surface {
-                            color: Theme.background
-                            radius: Theme.controlRadius
-                        }
-                        ListModel {
-                            id: optionsModel
-                            dynamicRoles: true
-                        }
-                        readonly property real itemsHeight: root.optionsFor(card.record).reduce((total, entry) => total + entryHeight(entry.kind), 0)
-                        function entryHeight(kind: string): int {
-                            return kind === "heading" ? 28 : kind === "separator" ? 13 : 36;
-                        }
-                        function sync(): void {
-                            Models.sync(optionsModel, root.optionsFor(card.record), "key");
-                        }
-                        function activate(entry): void {
-                            if (!card.editable)
-                                return;
-                            if (entry.kind === "option")
-                                root.service.change(card.record, entry.values);
-                            else if (entry.kind === "action") {
-                                if (entry.action === "recommended")
-                                    root.service.change(card.record, {
-                                        mode: "preferred"
-                                    });
-                                else
-                                    root.startTest(entry.action, card.record);
-                            } else if (entry.kind === "awake")
-                                root.comfortService.setAwake(card.record, !root.comfortService.awakeFor(card.record.name));
-                            else
-                                return;
-                            close();
-                        }
-                        function step(direction: int): void {
-                            for (let offset = 1; offset <= optionsModel.count; offset++) {
-                                const next = (list.currentIndex + direction * offset + optionsModel.count) % optionsModel.count;
-                                if (!["option", "action", "awake"].includes(optionsModel.get(next).record.kind))
-                                    continue;
-                                list.currentIndex = next;
-                                list.positionViewAtIndex(next, ListView.Contain);
-                                return;
-                            }
-                        }
-                        onAboutToShow: {
-                            sync();
-                            root.openOptions = options;
-                        }
-                        onOpened: list.forceActiveFocus()
+                        button: optionsButton
+                        active: root.active
+                        width: Math.min(360, (Overlay.overlay?.width ?? root.width) - 16)
+                        onAboutToShow: root.openOptions = options
                         onClosed: {
                             if (root.openOptions === options)
                                 root.openOptions = null;
                         }
-                        Component.onCompleted: sync()
                         Component.onDestruction: {
-                            if (root.openOptions === options) {
+                            if (root.openOptions === options)
                                 root.openOptions = null;
-                            }
                         }
-                        Connections {
-                            target: card
-                            function onRecordChanged(): void {
-                                options.sync();
-                            }
+                        Heading {
+                            text: card.record.label
                         }
-                        Connections {
-                            target: root
-                            function onDisplaysChanged(): void {
-                                options.sync();
-                            }
+                        Note {
+                            text: qsTr("Resolution")
                         }
-                        Connections {
-                            target: root.comfortService
-                            function onStateChanged(): void {
-                                options.sync();
-                            }
+                        ShellChoice {
+                            objectName: "displayResolution:" + card.record.name
+                            Layout.fillWidth: true
+                            enabled: card.editable
+                            model: [...new Set(card.record.modes.map(mode => mode.split("@")[0]))]
+                            currentIndex: model.indexOf(card.record.mode.split("@")[0])
+                            Accessible.name: qsTr("Resolution for %1").arg(card.record.label)
+                            onActivated: root.service.change(card.record, {
+                                mode: DisplayLayout.modeForResolution(card.record, model[index])
+                            })
                         }
-                        contentItem: FocusScope {
-                            Keys.onEscapePressed: event => {
-                                options.close();
-                                event.accepted = true;
-                            }
-                            ColumnLayout {
-                                anchors.fill: parent
-                                spacing: 8
-                                ScrollListView {
-                                    id: list
-                                    objectName: "displayOptionsList:" + card.record.name
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
-                                    clip: true
-                                    model: optionsModel
-                                    currentIndex: -1
-                                    // Keep this finite menu instantiated so mixed row
-                                    // heights do not leave the last entry partly clipped.
-                                    cacheBuffer: options.itemsHeight
-                                    Keys.onDownPressed: options.step(1)
-                                    Keys.onUpPressed: options.step(-1)
-                                    Keys.onReturnPressed: if (currentIndex >= 0)
-                                        options.activate(optionsModel.get(currentIndex).record)
-                                    Keys.onEnterPressed: if (currentIndex >= 0)
-                                        options.activate(optionsModel.get(currentIndex).record)
-                                    ScrollBar.vertical: ScrollBar {
-                                        policy: list.contentHeight > list.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
-                                    }
-                                    delegate: ShellMenuItem {
-                                        id: entry
-                                        required property var record
-                                        required property int index
-                                        width: list.width
-                                        objectName: ["option", "action", "awake"].includes(record.kind) ? "displayOption:" + card.record.name + ":" + record.key : "displayMenu:" + card.record.name + ":" + record.key
-                                        text: record.text ?? ""
-                                        marked: !!record.marked
-                                        implicitHeight: options.entryHeight(record.kind)
-                                        enabled: ["option", "action", "awake"].includes(record.kind) && card.editable && (record.kind !== "awake" || !root.comfortService.busy)
-                                        highlighted: hovered || (list.activeFocus && ListView.isCurrentItem)
-                                        opacity: ["option", "action", "awake"].includes(record.kind) && !enabled ? 0.5 : 1
-                                        Accessible.checkable: ["option", "awake"].includes(record.kind)
-                                        Accessible.checked: marked
-                                        contentItem: RowLayout {
-                                            visible: entry.record.kind !== "separator"
-                                            spacing: 8
-                                            Icon {
-                                                visible: ["option", "action", "awake"].includes(entry.record.kind)
-                                                name: entry.record.kind === "action" ? "monitor" : "check"
-                                                opacity: entry.record.kind === "action" || entry.marked ? 1 : 0
-                                                Layout.preferredWidth: 16
-                                                Layout.preferredHeight: 16
-                                                color: entry.highlighted ? Theme.accent : Theme.text
-                                            }
-                                            ShellText {
-                                                text: entry.text
-                                                Layout.fillWidth: true
-                                                elide: Text.ElideRight
-                                                color: entry.record.kind === "heading" ? Theme.muted : Theme.text
-                                                font.pixelSize: entry.record.kind === "heading" ? Theme.smallFontSize : Theme.fontSize
-                                            }
-                                        }
-                                        background: ButtonBackground {
-                                            idleColor: "transparent"
-                                            visible: ["option", "action", "awake"].includes(entry.record.kind)
-                                            highlighted: entry.highlighted
-                                            pressed: entry.down
-                                        }
-                                        Rectangle {
-                                            visible: entry.record.kind === "separator"
-                                            anchors.left: parent.left
-                                            anchors.right: parent.right
-                                            anchors.leftMargin: 6
-                                            anchors.rightMargin: 6
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            height: 1
-                                            color: Theme.border
-                                        }
-                                        onTriggered: {
-                                            list.currentIndex = index;
-                                            options.activate(record);
-                                        }
-                                    }
+                        Note {
+                            text: qsTr("Refresh rate")
+                        }
+                        ShellChoice {
+                            objectName: "displayRefresh:" + card.record.name
+                            Layout.fillWidth: true
+                            enabled: card.editable
+                            property var modes: card.record.modes.filter(mode => mode.split("@")[0] === card.record.mode.split("@")[0])
+                            model: modes.map(mode => root.rateLabel(mode))
+                            currentIndex: modes.indexOf(card.record.mode)
+                            Accessible.name: qsTr("Refresh rate for %1").arg(card.record.label)
+                            onActivated: root.service.change(card.record, {
+                                mode: modes[index]
+                            })
+                        }
+                        Note {
+                            text: qsTr("Scale")
+                        }
+                        ShellChoice {
+                            objectName: "displayScale:" + card.record.name
+                            Layout.fillWidth: true
+                            enabled: card.editable
+                            property var values: DisplayLayout.scales(card.record)
+                            model: values.map(value => Math.round(value * 100) + "%")
+                            currentIndex: values.indexOf(card.record.scale)
+                            Accessible.name: qsTr("Scale for %1").arg(card.record.label)
+                            onActivated: root.service.change(card.record, {
+                                scale: values[index]
+                            })
+                        }
+                        Note {
+                            text: qsTr("Orientation")
+                        }
+                        ShellChoice {
+                            objectName: "displayRotation:" + card.record.name
+                            Layout.fillWidth: true
+                            enabled: card.editable
+                            model: root.rotations
+                            currentIndex: card.record.transform
+                            Accessible.name: qsTr("Orientation for %1").arg(card.record.label)
+                            onActivated: root.service.change(card.record, {
+                                transform: index
+                            })
+                        }
+                        Note {
+                            text: qsTr("Mirroring")
+                        }
+                        ShellChoice {
+                            objectName: "displayMirror:" + card.record.name
+                            Layout.fillWidth: true
+                            enabled: card.editable
+                            property var targets: [
+                                {
+                                    name: "none",
+                                    label: qsTr("Independent display")
                                 }
+                            ].concat(root.displays.filter(row => row.enabled && row.name !== card.record.name && row.mirror === "none"))
+                            model: targets.map(row => row.name === "none" ? row.label : qsTr("Mirror %1").arg(row.label))
+                            currentIndex: targets.findIndex(row => row.name === card.record.mirror)
+                            Accessible.name: qsTr("Mirroring for %1").arg(card.record.label)
+                            onActivated: root.service.change(card.record, {
+                                mirror: targets[index].name
+                            })
+                        }
+                        ShellButton {
+                            objectName: "displayRecommended:" + card.record.name
+                            text: qsTr("Use recommended resolution")
+                            Layout.fillWidth: true
+                            enabled: card.editable
+                            onClicked: root.service.change(card.record, {
+                                mode: "preferred"
+                            })
+                        }
+                        ShellButton {
+                            objectName: "displayAwake:" + card.record.name
+                            text: qsTr("Keep awake")
+                            Layout.fillWidth: true
+                            enabled: card.editable && !root.comfortService.busy
+                            checkable: true
+                            checked: root.comfortService.awakeFor(card.record.name)
+                            onClicked: root.comfortService.setAwake(card.record, !root.comfortService.awakeFor(card.record.name))
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            ShellButton {
+                                objectName: "displayPatterns:" + card.record.name
+                                text: qsTr("Test patterns")
+                                Layout.fillWidth: true
+                                enabled: card.editable
+                                onClicked: root.startTest("patterns", card.record)
+                            }
+                            ShellButton {
+                                objectName: "displayMotion:" + card.record.name
+                                text: qsTr("Motion test")
+                                Layout.fillWidth: true
+                                enabled: card.editable
+                                onClicked: root.startTest("motion", card.record)
                             }
                         }
                     }

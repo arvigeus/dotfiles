@@ -457,7 +457,7 @@
         ],
         "private": {
             "files": [
-                "home/.config/hypr/displays.lua",
+                "home/.config/hypr/display-profiles.json",
                 "home/.config/quickshell/input-language.json",
                 "home/.config/quickshell/desktop/audio.ini",
                 "home/.config/quickshell/desktop/calendar.json",
@@ -935,6 +935,11 @@
                 "mode": "0755"
             },
             {
+                "source": "modules/desktop/quickshell/files/usr/local/bin/display-tools",
+                "target": "/usr/local/bin/display-tools",
+                "mode": "0755"
+            },
+            {
                 "source": "modules/desktop/quickshell/files/usr/local/lib/account-tools/account_core.py",
                 "target": "/usr/local/lib/account-tools/account_core.py",
                 "mode": "0644"
@@ -945,8 +950,18 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/desktop/quickshell/files/usr/local/lib/display-tools/display_gui.py",
+                "target": "/usr/local/lib/display-tools/display_gui.py",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/desktop/quickshell/files/usr/local/share/applications/account-tools.desktop",
                 "target": "/usr/local/share/applications/account-tools.desktop",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/desktop/quickshell/files/usr/local/share/applications/display-tools.desktop",
+                "target": "/usr/local/share/applications/display-tools.desktop",
                 "mode": "0644"
             },
             {
@@ -3907,7 +3922,6 @@
         "ogc/asusctl",
         "brightnessctl",
         "ddcutil",
-        "wdisplays",
         "fwupd",
         "radeontop",
         "nvtop",

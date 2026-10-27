@@ -633,13 +633,19 @@ class PanelPolicy(unittest.TestCase):
             values=dict(enabled=True),
             capped=True,
         )
-        with patch.object(self.backend, 'control', return_value=enabled):
+        with (
+            patch.object(self.backend, 'control', return_value=enabled),
+            patch.object(self.backend, 'snapshot', return_value=self.before),
+        ):
             result = self.backend.response(request)
         self.assertTrue(result['ok'], result['error'])
         self.assertEqual(self.modes(result['data'])[0], '1920x1080@60.00Hz')
         self.assertIn('mode = "1920x1080@120.00"', self.path.read_text())
         self.apply.reset_mock()
-        with patch.object(self.backend, 'control', return_value=enabled):
+        with (
+            patch.object(self.backend, 'control', return_value=enabled),
+            patch.object(self.backend, 'snapshot', return_value=self.before),
+        ):
             result = self.backend.response(dict(request, capped=False))
         self.apply.assert_not_called()
         self.assertEqual(self.modes(result['data'])[0], '1920x1080@120.00Hz')

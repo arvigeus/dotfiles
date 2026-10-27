@@ -403,6 +403,7 @@ class DisplayBackendTests(unittest.TestCase):
                     **os.environ,
                     'XDG_RUNTIME_DIR': str(root),
                     'XDG_CONFIG_HOME': str(root / 'config'),
+                    'HYPRLAND_INSTANCE_SIGNATURE': 'display-test',
                 },
             ) as process:
                 process.stdin.write(json.dumps(request) + '\n')
@@ -487,7 +488,10 @@ class DisplayRulesTests(unittest.TestCase):
             identity=self.external['identity'],
             values=dict(scale=1),
         )
-        with patch.object(backend, 'control', return_value=self.current):
+        with (
+            patch.object(backend, 'control', return_value=self.current),
+            patch.object(backend, 'snapshot', return_value=self.current),
+        ):
             result = backend.response(request)
         self.assertTrue(result['ok'], result['error'])
         self.assertEqual(
@@ -499,28 +503,45 @@ class DisplayRulesTests(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            [path.name for path in self.path.parent.iterdir()], ['displays.lua']
+            sorted(path.name for path in self.path.parent.iterdir()),
+            ['display-profiles.json', 'displays.lua'],
         )
 
-    def test_unrelated_lines_survive_and_known_rules_are_replaced_in_place(self):
-        self.path.parent.mkdir()
-        self.path.write_text(
-            '-- mine\nhl.monitor({ output = "desc:Dell Inc. DELL U1 X1", mode = "preferred" })\n'
-            'hl.monitor({ output = "desc:Office", mode = "preferred" })\nlocal x = 1\n'
-        )
+    def test_monitor_sets_keep_separate_arrangements(self):
         backend.persist(self.current, False)
-        lines = self.lines()
-        self.assertEqual(lines[0], '-- mine')
-        self.assertIn('position = "1536x0"', lines[1])
-        self.assertEqual(
-            lines[2:4],
-            [
-                'hl.monitor({ output = "desc:Office", mode = "preferred" })',
-                'local x = 1',
-            ],
+        office = described('DP-1', 'Office panel', x=-1920, y=100)
+        other = state([dict(self.panel, x=0, y=100), office])
+        backend.persist(other, False)
+        self.assertEqual(len(backend.read_profiles()['profiles']), 2)
+        self.assertEqual(backend.profile_rows(self.current), self.current['displays'])
+        self.assertEqual(backend.profile_rows(other), other['displays'])
+        self.assertNotIn('Dell', self.path.read_text())
+
+    def test_profile_follows_hardware_and_mirror_across_connectors(self):
+        backend.persist(state([self.panel, dict(self.external, mirror='eDP-1')]), False)
+        panel = dict(
+            self.panel, name='eDP-2', identity=['eDP-2', *self.panel['identity'][1:]]
         )
-        self.assertIn('output = "desc:Panel Co P1"', lines[4])
-        self.assertEqual(len(lines), 5)
+        external = dict(
+            self.external,
+            name='HDMI-A-1',
+            identity=['HDMI-A-1', *self.external['identity'][1:]],
+        )
+        resolved = backend.profile_rows(state([external, panel]))
+        self.assertEqual(resolved[0]['mirror'], 'eDP-2')
+        self.assertEqual(resolved[1]['name'], 'eDP-2')
+
+    def test_ambiguous_hardware_uses_connectors_and_serials_distinguish_devices(self):
+        first = display('DP-1', identity=['DP-1', 'Twin', 'Maker', 'Twin', ''])
+        second = display('DP-2', identity=['DP-2', 'Twin', 'Maker', 'Twin', ''])
+        self.assertEqual(len(set(backend.device_keys([first, second]).values())), 2)
+        serial = dict(first, identity=['DP-1', 'Twin', 'Maker', 'Twin', 'ABC'])
+        moved = dict(
+            serial,
+            name='HDMI-A-1',
+            identity=['HDMI-A-1', 'Changed label', 'Maker', 'Twin', 'ABC'],
+        )
+        self.assertEqual(backend.profile_key([serial]), backend.profile_key([moved]))
 
     def test_dock_only_panel_choice_is_saved(self):
         self.path.parent.mkdir()
@@ -528,7 +549,7 @@ class DisplayRulesTests(unittest.TestCase):
         self.path.write_text(saved + '\n')
         backend.persist(state([dict(self.panel, enabled=False), self.external]), False)
         self.assertEqual(
-            self.lines()[0],
+            self.lines()[len(backend.HEADER)],
             'hl.monitor({ output = "desc:Panel Co P1", disabled = true })',
         )
         self.assertEqual(sum('Panel Co P1' in line for line in self.lines()), 1)
@@ -590,37 +611,71 @@ class DisplayRulesTests(unittest.TestCase):
             [path.name for path in self.path.parent.iterdir()], ['displays.lua']
         )
 
-    def test_save_validates_then_makes_live_rules_match_the_saved_layout(self):
-        overlapping = state([self.panel, dict(self.external, x=0)])
-        with (
-            patch.object(backend, 'snapshot', return_value=overlapping),
-            patch.object(backend, 'apply_rows') as apply,
-        ):
-            self.assertFalse(backend.response(dict(op='save'))['ok'])
-        apply.assert_not_called()
-        self.assertFalse(self.path.exists())
+    def test_arrangement_rejects_stale_overlapping_and_noncoordinate_edits(self):
+        positions = {
+            row['name']: dict(x=row['x'], y=row['y'])
+            for row in self.current['displays']
+        }
+        cases = [
+            dict(token='stale', positions=positions),
+            dict(
+                token=self.current['token'],
+                positions={**positions, 'DP-1': dict(x=0, y=0)},
+            ),
+            dict(
+                token=self.current['token'],
+                positions={**positions, 'DP-1': dict(x=2000, y=0, scale=2)},
+            ),
+            dict(token=self.current['token'], positions={}),
+        ]
         with (
             patch.object(backend, 'snapshot', return_value=self.current),
-            patch.object(backend, 'apply_rows') as apply,
+            patch.object(backend, 'apply_setup') as apply,
         ):
-            result = backend.response(dict(op='save'))
+            for request in cases:
+                self.assertFalse(backend.response(dict(op='arrange', **request))['ok'])
+            apply.assert_not_called()
+        self.assertFalse(self.path.exists())
+
+    def test_arrangement_applies_and_saves_in_one_operation(self):
+        desired = state([dict(self.panel, x=1920), dict(self.external, x=0)])
+        positions = {
+            row['name']: dict(x=row['x'], y=row['y']) for row in desired['displays']
+        }
+        with (
+            patch.object(backend, 'snapshot', return_value=self.current),
+            patch.object(backend, 'apply_setup', return_value=desired) as apply,
+        ):
+            result = backend.response(
+                dict(op='arrange', token=self.current['token'], positions=positions)
+            )
         self.assertTrue(result['ok'], result['error'])
-        apply.assert_called_once_with(
-            self.current['displays'], backend.selectors(self.current['displays'])
-        )
-        self.assertEqual(len(self.lines()), len(backend.HEADER) + 2)
+        self.assertEqual(apply.call_args.args[0], desired['displays'])
+        self.assertEqual(backend.profile_rows(desired), desired['displays'])
+
+    def test_failed_native_file_write_rolls_back_profile(self):
+        backend.persist(self.current, False)
+        original = backend.profiles_path().read_text()
+        with (
+            patch.object(backend, 'compile_layout', side_effect=OSError('disk full')),
+            self.assertRaises(OSError),
+        ):
+            backend.persist(
+                state([dict(self.panel, x=2000), dict(self.external, x=0)]), False
+            )
+        self.assertEqual(backend.profiles_path().read_text(), original)
 
     def test_ensure_reenables_the_panel_only_when_no_display_is_usable(self):
         with (
             patch.object(backend, 'command', return_value='ok') as command,
             patch.object(backend, 'snapshot') as snapshot,
         ):
-            self.assertIs(backend.ensure(self.current), self.current)
+            self.assertIs(backend.emergency(self.current), self.current)
             command.assert_not_called()
             dark = state(
                 [dict(self.external, enabled=False), dict(self.panel, enabled=False)]
             )
-            backend.ensure(dark)
+            backend.emergency(dark)
         command.assert_called_once_with(
             'eval', 'hl.monitor({ output = "desc:Panel Co P1", disabled = false })'
         )
@@ -682,7 +737,7 @@ assert(dispatches == 1)
 class DisplayQmlTests(unittest.TestCase):
     run_qml = support.run_qml
 
-    def test_flat_menu_closes_on_selection_and_escape_keeps_changes(self):
+    def test_monitor_popover_applies_controls_and_closes_without_reverting(self):
         rows = json.dumps([display(), display('DP-1', x=1920)])
         self.run_qml(
             """import QtQuick
@@ -692,179 +747,29 @@ import Quickshell
 import "drawers"
 import "ui"
 ShellRoot {
- TestCase { id:input; when:false; parent:displayWindow.contentItem }
+ TestCase {id:input;when:false;parent:displayWindow.contentItem}
  QtObject {
   id:mock
-  property var state: ({available:true,displays:ROWS,token:"initial"})
+  property var state:({available:true,displays:ROWS,token:"initial"})
   property bool loaded:true
   property bool busy:false
+  property bool closing:false
   property string error:""
-  property var owners:[]
-  readonly property int observers:owners.length
   property int calls:0
-  property var lastValues: ({})
-  property int brightnessCalls:0
-  function brightnessFor(name) {return {available:name==="eDP-1",value:60,reason:"DDC/CI unavailable"};}
-  function setBrightness(name,value) {brightnessCalls++;}
-  function observe(owner,active) {owners=owners.filter(item=>item!==owner).concat(active?[owner]:[]);}
-  function change(record,values) {
-   calls++;
-   lastValues=values;
-   const applied=values.mode==="preferred"?{mode:record.modes[0]}:values;
-   state={available:true,displays:state.displays.map(row=>row.name===record.name?Object.assign({},row,applied):row),token:String(calls)};
-  }
+  property var lastValues:({})
+  function brightnessFor(name){return {available:false,value:0,reason:"Unavailable"};}
+  function setBrightness(name,value){}
+  function observe(owner,active){}
   function refresh(){}
- }
- FloatingWindow {
-  id:displayWindow
-  implicitWidth:480;implicitHeight:900;visible:true;color:Theme.background
-  DisplaysDrawer{id:drawer;x:16;y:16;width:448;height:400;active:true;service:mock}
- }
- function check(value,message){if(!value)throw new Error(message);}
- function find(item,name){
-  if(item.objectName===name)return item;
-  for(let child of item.children??[]){const found=find(child,name);if(found)return found;}
-  return null;
- }
- function choose(key){
-  const entry=drawer.optionsFor(drawer.displays[1]).find(entry=>entry.key===key);
-  if(!entry)throw new Error("missing option "+key);
-  const button=find(drawer,"displayOptions:DP-1");
-  if(!button.menu.visible)button.clicked();
-  button.menu.activate(entry);
-  check(!button.menu.visible,"menu stayed open on selection");
- }
- property int stage:0
- Timer{interval:180;repeat:true;running:true;onTriggered:{
-  try{
-   const button=find(drawer,"displayOptions:DP-1");
-   if(stage===0){
-    const destination=Quickshell.env("DISPLAY_PREVIEW_DIR");
-    if(destination)drawer.grabToImage(result=>result.saveToFile(destination+"/displays-normal.png"));
-   }else if(stage===1){
-    check(drawer.displays.length===2,"inventory");
-    check(!find(drawer,"displayApply")&&!find(drawer,"displayCountdown")&&!find(drawer,"displayUndoHint"),"staged controls remain");
-    check(!find(drawer,"displayResolution:DP-1"),"separate controls remain");
-    const brightness=find(drawer,"displayBrightness:DP-1");
-    check(button.mapToItem(drawer,0,0).y===brightness.mapToItem(drawer,0,0).y,"cog not beside brightness");
-    button.clicked();
-   }else if(stage===2){
-    check(button.menu.visible&&drawer.escapeHandler,"menu did not take Escape");
-    const list=find(button.menu.contentItem,"displayOptionsList:DP-1");
-    let headings=0,separators=0;
-    for(let i=0;i<list.model.count;i++){
-     const record=list.model.get(i).record;
-     if(record.kind==="heading")headings++;
-     if(record.kind==="separator")separators++;
-    }
-    check(headings===3&&separators===3,"flat sections incorrect");
-    const card=find(drawer,"displayCard:DP-1");
-    const rate=list.itemAtIndex(5);
-    check(rate&&rate.record.key==="rate:1920x1080@120.00Hz","refresh rate row missing");
-    input.mouseClick(rate,rate.width/2,rate.height/2);
-    check(mock.calls===1&&drawer.displays[1].mode==="1920x1080@120.00Hz","refresh rate not immediate");
-    check(!button.menu.visible,"menu stayed open on selection");
-    choose("mirror:eDP-1");
-    check(mock.calls===2&&drawer.displays[1].mirror==="eDP-1","settings not immediate");
-    check(find(drawer,"displayCard:DP-1")===card,"card recreated during changes");
-    check(!button.menu.visible,"menu stayed open after settings");
-   }else if(stage===3){
-    button.clicked();
-    check(button.menu.height<=displayWindow.height-16,"menu not constrained");
-    const list=find(button.menu.contentItem,"displayOptionsList:DP-1");
-    check(list.contentHeight<=list.height+1,"short menu still needs scrolling: content="+list.contentHeight+" height="+list.height+" menu="+button.menu.height+" items="+button.menu.itemsHeight);
-    const destination=Quickshell.env("DISPLAY_PREVIEW_DIR");
-    if(destination)button.menu.contentItem.grabToImage(result=>result.saveToFile(destination+"/displays-menu.png"));
-   }else if(stage===4){
-    button.menu.contentItem.forceActiveFocus();
-    input.keyClick(Qt.Key_Escape);
-    check(!button.menu.visible,"Escape did not close menu");
-    check(drawer.displays[1].mode==="1920x1080@120.00Hz"&&drawer.displays[1].scale===1&&drawer.displays[1].transform===0&&drawer.displays[1].mirror==="eDP-1","Escape changed applied settings");
-    check(drawer.active&&!drawer.escapeHandler,"Escape closed drawer or retained handler");
-    choose("rate:1920x1080@60.00Hz");
-    button.clicked();input.mouseClick(button,button.width/2,button.height/2);
-    check(!button.menu.visible&&drawer.displays[1].mode==="1920x1080@60.00Hz","second cog click changed settings");
-   }else if(stage===5){
-    choose("extend");button.clicked();
-   }else if(stage===6){
-    input.mouseClick(drawer,2,drawer.height-2);
-    check(!button.menu.visible&&drawer.displays[1].mirror==="none","outside click changed settings");
-    drawer.width=268;
-   }else if(stage===7){
-    const recommended=drawer.optionsFor(drawer.displays[1]).find(entry=>entry.key==="recommended");
-    check(recommended&&recommended.text==="Use recommended resolution"&&recommended.kind==="action","recommended action missing");
-    choose("recommended");
-    check(mock.lastValues.mode==="preferred"&&Object.keys(mock.lastValues).length===1,"recommendation changed unrelated settings");
-    check(drawer.displays[1].mode==="1920x1080@60.00Hz","recommendation not applied");
-    const destination=Quickshell.env("DISPLAY_PREVIEW_DIR");
-    if(destination)drawer.grabToImage(result=>result.saveToFile(destination+"/displays-narrow.png"));
-    find(drawer,"displayBrightness:eDP-1:slider").moved();
-    check(mock.brightnessCalls===1,"brightness missing");
-    const toggle=find(drawer,"displayEnabled:DP-1");
-    input.mouseClick(toggle,toggle.width/2,toggle.height/2);
-    check(!drawer.displays[1].enabled,"disable was not immediate");
-    input.mouseClick(toggle,toggle.width/2,toggle.height/2);
-    check(drawer.displays[1].enabled,"enable was not immediate");
-    check(!find(drawer,"displayBrightness:DP-1:slider").enabled,"unsupported brightness enabled");
-   }else if(stage===8){
-    mock.state={available:true,displays:[mock.state.displays[0]],token:"unplugged"};
-    check(drawer.displays.length===1&&!find(drawer,"displayCard:DP-1"),"hotplug not reconciled");
-    check(!find(drawer,"displayEnabled:eDP-1").enabled,"last display can be disabled");
-    drawer.active=false;check(mock.observers===0,"observation survived dismissal");finish.start();
-   }
-   stage++;
-  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}
- }}
- Timer{id:finish;interval:100;onTriggered:{console.log("DISPLAY_PASS");Qt.quit();}}
- Timer{interval:6000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
-}
-""".replace('ROWS', rows)
-        )
-
-    def test_long_menu_fits_window_and_bottom_entry_is_reachable(self):
-        modes = [f'2560x1600@{rate}.00Hz' for rate in range(60, 181, 10)]
-        rows = json.dumps(
-            [display(), display('DP-1', x=1920, mode=modes[0], modes=modes)]
-        )
-        self.run_qml(
-            """import QtQuick
-import QtQuick.Controls
-import QtTest
-import Quickshell
-import "drawers"
-import "ui"
-ShellRoot {
- TestCase { id:input; when:false; parent:displayWindow.contentItem }
- QtObject {
-  id:mockTests
-  property string mode:""
-  property string error:""
-  property int calls:0
-  property string output:""
-  function start(kind,record){mode=kind;output=record.name;calls++;return true;}
-  function identify(records){mode="identify";calls++;}
-  function stop(){mode="";}
- }
- QtObject {
-  id:mock
-  property var state: ({available:true,displays:ROWS,token:"initial"})
-  property bool loaded:true
-  property bool busy:false
-  property string error:""
-  property int calls:0
-  function brightnessFor(name) {return {available:false,value:0,reason:"Unavailable"};}
-  function setBrightness(name,value) {}
-  function observe(owner,active) {}
-  function change(record,values) {
-   calls++;
+  function change(record,values){
+   calls++;lastValues=values;
    state={available:true,displays:state.displays.map(row=>row.name===record.name?Object.assign({},row,values):row),token:String(calls)};
   }
-  function refresh(){}
  }
  FloatingWindow {
-  id:displayWindow
-  implicitWidth:480;implicitHeight:540;visible:true;color:Theme.background
-  DisplaysDrawer{id:drawer;x:16;y:displayWindow.height-height-8;width:448;height:400;active:true;service:mock;displayTests:mockTests}
+  id:displayWindow;implicitWidth:480;implicitHeight:620;visible:true;color:Theme.background
+  DisplaysDrawer{id:drawer;x:16;y:64;width:448;height:500;active:true;service:mock}
+  Loader{id:header;sourceComponent:drawer.headerActions}
  }
  function check(value,message){if(!value)throw new Error(message);}
  function find(item,name){
@@ -872,66 +777,59 @@ ShellRoot {
   for(let child of item.children??[]){const found=find(child,name);if(found)return found;}
   return null;
  }
- function checkBounds(menu){
-  const point=menu.contentItem.mapToItem(displayWindow.contentItem,-menu.leftPadding,-menu.topPadding);
-  check(point.x>=7&&point.y>=7,"popup exceeds top/left edge");
-  check(point.x+menu.width<=displayWindow.width-7&&point.y+menu.height<=displayWindow.height-7,"popup exceeds bottom/right edge");
-    check(menu.height<=560&&menu.height<=displayWindow.height-16,"popup too tall");
- }
  property int stage:0
- Timer{interval:180;repeat:true;running:true;onTriggered:{
-  try{
-   const button=find(drawer,"displayOptions:DP-1");
-   if(stage===0){
-    const record=drawer.displays[1];
-    const entries=drawer.optionsFor(record);
-    check(!entries.some(entry=>/^(resolution:|scale:|rotation:|flipped$)/.test(entry.key)),"advanced controls remain");
-    const rates=entries.filter(entry=>entry.key.startsWith("rate:"));
-    check(rates.length===record.modes.length&&rates.filter(entry=>entry.marked).length===1,"refresh rate choices incorrect");
-    check(rates.every(entry=>Object.keys(entry.values).join() === "mode" && entry.values.mode.startsWith(record.mode.split("@")[0]+"@")),"refresh rate changes other settings");
-    button.clicked();
-   }else if(stage===1){
-    checkBounds(button.menu);
-    const list=find(button.menu.contentItem,"displayOptionsList:DP-1");
-    check(list.contentHeight>list.height,"long list is not scrollable");
-    const before=list.contentY;
-    input.mouseWheel(list,80,80,0,-120,Qt.NoButton,Qt.NoModifier,0);
-    check(list.contentY===before+120,"menu wheel not immediate");
-    list.positionViewAtEnd();
-   }else if(stage===2){
-    checkBounds(button.menu);
-    const list=find(button.menu.contentItem,"displayOptionsList:DP-1");
-    const last=list.itemAtIndex(list.count-1);
-    check(last&&last.record.key==="test:motion"&&list.contentY>0,"bottom option not reached");
-    const point=last.mapToItem(list,0,0);
-    check(point.y>=-1&&point.y+last.height<=list.height+1,"bottom option clipped: "+point.y+" + "+last.height+" > "+list.height+" content="+list.contentHeight+" scroll="+list.contentY);
-    const destination=Quickshell.env("DISPLAY_PREVIEW_DIR");
-    if(destination)button.menu.contentItem.grabToImage(result=>result.saveToFile(destination+"/displays-menu-bottom.png"));
-    input.mouseClick(last,last.width/2,last.height/2);
-    check(mock.calls===0&&mockTests.calls===1&&mockTests.mode==="motion"&&mockTests.output==="DP-1"&&!button.menu.visible,"test action was not targeted or changed settings");
-    drawer.width=268;drawer.height=340;button.clicked();
-   }else if(stage===3){
-    checkBounds(button.menu);
-    const list=find(button.menu.contentItem,"displayOptionsList:DP-1");
-    list.positionViewAtEnd();
-   }else if(stage===4){
-    checkBounds(button.menu);
-    button.menu.close();
-    const patterns=drawer.optionsFor(drawer.displays[1]).find(entry=>entry.key==="test:patterns");
-    button.clicked();button.menu.activate(patterns);
-    check(mockTests.calls===2&&mockTests.mode==="patterns"&&mockTests.output==="DP-1"&&mock.calls===0,"patterns action incorrect");
-    const identify=find(drawer,"displayIdentifyButton");
-    input.mouseClick(identify,identify.width/2,identify.height/2);
-    check(mockTests.mode==="identify"&&mockTests.calls===3,"identify button missing");
-    input.mouseClick(identify,identify.width/2,identify.height/2);
-    check(mockTests.mode==="","identify did not stop on second click");
-    drawer.active=false;
-    console.log("DISPLAY_PASS");Qt.quit();
-   }
-   stage++;
-  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}
- }}
- Timer{interval:6000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
+ Timer{interval:180;repeat:true;running:true;onTriggered:{try{
+  const button=find(drawer,"displayOptions:DP-1");
+  if(stage===0){
+   check(!find(header,"displaySave"),"manual save remains");
+   check(find(header,"displaySettings").text==="Configure display arrangement","arrangement entry unclear");
+   button.clicked();
+  }else if(stage===1){
+   check(button.menu.visible&&drawer.escapeHandler,"popover not opened");
+   const content=button.menu.contentItem;
+   const resolution=find(content,"displayResolution:DP-1");
+   const refresh=find(content,"displayRefresh:DP-1");
+   const scale=find(content,"displayScale:DP-1");
+   const rotation=find(content,"displayRotation:DP-1");
+   check(resolution&&scale&&rotation&&refresh,"monitor controls missing");
+   input.mouseClick(refresh,refresh.width/2,refresh.height/2);
+   check(refresh.popup.visible,"refresh dropdown did not open");
+   const destination=Quickshell.env("DISPLAY_PREVIEW_DIR");
+   if(destination)displayWindow.contentItem.grabToImage(result=>result.saveToFile(destination+"/display-custom-dropdown.png"));
+  }else if(stage===2){
+   const refresh=find(button.menu.contentItem,"displayRefresh:DP-1");
+   const list=refresh.popup.contentItem;
+   check(list.itemAtIndex(0)?.marked&&!list.itemAtIndex(1)?.marked,"dropdown does not mark the selected choice");
+   const choice=list.itemAtIndex(1);check(choice,"refresh choice missing");
+   input.mouseClick(choice,choice.width/2,choice.height/2);
+   check(!refresh.popup.visible&&button.menu.visible,"selection closed the monitor popover");
+   check(mock.calls===1&&mock.lastValues.mode==="1920x1080@120.00Hz","pointer selection did not apply exactly once");
+   const rotation=find(button.menu.contentItem,"displayRotation:DP-1");
+   rotation.forceActiveFocus();rotation.popup.open();
+   input.keyClick(Qt.Key_Down);input.keyClick(Qt.Key_Escape);
+   check(!rotation.popup.visible&&button.menu.visible&&mock.calls===1,"Escape did not cancel only the dropdown");
+  }else if(stage===3){
+   const content=button.menu.contentItem;
+   const rotation=find(content,"displayRotation:DP-1");
+   rotation.forceActiveFocus();rotation.popup.open();
+   input.keyClick(Qt.Key_Home);input.keyClick(Qt.Key_Down);input.keyClick(Qt.Key_Return);
+   check(mock.calls===2&&mock.lastValues.transform===1,"keyboard selection did not apply exactly once");
+   const scale=find(content,"displayScale:DP-1");
+   scale.activated(scale.values.indexOf(1.25));check(mock.lastValues.scale===1.25,"scale not applied");
+   const resolution=find(content,"displayResolution:DP-1");
+   resolution.activated(resolution.model.indexOf("1280x720"));check(mock.lastValues.mode==="1280x720@60.00Hz","resolution not applied");
+   check(button.menu.visible,"popover closes after each edit");
+   check(button.menu.height<=displayWindow.height-16,"popover exceeds window");
+   const point=content.mapToItem(displayWindow.contentItem,-button.menu.leftPadding,-button.menu.topPadding);
+   check(point.x>=7&&point.y>=7&&point.y+button.menu.height<=displayWindow.height-7,"popover outside screen");
+   content.forceActiveFocus();input.keyClick(Qt.Key_Escape);
+   check(!button.menu.visible&&!drawer.escapeHandler&&mock.calls===4,"Escape reverted or leaked focus");
+   button.clicked();drawer.active=false;check(!button.menu.visible,"dismissal left popover open");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+ Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }
 """.replace('ROWS', rows)
         )

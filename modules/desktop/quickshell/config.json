@@ -34,7 +34,7 @@
         ],
         "private": {
             "files": [
-                "home/.config/hypr/displays.lua",
+                "home/.config/hypr/display-profiles.json",
                 "home/.config/quickshell/input-language.json",
                 "home/.config/quickshell/desktop/audio.ini",
                 "home/.config/quickshell/desktop/calendar.json",
