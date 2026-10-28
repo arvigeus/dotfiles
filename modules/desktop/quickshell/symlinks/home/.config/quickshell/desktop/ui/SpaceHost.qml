@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
-import "../spaces/movies" as Movies
 
 InteractionWindow {
     id: root
@@ -121,10 +120,13 @@ InteractionWindow {
                         root.deliverPending(instance);
                         root.focusInitial();
                     }
-                    Movies.MovieSpinner {
+                    // The Spaces' red loading ring, without depending on a Space.
+                    BusySpinner {
                         anchors.centerIn: parent
                         width: 28
                         height: 28
+                        foreground: "#e50914"
+                        track: "#49313e"
                         visible: instance.status === Loader.Loading
                         running: visible && root.opened
                     }

@@ -2,6 +2,8 @@
 // form state and focus). Used instead of ScriptModel { objectProp } for lists
 // whose rows can reorder: Quickshell 0.3.2 moves such rows but leaves their
 // delegates' modelData at the pre-move record.
+// The model needs dynamicRoles: it then ignores a record equal to the stored
+// one, including nested lists and a different key order.
 function sync(model, values, identity, role = "record") {
     const wanted = new Set(values.map(entry => entry[identity]));
     for (let i = model.count - 1; i >= 0; i--)
@@ -14,12 +16,9 @@ function sync(model, values, identity, role = "record") {
         if (existing === -1) model.insert(index, {identity: key, [role]: entry});
         else {
             if (existing !== index) model.move(existing, index, 1);
-            const current = model.get(index)[role];
-            // Snapshot records have scalar fields. Compare by key because Qt
-            // maps need not enumerate properties in Python's insertion order.
-            if (Object.keys(current).length !== Object.keys(entry).length
-                || Object.keys(entry).some(key => current[key] !== entry[key]))
-                model.setProperty(index, role, entry);
+            model.setProperty(index, role, entry);
         }
     });
+    // Rows left over from duplicate keys.
+    if (model.count > values.length) model.remove(values.length, model.count - values.length);
 }

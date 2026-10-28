@@ -3,6 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 // Optional scrolling layout for forms. DrawerPage itself imposes no layout.
+// Tab and programmatic focus scroll the focused control into view; call
+// wheelInput.reveal(item) to show anything else.
 ScrollView {
     id: root
     default property alias content: body.data
@@ -13,6 +15,7 @@ ScrollView {
     contentHeight: body.implicitHeight
     readonly property WheelScroll wheelInput: WheelScroll {
         view: root.contentItem as Flickable
+        revealFocus: true
     }
     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
     ScrollBar.vertical: ScrollBar {

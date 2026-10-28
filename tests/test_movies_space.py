@@ -1,23 +1,11 @@
 """Movies runs through the real SpaceHost with isolated media workers."""
 
-import re
 import unittest
 import support
 
 
 def setup(root):
-    path = root / 'ui/InteractionWindow.qml'
-    source = path.read_text().replace(
-        'PanelWindow {',
-        'FloatingWindow {\n implicitWidth: 1440; implicitHeight: 900',
-        1,
-    )
-    source = source.replace(
-        '    anchors { top: true; bottom: true; left: true; right: true }\n', ''
-    )
-    source = source.replace('    exclusionMode: ExclusionMode.Ignore\n', '')
-    source = re.sub(r'^    WlrLayershell\..*\n', '', source, flags=re.M)
-    path.write_text(source)
+    support.floating_window(root / 'ui/InteractionWindow.qml', 1440, 900)
     # Real catalogue, aliases and worker transport; seeded cache avoids APIs.
     import sys
 

@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Templates as T
 
 // Add to any native Flickable/ListView/GridView. Native controls keep clicks
 // and focus; the mouse-only step replaces Qt's wheel acceleration.
@@ -10,6 +11,9 @@ MouseArea {
     property bool verticalToHorizontal: false
     // Shared default in logical pixels. A horizontal strip can use its column width.
     property real wheelStep: 120
+    // Scroll keyboard and programmatic focus inside the view into sight. Pointer
+    // focus never scrolls, so a click cannot move its target away.
+    property bool revealFocus: false
 
     // Behind content controls, but before the view's own wheel handler. Offset
     // the moving contentItem so this area always covers the visible viewport.
@@ -24,6 +28,81 @@ MouseArea {
     // when they explicitly map vertical gestures to horizontal movement.
     scrollGestureEnabled: false
     onWheel: event => scroll(event)
+
+    Window.onActiveFocusItemChanged: {
+        const focused = Window.activeFocusItem;
+        if (!revealFocus || !focused)
+            return;
+        // Show the whole control (a SpinBox, not just its editor). Controls
+        // record why they gained focus; plain items do not.
+        let control = null;
+        for (let item = focused; item; item = item.parent) {
+            if (item === view.contentItem) {
+                const reason = control?.focusReason;
+                if (reason !== Qt.MouseFocusReason && reason !== Qt.ActiveWindowFocusReason)
+                    reveal(control ?? focused);
+                return;
+            }
+            if (!control && item instanceof T.Control)
+                control = item as T.Control;
+        }
+    }
+
+    // Layouts place newly shown items only when the window polishes, so a
+    // reveal repeats once the next frame has settled their geometry.
+    property Item pendingReveal: null
+    Connections {
+        target: root.pendingReveal ? root.Window.window : null
+        function onAfterAnimating(): void {
+            const item = root.pendingReveal;
+            root.pendingReveal = null;
+            if (item)
+                root.show(item);
+        }
+    }
+
+    function reveal(item: Item): void {
+        show(item);
+        pendingReveal = item;
+        Window.window?.update();
+    }
+
+    function show(item: Item): void {
+        const horizontal = orientation === Qt.Horizontal;
+        const position = item.mapToItem(view.contentItem, 0, 0);
+        const start = horizontal ? position.x : position.y;
+        const end = start + (horizontal ? item.width : item.height);
+        const size = horizontal ? view.width : view.height;
+        const current = horizontal ? view.contentX : view.contentY;
+        // Show the whole item, or its start when it is larger than the view.
+        if (start < current)
+            scrollTo(start);
+        else if (end > current + size)
+            scrollTo(Math.min(start, end - size));
+    }
+
+    // Returns whether the view moved; positions clamp to the scrollable range.
+    function scrollTo(position: real): bool {
+        if (!view.interactive)
+            return false;
+        const horizontal = orientation === Qt.Horizontal;
+        const origin = horizontal ? view.originX : view.originY;
+        const minimum = origin - (horizontal ? view.leftMargin : view.topMargin);
+        const maximum = Math.max(minimum, origin + (horizontal ? view.contentWidth - view.width + view.rightMargin : view.contentHeight - view.height + view.bottomMargin));
+        const current = horizontal ? view.contentX : view.contentY;
+        const next = Math.max(minimum, Math.min(maximum, position));
+        // Edge-spring note (Qt 6.12): ListView snaps programmatic overscroll back
+        // immediately; revisit its fixup/Immediate behavior when trying rebound.
+        if (next === current)
+            return false;
+
+        view.cancelFlick();
+        if (horizontal)
+            view.contentX = next;
+        else
+            view.contentY = next;
+        return true;
+    }
 
     function scroll(event: var): void {
         event.accepted = false;
@@ -44,23 +123,9 @@ MouseArea {
             return;
         }
 
-        const origin = horizontal ? view.originX : view.originY;
-        const minimum = origin - (horizontal ? view.leftMargin : view.topMargin);
-        const maximum = Math.max(minimum, origin + (horizontal ? view.contentWidth - view.width + view.rightMargin : view.contentHeight - view.height + view.bottomMargin));
         const current = horizontal ? view.contentX : view.contentY;
         const distance = gesture ? amount : amount / 120 * wheelStep;
-        const next = Math.max(minimum, Math.min(maximum, current - distance));
-        // Edge-spring note (Qt 6.12): ListView snaps programmatic overscroll back
-        // immediately; revisit its fixup/Immediate behavior when trying rebound.
         // An exhausted inner view lets its parent scroll.
-        if (next === current)
-            return;
-
-        view.cancelFlick();
-        if (horizontal)
-            view.contentX = next;
-        else
-            view.contentY = next;
-        event.accepted = true;
+        event.accepted = scrollTo(current - distance);
     }
 }

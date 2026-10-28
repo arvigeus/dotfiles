@@ -250,15 +250,11 @@ DrawerPage {
         selected = network;
         if (!passwordRequired)
             return;
+        // The column scrolls the focused field into view once it is laid out.
         Qt.callLater(() => {
             const field = root.passwordField;
-            if (!field?.visible)
-                return;
-            field.forceActiveFocus();
-            const view = networkScroll.contentItem;
-            const bottom = field.mapToItem(networkScroll.contentChildren[0], 0, field.height).y + 8;
-            if (view && bottom > view.contentY + view.height)
-                view.contentY = Math.max(0, Math.min(bottom - view.height, view.contentHeight - view.height));
+            if (field?.visible)
+                field.forceActiveFocus();
         });
     }
     // Saved networks connect natively. New ones get a user-scoped profile from

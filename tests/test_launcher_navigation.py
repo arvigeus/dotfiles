@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import unittest
 
+import support
 
 DESKTOP = (
     Path(__file__).resolve().parents[1]
@@ -27,18 +28,7 @@ class LauncherNavigationTests(unittest.TestCase):
             # PanelWindow has no offscreen backend. Replace only its native
             # surface/shortcut plumbing; selection, handlers, models and rows
             # are the unchanged production source running inside Quickshell.
-            path = root / 'ui/InteractionWindow.qml'
-            source = path.read_text().replace(
-                'PanelWindow {',
-                'FloatingWindow {\n    implicitWidth: 800; implicitHeight: 720',
-                1,
-            )
-            source = source.replace(
-                '    anchors { top: true; bottom: true; left: true; right: true }\n', ''
-            )
-            source = source.replace('    exclusionMode: ExclusionMode.Ignore\n', '')
-            source = re.sub(r'^    WlrLayershell\..*\n', '', source, flags=re.M)
-            path.write_text(source)
+            support.floating_window(root / 'ui/InteractionWindow.qml', 800, 720)
             path = root / 'launcher/Launcher.qml'
             source = path.read_text()
             source = re.sub(r'^    WlrLayershell\..*\n', '', source, flags=re.M)

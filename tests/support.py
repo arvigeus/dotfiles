@@ -3,6 +3,7 @@
 import copy
 import importlib.util
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -61,6 +62,59 @@ def state(rows):
     return dict(
         available=True, displays=copy.deepcopy(rows), token=backend.fingerprint(rows)
     )
+
+
+def floating_window(path, width=None, height=None):
+    """Replace the first PanelWindow in path with a FloatingWindow.
+
+    Offscreen QPA has no layer shell. Only that window's own layer-shell
+    declarations (grouped or single-line) are removed; content, input, focus and
+    bindings run unchanged.
+    """
+    source = path.read_text()
+    start = re.search(r'^( *)PanelWindow \{\n', source, flags=re.M)
+    end = start and re.compile(rf'^{start[1]}\}}\n', re.M).search(source, start.end())
+    if not end:
+        raise AssertionError(f'{path}: no PanelWindow block to replace')
+    inner = start[1] + '    '
+    body = re.sub(
+        rf'^{inner}(?:(?:anchors|margins) \{{[^}}]*\}}'
+        r'|(?:anchors|margins|exclusionMode|exclusiveZone|WlrLayershell)\b.*)\n',
+        '',
+        source[start.end() : end.start()],
+        flags=re.M,
+    )
+    size = ''.join(
+        f'{inner}{name}: {value}\n'
+        for name, value in (('implicitWidth', width), ('implicitHeight', height))
+        if value
+    )
+    path.write_text(
+        f'{source[: start.start()]}{start[1]}FloatingWindow {{\n{size}{body}{source[end.start() :]}'
+    )
+
+
+def private_bus(root):
+    """Return a dbus-run-session prefix for a bus that activates nothing.
+
+    The stock session bus configuration activates real portals and daemons from
+    the system service directories into the test's runtime directory.
+    """
+    config = root / 'bus.conf'
+    config.write_text(f"""<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>session</type>
+  <listen>unix:dir={root}</listen>
+  <auth>EXTERNAL</auth>
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+    <allow own="*"/>
+  </policy>
+</busconfig>
+""")
+    return ['dbus-run-session', f'--config-file={config}', '--']
 
 
 def copy_theme_ui(root):

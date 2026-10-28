@@ -5,7 +5,7 @@ Scope {
     id: root
 
     // One owner for every interactive surface, across all outputs. The drawer
-    // host and launcher share ownership; categories have no navigation stack.
+    // host, launcher and Space host share ownership; there is no navigation stack.
     property QtObject activeSurface: null
     property ShellScreen screen: null
 
@@ -38,7 +38,6 @@ Scope {
     }
 
     Connections {
-        id: outputs
         target: Quickshell
         function onScreensChanged(): void {
             if (root.activeSurface && !Quickshell.screens.includes(root.screen))

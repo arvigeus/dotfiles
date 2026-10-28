@@ -44,3 +44,67 @@ ShellRoot {
  }}
 }""",
         )
+
+    def test_unchanged_snapshots_keep_bindings_and_focus(self):
+        support.run_qml(
+            self,
+            """import QtQuick
+import QtQuick.Controls
+import Quickshell
+import "ui"
+import "ui/Models.js" as Models
+ShellRoot {
+ property int changes: 0
+ property int evaluations: 0
+ function rows(order, value) {
+  // Python snapshots can enumerate keys in any order; nested values are lists.
+  const all = {a: {key: "a", value: value, routes: [{name: "x"}]}, b: {routes: [{name: "y"}], value: 2, key: "b"}};
+  return order.map(key => all[key]);
+ }
+ FloatingWindow {
+  id: window
+  visible: true
+  Column {
+   Repeater {
+    id: items
+    model: KeyedModel { id: keyed; values: rows(["a", "b"], 1) }
+    delegate: TextField {
+     required property var modelData
+     text: modelData.key ?? ""
+     onModelDataChanged: evaluations++
+    }
+   }
+  }
+ }
+ Connections { target: keyed; function onDataChanged() { changes++; } }
+ ListModel { id: plain; dynamicRoles: true }
+ function check(value, message) { if (!value) throw new Error(message); }
+ Timer { interval: 100; running: true; onTriggered: {
+  try {
+   const first = items.itemAt(0);
+   first.forceActiveFocus();
+   const before = evaluations;
+   keyed.values = rows(["a", "b"], 1);
+   keyed.values = rows(["a", "b"], 1).map(row => {
+    const reversed = {};
+    for (const key of Object.keys(row).reverse()) reversed[key] = row[key];
+    return reversed;
+   });
+   check(changes === 0 && evaluations === before, "unchanged records were rewritten");
+   keyed.values = rows(["b", "a"], 1);
+   check(changes === 0 && items.itemAt(1) === first && first.activeFocus, "a move rewrote records or lost focus");
+   keyed.values = rows(["b", "a"], 3);
+   check(changes === 1 && first.modelData.value === 3 && first.activeFocus, "a changed record lost focus or stayed stale");
+   // Duplicate or missing keys still mirror the snapshot row for row.
+   keyed.values = [{key: "d", value: 1}, {key: "d", value: 2}, {value: 3}, {value: 4}];
+   keyed.values = [{key: "d", value: 5}, {value: 6}];
+   check(keyed.count === 2 && items.count === 2 && items.itemAt(0).modelData.value === 5
+    && items.itemAt(1).modelData.value === 6, "stale rows remained: " + keyed.count);
+   Models.sync(plain, [{name: "x"}, {name: "x"}], "name");
+   Models.sync(plain, [], "name");
+   check(plain.count === 0, "emptied snapshot left rows");
+   console.log("DISPLAY_PASS"); Qt.quit();
+  } catch(e) { console.error("DISPLAY_FAIL", e); Qt.quit(); }
+ }}
+}""",
+        )

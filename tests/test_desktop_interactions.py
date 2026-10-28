@@ -32,28 +32,8 @@ class DesktopInteractionTests(unittest.TestCase):
             # Only native surface and shortcut registration need substitutes.
             # The owner, geometry, input, controls, persistence and launcher run
             # unchanged. Native layer focus/hotplug remain live acceptance checks.
-            path = root / 'ui/InteractionWindow.qml'
-            source = path.read_text().replace(
-                'PanelWindow {',
-                'FloatingWindow {\n    implicitWidth: 1280; implicitHeight: 720',
-                1,
-            )
-            source = source.replace(
-                '    anchors { top: true; bottom: true; left: true; right: true }\n', ''
-            )
-            source = source.replace('    exclusionMode: ExclusionMode.Ignore\n', '')
-            source = re.sub(r'^    WlrLayershell\..*\n', '', source, flags=re.M)
-            path.write_text(source)
-            path = root / 'bar/Bar.qml'
-            source = path.read_text().replace(
-                'PanelWindow {', 'FloatingWindow {\n    implicitWidth: 1280', 1
-            )
-            source = source.replace(
-                '    anchors { top: true; left: true; right: true }\n', ''
-            )
-            source = source.replace('    exclusiveZone: Theme.pillHeight\n', '')
-            source = re.sub(r'^    WlrLayershell\..*\n', '', source, flags=re.M)
-            path.write_text(source)
+            support.floating_window(root / 'ui/InteractionWindow.qml', 1280, 720)
+            support.floating_window(root / 'bar/Bar.qml', 1280)
             for name in ('ui/DrawerHost.qml', 'launcher/Launcher.qml'):
                 path = root / name
                 source = re.sub(
@@ -610,3 +590,220 @@ ShellRoot {
             self.assertNotIn('Binding loop', log)
             self.assertIn('INTERACTIONS_PASS', log)
             self.assertEqual((config / 'theme-mode').read_text(), 'light\n')
+
+    @unittest.skipUnless(shutil.which('dbus-run-session'), 'Private D-Bus is required')
+    def test_production_shell_starts_routes_outputs_and_reloads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            support.copy_theme_ui(root)
+            for name in (
+                'icons',
+                'drawers',
+                'spaces',
+                'bar',
+                'launcher',
+                'integrations',
+            ):
+                shutil.copytree(DESKTOP / name, root / name)
+            # The unchanged shell.qml composes every startup service. Helpers are
+            # inert and host commands are stubs, so nothing reaches the session.
+            for path in root.rglob('*.py'):
+                path.write_text('import sys\nsys.stdin.read()\n')
+            stubs = root / 'bin'
+            stubs.mkdir()
+            for name in ('hyprctl', 'notify-send', 'systemctl', 'uwsm'):
+                (stubs / name).write_text('#!/bin/sh\nexit 1\n')
+                (stubs / name).chmod(0o755)
+            support.floating_window(root / 'ui/InteractionWindow.qml', 640, 480)
+            support.floating_window(root / 'bar/Bar.qml', 640)
+            support.floating_window(
+                root / 'spaces/pictures/WallpaperBackground.qml', 640, 480
+            )
+            support.floating_window(
+                root / 'drawers/notifications/NotificationPopups.qml'
+            )
+            # Layer-shell attachments on a FloatingWindow stall the offscreen QPA.
+            for name in ('ui/DrawerHost.qml', 'launcher/Launcher.qml'):
+                path = root / name
+                path.write_text(
+                    re.sub(
+                        r'^    WlrLayershell\..*\n', '', path.read_text(), flags=re.M
+                    )
+                )
+            (root / 'screens.json').write_text(
+                '{"screens": ['
+                '{"name": "OUT-1", "x": 0, "y": 0, "width": 640, "height": 480},'
+                '{"name": "OUT-2", "x": 640, "y": 0, "width": 800, "height": 600}]}'
+            )
+            shell = (DESKTOP / 'shell.qml').read_text()
+            (root / 'shell.qml').write_text(
+                shell[: shell.rstrip().rindex('}')]
+                + """
+    PersistentProperties {
+        id: lifecycleRun
+        reloadableId: "lifecycleRun"
+        property bool reloaded: false
+    }
+    Timer {
+        id: lifecycleDriver
+        property int stage: 0
+        property int waits: 0
+        interval: 100
+        running: true
+        repeat: true
+        function check(value, message) {
+            if (!value)
+                throw new Error(message);
+        }
+        function settled() {
+            return drawers.currentPage && drawers.slideProgress === 1 || ++waits > 40;
+        }
+        onTriggered: {
+            try {
+                const first = Quickshell.screens[0], second = Quickshell.screens[1];
+                if (stage === 0) {
+                    check(second, "second output missing");
+                    check(Theme.started && DisplayService.started && PowerSession.started && CalendarService.started
+                        && NotificationCenter.started && NotificationCenter.initialized, "a session service did not start");
+                    check(SpaceState.host && interactions.activeSurface === null && !drawers.visible && !launcher.visible
+                        && !NotificationCenter.drawerOpen, "a surface is open at startup");
+                    if (lifecycleRun.reloaded) {
+                        drawers.toggleDrawer("tray", second);
+                        check(drawers.opened && interactions.screen === second, "reloaded shell cannot open a drawer");
+                        console.log("INTERACTIONS_PASS");
+                        Qt.quit();
+                        return;
+                    }
+                    drawers.toggleDrawer("notifications", first);
+                    check(drawers.opened && interactions.screen === first && NotificationCenter.drawerOpen,
+                        "notifications drawer did not own the first output");
+                    launcher.toggleOn(second);
+                    check(interactions.activeSurface === launcher && interactions.screen === second,
+                        "launcher did not replace the drawer on the second output");
+                    check(!drawers.visible && !NotificationCenter.drawerOpen, "replaced drawer stayed presented");
+                    CaptureService.hideRequested();
+                    check(interactions.activeSurface === null && !launcher.visible, "capture left the launcher open");
+                    drawers.toggleDrawer("tray", first);
+                } else if (stage === 1) {
+                    if (!settled())
+                        return;
+                    check(drawers.currentPage?.active && drawers.currentPage.screen === first, "tray did not open on the first output");
+                    // A replaced drawer reopened at once reloads its page, so it must not resume the old slide.
+                    launcher.toggleOn(first);
+                    drawers.toggleDrawer("tray", first);
+                    check(drawers.opened && drawers.slideProgress === 0 && drawers.currentPage === null,
+                        "replaced drawer resumed its old presentation");
+                } else if (stage === 2) {
+                    if (!settled())
+                        return;
+                    drawers.toggleDrawer("tray", second);
+                    check(drawers.opened && interactions.screen === second && drawers.slideProgress === 0,
+                        "drawer did not restart on the second output");
+                } else if (stage === 3) {
+                    if (!settled())
+                        return;
+                    check(drawers.currentPage.screen === second && drawers.presentationScreen === second,
+                        "moved drawer kept its old output");
+                    drawers.toggleDrawer("tray", second);
+                    check(!drawers.opened && interactions.activeSurface === null, "toggle on the same output did not close");
+                } else if (stage === 4) {
+                    if (drawers.visible && ++waits < 40)
+                        return;
+                    check(!drawers.visible && drawers.currentPage === null && drawers.presentationScreen === null
+                        && interactions.screen === null, "closed drawer retained its page or output");
+                    // Reloading with a drawer open must start the next generation closed.
+                    drawers.toggleDrawer("notifications", second);
+                    check(NotificationCenter.drawerOpen, "notifications drawer did not reopen");
+                    lifecycleRun.reloaded = true;
+                    Quickshell.reload(false);
+                    return;
+                }
+                stage++;
+                waits = 0;
+            } catch (error) {
+                console.error("INTERACTIONS_FAIL", lifecycleRun.reloaded, stage, error.message);
+                Qt.quit();
+            }
+        }
+    }
+}
+"""
+            )
+            (root / 'runtime').mkdir(mode=0o700)
+            (root / 'config/quickshell/desktop').mkdir(parents=True)
+            (root / 'config/quickshell/desktop/theme-mode').write_text('dark\n')
+            env = {
+                **os.environ,
+                'PATH': f'{stubs}{os.pathsep}{os.environ.get("PATH", "")}',
+                'QT_QPA_PLATFORM': f'offscreen:configfile={root / "screens.json"}',
+                'XDG_RUNTIME_DIR': str(root / 'runtime'),
+                'XDG_CONFIG_HOME': str(root / 'config'),
+                'XDG_DATA_HOME': str(root / 'data'),
+                'XDG_STATE_HOME': str(root / 'state'),
+                'XDG_CACHE_HOME': str(root / 'cache'),
+                'XDG_DATA_DIRS': str(root / 'empty'),
+                'PIPEWIRE_REMOTE': 'dotfiles-tests-unavailable',
+            }
+            for key in ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE'):
+                env.pop(key, None)
+            result = subprocess.run(
+                [
+                    *support.private_bus(root),
+                    QS,
+                    '--no-color',
+                    '-p',
+                    str(root / 'shell.qml'),
+                ],
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=30,
+            )
+            log = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, log)
+            self.assertIn('INTERACTIONS_PASS', log)
+            for error in (
+                'INTERACTIONS_FAIL',
+                'Failed to load',
+                'TypeError',
+                'ReferenceError',
+                'Binding loop',
+                'Unable to assign',
+                'is not a function',
+            ):
+                self.assertNotIn(error, log)
+
+    def test_style_preview_loads(self):
+        source = (DESKTOP / 'preview.qml').read_text()
+        finish = '    Timer { interval: 200; running: true; onTriggered: { console.log("DISPLAY_PASS"); Qt.quit(); } }\n'
+        self.assertIn('ShellRoot {\n', source)
+        support.run_qml(
+            self, source.replace('ShellRoot {\n', 'ShellRoot {\n' + finish, 1)
+        )
+
+    def test_hyprland_bindings_reach_registered_shell_shortcuts(self):
+        bindings = (
+            support.REPO
+            / 'modules/desktop/hyprland/symlinks/home/.config/hypr/bindings.lua'
+        ).read_text()
+        wanted = set(re.findall(r'hl\.dsp\.global\("desktop:([\w-]+)"\)', bindings))
+        self.assertIn('launcher', wanted)
+        registered = set()
+        for path in DESKTOP.rglob('*.qml'):
+            for block in re.findall(
+                r'GlobalShortcut \{\n(.*?)\n *\}', path.read_text(), flags=re.S
+            ):
+                self.assertIn('appid: "desktop"', block, path)
+                registered.update(
+                    re.findall(r'^ *name: "([\w-]+)"$', block, flags=re.M)
+                )
+                # DrawerHost registers each catalogue shortcut under the same app ID.
+                if re.search(r'^ *name: modelData\.shortcut$', block, flags=re.M):
+                    registered.update(
+                        re.findall(
+                            r'^ *shortcut: "([\w-]+)"$',
+                            (DESKTOP / 'drawers/Drawers.qml').read_text(),
+                            flags=re.M,
+                        )
+                    )
+        self.assertLessEqual(wanted, registered)

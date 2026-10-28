@@ -7,7 +7,6 @@ ShellButton {
     property bool toolTipEnabled: true
     property int holdDuration: 1300
     property real progress: 0
-    property bool fired: false
     property bool armed: true
     signal confirmed
     function cancel(): void {
@@ -15,9 +14,12 @@ ShellButton {
         fill.stop();
         progress = 0;
     }
+    // Wayland clients repeat a held key as release/press pairs; the button would
+    // treat each pair as a new click and restart the hold.
+    Keys.onPressed: event => event.accepted = event.isAutoRepeat && down
+    Keys.onReleased: event => event.accepted = event.isAutoRepeat && down
     onPressed: {
         cancel();
-        fired = false;
         if (enabled && armed && visible) {
             hold.start();
             fill.start();
@@ -37,8 +39,7 @@ ShellButton {
     Timer {
         id: hold
         interval: root.holdDuration
-        onTriggered: if (root.down && root.enabled && root.visible && root.armed && !root.fired) {
-            root.fired = true;
+        onTriggered: if (root.down && root.enabled && root.visible && root.armed) {
             root.cancel();
             root.confirmed();
         }

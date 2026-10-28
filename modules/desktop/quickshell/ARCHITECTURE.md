@@ -63,9 +63,14 @@ cards use it. Static containers do
 not gain a hover action; their nested controls remain independent. Performance
 and keyboard language choices use `ButtonBackground` with the same surface and
 idle border, retaining their selected-state tint.
-`HoldButton` cancels on release, focus loss, disabling or dismissal.
-`PassiveToolTip` uses passive hover/focus observation without stealing clicks.
+`HoldButton` cancels on release, focus loss, disabling or dismissal; a held
+key's auto-repeat remains one hold.
+`PassiveToolTip` appears after a delay on hover or keyboard focus, without
+taking clicks or focus. Pointer and programmatic focus show no tip.
 `WheelScroll` and `ScrollListView` handle pointer wheels and touchpad scrolling.
+`DrawerColumn`, `ScrollListView` and the Spaces' `ScrollArea` scroll keyboard and
+programmatic focus into view once layouts settle; pointer focus never scrolls.
+`wheelInput.reveal(item)` shows any other item.
 
 Native QObject lists use `ScriptModel`. Plain keyed snapshots use `KeyedModel`,
 a dynamic `ListModel` reconciled by `ui/Models.js`. It updates records after moves
@@ -81,8 +86,8 @@ presentation rather than the shell's gray controls or light/dark variants, and o
 See the presentation contract in [Movies architecture](symlinks/home/.config/quickshell/desktop/spaces/movies/ARCHITECTURE.md)
 for lifecycle, provider, worker and private restoration details.
 All Space headers use the shared activity indicator for concurrent work and
-progress. The host's page-opening indicator uses the same red, 28-pixel movie
-spinner as the headers. Idle headers have no status marker or history tooltip; completed jobs
+progress. The host's page-opening indicator is a 28-pixel `BusySpinner` in the
+headers' red; `ui/` does not import Space modules. Idle headers have no status marker or history tooltip; completed jobs
 remain in notification/activity panels. Actionable errors remain inline.
 For Games providers, artwork and beat times, see the
 [Games architecture](symlinks/home/.config/quickshell/desktop/spaces/games/ARCHITECTURE.md).

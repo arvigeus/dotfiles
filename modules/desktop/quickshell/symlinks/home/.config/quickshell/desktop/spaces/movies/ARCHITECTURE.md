@@ -65,6 +65,14 @@ and reviewable jobs remain in the existing notification/activity panels.
 The cached ring repaints after canvas allocation, sizing or visibility changes,
 including asynchronous page creation and retained-page restoration.
 
+Every Space reuses this directory's `Movie*` controls, `ScrollArea` and
+`Catalogue.js`. `ScrollArea` steps mouse wheels like the shell's drawers and
+sizes its content from its single declared child unless the page sets
+`contentWidth`/`contentHeight`. `Catalogue.update()` keeps catalogue rows
+(`key` plus a JSON `payload`) keyed by identity, so delegates, decoded artwork
+and scroll position survive refreshes; appended pages add only unseen keys. It
+stays separate from the shell's role-based `ui/Models.js`.
+
 Progress derives directly from pending tasks and job snapshots; the indicator
 does not collect operation history. Errors, validation and actions requiring
 intervention stay beside their controls.

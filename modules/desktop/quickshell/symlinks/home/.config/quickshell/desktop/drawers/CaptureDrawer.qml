@@ -396,11 +396,7 @@ DrawerPage {
                         root.closePopovers();
                         root.openCamera = cameraCard;
                     }
-                    onPreviewRequested: Qt.callLater(() => {
-                        const view = captureScroll.contentItem;
-                        const position = cameraCard.mapToItem(view.contentItem, 0, cameraCard.height).y - view.height;
-                        view.contentY = Math.max(0, Math.min(view.contentHeight - view.height, position));
-                    })
+                    onPreviewRequested: captureScroll.wheelInput.reveal(cameraCard)
                 }
             }
         }
