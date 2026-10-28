@@ -48,22 +48,31 @@ Hyprland via `uwsm start -e -D Hyprland hyprland.desktop`, or the DRM
 `gaming-session` launcher. Desktop starts set `UWSM_SILENT_START=1` to suppress
 UWSM's informational console output while preserving warnings and errors.
 It retains the PAM/controlling-terminal session and
-hands the foreground terminal to each child. It holds a lock on
+hands the foreground terminal to each child. SIGTTOU is ignored only while it
+switches the foreground group, so sessions inherit default job control. It holds a lock on
 `$XDG_RUNTIME_DIR/session-mode/current`, which records the running mode and owner
 PID; `session-mode status` reports availability from that lock.
 
 `session-mode desktop|gaming` atomically writes the one-shot `next` request and
 signals its owner. A wake pipe and child pidfd wait for requests/exits without
-polling. Gaming requests first run `gaming-session --check`; invalid GPU/output
-settings leave the desktop running. The supervisor stops desktop through `uwsm stop` and gaming through
+polling. Requests fail without a supervisor; gaming requests then run
+`gaming-session --check`, and invalid GPU/output settings leave the desktop
+running. The supervisor stops desktop through `uwsm stop` and ready gaming through
 `steam -shutdown`, with bounded waits and TERM/KILL of its owned process group
-if graceful shutdown fails. Without a request it starts the desktop. Any
+if graceful shutdown fails. Before Gamescope's readiness, or once the session
+leader has exited, it skips `steam -shutdown`: Steam's launcher starts a new
+client when none is running. Without a request it starts the desktop. Any
 gaming exit, including Steam Exit, a crash or startup failure, therefore returns
 to Hyprland, and gaming never survives logout or reboot. Requesting desktop from
-desktop is Reload. Startup discards stale requests.
+desktop is Reload. Startup discards stale requests. The latest request picks the
+next session, so one made while a session stops or during a retry delay
+replaces the pending choice rather than starting and stopping it.
 
 Gaming passes a pipe to Gamescope's `--ready-fd` through `SESSION_MODE_READY_FD`;
 no readiness within 45 seconds, or EOF without readiness, stops gaming and returns to desktop.
+Data after the readiness line is the launcher's report that Steam exited: the
+supervisor then gives Gamescope the graceful-stop wait to follow before
+TERM/KILL, without `steam -shutdown`. EOF after readiness only ends the watch.
 Desktop exits within 5 seconds without a request retry with a capped backoff.
 SIGTERM/SIGHUP stop the current session and end supervision; Ctrl+C is ignored
 by the supervisor only. Child sessions start with clean display/socket variables.
@@ -74,7 +83,12 @@ Steam's `-steamos3` exposes the `steamos-session-select` hook, installed in
 
 `tests/test_session_modes.py` runs the production supervisor and Steam hook with
 isolated compositor and Steam executables, covering transitions, Reload, Steam
-exit, gaming failure/timeout, failed stops, and the desktop default of a new login.
+exit, gaming failure/timeout, stops before readiness, requests made during a stop,
+failed stops, and the desktop default of a new login. With the real launcher and
+a fake Gamescope that follows 3.17's readiness, descriptor and lingering
+behavior, it also covers Steam exit reports. A pseudo-terminal test
+checks foreground handoff and inherited signal dispositions; other tests keep
+the supervisor off the terminal running them.
 `test_boot_and_session.py` checks autologin provisioning and the TTY1 profile
 gate. Neither replaces a real DRM/Steam round trip on the installed hardware.
 
@@ -84,8 +98,8 @@ multi-output teardown can dereference a cleared connector in
 Gamescope can linger after Steam exits; a related DRM teardown stall is tracked
 [upstream](https://github.com/ValveSoftware/gamescope/issues/2287). The supervisor's
 bounded stop and process-group cleanup remain necessary even after a successful
-Steam startup. A successful return proves session recovery, not a clean native
-compositor shutdown.
+Steam startup, including after Steam exits on its own. A successful return proves
+session recovery, not a clean native compositor shutdown.
 
 ## Desktop integration
 

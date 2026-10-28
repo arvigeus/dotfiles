@@ -51,6 +51,9 @@ def current_mode(directory):
 
 
 def request_mode(directory, mode):
+    current = owner(directory)
+    if current is None:
+        raise ValueError('Session switching requires the TTY1 session supervisor.')
     if mode == 'gaming':
         if not gaming_available():
             raise ValueError('Install Gamescope and Steam to enter gaming mode.')
@@ -59,9 +62,6 @@ def request_mode(directory, mode):
             raise ValueError(result.stderr.strip() or 'Gaming session preflight failed.')
     with (directory / 'request.lock').open('a') as guard:
         fcntl.flock(guard, fcntl.LOCK_EX)
-        current = owner(directory)
-        if current is None:
-            raise ValueError('Session switching requires the TTY1 session supervisor.')
         request = directory / 'next'
         staged = directory / f'.next-{os.getpid()}'
         try:
@@ -85,6 +85,18 @@ def take_request(directory):
     return mode if mode in MODES else None
 
 
+def foreground(pgid):
+    """Give the controlling terminal to a process group."""
+    if not os.isatty(0):
+        return
+    # Ignore SIGTTOU only while switching, so sessions do not inherit SIG_IGN.
+    previous = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+    try:
+        os.tcsetpgrp(0, pgid)
+    finally:
+        signal.signal(signal.SIGTTOU, previous)
+
+
 class Supervisor:
     def __init__(self, directory):
         self.directory = directory
@@ -100,24 +112,28 @@ class Supervisor:
         except BlockingIOError:
             pass
 
-    def stop_child(self, mode):
-        try:
-            subprocess.run(STOP[mode], check=False, timeout=8)
-        except (OSError, subprocess.SubprocessError) as error:
-            print(f'Session stop: {error}', file=sys.stderr, flush=True)
-        try:
-            self.child.wait(timeout=STOP_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            for sig, timeout in ((signal.SIGTERM, 5), (signal.SIGKILL, None)):
+    def stop_child(self, command=None, grace=0):
+        """Run the graceful stop command, if any, wait, then end the owned process group."""
+        # An exited session needs no stop; `steam -shutdown` would start a client.
+        if self.child.poll() is not None:
+            return
+        if command:
+            try:
+                subprocess.run(command, check=False, timeout=8)
+            except (OSError, subprocess.SubprocessError) as error:
+                print(f'Session stop: {error}', file=sys.stderr, flush=True)
+            grace = STOP_TIMEOUT
+        for sig, timeout in ((None, grace), (signal.SIGTERM, 5), (signal.SIGKILL, None)):
+            if sig:
                 try:
                     os.killpg(self.child.pid, sig)
                 except ProcessLookupError:
                     pass
-                try:
-                    self.child.wait(timeout=timeout)
-                    break
-                except subprocess.TimeoutExpired:
-                    pass
+            try:
+                self.child.wait(timeout=timeout)
+                return
+            except subprocess.TimeoutExpired:
+                pass
 
     def run_once(self, mode):
         ready = write = pidfd = None
@@ -125,11 +141,13 @@ class Supervisor:
         for key in ('WAYLAND_DISPLAY', 'DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE', 'XDG_CURRENT_DESKTOP',
                     'XDG_SESSION_DESKTOP', 'IN_UWSM_ENV_PRELOADER'):
             env.pop(key, None)
-        command = DESKTOP
+        command, stop = DESKTOP, STOP['desktop']
         if mode == 'gaming':
             ready, write = os.pipe2(os.O_CLOEXEC)
             env['SESSION_MODE_READY_FD'] = str(write)
-            command = ['gaming-session']
+            # Steam's launcher starts a client when none is running, so
+            # `steam -shutdown` waits for Gamescope's readiness.
+            command, stop = ['gaming-session'], None
         else:
             env['UWSM_SILENT_START'] = '1'
         try:
@@ -138,21 +156,20 @@ class Supervisor:
             if write is not None:
                 os.close(write)
                 write = None
-            if os.isatty(0):
-                signal.signal(signal.SIGTTOU, signal.SIG_IGN)
-                os.tcsetpgrp(0, self.child.pid)
+            foreground(self.child.pid)
             pidfd = os.pidfd_open(self.child.pid)
             deadline = time.monotonic() + STARTUP_TIMEOUT
             while True:
                 if self.stopping:
-                    self.stop_child(mode)
+                    self.stop_child(stop)
                     return None
                 requested = take_request(self.directory)
                 if requested:
-                    self.stop_child(mode)
+                    self.stop_child(stop)
                     return requested
+                starting = ready is not None and stop is None
                 watched = [pidfd, self.wake_read] + ([] if ready is None else [ready])
-                timeout = None if ready is None else max(0, deadline - time.monotonic())
+                timeout = max(0, deadline - time.monotonic()) if starting else None
                 readable = select.select(watched, [], [], timeout)[0]
                 if self.wake_read in readable:
                     os.read(self.wake_read, 4096)
@@ -160,19 +177,27 @@ class Supervisor:
                 if pidfd in readable:
                     self.child.wait()
                     return take_request(self.directory)
-                if ready is not None:
-                    if ready in readable and os.read(ready, 4096):
-                        os.close(ready)
-                        ready = None
-                    else:
+                report = os.read(ready, 4096) if ready in readable else b''
+                if starting:
+                    if not report:
                         print('Gaming startup timed out or closed its readiness pipe; returning to desktop.', file=sys.stderr, flush=True)
-                        self.stop_child(mode)
+                        self.stop_child(stop)
                         return None
+                    # Gamescope's readiness line precedes Steam's exit report.
+                    stop, report = STOP['gaming'], report.partition(b'\n')[2]
+                elif not report:
+                    # Gamescope closed the pipe while exiting; its pidfd follows.
+                    os.close(ready)
+                    ready = None
+                    continue
+                if report:
+                    # Steam exited. Gamescope should follow but can linger.
+                    self.stop_child(grace=STOP_TIMEOUT)
+                    return take_request(self.directory)
         finally:
-            if self.child and self.child.poll() is None:
-                self.stop_child(mode)
-            if os.isatty(0):
-                os.tcsetpgrp(0, os.getpgrp())
+            if self.child:
+                self.stop_child(stop)
+            foreground(os.getpgrp())
             for fd in (ready, write, pidfd):
                 if fd is not None:
                     os.close(fd)
@@ -186,6 +211,9 @@ class Supervisor:
                 (self.directory / 'next').unlink(missing_ok=True)
                 mode, delay = 'desktop', 1
                 while not self.stopping:
+                    # The latest request wins, including one made while the
+                    # previous session stopped or during a retry delay.
+                    mode = take_request(self.directory) or mode
                     current.seek(0)
                     current.truncate()
                     json.dump(dict(mode=mode, pid=os.getpid()), current)

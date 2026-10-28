@@ -20,6 +20,8 @@ desktop. Rebooting always starts Hyprland.
 **Restart → Reload** starts a fresh desktop session, closing running applications.
 Gaming exits, startup failures and a compositor startup timeout return to Hyprland.
 Returning from gaming can take about 30 seconds while Steam and Gamescope shut down.
+If gaming mode stops responding, press Ctrl+Alt+F2, log in, run
+`session-mode desktop`, then return with Ctrl+Alt+F1.
 
 Per-machine Gamescope settings (`SYSTEM_GAMING_GPU`, `SYSTEM_GAMING_HDR`,
 `SYSTEM_GAMING_OUTPUT`) go in `/etc/gaming-session.conf` or

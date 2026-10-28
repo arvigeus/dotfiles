@@ -150,6 +150,9 @@ if [[ $check_only == --check ]]; then
     exit 0
 fi
 
+# Honor Steam's PrefersNonDefaultGPU policy for Steam and its games, independently
+# of the GPU that must scan out Gamescope's display.
+client=(switcherooctl launch "$steam_bin" -gamepadui -steamos3)
 args=(--backend drm --steam --xwayland-count 2 --adaptive-sync --mangoapp)
 if [[ -n ${SESSION_MODE_READY_FD:-} ]]; then
     [[ $SESSION_MODE_READY_FD =~ ^[0-9]+$ ]] || {
@@ -158,6 +161,12 @@ if [[ -n ${SESSION_MODE_READY_FD:-} ]]; then
     }
     # Despite its name, Gamescope opens this argument as a path, not an FD number.
     args+=(--ready-fd "/proc/self/fd/$SESSION_MODE_READY_FD")
+    # Gamescope closes inherited descriptors in its children and can outlive
+    # Steam, so Steam's exit is reported through Gamescope's descriptor. The
+    # exec chain below keeps this shell's PID for Gamescope.
+    # shellcheck disable=SC2016 # Expanded by the wrapper shell.
+    client=(sh -c 'report=$1; shift; "$@"; echo exited > "$report"' gaming-session
+        "/proc/$$/fd/$SESSION_MODE_READY_FD" "${client[@]}")
 fi
 
 args+=(--prefer-output "$output" --prefer-vk-device "$gpu")
@@ -179,9 +188,7 @@ if [[ $SYSTEM_GAMING_HDR == 1 ]]; then
     session_env+=(STEAM_GAMESCOPE_HDR_SUPPORTED=1)
 fi
 
-# Honor Steam's PrefersNonDefaultGPU policy for Steam and its games, independently
-# of the GPU that must scan out Gamescope's display.
-command=(env "${session_env[@]}" "$gamescope_bin" "${args[@]}" -- switcherooctl launch "$steam_bin" -gamepadui -steamos3)
+command=(env "${session_env[@]}" "$gamescope_bin" "${args[@]}" -- "${client[@]}")
 if [[ ${SYSTEM_GAMING_DRY_RUN:-0} == 1 ]]; then
     printf '%q ' "${command[@]}"
     printf '\n'
