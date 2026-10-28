@@ -41,7 +41,12 @@ publishing when the running engine has cached a missing type.
 
 `Apps.launch()` uses `uwsm app -t service` to put user-facing applications in their own
 units. The launcher uses service mode with the desktop entry ID so UWSM handles
-field codes, working directories and terminal entries. Helpers keep their parent
+field codes, working directories and terminal entries. UWSM rejects IDs outside
+`[A-Za-z0-9_][A-Za-z0-9_.-]*`, which Quickshell still lists (Steam and Wine names
+with spaces or `+`); `launcher/entry_path.py` maps those back to the file that won
+XDG precedence and UWSM parses it by path. A new search query selects its best
+match; favorite and catalogue changes keep the selected application. Enter, the
+arrows and Ctrl+D apply a still-debounced query first. Helpers keep their parent
 service's lifetime. Shell restart therefore releases temporary controls while
 applications launched through UWSM remain running.
 The shell service uses `UMask=0077` for private history and helper output;

@@ -171,5 +171,7 @@ journalctl --user -b -u desktop-shell.service -n 50
 ```
 
 Applications launched from the shell run independently and survive its restart.
-Temporary pauses, tests and reminders end on restart. See
+Desktop entries whose file names contain spaces, `+` or non-ASCII characters
+(common for Steam and Wine shortcuts) launch, but UWSM shows a warning about the
+non-standard entry ID. Temporary pauses, tests and reminders end on restart. See
 [implementation and validation notes](ARCHITECTURE.md).

@@ -68,13 +68,18 @@ TestCase {
         compare(many.ids, ["kitty", "missing-app"]);
         const empty = store("empty"); empty.toggle("firefox"); empty.toggle("firefox");
         compare(empty.ids, []);
+        // Desktop IDs follow file names: list and INI syntax must stay data.
+        const odd = store("odd");
+        for (const id of ["Portal 2", "a,b", "x;y", "@Variant(x)", "q\\"uote", " lead", "ünï"])
+            odd.toggle(id);
+        store("single").toggle("a, b");
         // Native settings should retain unrelated values in the same file.
         many.preferences.setValue("otherPreference", "keep"); many.preferences.sync();
     }
 """,
             )
             self.assertFalse((root / 'untouched.ini').exists())
-            for name in ('one', 'many', 'empty'):
+            for name in ('one', 'many', 'empty', 'odd', 'single'):
                 self.assertTrue((root / (name + '.ini')).is_file())
             self.run_qt(
                 root,
@@ -84,6 +89,8 @@ TestCase {
         const many = store("many"); compare(many.ids, ["kitty", "missing-app"]);
         compare(many.preferences.value("otherPreference", ""), "keep");
         compare(store("empty").ids, []);
+        compare(store("odd").ids, ["Portal 2", "a,b", "x;y", "@Variant(x)", "q\\"uote", " lead", "ünï"]);
+        compare(store("single").ids, ["a, b"]);
     }
 """,
             )

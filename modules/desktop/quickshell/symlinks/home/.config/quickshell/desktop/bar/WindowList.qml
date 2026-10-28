@@ -234,7 +234,7 @@ Surface {
                 implicitWidth: contentItem.implicitWidth + leftPadding + rightPadding
                 padding: Theme.spacingSmall
                 urgent: edge.urgent
-                text: (edge.direction < 0 ? (edge.hidden === 1 ? qsTr("1 more window to the left") : qsTr("%1 more windows to the left")) : (edge.hidden === 1 ? qsTr("1 more window to the right") : qsTr("%1 more windows to the right"))).arg(edge.hidden) + (edge.urgent ? " · " + qsTr("needs attention") : "")
+                text: (edge.direction < 0 ? (edge.hidden === 1 ? qsTr("1 more window to the left") : qsTr("%1 more windows to the left").arg(edge.hidden)) : (edge.hidden === 1 ? qsTr("1 more window to the right") : qsTr("%1 more windows to the right").arg(edge.hidden))) + (edge.urgent ? " · " + qsTr("needs attention") : "")
                 onClicked: root.page(edge.direction)
                 PassiveToolTip {
                     target: marker

@@ -16,7 +16,10 @@ InteractionWindow {
     property bool launching: false
     property int session: 0
     property string searchQuery: ""
-    property string selectionToRestore: ""
+    // The Enter target and the query it belongs to. A new query selects its best
+    // match; favorite and catalogue changes keep the same application selected.
+    property string selectedId: ""
+    property string selectionQuery: ""
     property bool pointerPositionKnown: false
     property point lastPointerPosition: Qt.point(0, 0)
     readonly property var favoriteIds: favorites.ids
@@ -34,7 +37,7 @@ InteractionWindow {
         if (opened) {
             session++;
             pointerPositionKnown = false;
-            selectionToRestore = "";
+            selectedId = "";
             search.text = "";
             search.submit();
             errorMessage = "";
@@ -44,24 +47,33 @@ InteractionWindow {
     // Let ScriptModel reconcile identities before assigning the new selection.
     onMatchesChanged: Qt.callLater(root.resetSelection)
 
+    function select(index: int): void {
+        results.currentIndex = index;
+        selectedId = matches[index]?.id ?? "";
+    }
+
     function resetSelection(): void {
-        const wanted = selectionToRestore;
-        selectionToRestore = "";
-        const index = wanted ? matches.findIndex(entry => entry.id === wanted) : 0;
-        results.currentIndex = matches.length ? Math.max(0, index) : -1;
+        const kept = searchQuery === selectionQuery ? matches.findIndex(entry => entry.id === selectedId) : -1;
+        selectionQuery = searchQuery;
+        select(matches.length ? Math.max(0, kept) : -1);
         if (results.currentIndex > 0)
             results.positionViewAtIndex(results.currentIndex, ListView.Contain);
         else
             results.positionViewAtBeginning();
     }
 
-    function toggleFavorite(id: string): void {
-        if (!DesktopEntries.applications.values.some(entry => entry.id === id))
+    // Keys can arrive before the debounced query. Apply it first, so typing and
+    // pressing Enter at once opens the typed query's best match.
+    function applyQuery(): void {
+        if (search.text === searchQuery)
             return;
-        // Reordering favorites must not change the next Enter target.
-        selectionToRestore = matches[results.currentIndex]?.id || "";
-        favorites.toggle(id);
-        Qt.callLater(root.resetSelection);
+        search.submit();
+        resetSelection();
+    }
+
+    function toggleFavorite(id: string): void {
+        if (DesktopEntries.applications.values.some(entry => entry.id === id))
+            favorites.toggle(id);
     }
 
     GlobalShortcut {
@@ -72,9 +84,10 @@ InteractionWindow {
     }
 
     function moveSelection(delta: int): void {
+        applyQuery();
         if (!matches.length)
             return;
-        results.currentIndex = Math.max(0, Math.min(matches.length - 1, results.currentIndex + delta));
+        select(Math.max(0, Math.min(matches.length - 1, results.currentIndex + delta)));
         results.positionViewAtIndex(results.currentIndex, ListView.Contain);
     }
 
@@ -93,7 +106,7 @@ InteractionWindow {
             return;
         const index = results.indexAt(results.contentX + local.x, results.contentY + local.y);
         if (index >= 0)
-            results.currentIndex = index;
+            select(index);
     }
 
     HoverHandler {
@@ -121,8 +134,12 @@ InteractionWindow {
         launching = true;
         // uwsm parses the entry (Terminal, Path, field codes) and starts it as its
         // own service, so it outlives desktop-shell.service restarts and the
-        // command returns once the app started. Pass the ID as one argument.
-        launch.exec(["uwsm", "app", "-t", "service", "--", entry.id + ".desktop"]);
+        // command returns once the app started. uwsm resolves only standard IDs;
+        // others, such as Steam or Wine names with spaces, go by file path.
+        if (/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(entry.id))
+            launch.exec(Apps.command([entry.id + ".desktop"]));
+        else
+            launch.exec(["python3", Quickshell.shellPath("launcher/entry_path.py"), entry.id, ...Apps.command([])]);
     }
 
     Process {
@@ -138,9 +155,12 @@ InteractionWindow {
                 return;
             if (exitCode === 0 && exitStatus === 0) {
                 root.dismiss();
-            } else {
-                root.errorMessage = qsTr("Could not open %1. %2").arg(applicationName).arg(launchErrors.text.trim());
+                return;
             }
+            // Piped uwsm output carries journal priority prefixes such as "<3>".
+            const detail = launchErrors.text.replace(/^<[0-7]>/gm, "").trim();
+            // Fill the name last: a "%1" inside it must not receive the detail.
+            root.errorMessage = qsTr("Could not open %1.").arg(applicationName) + (detail ? " " + detail : "");
         }
         // FailedToStart does not emit exited in Quickshell 0.3.2.
         onRunningChanged: if (!running)
@@ -200,15 +220,16 @@ InteractionWindow {
                         border.color: search.activeFocus ? Theme.accent : Theme.border
                     }
                     onSearchRequested: query => root.searchQuery = query
-                    onTextChanged: {
-                        root.errorMessage = "";
-                        root.selectionToRestore = "";
+                    onTextChanged: root.errorMessage = ""
+                    onAccepted: {
+                        root.applyQuery();
+                        root.activate(results.currentIndex);
                     }
-                    onAccepted: root.activate(results.currentIndex)
                     Keys.onUpPressed: root.moveSelection(-1)
                     Keys.onDownPressed: root.moveSelection(1)
                     Keys.onPressed: event => {
                         if (event.key === Qt.Key_D && event.modifiers === Qt.ControlModifier) {
+                            root.applyQuery();
                             const entry = root.matches[results.currentIndex];
                             if (entry && !root.launching)
                                 root.toggleFavorite(entry.id);
@@ -249,7 +270,7 @@ InteractionWindow {
                     // Native catalogue removals can clear an entry before its row is disposed.
                     text: modelData?.name || ""
                     enabled: !root.launching
-                    onPressed: results.currentIndex = index
+                    onPressed: root.select(index)
                     onClicked: root.activate(index)
                     background: ButtonBackground {
                         highlighted: resultButton.rowHighlighted
@@ -290,7 +311,7 @@ InteractionWindow {
                             PassiveToolTip {
                                 target: favoriteButton
                             }
-                            onPressed: results.currentIndex = resultButton.index
+                            onPressed: root.select(resultButton.index)
                             onClicked: root.toggleFavorite(resultButton.modelData?.id || "")
                             contentItem: Icon {
                                 name: favoriteButton.favorite ? "star-filled" : "star"

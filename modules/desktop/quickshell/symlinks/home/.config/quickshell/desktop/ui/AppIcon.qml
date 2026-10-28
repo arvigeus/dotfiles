@@ -12,7 +12,8 @@ Item {
 
     Image {
         anchors.fill: parent
-        source: !root.icon.length ? "" : root.icon.startsWith("/") ? "file://" + root.icon : Quickshell.iconPath(root.icon, true)
+        // Encode path segments: "#", "?" and "%" in file names are not URL syntax.
+        source: !root.icon.length ? "" : root.icon.startsWith("/") ? "file://" + root.icon.split("/").map(encodeURIComponent).join("/") : Quickshell.iconPath(root.icon, true)
         // Layouts briefly have zero size during creation. Do not decode an SVG
         // at its possibly enormous intrinsic size before the row is laid out.
         sourceSize.width: Math.max(1, Math.ceil(width * Screen.devicePixelRatio))

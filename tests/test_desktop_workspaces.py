@@ -538,6 +538,8 @@ CROWDED_STEPS = """        [() => part("OUT-1", "windowList").windows.length ===
             check(list.tabWidth === list.minimumCellWidth && list.width === list.maximumWidth, "crowded tabs did not shrink: " + list.tabWidth);
             check(list.hiddenBefore === 0 && list.hiddenAfter > 0, "crowded strip did not overflow to the right");
             check(!part("OUT-1", "windowsBefore").visible && part("OUT-1", "windowsAfter").visible, "edge markers do not match hidden tabs");
+            const label = Array.from(part("OUT-1", "windowsAfter").children).map(child => Array.from(child.children).find(item => item.text !== undefined)).find(Boolean).text;
+            check(label === list.hiddenAfter + " more windows to the right", "edge marker label: " + label);
             check(!find(tab("OUT-1", "c01"), "closeWindow").visible, "a shrunk tab kept its close button");
             input.mouseMove(tab("OUT-1", "c01"), 20, 10);
         }],
@@ -668,7 +670,13 @@ class BarNavigationTests(unittest.TestCase):
         log = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0, log)
         self.assertIn('BAR_PASS', log)
-        for error in ('BAR_FAIL', 'TypeError', 'ReferenceError', 'Binding loop'):
+        for error in (
+            'BAR_FAIL',
+            'TypeError',
+            'ReferenceError',
+            'Binding loop',
+            'QString::arg',
+        ):
             self.assertNotIn(error, log)
         return hyprland
 

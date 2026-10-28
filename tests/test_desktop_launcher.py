@@ -1,9 +1,12 @@
-"""Exercise launcher search in Qt's JavaScript engine with native-entry identities."""
+"""Exercise launcher search in Qt's JavaScript engine with native-entry identities,
+and the mapping of desktop IDs that uwsm cannot resolve back to their files."""
 
+import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -86,3 +89,85 @@ TestCase {
                 timeout=30,
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+class EntryPathTests(unittest.TestCase):
+    """Quickshell's IDs map to the file that wins XDG precedence."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.home = self.root / 'home/applications'
+        self.system = self.root / 'system/applications'
+        self.record = self.root / 'argv.json'
+        self.recorder = self.root / 'record.py'
+        self.recorder.write_text(
+            'import json, sys\nopen(sys.argv[1], "w").write(json.dumps(sys.argv[2:]))\n'
+        )
+
+    def write(self, base, name):
+        path = base / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('[Desktop Entry]\nType=Application\nName=X\nExec=true\n')
+        return path
+
+    def run_helper(self, entry_id, data_dirs=None):
+        self.record.unlink(missing_ok=True)
+        command = [sys.executable, str(self.recorder), str(self.record)]
+        result = subprocess.run(
+            [sys.executable, str(LAUNCHER / 'entry_path.py'), entry_id, *command]
+            + ['app', '-t', 'service', '--'],
+            cwd=self.root,
+            env={
+                **os.environ,
+                'XDG_DATA_HOME': str(self.home.parent),
+                'XDG_DATA_DIRS': data_dirs or str(self.system.parent),
+            },
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+        argv = json.loads(self.record.read_text()) if self.record.exists() else None
+        return result, argv
+
+    def test_unusual_and_nested_ids(self):
+        for name, entry_id in (
+            ('Portal 2.desktop', 'Portal 2'),
+            ('ünï.desktop', 'ünï'),
+            ('a:b.desktop', 'a:b'),
+            ('-dash.desktop', '-dash'),
+            (
+                'wine/Programs/Notepad++/Notepad++.desktop',
+                'wine-Programs-Notepad++-Notepad++',
+            ),
+        ):
+            with self.subTest(entry_id):
+                path = self.write(self.home, name)
+                result, argv = self.run_helper(entry_id)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(argv, ['app', '-t', 'service', '--', str(path)])
+
+    def test_precedence_and_data_dirs(self):
+        home = self.write(self.home, 'Same Name.desktop')
+        self.write(self.system, 'Same Name.desktop')
+        system = self.write(self.system, 'kde/Only System.desktop')
+        self.assertEqual(self.run_helper('Same Name')[1][-1], str(home))
+        self.assertEqual(self.run_helper('kde-Only System')[1][-1], str(system))
+        # Relative and empty XDG_DATA_DIRS entries are invalid and ignored.
+        self.write(self.root / 'relative/applications', 'Relative App.desktop')
+        result, argv = self.run_helper(
+            'Relative App', 'relative::' + str(self.system.parent)
+        )
+        self.assertEqual((result.returncode, argv), (1, None))
+
+    def test_missing_entry_does_not_run_command(self):
+        self.write(self.home, 'wine/Programs.desktop')
+        for entry_id in ('Missing App', 'wine', 'Programs'):
+            with self.subTest(entry_id):
+                result, argv = self.run_helper(entry_id)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(
+                    result.stderr, f'Desktop entry not found: {entry_id}\n'
+                )
+                self.assertIsNone(argv)

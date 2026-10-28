@@ -2780,6 +2780,10 @@
                 "target": "home/.config/quickshell/desktop/launcher/Search.js"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/launcher/entry_path.py",
+                "target": "home/.config/quickshell/desktop/launcher/entry_path.py"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/preview.qml",
                 "target": "home/.config/quickshell/desktop/preview.qml"
             },
