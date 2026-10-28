@@ -147,7 +147,8 @@ by you with mode `0600`; keep the integrations directory private (`0700`).
 Optional `calendar.json` [selections](symlinks/home/.config/quickshell/desktop/drawers/events/calendar.example.json)
 choose collection names/slugs. Omitted arrays include all; empty arrays include none.
 
-Notifications provide popups, history and Do Not Disturb. The tray highlights
+Notifications provide popups, history and Do Not Disturb, which still shows
+critical notifications. The tray highlights
 reported attention or unseen desktop notifications; apps must expose one of these
 signals for unread messages to be detectable. Legacy XEmbed tray icons are unsupported.
 

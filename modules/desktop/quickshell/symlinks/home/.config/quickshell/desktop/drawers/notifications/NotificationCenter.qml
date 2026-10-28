@@ -15,7 +15,6 @@ Singleton {
             paused: false
         })
     property var live: ({})
-    property var snapshots: ({})
     property int sequence: 0
     property var updates: []
     property bool drawerOpen: false
@@ -70,7 +69,7 @@ Singleton {
                 timestamp: number("timestamp", Date.now() / 1000),
                 urgency: number("urgency", 1),
                 progress: number("progress", -1),
-                processId: number("processId", 0),
+                instanceId: text("instanceId", 100),
                 liveId: number("liveId", 0),
                 actions: [],
                 image: "",
@@ -82,8 +81,10 @@ Singleton {
             paused: value?.paused === true
         };
     }
+    // Body markup is not advertised, so bodies are literal text apart from the
+    // specification and Pango tags that clients send regardless.
     function plain(value: string): string {
-        return value.replace(/<[^>]*>/g, "").replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi, (_, entity) => {
+        return value.replace(/<\/?(?:a|b|big|i|img|s|small|span|sub|sup|tt|u)(?:\s[^<>]*)?\/?>/gi, "").replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi, (_, entity) => {
             if (entity[0] === "#") {
                 const code = entity[1].toLowerCase() === "x" ? parseInt(entity.slice(2), 16) : parseInt(entity.slice(1), 10);
                 return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
@@ -101,17 +102,17 @@ Singleton {
     function imageSource(value: string): string {
         return value.startsWith("image://") || value.startsWith("file:///") || value.startsWith("/") ? value : "";
     }
+    // Save within 150 ms of a change; a stream of updates cannot postpone it.
     function save(): void {
-        if (initialized)
-            saveTimer.restart();
+        if (initialized && !saveTimer.running)
+            saveTimer.start();
     }
-    function updateItem(record: var, retain: bool): void {
-        snapshots = Object.assign({}, snapshots, {
-            [record.id]: record
-        });
+    // New and replaced notifications move to the top; restored ones keep their place.
+    function updateItem(record: var, retain: bool, top: bool): void {
+        const index = state.items.findIndex(row => row.id === record.id);
         const items = state.items.filter(row => row.id !== record.id);
         if (retain)
-            items.unshift(record);
+            items.splice(top || index < 0 ? 0 : index, 0, record);
         const removed = items.splice(100);
         state = Object.assign({}, state, {
             items
@@ -121,9 +122,6 @@ Singleton {
             const notification = live[row.id];
             if (notification)
                 notification.expire();
-            const values = Object.assign({}, snapshots);
-            delete values[row.id];
-            snapshots = values;
         }
         save();
     }
@@ -136,8 +134,11 @@ Singleton {
         notification.tracked = true;
         let key = Object.keys(live).find(key => live[key] === notification);
         const fresh = !key;
+        // Re-emitted after a configuration reload of this same process.
+        const restored = notification.lastGeneration && !replacement;
+        // Server IDs restart with each process, and a PID can be reused.
         if (!key && notification.lastGeneration)
-            key = state.items.find(row => row.liveId === notification.id && row.processId === Quickshell.processId)?.id;
+            key = state.items.find(row => row.liveId === notification.id && row.instanceId === Quickshell.instanceId)?.id;
         key = key || "notification-" + Date.now() + "-" + (++sequence);
         live = Object.assign({}, live, {
             [key]: notification
@@ -147,13 +148,13 @@ Singleton {
         const record = {
             id: key,
             liveId: notification.id,
-            processId: Quickshell.processId,
-            seen: drawerOpen || (notification.lastGeneration && !replacement && previous ? previous.seen !== false : false),
+            instanceId: Quickshell.instanceId,
+            seen: drawerOpen || (restored && !!previous && previous.seen !== false),
             app: notification.appName || qsTr("Notification"),
             desktopEntry: notification.desktopEntry || "",
             summary: notification.summary || qsTr("Notification"),
             body: plain(notification.body).slice(0, 16384),
-            timestamp: notification.lastGeneration && !replacement ? state.items.find(row => row.id === key)?.timestamp || Date.now() / 1000 : Date.now() / 1000,
+            timestamp: restored && previous?.timestamp || Date.now() / 1000,
             urgency: notification.urgency,
             appIcon: notification.appIcon || "",
             image: imageSource(notification.image),
@@ -168,8 +169,9 @@ Singleton {
             for (const signal of [notification.summaryChanged, notification.bodyChanged, notification.actionsChanged, notification.hintsChanged, notification.appNameChanged, notification.appIconChanged, notification.imageChanged, notification.urgencyChanged, notification.expireTimeoutChanged, notification.transientChanged, notification.desktopEntryChanged])
                 signal.connect(() => root.changed(key));
         }
-        updateItem(record, !notification.transient);
-        if (notification.lastGeneration && !replacement || state.paused || drawerOpen) {
+        updateItem(record, !notification.transient, !restored);
+        // Do Not Disturb still shows critical notifications.
+        if (restored || drawerOpen || state.paused && notification.urgency !== NotificationUrgency.Critical) {
             // New/reloaded notifications enter the server ID map after this callback.
             if (notification.transient)
                 Qt.callLater(() => {
@@ -207,7 +209,7 @@ Singleton {
         const values = Object.assign({}, live);
         delete values[key];
         live = values;
-        const record = state.items.find(row => row.id === key) || snapshots[key];
+        const record = state.items.find(row => row.id === key);
         hidePopup(key);
         if (reason === NotificationCloseReason.CloseRequested) {
             state = Object.assign({}, state, {
@@ -222,9 +224,6 @@ Singleton {
                 items: state.items.map(row => row.id === key ? saved : row)
             });
         }
-        const records = Object.assign({}, snapshots);
-        delete records[key];
-        snapshots = records;
         save();
     }
     function popupIndex(key: string): int {
@@ -302,8 +301,9 @@ Singleton {
             state = Object.assign({}, state, {
                 paused: !!value
             });
-            while (popups.count)
-                hidePopup(popups.get(0).key);
+            for (let index = popups.count - 1; index >= 0; index--)
+                if (popups.get(index).record.urgency !== NotificationUrgency.Critical)
+                    hidePopup(popups.get(index).key);
             save();
         }
     }

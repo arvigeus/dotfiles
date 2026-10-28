@@ -833,6 +833,42 @@ ShellRoot {
         ]
         self.assertTrue(refreshes, 'window order refresh waited for the stream')
 
+    @unittest.skipUnless(shutil.which('dbus-run-session'), 'Private D-Bus is required')
+    def test_notification_server_starts_despite_another_service_error(self):
+        # Notification senders wait on D-Bus activation until the server registers.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env, command = production_shell(
+                root,
+                """
+    Timer {
+        interval: 300
+        running: true
+        onTriggered: {
+            console.log(NotificationCenter.started && NotificationCenter.initialized ? "INTERACTIONS_PASS" : "INTERACTIONS_FAIL");
+            Qt.quit();
+        }
+    }
+}
+""",
+            )
+            theme = root / 'ui/Theme.qml'
+            source = theme.read_text()
+            start = '    function start(): void {\n'
+            self.assertIn(start, source)
+            theme.write_text(
+                source.replace(
+                    start, start + '        throw new Error("startup fixture");\n', 1
+                )
+            )
+            result = subprocess.run(
+                command, env=env, text=True, capture_output=True, timeout=30
+            )
+        log = result.stdout + result.stderr
+        self.assertIn('startup fixture', log)
+        self.assertIn('INTERACTIONS_PASS', log)
+        self.assertNotIn('INTERACTIONS_FAIL', log)
+
     def test_style_preview_loads(self):
         source = (DESKTOP / 'preview.qml').read_text()
         finish = '    Timer { interval: 200; running: true; onTriggered: { console.log("DISPLAY_PASS"); Qt.quit(); } }\n'

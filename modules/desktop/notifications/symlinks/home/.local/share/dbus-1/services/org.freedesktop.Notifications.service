@@ -1,4 +1,4 @@
 [D-BUS Service]
 Name=org.freedesktop.Notifications
-Exec=/usr/bin/qs --no-duplicate -c desktop
+Exec=/bin/false
 SystemdService=desktop-shell.service

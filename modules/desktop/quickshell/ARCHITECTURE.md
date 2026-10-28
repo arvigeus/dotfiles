@@ -20,7 +20,8 @@ belong to their respective modules.
 ## Lifetimes
 
 `desktop-shell.service` belongs to `graphical-session.target`. The shell root
-starts services needed across drawers: notifications, calendar warming, display
+starts services needed across drawers: notifications (first, as the D-Bus
+activation target), calendar warming, display
 comfort/layout policy, clipboard control, power utilities and capture state.
 Other helpers run only while observed or while completing an action.
 
@@ -520,9 +521,10 @@ unseen items. See [notification lifecycle](symlinks/home/.config/quickshell/desk
 
 Run `python3 -m unittest discover -s tests -v`. QML tests use offscreen surfaces,
 private config/runtime/state and fake hardware/helpers; native panel checks need
-a Wayland backend. `tests/support.py` holds shared QML fixtures. Run the suite
-under `dbus-run-session` for notification tests and with `PIPEWIRE_REMOTE` set to
-an unavailable test remote. Tests must never start real recordings or mutate
+a Wayland backend. `tests/support.py` holds shared QML fixtures; session-service
+tests own a bus from `support.private_bus`. Run the suite under `dbus-run-session`,
+so any remaining helper cannot reach the user's bus, and with `PIPEWIRE_REMOTE` set
+to an unavailable test remote. Tests must never start real recordings or mutate
 host radio/audio/power state.
 
 Validate generated configuration and run ShellCheck with `--shell=bash` for

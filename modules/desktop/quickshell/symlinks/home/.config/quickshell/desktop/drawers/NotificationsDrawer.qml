@@ -16,38 +16,6 @@ DrawerPage {
         enabled: root.items.length > 0
         onClicked: root.service.request("clear")
     }
-    function reconcile(): void {
-        const wanted = new Set(items.map(row => row.id));
-        for (let index = rows.count - 1; index >= 0; index--)
-            if (!wanted.has(rows.get(index).key))
-                rows.remove(index);
-        for (let index = 0; index < items.length; index++) {
-            const item = items[index];
-            let current = index;
-            while (current < rows.count && rows.get(current).key !== item.id)
-                current++;
-            if (current === rows.count)
-                rows.insert(index, {
-                    key: item.id,
-                    record: item,
-                    signature: JSON.stringify(item)
-                });
-            else {
-                if (current !== index)
-                    rows.move(current, index, 1);
-                const signature = JSON.stringify(item);
-                if (signature !== rows.get(index).signature) {
-                    rows.setProperty(index, "record", item);
-                    rows.setProperty(index, "signature", signature);
-                }
-            }
-        }
-    }
-    onItemsChanged: reconcile()
-    ListModel {
-        id: rows
-        dynamicRoles: true
-    }
     DrawerColumn {
         anchors.fill: parent
         RowLayout {
@@ -89,12 +57,16 @@ DrawerPage {
             color: Theme.muted
         }
         Repeater {
-            model: rows
+            model: KeyedModel {
+                values: root.items
+                keyField: "id"
+            }
             NotificationCard {
-                required property string key
+                required property var modelData
+                record: modelData
                 Layout.fillWidth: true
-                onDismissed: root.service.request("remove", key)
-                onActionRequested: identifier => root.service.invoke(key, identifier)
+                onDismissed: root.service.request("remove", record.id)
+                onActionRequested: identifier => root.service.invoke(record.id, identifier)
             }
         }
     }

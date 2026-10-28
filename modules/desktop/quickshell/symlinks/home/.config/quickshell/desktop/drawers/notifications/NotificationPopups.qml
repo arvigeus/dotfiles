@@ -80,8 +80,12 @@ Scope {
                             }
                             onActionRequested: identifier => root.service.invoke(key, identifier)
                             HoverHandler {
+                                id: hover
                                 onHoveredChanged: root.service.hoverPopup(card.key, hovered)
                             }
+                            // A window removed with its output never reports the pointer leaving.
+                            Component.onDestruction: if (hover.hovered)
+                                root.service.hoverPopup(key, false)
                             property bool entered: false
                             opacity: entered ? 1 : 0
                             Component.onCompleted: entered = true

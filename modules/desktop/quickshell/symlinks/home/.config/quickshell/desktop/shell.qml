@@ -55,6 +55,9 @@ ShellRoot {
 
     // Session-wide services that must run before any drawer opens.
     Component.onCompleted: {
+        // D-Bus activation callers wait until the notification server registers;
+        // an error in another service's start must not prevent that.
+        NotificationCenter.start();
         Theme.start();
         layoutRefresh.restart();
         ComfortService.start();
@@ -63,7 +66,6 @@ ShellRoot {
         ClipboardService.start();
         CaptureService.start();
         CalendarService.start();
-        NotificationCenter.start();
     }
 
     GlobalShortcut {

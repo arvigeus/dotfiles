@@ -1,5 +1,6 @@
 """Native notification lifecycle, private history, and production cards/drawer."""
 
+import configparser
 import json
 from pathlib import Path
 import shutil
@@ -8,6 +9,26 @@ import unittest
 from unittest.mock import patch
 import support
 
+ACTIVATION = (
+    support.REPO
+    / 'modules/desktop/notifications/symlinks/home/.local/share/dbus-1/services'
+    / 'org.freedesktop.Notifications.service'
+)
+
+
+class ActivationTests(unittest.TestCase):
+    def test_activation_starts_only_the_managed_shell_unit(self):
+        entry = configparser.ConfigParser(interpolation=None)
+        entry.optionxform = str
+        entry.read(ACTIVATION)
+        service = entry['D-BUS Service']
+        self.assertEqual(service['Name'], 'org.freedesktop.Notifications')
+        unit = support.REPO / 'modules/desktop/quickshell/files/etc/systemd/user'
+        self.assertTrue((unit / service['SystemdService']).is_file())
+        # A bus without systemd activation fails instead of starting a shell
+        # outside the unit's umask, restart policy and session conditions.
+        self.assertEqual(service['Exec'], '/bin/false')
+
 
 @unittest.skipUnless(
     support.QS and shutil.which('dbus-run-session'),
@@ -15,14 +36,13 @@ import support
 )
 class HistoryQmlTests(unittest.TestCase):
     def run_qml(self, body, setup=None):
+        """Own a private bus that activates nothing, so no other daemon can answer."""
         run = subprocess.run
 
         def isolated(command, **kwargs):
             if command[0] == support.QS:
-                kwargs['env']['XDG_STATE_HOME'] = str(
-                    Path(kwargs['env']['XDG_CONFIG_HOME']).parent / 'state'
-                )
-                command = ['dbus-run-session', '--', *command]
+                root = Path(kwargs['env']['XDG_CONFIG_HOME']).parent
+                command = [*support.private_bus(root), *command]
             return run(command, **kwargs)
 
         with patch.object(support.subprocess, 'run', side_effect=isolated):
@@ -154,7 +174,8 @@ ShellRoot {
   property string error:""
   property var state:({items:[{id:"two",app:"Mail",summary:"New message",body:"A plain-text message.",timestamp:1792570000,urgency:1,appIcon:"",image:"",progress:-1,actions:[]}],paused:true})
   property string lastOp:""
-  function request(op,id,value){lastOp=op;if(op==="clear")state=Object.assign({},state,{items:[]});}
+  property string lastId:""
+  function request(op,id,value){lastOp=op;lastId=id??"";if(op==="clear")state=Object.assign({},state,{items:[]});}
   function invoke(key,identifier){}
  }
  FloatingWindow {implicitWidth:480;implicitHeight:820;NotificationsDrawer{id:drawer;anchors.fill:parent;active:true;service:mock}
@@ -166,7 +187,15 @@ ShellRoot {
  property int stage:0
  Timer {interval:180;repeat:true;running:true;onTriggered:{try{
   if(stage===0){original=find(drawer,"notificationDismiss:two");check(original,"card missing");drawer.width=268;mock.state=Object.assign({},mock.state,{paused:false});}
-  else if(stage===1){check(find(drawer,"notificationDismiss:two")===original,"quiet change rebuilt card");find(header.item,"notificationsClear").clicked();check(mock.lastOp==="clear"&&mock.state.items.length===0,"clear required confirmation");}
+  else if(stage===1){
+   check(find(drawer,"notificationDismiss:two")===original,"quiet change rebuilt card");
+   const two=mock.state.items[0];mock.state=Object.assign({},mock.state,{items:[Object.assign({},two,{id:"three",summary:"Newer"}),Object.assign({},two,{summary:"Edited",seen:true})]});
+  }else if(stage===2){
+   let card=original;while(card&&card.record===undefined)card=card.parent;
+   check(find(drawer,"notificationDismiss:two")===original&&card.record.summary==="Edited"&&find(drawer,"notificationDismiss:three"),"insert or edit rebuilt or staled a card");
+   original.clicked();check(mock.lastOp==="remove"&&mock.lastId==="two","dismiss targeted the wrong record");
+   find(header.item,"notificationsClear").clicked();check(mock.lastOp==="clear"&&mock.state.items.length===0,"clear required confirmation");
+  }
   else {console.log("DISPLAY_PASS");Qt.quit();}stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
 }""")
@@ -247,7 +276,7 @@ ShellRoot {
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
 }""")
 
-    def test_reload_restores_live_actions_without_replaying_popups(self):
+    def test_reload_restores_live_actions_in_place_without_replaying_popups(self):
         def setup(root):
             (root / 'config/notification-reload').write_text('')
 
@@ -257,6 +286,7 @@ import Quickshell
 import Quickshell.Io
 import "drawers/notifications"
 ShellRoot {
+ id:shell
  property var center:NotificationCenter
  property int stage:0
  property int ticks:0
@@ -265,22 +295,82 @@ ShellRoot {
   id:phase;path:Quickshell.env("XDG_CONFIG_HOME")+"/notification-reload";blockLoading:true
   onSaved:if(text().trim()==="reload")Quickshell.reload(false)
  }
- Process {id:sender;command:["notify-send","--expire-time=0","--action=open=Open","Reload fixture","Keep this action"]}
+ // notify-send waits while a notification has actions, so each send owns a process.
+ Component {id:process;Process {}}
+ function send(args){process.createObject(shell,{command:["notify-send","--expire-time=0",...args]}).running=true;}
+ function row(summary){return center.state.items.find(item=>item.summary===summary);}
+ function order(){return center.state.items.map(item=>item.summary).join(",");}
  function check(v,m){if(!v)throw Error(m);}
  Timer {interval:100;running:true;repeat:true;onTriggered:{try{
   ticks++;
   if(!center.initialized)return;
+  const count=center.state.items.length;
   if(phase.text().trim()!=="reload"){
-   if(stage===0){sender.running=true;stage++;}
-   else if(stage===1&&center.state.items.length===1){ticks=0;stage++;}
-   else if(stage===2&&ticks>5){phase.setText("reload");stage++;}
-  }else if(stage===0&&Object.keys(center.live).length===1){
-   check(center.state.items.length===1&&center.state.items[0].actions.length===1,"reload lost live action or duplicated history");
-   check(center.popups.count===0,"reload replayed popup");check(center.unseenCount===1,"reload lost unseen state");
-   center.invoke(center.state.items[0].id,"open");
-   check(center.state.items[0].actions.length===0&&center.unseenCount===0,"reloaded action did not close or acknowledge notification");center.request("clear");ticks=0;stage=10;
+   if(stage===0){send(["--action=open=Open","Older"]);stage++;}
+   else if(stage===1&&count===1){send(["--action=open=Open","Closed"]);stage++;}
+   else if(stage===2&&count===2){send(["--action=open=Open","Newest"]);stage++;}
+   else if(stage===3&&count===3){
+    center.invoke(row("Closed").id,"open");check(!row("Closed").actions.length,"invoked action stayed live");
+    send(["--hint=boolean:transient:true","Transient across reload"]);stage++;
+   }else if(stage===4){
+    const transient=Object.values(center.live).find(notification=>notification.transient);
+    if(!transient)return;
+    // An earlier shell process can reuse this PID and notification ID.
+    center.state=Object.assign({},center.state,{items:center.state.items.concat([{id:"earlier",summary:"Earlier process",liveId:transient.id,processId:Quickshell.processId,instanceId:"earlier-instance",timestamp:1,seen:true}])});
+    center.save();ticks=0;stage++;
+   }else if(stage===5&&ticks>4){check(order()==="Newest,Closed,Older,Earlier process","fixture order: "+order());phase.setText("reload");stage++;}
+  }else if(stage===0&&Object.keys(center.live).length===2&&ticks>2){
+   check(order()==="Newest,Closed,Older,Earlier process","reload reordered or dropped history: "+order());
+   check(row("Older").actions.length===1&&row("Newest").actions.length===1&&!row("Closed").actions.length,"reload lost live actions or revived a closed one");
+   check(center.popups.count===0,"reload replayed popup");check(center.unseenCount===2,"reload changed unseen state");
+   send(["--replace-id="+row("Older").liveId,"--action=open=Open","Older updated"]);stage++;
+  }else if(stage===1&&row("Older updated")){
+   const older=row("Older updated");
+   check(center.state.items[0]===older&&center.state.items.length===4&&center.popups.count===1,"replacement after reload duplicated or did not pop up: "+order());
+   center.invoke(older.id,"open");
+   check(!row("Older updated").actions.length&&center.unseenCount===1,"reloaded action did not close or acknowledge notification");center.request("clear");ticks=0;stage=10;
   }else if(stage===10&&ticks>4){check(!center.error,"storage error");console.log("DISPLAY_PASS");Qt.quit();}
-  if(ticks>50)throw Error("timeout at "+stage+" "+Object.keys(center.live).length+" "+center.error);
+  if(ticks>50)throw Error("timeout at "+stage+" "+Object.keys(center.live).length+" "+order()+" "+center.error);
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+}""",
+            setup,
+        )
+
+    def test_popup_removed_with_its_output_while_hovered_resumes_expiry(self):
+        def setup(root):
+            support.floating_window(
+                root / 'drawers/notifications/NotificationPopups.qml'
+            )
+
+        self.run_qml(
+            """import QtQuick
+import QtTest
+import Quickshell
+import Quickshell.Io
+import "drawers/notifications"
+ShellRoot {
+ property var center:NotificationCenter
+ property int stage:0
+ property int ticks:0
+ Component.onCompleted:center.start()
+ Loader {id:outputs;sourceComponent:Component {NotificationPopups {}}}
+ FloatingWindow {id:driver;implicitWidth:10;implicitHeight:10;TestCase {id:input;when:false;parent:driver.contentItem}}
+ Process {id:sender;command:["notify-send","--expire-time=1500","Output removed","Hovered when its window disappears"]}
+ function find(item,name){if(item.objectName===name)return item;for(let child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ function check(v,m){if(!v)throw Error(m);}
+ Timer {interval:100;running:true;repeat:true;onTriggered:{try{
+  ticks++;
+  if(stage===0&&center.initialized){sender.running=true;stage++;}
+  else if(stage===1&&center.popups.count===1){
+   const window=outputs.item.windows[0],card=find(window.contentItem,"notificationPopup:"+center.popups.get(0).key);
+   if(!card?.visible)return;
+   input.mouseMove(window.contentItem,1,1);input.mouseMove(card,card.width/2,card.height/2);input.wait(30);
+   check(center.popups.get(0).hovered&&!center.popups.get(0).deadline,"pointer hover did not pause the popup");
+   outputs.active=false;ticks=0;stage++;
+  }else if(stage===2){
+   check(!center.popups.get(0).hovered&&center.popups.get(0).deadline>0,"popup window destroyed while hovered kept its deadline paused");stage++;
+  }else if(stage===3&&!center.popups.count){console.log("DISPLAY_PASS");Qt.quit();}
+  if(ticks>50)throw Error("timeout at "+stage);
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
 }""",
             setup,
@@ -310,9 +400,9 @@ ShellRoot {
  function check(v,m){if(!v)throw Error(m);}
  Timer {interval:100;running:true;repeat:true;onTriggered:{try{
   ticks++;
-  if(stage===0&&center.initialized){send(["--expire-time=1200","--wait","--hint=string:desktop-entry:org.example.Fixture","--action=open=Open","First","<b>Hello</b> &amp; friends"]);stage++;}
+  if(stage===0&&center.initialized){send(["--expire-time=1200","--wait","--hint=string:desktop-entry:org.example.Fixture","--action=open=Open","First","<b>Hello</b> &amp; <a href='https://example.test'>friends</a>: Vec<String> x<y>z, 1 < 2"]);stage++;}
   else if(stage===1&&center.state.items.length===1&&notificationId){
-   key=center.state.items[0].id;check(center.state.items[0].body==="Hello & friends","body formatting");
+   key=center.state.items[0].id;check(center.state.items[0].body==="Hello & friends: Vec<String> x<y>z, 1 < 2","markup stripped or literal text lost: "+center.state.items[0].body);
    check(center.state.items[0].desktopEntry==="org.example.Fixture","notification sender desktop ID was dropped");
    check(center.state.items[0].actions.length===1&&center.popups.count===1,"action or popup missing");
    center.hoverPopup(key,true);ticks=0;stage++;
@@ -339,5 +429,67 @@ ShellRoot {
    center.request("clear");check(center.state.items.length===0&&Object.keys(center.live).length===0,"clear left live notifications");ticks=0;stage++;
   }else if(stage===9&&ticks>3){check(!center.error,"storage error: "+center.error);console.log("DISPLAY_PASS");Qt.quit();}
   if(ticks>60)throw Error("timeout at "+stage+" "+center.error);
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+}""")
+
+    def test_do_not_disturb_still_shows_critical_notifications(self):
+        self.run_qml("""import QtQuick
+import Quickshell
+import Quickshell.Io
+import "drawers/notifications"
+ShellRoot {
+ id:shell
+ property var center:NotificationCenter
+ property int stage:0
+ property int ticks:0
+ Component.onCompleted:center.start()
+ Component {id:process;Process {}}
+ function send(args){process.createObject(shell,{command:["notify-send",...args]}).running=true;}
+ function popups(){const rows=[];for(let i=0;i<center.popups.count;i++)rows.push(center.popups.get(i).record.summary);return rows.sort().join(",");}
+ function check(v,m){if(!v)throw Error(m);}
+ Timer {interval:100;running:true;repeat:true;onTriggered:{try{
+  ticks++;
+  const count=center.state.items.length;
+  if(stage===0&&center.initialized){send(["--expire-time=0","Normal before"]);send(["--urgency=critical","Critical before"]);stage++;}
+  else if(stage===1&&count===2){
+   check(popups()==="Critical before,Normal before","popups missing before quiet mode: "+popups());
+   center.request("pause","",true);check(popups()==="Critical before","quiet mode hid a critical popup or kept a normal one: "+popups());
+   send(["--expire-time=0","Normal quiet"]);stage++;
+  }else if(stage===2&&count===3){
+   check(popups()==="Critical before","quiet mode showed a normal notification: "+popups());
+   send(["--urgency=critical","Critical quiet"]);stage++;
+  }else if(stage===3&&count===4){
+   check(popups()==="Critical before,Critical quiet","quiet mode suppressed a critical notification: "+popups());
+   check(center.unseenCount===4,"quiet delivery changed unseen state");
+   center.request("pause","",false);check(popups()==="Critical before,Critical quiet","ending quiet mode changed popups: "+popups());
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  if(ticks>50)throw Error("timeout at "+stage+" "+popups());
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+}""")
+
+    def test_update_streams_do_not_postpone_saving(self):
+        self.run_qml("""import QtQuick
+import Quickshell
+import Quickshell.Io
+import "drawers/notifications"
+ShellRoot {
+ property var center:NotificationCenter
+ property int stage:0
+ property int ticks:0
+ Component.onCompleted:center.start()
+ // Progress replacements arrive faster than the save delay.
+ Process {id:stream;command:["sh","-c","id=$(notify-send --print-id --expire-time=0 Progress 0) && for i in $(seq 1 20); do notify-send --replace-id=$id --expire-time=0 --hint=int:value:$((i*5)) Progress $i; sleep 0.05; done"]}
+ FileView {id:saved;path:Quickshell.env("XDG_STATE_HOME")+"/quickshell/desktop/notifications.json";blockLoading:true;printErrors:false}
+ function check(v,m){if(!v)throw Error(m);}
+ Timer {interval:100;running:true;repeat:true;onTriggered:{try{
+  ticks++;
+  if(stage===0&&center.initialized){stream.running=true;stage++;}
+  else if(stage===1&&center.state.items.length===1){ticks=0;stage++;}
+  else if(stage===2&&ticks>5){
+   check(stream.running,"update stream ended before the check");
+   saved.reload();check(JSON.parse(saved.text()||"{}").items?.length===1,"saving waited for the update stream to end");stage++;
+  }else if(stage===3&&!stream.running){check(!center.error,"storage error: "+center.error);console.log("DISPLAY_PASS");Qt.quit();}
+  if(ticks>50)throw Error("timeout at "+stage);
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
 }""")
