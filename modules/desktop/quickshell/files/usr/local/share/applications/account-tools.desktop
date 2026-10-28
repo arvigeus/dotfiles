@@ -5,4 +5,5 @@ Comment=Edit your profile and view account details and groups
 Icon=user-info
 Exec=/usr/local/bin/account-tools
 Categories=Settings;DesktopSettings;
+Keywords=user;photo;picture;avatar;name;email;location;
 Terminal=false

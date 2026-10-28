@@ -5,14 +5,23 @@ import json
 import os
 from pathlib import Path
 import pwd
+import re
 import sys
 
+# Editable properties and their names in messages. Each is written by its native
+# method: SetRealName, SetEmail, SetLocation or SetIconFile.
 EDITABLE = {
-    'RealName': 'SetRealName',
-    'Email': 'SetEmail',
-    'Location': 'SetLocation',
-    'IconFile': 'SetIconFile',
+    'RealName': 'full name',
+    'Email': 'email',
+    'Location': 'location',
+    'IconFile': 'photo',
 }
+
+
+def reason(error):
+    """Describe an error without GLib's domain/code or the remote D-Bus error name."""
+    message = getattr(error, 'message', None) or str(error)
+    return re.sub(r'^GDBus\.Error:[\w.]+: ', '', message)
 
 
 class Accounts:
@@ -51,7 +60,7 @@ class Accounts:
             'org.freedesktop.Accounts',
             self.path,
             'org.freedesktop.Accounts.User',
-            EDITABLE[key],
+            'Set' + key,
             self.GLib.Variant('(s)', (value,)),
             None,
             self.Gio.DBusCallFlags.ALLOW_INTERACTIVE_AUTHORIZATION,
@@ -67,7 +76,7 @@ def snapshot(account=None, service_factory=Accounts):
         properties = service_factory(account.pw_uid).properties()
     except Exception as failure:
         properties = {}
-        error = str(failure)
+        error = reason(failure)
     groups = []
     for gid in sorted(set(os.getgrouplist(account.pw_name, account.pw_gid))):
         try:
@@ -109,7 +118,6 @@ def snapshot(account=None, service_factory=Accounts):
                 'AutomaticLogin',
                 'LocalAccount',
                 'PasswordMode',
-                'LoginTime',
             )
             if key in properties
         },
@@ -139,7 +147,9 @@ def save(changes, service_factory=Accounts):
             service.set(key, value)
             saved[key] = value
         except Exception as error:
-            return dict(saved=saved, error=f'Could not save {key}: {error}')
+            return dict(
+                saved=saved, error=f'Could not save {EDITABLE[key]}: {reason(error)}'
+            )
     return dict(saved=saved, error='')
 
 
@@ -149,7 +159,7 @@ def main():
             save(json.load(sys.stdin)) if sys.argv[1:] == ['--save'] else snapshot()
         )
     except Exception as error:
-        result = dict(error=str(error), saved={})
+        result = dict(error=reason(error), saved={})
     print(json.dumps(result))
 
 

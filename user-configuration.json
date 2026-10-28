@@ -2236,6 +2236,10 @@
                 "target": "home/.config/quickshell/desktop/drawers/system/backend.py"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/tray/ARCHITECTURE.md",
+                "target": "home/.config/quickshell/desktop/drawers/tray/ARCHITECTURE.md"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/tray/TrayService.qml",
                 "target": "home/.config/quickshell/desktop/drawers/tray/TrayService.qml"
             },
@@ -3670,10 +3674,6 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/theme.py",
                 "target": "home/.config/quickshell/desktop/ui/theme.py"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.local/share/applications/org.bluesabre.Mugshot.desktop",
-                "target": "home/.local/share/applications/org.bluesabre.Mugshot.desktop"
             },
             {
                 "source": "modules/dev/editors/zed/symlinks/home/.config/zed/settings.json",

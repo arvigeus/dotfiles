@@ -6,7 +6,7 @@ import sys
 import tempfile
 
 from PySide6.QtCore import QProcess, QSize, Qt, QTimer
-from PySide6.QtGui import QIcon, QImageReader, QPixmap
+from PySide6.QtGui import QIcon, QImage, QImageReader, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -34,6 +34,7 @@ class AccountTools(QDialog):
         self.photo_path = ''
         self.photo_files = []
         self.mode = ''
+        self.available = False
         self.setWindowTitle('Account tools')
         self.setWindowIcon(QIcon.fromTheme('user-info'))
         self.resize(880, 680)
@@ -48,6 +49,7 @@ class AccountTools(QDialog):
         font.setBold(True)
         self.title.setFont(font)
         self.username = QLabel()
+        self.username.setTextFormat(Qt.TextFormat.PlainText)
         titles.addWidget(self.title)
         titles.addWidget(self.username)
         header.addLayout(titles, 1)
@@ -143,10 +145,6 @@ class AccountTools(QDialog):
             edit.setEnabled(not busy and self.available)
         self.photo.setEnabled(not busy and bool(self.baseline) and self.available)
 
-    @property
-    def available(self):
-        return getattr(self, 'service_available', False)
-
     def start(self, mode, payload=None):
         self.mode = mode
         self.update_actions()
@@ -194,7 +192,6 @@ class AccountTools(QDialog):
             else:
                 self.baseline.update(result.get('saved', {}))
                 self.title.setText(self.baseline.get('RealName') or 'My account')
-                self.title.setTextFormat(Qt.TextFormat.PlainText)
                 self.status.setText(result.get('error') or 'Profile saved.')
         except (ValueError, TypeError, KeyError) as error:
             self.status.setText(str(error))
@@ -207,9 +204,8 @@ class AccountTools(QDialog):
             self.update_actions()
 
     def loaded(self, data):
-        self.service_available = data['available']
+        self.available = data['available']
         self.baseline = dict(data['fields'])
-        self.username.setTextFormat(Qt.TextFormat.PlainText)
         self.username.setText('@' + data['username'])
         self.discard_edits()
         self.details.clear()
@@ -278,10 +274,11 @@ class AccountTools(QDialog):
         reader = QImageReader(path)
         reader.setAutoTransform(True)
         size = reader.size()
-        if not size.isValid() or size.width() * size.height() > 40_000_000:
+        if size.isValid() and size.width() * size.height() > 40_000_000:
             self.status.setText('Choose an image smaller than 40 megapixels.')
             return
-        image = reader.read()
+        # An unreadable header has no size; never decode an image of unknown size.
+        image = reader.read() if size.isValid() else QImage()
         if image.isNull():
             self.status.setText('Could not read this image.')
             return

@@ -543,7 +543,9 @@ shell, groups and available account/login flags are read-only. Full name, email,
 location and photo use the native SetRealName/SetEmail/SetLocation/SetIconFile
 methods with interactive PolicyKit authorization; no direct account-file writes,
 sudo, group administration or password handling is implemented. Email/location
-are profile metadata, not mail-client or session configuration.
+are profile metadata, not mail-client or session configuration. AccountsService
+rejects commas in SetRealName and keeps the remaining GECOS fields, so the editor
+does not duplicate those rules.
 
 QProcess runs the helper outside the UI thread. Requests accept only the four
 editable string keys and always target the caller's UID. Writes are sequential;
@@ -551,9 +553,14 @@ partial success is reported per field, and failed changes remain editable.
 Unavailable AccountsService still permits local account/group inspection.
 Photo selection normalizes a bounded image to a PNG no larger than 512×512;
 temporary images remain alive until the dialog closes so draft/discard cycles
-work, while AccountsService owns the saved copy. Saving prevents closing until
-the request finishes; refresh and close confirm discarding unsaved edits.
+work. SetIconFile copies the file as the caller (at most 1 MiB) before replying,
+so AccountsService owns the saved copy; drafts live in `/tmp`, which the packaged
+`accounts-daemon.service` shares (`PrivateTmp=false`). Saving prevents closing
+until the request finishes; refresh and close confirm discarding unsaved edits.
 
-`tests/test_account_tools.py` uses fake services and an offscreen dialog to cover
-current-user targeting, validation, partial failures, unavailable services,
-groups, drafts and asynchronous request dispatch. Tests never modify an account.
+`tests/test_account_tools.py` runs the real helper and an offscreen dialog against
+a fake AccountsService (`tests/fixtures/accounts_service.py`) on a private bus
+that serves as both system and session bus. It covers current-user targeting,
+validation, partial failures, unavailable services, groups, drafts, photo cleanup
+and asynchronous requests. In-process tests block the real adapter, so tests
+never modify an account.
