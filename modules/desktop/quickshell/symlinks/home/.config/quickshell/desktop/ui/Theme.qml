@@ -6,31 +6,40 @@ import Quickshell.Io
 Singleton {
     id: root
     property bool started: false
-    property string error: ""
+    // A failed save stays visible until a later save succeeds; synchronization
+    // results only replace their own message.
+    property string saveError: ""
+    property string syncError: ""
+    readonly property string error: [saveError, syncError].filter(Boolean).join("\n")
     property string paletteError: ""
     property bool pending: false
     readonly property bool busy: sync.running || pending
     property var definition: readPalette()
 
+    // Keep these rules identical to theme.py::load.
+    function parsePalette(text: string): var {
+        const value = JSON.parse(text);
+        if (Object.keys(value).sort().join() !== "font,fontSize,monospaceFont,palettes" || typeof value.fontSize !== "number" || value.fontSize < 6 || value.fontSize > 24 || !Number.isFinite(value.fontSize))
+            throw new Error("Invalid theme fields or font size");
+        for (const key of ["font", "monospaceFont"])
+            if (typeof value[key] !== "string" || !/^[\w .+()-]{1,100}$/.test(value[key]))
+                throw new Error("Invalid font family");
+        if (Object.keys(value.palettes).sort().join() !== "dark,light")
+            throw new Error("Expected dark and light palettes");
+        const keys = "accent,accentText,background,border,danger,muted,raised,success,surface,text,visited,warning";
+        for (const mode of ["dark", "light"]) {
+            const palette = value.palettes[mode];
+            if (Object.keys(palette).sort().join() !== keys)
+                throw new Error("Invalid color tokens");
+            for (const color of Object.values(palette))
+                if (typeof color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(color))
+                    throw new Error("Colors must use #RRGGBB");
+        }
+        return value;
+    }
     function readPalette() {
         try {
-            const value = JSON.parse(paletteFile.text());
-            if (Object.keys(value).sort().join() !== "font,fontSize,monospaceFont,palettes" || typeof value.fontSize !== "number" || value.fontSize < 6 || value.fontSize > 24 || !Number.isFinite(value.fontSize))
-                throw new Error("Invalid theme fields or font size");
-            for (const key of ["font", "monospaceFont"])
-                if (typeof value[key] !== "string" || !/^[\w .+()-]{1,100}$/.test(value[key]))
-                    throw new Error("Invalid font family");
-            if (Object.keys(value.palettes).sort().join() !== "dark,light")
-                throw new Error("Expected dark and light palettes");
-            const keys = "accent,accentText,background,border,danger,muted,raised,success,surface,text,visited,warning";
-            for (const mode of ["dark", "light"]) {
-                const palette = value.palettes[mode];
-                if (Object.keys(palette).sort().join() !== keys)
-                    throw new Error("Invalid color tokens");
-                for (const color of Object.values(palette))
-                    if (typeof color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(color))
-                        throw new Error("Colors must use #RRGGBB");
-            }
+            const value = parsePalette(paletteFile.text());
             paletteError = "";
             return value;
         } catch (e) {
@@ -66,8 +75,16 @@ Singleton {
         atomicWrites: true
         printErrors: false
         onFileChanged: reload()
-        onSaved: reload()
-        onSaveFailed: root.error = qsTr("Could not save appearance mode.")
+        onSaved: {
+            root.saveError = "";
+            reload();
+        }
+        onSaveFailed: {
+            root.saveError = qsTr("Could not save appearance mode.");
+            // The rejected text remains in memory; show the persisted mode.
+            // Quickshell 0.3.2 defers a reload issued during the failed write.
+            Qt.callLater(reload);
+        }
     }
     readonly property string mode: modeFile.text().trim() === "light" ? "light" : "dark"
 
@@ -79,9 +96,7 @@ Singleton {
         modeFile.setText(value + "\n");
     }
 
-    readonly property var darkPalette: definition.palettes.dark
-    readonly property var lightPalette: definition.palettes.light
-    readonly property var palette: mode === "light" ? lightPalette : darkPalette
+    readonly property var palette: definition.palettes[mode]
     readonly property color background: palette.background
     readonly property color surface: palette.surface
     readonly property color raised: palette.raised
@@ -149,11 +164,13 @@ Singleton {
     }
     Process {
         id: sync
-        command: ["python3", Quickshell.shellPath("ui/theme.py")]
+        // Startup and reloads reapply files without re-announcing an unchanged
+        // appearance to every running application.
+        command: ["python3", Quickshell.shellPath("ui/theme.py"), "--if-changed"]
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
-                    root.error = JSON.parse(text).warnings.join("\n");
+                    root.syncError = JSON.parse(text).warnings.join("\n");
                 } catch (_) { /* Failed commands report stderr below. */ }
             }
         }
@@ -162,7 +179,7 @@ Singleton {
         }
         onExited: (code, status) => {
             if (code !== 0)
-                root.error = qsTr("Could not apply appearance: ") + syncErrors.text.trim();
+                root.syncError = qsTr("Could not apply appearance: ") + syncErrors.text.trim();
             if (root.pending)
                 syncTimer.restart();
         }

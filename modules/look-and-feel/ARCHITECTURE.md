@@ -15,7 +15,8 @@ opaque `#RRGGBB`. Solid accent fills use `accentText` when contrast is at least
 KDE selections retain normal text.
 
 `Theme.qml` consumes the source and retains the last valid in-memory palette
-when an edit fails validation. Initial startup requires a valid source. The
+when an edit fails validation. Initial startup requires a valid source. Its
+`parsePalette` and `theme.py::load` must accept exactly the same palettes. The
 user-owned `quickshell/desktop/theme-mode` remains the mode preference, defaulting
 to dark when absent. Provisioning does not seed or reset it. Both files are
 watched, including atomic replacements. The shell converts points to logical
@@ -25,7 +26,16 @@ pixels at 96/72; compositor scaling remains independent.
 serialized `ui/theme.py` application on startup and mode/palette changes. Changes
 during application request another pass. Previews import Theme without starting
 synchronization. The helper also backs `desktop-theme [dark|light]`. Failures
-appear beside the appearance control; another change or CLI apply retries.
+appear beside the appearance control; another change, shell start or CLI apply
+retries. A failed preference save shows the saved mode and keeps its error until
+a later save succeeds.
+
+Shell synchronization runs the helper with `--if-changed`: it contacts desktop
+services only after publishing changes, or when an earlier announcement failed
+or was interrupted. `desktop-theme.pending` in XDG state records that until an
+announcement succeeds, so shell restarts and reloads do not restyle running
+apps. `desktop-theme` always re-announces; use it after another tool changes the
+GNOME interface settings.
 
 The helper locks under XDG state, validates and renders before writing, rejects
 symlink destinations, writes atomically and skips identical content. Background
@@ -142,7 +152,9 @@ and `hyprctl eval` updates the running compositor.
 ## Application themes
 
 Kitty's `dark-theme.auto.conf`, `light-theme.auto.conf` and
-`no-preference-theme.auto.conf` contain palette and ANSI colors. No-preference
+`no-preference-theme.auto.conf` contain palette and ANSI colors. ANSI black is
+`surface`; bright black is `muted`, because programs use it for dim foreground
+text. No-preference
 defaults to dark, matching the shell. Kitty >=0.38 follows the portal without
 remote control or process signaling. Its main config includes a generated
 monospace font fragment.
@@ -246,6 +258,9 @@ References: [Union overview](https://api.kde.org/overview.html),
 compilation, configuration preservation, idempotence, invalid input, symlink
 protection, concurrent mode ownership, native GTK 3/4 CSS parsers, GTK 4 queries
 switching in one provider, and isolated QML watching/production synchronization.
+It also checks that shell and compiler accept the same palettes and choose the
+same selection text, announcement gating and retries, failed preference saves,
+readable kitty ANSI foregrounds and that every interface icon is referenced.
 Icon tests cover accent shades, alias resolution, HiDPI metadata, inheritance,
 upstream changes, stale alias cleanup, preservation after a failed build, and
 user theme switching without icon generation.

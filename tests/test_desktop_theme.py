@@ -1,9 +1,11 @@
 """Theme compilation, native parsers, and shell mode/palette propagation."""
 
+import copy
 import json
 import importlib.machinery
 import importlib.util
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -230,7 +232,9 @@ for mode,color in ((Gtk.InterfaceColorScheme.DARK,'#1b2021'),(Gtk.InterfaceColor
 """
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'theme.css'
-            source.write_text(theme.gtk_dynamic_css(theme.load()))
+            source.write_text(
+                theme.gtk_dynamic_css(theme.effective_palettes(theme.load()))
+            )
             result = subprocess.run(
                 ['python3', '-c', probe, str(source)],
                 check=False,
@@ -274,14 +278,10 @@ for mode,color in ((Gtk.InterfaceColorScheme.DARK,'#1b2021'),(Gtk.InterfaceColor
     def test_native_gtk_css_parsers(self):
         # Separate processes: GTK 3 and GTK 4 cannot be loaded together.
         for version in (3, 4):
-            for mode, c in theme.load()['palettes'].items():
+            for mode, c in theme.effective_palettes(theme.load()).items():
                 with tempfile.TemporaryDirectory() as directory:
                     source = Path(directory) / 'theme.css'
-                    source.write_text(
-                        theme.gtk_css(
-                            dict(c, accentText=theme.selection_text(c)), version
-                        )
-                    )
+                    source.write_text(theme.gtk_css(c, version))
                     probe = """import gi,sys
 gi.require_version('Gtk', sys.argv[1])
 from gi.repository import Gtk
@@ -357,6 +357,94 @@ assert not errors, errors
             ):
                 theme.apply(notifications=False)
             self.assertEqual(mode_path.read_text(), 'light\n')
+
+    def test_background_apply_announces_only_unannounced_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            mode_path = root / 'config/quickshell/desktop/theme-mode'
+            with (
+                patch.dict(
+                    os.environ,
+                    HOME=str(root),
+                    XDG_CONFIG_HOME=str(root / 'config'),
+                    XDG_DATA_HOME=str(root / 'data'),
+                    XDG_STATE_HOME=str(root / 'state'),
+                ),
+                patch.object(theme, 'notify', return_value=[]) as notify,
+            ):
+                # Files published without notification still need announcing.
+                theme.apply('dark', notifications=False)
+                theme.apply(if_changed=True)
+                # Shell restarts and reloads find nothing new.
+                theme.apply(if_changed=True)
+                self.assertEqual(notify.call_count, 1)
+                # The CLI reapplies on request.
+                theme.apply()
+                self.assertEqual(notify.call_count, 2)
+                mode_path.write_text('light\n')
+                notify.return_value = ['gsettings: unavailable']
+                self.assertEqual(
+                    theme.apply(if_changed=True)['warnings'], ['gsettings: unavailable']
+                )
+                notify.return_value = []
+                # A failed announcement is retried although the files are current.
+                theme.apply(if_changed=True)
+                theme.apply(if_changed=True)
+                self.assertEqual(notify.call_count, 4)
+                self.assertEqual(notify.call_args.args[1], 'light')
+                # So is one interrupted after publishing.
+                mode_path.write_text('dark\n')
+                notify.side_effect = RuntimeError('interrupted')
+                with self.assertRaises(RuntimeError):
+                    theme.apply(if_changed=True)
+                notify.side_effect = None
+                theme.apply(if_changed=True)
+                theme.apply(if_changed=True)
+                self.assertEqual(notify.call_count, 6)
+
+    def test_empty_xdg_variables_use_default_locations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            with patch.dict(
+                os.environ,
+                HOME=str(home),
+                XDG_CONFIG_HOME='',
+                XDG_DATA_HOME='',
+                XDG_STATE_HOME='',
+            ):
+                self.assertEqual(
+                    theme.locations(),
+                    (home / '.config', home / '.local/share', home / '.local/state'),
+                )
+
+    def test_kitty_ansi_foregrounds_are_readable(self):
+        def luminance(color):
+            values = [int(color[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+            return sum(
+                (v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4) * w
+                for v, w in zip(values, (0.2126, 0.7152, 0.0722))
+            )
+
+        for mode, c in theme.effective_palettes(theme.load()).items():
+            colors = dict(line.split() for line in theme.kitty_colors(c).splitlines())
+            # Black stays near the background; other ANSI colors are foregrounds.
+            for index in range(1, 16):
+                first, second = sorted(
+                    (luminance(colors[f'color{index}']), luminance(c['background']))
+                )
+                self.assertGreaterEqual(
+                    (second + 0.05) / (first + 0.05), 3, f'{mode} color{index}'
+                )
+
+
+class InterfaceIconTests(unittest.TestCase):
+    def test_every_interface_icon_is_referenced(self):
+        literals = set()
+        for path in DESKTOP.rglob('*'):
+            if path.suffix in ('.qml', '.js'):
+                literals.update(re.findall(r'["\']([a-z0-9-]+)["\']', path.read_text()))
+        icons = {path.stem for path in (DESKTOP / 'icons').glob('*.svg')}
+        self.assertEqual(icons - literals, set())
 
 
 @unittest.skipUnless(
@@ -540,9 +628,10 @@ class ThemeQmlTests(unittest.TestCase):
             runtime.mkdir(mode=0o700)
             binary = root / 'bin'
             binary.mkdir()
+            calls = root / 'calls'
             for name in ('gsettings', 'gdbus', 'hyprctl'):
                 command = binary / name
-                command.write_text('#!/bin/sh\nexit 0\n')
+                command.write_text(f'#!/bin/sh\necho "$0 $*" >> {calls}\n')
                 command.chmod(0o755)
             (root / 'shell.qml').write_text("""import QtQuick
 import Quickshell
@@ -572,32 +661,69 @@ ShellRoot {
             )
             env.pop('HYPRLAND_INSTANCE_SIGNATURE', None)
             env.pop('WAYLAND_DISPLAY', None)
-            result = subprocess.run(
-                [QS, '--no-color', '-p', str(root / 'shell.qml')],
-                env=env,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            log = result.stdout + result.stderr
-            self.assertEqual(result.returncode, 0, log)
-            self.assertIn('THEME_PASS', log)
-            for error in ('THEME_FAIL', 'TypeError', 'ReferenceError', 'Binding loop'):
-                self.assertNotIn(error, log)
+
+            def run():
+                result = subprocess.run(
+                    [QS, '--no-color', '-p', str(root / 'shell.qml')],
+                    env=env,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                log = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0, log)
+                self.assertIn('THEME_PASS', log)
+                for error in (
+                    'THEME_FAIL',
+                    'TypeError',
+                    'ReferenceError',
+                    'Binding loop',
+                ):
+                    self.assertNotIn(error, log)
+
+            run()
             self.assertIn(
                 'ColorScheme=DotfilesDark', (root / 'config/kdeglobals').read_text()
             )
             self.assertEqual(
                 (root / 'config/quickshell/desktop/theme-mode').read_text(), 'dark\n'
             )
+            announced = calls.read_text()
+            schemes = [
+                line for line in announced.splitlines() if 'color-scheme' in line
+            ]
+            self.assertTrue(schemes[-1].endswith("'prefer-dark'"), announced)
+            # A restarted shell reapplies files without re-announcing them.
+            (root / 'shell.qml').write_text("""import QtQuick
+import Quickshell
+import "ui"
+ShellRoot {
+ Component.onCompleted: Theme.start()
+ Timer { interval: 300; running: true; onTriggered: {
+  if (Theme.busy) { restart(); return; }
+  if (Theme.error) console.error("THEME_FAIL", Theme.error);
+  else console.log("THEME_PASS");
+  Qt.quit();
+ } }
+}
+""")
+            run()
+            self.assertEqual(calls.read_text(), announced)
 
     def test_palette_and_external_mode_changes_and_invalid_edit_recovery(self):
         def setup(root):
+            # The installed palette links into the checkout, where editors
+            # atomically replace the link target.
+            palette = root / 'ui/palette.json'
+            target = root / 'checkout/desktop-palette.json'
+            target.parent.mkdir()
+            palette.rename(target)
+            palette.symlink_to(target)
             # Drive edits via a helper so the QML watcher sees atomic replacements.
             (root / 'edit.py').write_text("""import json,os,pathlib,sys
 root=pathlib.Path(sys.argv[1]); stage=int(sys.argv[2])
-source=root/'ui/palette.json'
+source=(root/'ui/palette.json').resolve()
 if stage==1:
  p=root/'config/quickshell/desktop/theme-mode'; p.write_text('light\\n')
 elif stage==2:
@@ -641,3 +767,162 @@ ShellRoot {
 """,
             setup,
         )
+
+    def test_shell_and_compiler_accept_the_same_palettes(self):
+        valid = json.loads(PALETTE.read_text())
+
+        def variant(change):
+            value = copy.deepcopy(valid)
+            change(value)
+            return json.dumps(value)
+
+        cases = {
+            'valid': json.dumps(valid),
+            'punctuated font': variant(
+                lambda v: v.update(font='Fira Code (Retina)+', fontSize=6)
+            ),
+            'largest size': variant(lambda v: v.update(fontSize=24)),
+            'non-ASCII font': variant(lambda v: v.update(font='Überschrift Sans')),
+            'font markup': variant(lambda v: v.update(font='Noto; Sans')),
+            'empty font': variant(lambda v: v.update(monospaceFont='')),
+            'long font': variant(lambda v: v.update(font='N' * 101)),
+            'boolean size': variant(lambda v: v.update(fontSize=True)),
+            'string size': variant(lambda v: v.update(fontSize='11')),
+            'large size': variant(lambda v: v.update(fontSize=25)),
+            'NaN size': json.dumps(dict(valid, fontSize=float('nan'))),
+            'extra field': variant(lambda v: v.update(extra=1)),
+            'palette list': variant(lambda v: v.update(palettes=['dark', 'light'])),
+            'token list': variant(
+                lambda v: v['palettes'].update(dark=sorted(valid['palettes']['dark']))
+            ),
+            'missing token': variant(lambda v: v['palettes']['light'].pop('visited')),
+            'unknown token': variant(
+                lambda v: v['palettes']['dark'].update(link='#ffffff')
+            ),
+            'short color': variant(
+                lambda v: v['palettes']['dark'].update(accent='#fff')
+            ),
+            'alpha color': variant(
+                lambda v: v['palettes']['light'].update(accent='#c92240ff')
+            ),
+            'null palettes': variant(lambda v: v.update(palettes=None)),
+            'array root': json.dumps([valid]),
+            'malformed JSON': '{broken',
+        }
+        dark = valid['palettes']['dark']
+        palettes = [
+            *valid['palettes'].values(),
+            dict(dark, accentText='#ffffff', text='#101010'),
+            dict(dark, accent='#808080', accentText='#909090', text='#707070'),
+            dict(dark, accent='#2040a0', accentText='#304080', text='#203070'),
+        ]
+        log = run_qml(
+            self,
+            """import QtQuick
+import Quickshell
+import "ui"
+ShellRoot {
+ Timer { interval: 1; running: true; onTriggered: {
+  const accepted = %s.map(text => { try { Theme.parsePalette(text); return true; } catch (_) { return false; } });
+  const selections = %s.map(palette => Theme.selectionText(palette));
+  console.log("PARITY " + JSON.stringify({ accepted, selections }));
+  console.log("DISPLAY_PASS");
+  Qt.quit();
+ } }
+}
+"""
+            % (json.dumps(list(cases.values())), json.dumps(palettes)),
+        )
+        shell = json.loads(log.split('PARITY ', 1)[1].splitlines()[0])
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'palette.json'
+            for (name, text), qml in zip(cases.items(), shell['accepted']):
+                source.write_text(text)
+                try:
+                    with patch.object(theme, 'SOURCE', source):
+                        theme.load()
+                    python = True
+                except ValueError:
+                    python = False
+                expected = name in ('valid', 'punctuated font', 'largest size')
+                self.assertEqual((qml, python), (expected, expected), name)
+        self.assertEqual(
+            [color.lower() for color in shell['selections']],
+            [theme.selection_text(palette) for palette in palettes],
+        )
+        self.assertEqual(shell['selections'][2:], ['#101010', '#000000', '#ffffff'])
+
+    def test_failed_mode_save_shows_the_saved_mode_and_the_failure(self):
+        def setup(root):
+            # The helper writes elsewhere; only the preference cannot be saved.
+            (root / 'config/quickshell/desktop').chmod(0o500)
+
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory)
+            for name in ('gsettings', 'gdbus', 'hyprctl'):
+                (binary / name).write_text('#!/bin/sh\nexit 0\n')
+                (binary / name).chmod(0o755)
+            with patch.dict(os.environ, PATH=f'{binary}:{os.environ["PATH"]}'):
+                run_qml(
+                    self,
+                    """import QtQuick
+import Quickshell
+import Quickshell.Io
+import "ui"
+import "drawers/displays"
+ShellRoot {
+ id: root
+ property int stage: 0
+ property int settled: 0
+ Component.onCompleted: Theme.start()
+ FloatingWindow {
+  ComfortControls {
+   id: controls
+   active: true
+   service: QtObject {
+    property var state: ({ nightEnabled: false, nightAvailable: false })
+    property bool loaded: true
+    property bool busy: false
+    property string error: ""
+    function run(operation, values) {}
+   }
+  }
+ }
+ Process { id: writable; command: ["chmod", "700", Quickshell.env("XDG_CONFIG_HOME") + "/quickshell/desktop"] }
+ function find(item, name) {
+  if (item.objectName === name) return item;
+  for (const child of item.children) { const found = find(child, name); if (found) return found; }
+  return null;
+ }
+ function shown(text) {
+  return Array.from(controls.children).some(item => item.visible && item.text === text);
+ }
+ function check(value, message) { if (!value) throw new Error(message); }
+ Timer { interval: 100; running: true; repeat: true; onTriggered: {
+  try {
+   if (Theme.busy || writable.running) { root.settled = 0; return; }
+   // Let a follow-up synchronization start before inspecting the result.
+   if (++root.settled < 4) return;
+   const toggle = find(controls, "darkModeEnabled");
+   if (root.stage === 0) {
+    check(Theme.mode === "dark" && toggle.checked && !Theme.error, "initial dark mode");
+    toggle.toggle(); toggle.toggled();
+   } else if (root.stage === 1) {
+    const failure = "Could not save appearance mode.";
+    check(Theme.mode === "dark" && toggle.checked, "unsaved light mode shown: " + Theme.mode);
+    check(Theme.error === failure && shown(failure), "save failure hidden: " + Theme.error);
+    writable.running = true;
+   } else if (root.stage === 2) {
+    toggle.toggle(); toggle.toggled();
+   } else {
+    check(Theme.mode === "light" && !toggle.checked, "recovered save not shown");
+    check(!Theme.error && !shown("Could not save appearance mode."), "stale save failure: " + Theme.error);
+    console.log("DISPLAY_PASS"); Qt.quit(); return;
+   }
+   root.stage++; root.settled = 0;
+  } catch (e) { console.error("DISPLAY_FAIL", root.stage, e.message); Qt.quit(); }
+ } }
+}
+""",
+                    setup,
+                )

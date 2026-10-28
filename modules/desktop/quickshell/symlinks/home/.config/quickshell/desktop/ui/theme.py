@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 
 SOURCE = Path('/etc/desktop-palette.json')
+FIELDS = {'font', 'monospaceFont', 'fontSize', 'palettes'}
 TOKENS = {
     'background',
     'surface',
@@ -29,20 +30,22 @@ TOKENS = {
 
 
 def load():
+    # Keep these rules identical to Theme.qml::parsePalette.
     theme = json.loads(SOURCE.read_text())
-    if set(theme) != {'font', 'monospaceFont', 'fontSize', 'palettes'}:
+    if not isinstance(theme, dict) or set(theme) != FIELDS:
         raise ValueError('Expected font, monospaceFont, fontSize and palettes')
     for key in ('font', 'monospaceFont'):
         if not isinstance(theme[key], str) or not re.fullmatch(
-            r'[\w .+()-]{1,100}', theme[key]
+            r'[\w .+()-]{1,100}', theme[key], re.ASCII
         ):
             raise ValueError(f'{key} must be a plain font family name')
     if type(theme['fontSize']) not in (int, float) or not 6 <= theme['fontSize'] <= 24:
         raise ValueError('fontSize must be between 6 and 24 points')
-    if set(theme['palettes']) != {'dark', 'light'}:
+    palettes = theme['palettes']
+    if not isinstance(palettes, dict) or set(palettes) != {'dark', 'light'}:
         raise ValueError('Expected dark and light palettes')
-    for palette in theme['palettes'].values():
-        if set(palette) != TOKENS:
+    for palette in palettes.values():
+        if not isinstance(palette, dict) or set(palette) != TOKENS:
             raise ValueError('Incomplete palette or unknown color token')
         if any(
             not isinstance(c, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', c)
@@ -54,8 +57,9 @@ def load():
 
 def locations():
     home = Path.home()
+    # Empty values mean unset, as in Theme.qml and desktop-theme.
     return tuple(
-        Path(os.environ.get(key, home / fallback))
+        Path(os.environ.get(key) or home / fallback)
         for key, fallback in (
             ('XDG_CONFIG_HOME', '.config'),
             ('XDG_DATA_HOME', '.local/share'),
@@ -361,6 +365,8 @@ def kitty_colors(c):
         'text',
     )
     result.update({f'color{i}': c[token] for i, token in enumerate(tokens * 2)})
+    # Bright black is the conventional dim foreground; surface is unreadable.
+    result['color8'] = c['muted']
     return ''.join(f'{key} {value}\n' for key, value in result.items())
 
 
@@ -469,10 +475,17 @@ def icon_theme(mode):
     return 'DotfilesPapirus' + mode.title()
 
 
-def render(theme, mode, config, data, home):
+def effective_palettes(theme):
+    return {
+        variant: dict(colors, accentText=selection_text(colors))
+        for variant, colors in theme['palettes'].items()
+    }
+
+
+def render(theme, mode, config, data):
     """Compute every output before publishing any files."""
-    c = dict(theme['palettes'][mode])
-    c['accentText'] = selection_text(c)
+    palettes = effective_palettes(theme)
+    c = palettes[mode]
     name = 'Dotfiles' + mode.title()
     kde = kde_colors(c, name)
     font = f'{theme["font"]},{theme["fontSize"]:g},-1,5,50,0,0,0,0,0'
@@ -495,8 +508,7 @@ def render(theme, mode, config, data, home):
     output[union / 'contents/css/style.css'] = union_css()
     zed_themes, code_themes = [], []
     extension = data / 'vscode-oss/extensions/dotfiles.desktop-theme-1.0.0'
-    for variant, colors in theme['palettes'].items():
-        colors = dict(colors, accentText=selection_text(colors))
+    for variant, colors in palettes.items():
         label = 'Dotfiles ' + variant.title()
         scheme = 'Dotfiles' + variant.title()
         breeze = 'Breeze-Dark' if variant == 'dark' else 'Breeze'
@@ -506,13 +518,9 @@ def render(theme, mode, config, data, home):
                 + gtk_css(colors, version)
             )
             output[data / f'themes/{scheme}/gtk-{version}.0/gtk.css'] = css
-            dark = dict(
-                theme['palettes']['dark'],
-                accentText=selection_text(theme['palettes']['dark']),
-            )
             output[data / f'themes/{scheme}/gtk-{version}.0/gtk-dark.css'] = (
                 f'@import url("/usr/share/themes/Breeze-Dark/gtk-{version}.0/gtk.css");\n'
-                + gtk_css(dark, version)
+                + gtk_css(palettes['dark'], version)
             )
         output[data / f'color-schemes/{scheme}.colors'] = ini_merge(
             '', kde_colors(colors, scheme)
@@ -548,10 +556,7 @@ def render(theme, mode, config, data, home):
             }
         )
     output[config / 'kitty/no-preference-theme.auto.conf'] = kitty_colors(
-        dict(
-            theme['palettes']['dark'],
-            accentText=selection_text(theme['palettes']['dark']),
-        )
+        palettes['dark']
     )
     output[config / 'kitty/desktop-font.conf'] = (
         f'font_family {theme["monospaceFont"]}\nfont_size {theme["fontSize"]:g}\n'
@@ -584,7 +589,7 @@ def render(theme, mode, config, data, home):
         if version == 4:
             # GTK >=4.20 re-evaluates media queries on appearance changes. Both
             # palettes stay loaded, including in libadwaita's user CSS provider.
-            output[folder / 'desktop-theme.css'] = gtk_dynamic_css(theme)
+            output[folder / 'desktop-theme.css'] = gtk_dynamic_css(palettes)
             output[folder / 'gtk.css'] = css_import(read(folder / 'gtk.css'))
     output[config / 'hypr/theme.lua'] = borders(c) + '\n'
     return output
@@ -598,12 +603,10 @@ def borders(c):
     )
 
 
-def gtk_dynamic_css(theme):
+def gtk_dynamic_css(palettes):
     return ''.join(
-        f'@media (prefers-color-scheme: {mode}) {{\n'
-        + gtk_css(dict(c, accentText=selection_text(c)), 4)
-        + '}\n'
-        for mode, c in theme['palettes'].items()
+        f'@media (prefers-color-scheme: {mode}) {{\n' + gtk_css(c, 4) + '}\n'
+        for mode, c in palettes.items()
     )
 
 
@@ -643,7 +646,7 @@ def notify(theme, mode):
     return errors
 
 
-def apply(mode=None, notifications=True):
+def apply(mode=None, notifications=True, if_changed=False):
     config, data, state = locations()
     state.mkdir(parents=True, exist_ok=True)
     with (state / 'desktop-theme.lock').open('w') as lock:
@@ -653,17 +656,29 @@ def apply(mode=None, notifications=True):
         mode_path = config / 'quickshell/desktop/theme-mode'
         saved = read(mode_path).strip()
         mode = mode or (saved if saved in ('dark', 'light') else 'dark')
-        output = render(theme, mode, config, data, Path.home())
+        output = render(theme, mode, config, data)
         # Preflight symlinks before any output is changed.
         for path in (*output, *((mode_path,) if requested_mode else ())):
             if path.is_symlink():
                 raise ValueError(f'Refusing to replace symlink: {path}')
-        for path, content in output.items():
+        # Marks published files not yet announced to desktop services, so an
+        # interrupted or failed announcement is retried by the next run.
+        pending = state / 'desktop-theme.pending'
+        changed = {path: text for path, text in output.items() if read(path) != text}
+        if changed:
+            pending.touch()
+        for path, content in changed.items():
             write(path, content)
         # Publish mode after its toolkit configuration is ready.
         if requested_mode:
             write(mode_path, mode + '\n')
-        warnings = notify(theme, mode) if notifications else []
+        warnings = []
+        if notifications and (pending.exists() or not if_changed):
+            warnings = notify(theme, mode)
+            if warnings:
+                pending.touch()
+            else:
+                pending.unlink(missing_ok=True)
         return {'mode': mode, 'warnings': warnings}
 
 
@@ -677,9 +692,18 @@ def main():
         action='store_true',
         help='Generate files without contacting desktop services',
     )
+    parser.add_argument(
+        '--if-changed',
+        action='store_true',
+        help='Contact desktop services only for changes they have not received',
+    )
     args = parser.parse_args()
     try:
-        result = apply(None if args.mode == 'apply' else args.mode, not args.no_notify)
+        result = apply(
+            None if args.mode == 'apply' else args.mode,
+            not args.no_notify,
+            args.if_changed,
+        )
     except (OSError, ValueError, TypeError, KeyError) as error:
         parser.exit(1, f'{error}\n')
     print(json_text(result), end='')

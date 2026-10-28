@@ -2420,10 +2420,6 @@
                 "target": "home/.config/quickshell/desktop/icons/droplet.svg"
             },
             {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/eject.svg",
-                "target": "home/.config/quickshell/desktop/icons/eject.svg"
-            },
-            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/eye-off.svg",
                 "target": "home/.config/quickshell/desktop/icons/eye-off.svg"
             },
@@ -2446,10 +2442,6 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/film.svg",
                 "target": "home/.config/quickshell/desktop/icons/film.svg"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/folder-git-2.svg",
-                "target": "home/.config/quickshell/desktop/icons/folder-git-2.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/folder-open.svg",
@@ -2518,10 +2510,6 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/leaf.svg",
                 "target": "home/.config/quickshell/desktop/icons/leaf.svg"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/link-2-off.svg",
-                "target": "home/.config/quickshell/desktop/icons/link-2-off.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/link.svg",
@@ -2662,10 +2650,6 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/sun.svg",
                 "target": "home/.config/quickshell/desktop/icons/sun.svg"
-            },
-            {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/terminal.svg",
-                "target": "home/.config/quickshell/desktop/icons/terminal.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/thermometer.svg",
