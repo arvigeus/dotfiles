@@ -34,53 +34,7 @@ DrawerPage {
             Layout.fillHeight: true
             contentSpacing: 8
             Repeater {
-                model: [
-                    {
-                        id: "movies",
-                        name: qsTr("Movies"),
-                        icon: "film"
-                    },
-                    {
-                        id: "series",
-                        name: qsTr("TV Series"),
-                        icon: "tv"
-                    },
-                    {
-                        id: "music",
-                        name: qsTr("Music"),
-                        icon: "music"
-                    },
-                    {
-                        id: "streaming",
-                        name: qsTr("Streaming"),
-                        icon: "video"
-                    },
-                    {
-                        id: "radio",
-                        name: qsTr("Radio"),
-                        icon: "boom-box"
-                    },
-                    {
-                        id: "television",
-                        name: qsTr("Television"),
-                        icon: "antenna"
-                    },
-                    {
-                        id: "pictures",
-                        name: qsTr("Pictures"),
-                        icon: "image"
-                    },
-                    {
-                        id: "games",
-                        name: qsTr("Games"),
-                        icon: "gamepad-2"
-                    },
-                    {
-                        id: "books",
-                        name: qsTr("Books"),
-                        icon: "book-open"
-                    }
-                ]
+                model: SpaceState.entries
                 Item {
                     id: row
                     required property var modelData
@@ -105,7 +59,6 @@ DrawerPage {
                         ShellButton {
                             id: entry
                             readonly property var modelData: row.modelData
-                            readonly property bool available: SpaceState.entries.some(space => space.id === modelData.id)
                             objectName: "space:" + modelData.id
                             Layout.fillWidth: true
                             Layout.preferredHeight: 52
@@ -115,9 +68,8 @@ DrawerPage {
                             enabled: root.active
                             text: modelData.name
                             iconName: modelData.icon
-                            Accessible.description: available ? SpaceState.runningIds.includes(modelData.id) ? qsTr("Running") : qsTr("Open %1").arg(modelData.name) : qsTr("Not available yet")
-                            onClicked: if (available)
-                                SpaceState.open(modelData.id, root.screen)
+                            Accessible.description: SpaceState.runningIds.includes(modelData.id) ? qsTr("Running") : qsTr("Open %1").arg(modelData.name)
+                            onClicked: SpaceState.open(modelData.id, root.screen)
                             contentItem: RowLayout {
                                 spacing: 14
                                 Icon {

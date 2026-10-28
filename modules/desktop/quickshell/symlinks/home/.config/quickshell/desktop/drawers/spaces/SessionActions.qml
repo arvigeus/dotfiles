@@ -26,6 +26,12 @@ ColumnLayout {
         if (opening)
             menu.open();
     }
+    function scheduleText(schedule): string {
+        if (!schedule?.at)
+            return "";
+        const when = new Date(schedule.at).toLocaleString(Qt.locale(), Locale.ShortFormat);
+        return (["reboot", "kexec"].includes(schedule.action) ? qsTr("Restart scheduled for %1") : qsTr("Shutdown scheduled for %1")).arg(when);
+    }
     onActiveChanged: if (!active)
         closePopup()
     spacing: 6
@@ -347,9 +353,10 @@ ColumnLayout {
             }
         }
         ShellText {
+            objectName: "sessionScheduledShutdown"
             Layout.fillWidth: true
             visible: text !== ""
-            text: root.service.state.scheduledShutdown
+            text: root.scheduleText(root.service.state.scheduledShutdown)
             wrapMode: Text.Wrap
             color: Theme.muted
             font.pixelSize: Theme.smallFontSize

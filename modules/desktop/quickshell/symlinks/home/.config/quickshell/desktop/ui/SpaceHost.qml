@@ -6,16 +6,8 @@ import Quickshell
 InteractionWindow {
     id: root
     objectName: "spaceHost"
-    property var pendingPayloads: ({})
     readonly property var currentEntry: SpaceState.entries.find(entry => entry.id === SpaceState.currentId)
-    readonly property var currentPage: {
-        for (let i = 0; i < instances.count; ++i) {
-            const loader = instances.itemAt(i);
-            if (loader?.modelData.id === SpaceState.currentId)
-                return loader.item;
-        }
-        return null;
-    }
+    readonly property var currentPage: instanceFor(SpaceState.currentId)?.item ?? null
     initialFocus: currentPage?.initialFocus ?? hideButton
     escapeHandler: () => {
         if (!root.currentPage?.dismissTransient())
@@ -25,21 +17,20 @@ InteractionWindow {
     Component.onDestruction: if (SpaceState.host === root)
         SpaceState.host = null
 
-    function deliver(id, payload) {
-        if (!payload)
-            return;
-        pendingPayloads[id] = payload;
+    function instanceFor(id) {
         for (let i = 0; i < instances.count; ++i) {
             const loader = instances.itemAt(i);
-            if (loader?.modelData.id === id && loader.item)
-                deliverPending(loader);
+            if (loader?.modelData.id === id)
+                return loader;
         }
+        return null;
     }
-    function deliverPending(loader) {
-        const payload = pendingPayloads[loader.modelData.id];
-        delete pendingPayloads[loader.modelData.id];
-        if (payload && loader.item.handleOpen)
-            loader.item.handleOpen(payload);
+    function deliver(id, payload) {
+        const loader = instanceFor(id);
+        if (!payload || !loader)
+            return;
+        loader.pendingPayload = payload;
+        loader.deliverPending();
     }
 
     Rectangle {
@@ -97,27 +88,39 @@ InteractionWindow {
                 Loader {
                     id: instance
                     required property var modelData
+                    // An open request waits for asynchronous creation; closing discards it.
+                    property var pendingPayload: null
+                    function deliverPending() {
+                        const payload = pendingPayload;
+                        if (!payload || !item)
+                            return;
+                        pendingPayload = null;
+                        if (item.handleOpen)
+                            item.handleOpen(payload);
+                    }
                     anchors.fill: parent
                     active: SpaceState.runningIds.includes(modelData.id)
                     visible: root.opened && SpaceState.currentId === modelData.id
                     asynchronous: true
                     source: Qt.resolvedUrl(modelData.source)
+                    onActiveChanged: if (!active)
+                        pendingPayload = null
                     onLoaded: {
-                        const owner = modelData.id;
                         if ("backdropTarget" in item)
                             item.backdropTarget = backdropLayer;
                         if ("toolbarTarget" in item)
                             item.toolbarTarget = toolbarLayer;
+                        // Late callbacks from a hidden or background Space must not
+                        // hide, reopen or navigate whichever Space is presented now.
                         item.host = {
                             hide: () => {
-                                if (SpaceState.currentId === owner)
+                                if (instance.visible)
                                     SpaceState.hide();
                             },
-                            close: () => SpaceState.close(owner),
-                            openModule: (id, payload) => SpaceState.open(id, root.targetScreen, payload)
+                            openModule: (id, payload) => instance.visible && SpaceState.open(id, root.targetScreen, payload)
                         };
                         item.active = Qt.binding(() => instance.visible);
-                        root.deliverPending(instance);
+                        instance.deliverPending();
                         root.focusInitial();
                     }
                     // The Spaces' red loading ring, without depending on a Space.
@@ -137,6 +140,7 @@ InteractionWindow {
                             text: qsTr("%1 could not be opened.").arg(instance.modelData.name)
                         }
                         ShellButton {
+                            objectName: "closeFailedSpace:" + instance.modelData.id
                             text: qsTr("Close %1").arg(instance.modelData.name)
                             onClicked: SpaceState.close(instance.modelData.id)
                         }

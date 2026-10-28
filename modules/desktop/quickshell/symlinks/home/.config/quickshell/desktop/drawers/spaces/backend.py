@@ -7,6 +7,11 @@ import sys
 
 
 DELAYS = (15, 30, 60, 90, 120, 180, 240, 300)
+LOGIN1 = (
+    'org.freedesktop.login1',
+    '/org/freedesktop/login1',
+    'org.freedesktop.login1.Manager',
+)
 
 
 def run(argv, *, check=True):
@@ -20,17 +25,7 @@ def run(argv, *, check=True):
 
 def can(method):
     try:
-        result = run(
-            [
-                'busctl',
-                '--system',
-                'call',
-                'org.freedesktop.login1',
-                '/org/freedesktop/login1',
-                'org.freedesktop.login1.Manager',
-                method,
-            ]
-        )
+        result = run(['busctl', '--system', 'call', *LOGIN1, method])
         return result.stdout.strip() in ('s "yes"', 's "challenge"')
     except (OSError, subprocess.SubprocessError, ValueError):
         return False
@@ -45,9 +40,29 @@ def session_status():
         return {}
 
 
+def scheduled_shutdown():
+    """Return logind's pending shutdown action and epoch milliseconds, if any."""
+    try:
+        reply = run(
+            [
+                'busctl',
+                '--system',
+                '--json=short',
+                'get-property',
+                *LOGIN1,
+                'ScheduledShutdown',
+            ]
+        )
+        action, usec = json.loads(reply.stdout)['data']
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+        return None
+    # logind reports no schedule as an empty action with USEC_INFINITY.
+    if not action or type(usec) is not int or not 0 < usec < 2**64 - 1:
+        return None
+    return dict(action=action, at=usec // 1000)
+
+
 def snapshot():
-    scheduled = run(['systemctl', 'poweroff', '--when=show'], check=False)
-    message = (scheduled.stdout or scheduled.stderr).strip()
     session = session_status()
     return dict(
         capabilities=dict(
@@ -57,9 +72,7 @@ def snapshot():
             reboot=can('CanReboot'),
             poweroff=can('CanPowerOff'),
         ),
-        scheduledShutdown=message
-        if scheduled.returncode == 0 and 'No scheduled shutdown' not in message
-        else '',
+        scheduledShutdown=scheduled_shutdown(),
     )
 
 

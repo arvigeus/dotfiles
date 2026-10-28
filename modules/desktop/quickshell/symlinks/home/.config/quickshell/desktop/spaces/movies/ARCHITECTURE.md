@@ -2,23 +2,10 @@
 
 ## Scope and integration
 
-Space registrations live in `ui/SpaceState.qml`, which
-owns the catalogue, running IDs and navigation; `SpaceHost.qml` owns asynchronous
-loaders and binds effective page activation. It uses the existing
-`InteractionState` / `InteractionWindow` layer surface with all four anchors,
-Overlay stacking and ignored exclusion zones, covering the panel as well as the
-workspace. Qt applies per-output scale; the surface follows the output selected
-in Spaces. Unplugging its output hides it without destroying the instance.
-Opening a drawer or launcher hides the Space through shared input ownership.
-Hidden Spaces stay running. Explicit close unloads
-only the selected instance. A feature host captures its own ID so late callbacks
-cannot hide a different Space.
-
-The top-left hide control is outside the page and its popups. Escape dismisses a
-page popup/gallery first, then search or filters, then hides the Space. Native
-menus can consume Escape through their normal shortcut override. Focus is restored
-only after the visible native surface activates. The full-screen host has no
-panel-height allowance or compositor geometry commands.
+Movies runs in the shared Spaces host; see its
+[lifecycle](../../../../../../../ARCHITECTURE.md#spaces). A related anime of the
+other kind opens in TV Series (or Movies) only while this page is shown; a lookup
+that finishes after the page was hidden is dropped without an error.
 
 Movies retains the established catalogue/detail and rail/grid workflows.
 Browser targets

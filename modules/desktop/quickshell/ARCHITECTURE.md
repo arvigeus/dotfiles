@@ -85,11 +85,30 @@ controls and choices can share them.
 
 ## Spaces
 
-Movies, TV Series, Games, Pictures, Books, Radio, Television, Streaming and Music are fullscreen, retained Spaces;
-remaining entries are placeholders. Space modules use their own immersive
+Movies, TV Series, Games, Pictures, Books, Radio, Television, Streaming and Music are fullscreen, retained Spaces.
+`ui/SpaceState.entries` is the only registry; the Spaces drawer lists it in that order. Space modules use their own immersive
 presentation rather than the shell's gray controls or light/dark variants, and omit in-module Spaces links.
 See the presentation contract in [Movies architecture](symlinks/home/.config/quickshell/desktop/spaces/movies/ARCHITECTURE.md)
-for lifecycle, provider, worker and private restoration details.
+for provider, worker and private restoration details.
+
+`SpaceState` owns running IDs and the current Space; opening one requires a
+connected output. `SpaceHost` owns asynchronous loaders and binds effective page
+activation. It uses the shared `InteractionState` / `InteractionWindow` layer
+surface with all four anchors, Overlay stacking and ignored exclusion zones,
+covering the panel as well as the workspace, with no panel-height allowance or
+compositor geometry commands. Qt applies per-output scale; the surface follows
+the output selected in Spaces. Unplugging that output, or opening a drawer or
+launcher, hides the Space through shared input ownership. Hidden Spaces stay
+running. Explicit close unloads only that instance and drops an open payload
+still waiting for asynchronous creation. Each page gets a `host` with `hide()`
+and `openModule(id, payload)`; both act only while that page is shown, so late
+callbacks cannot hide, reopen or switch Spaces, and `openModule` returns `false`
+when refused. The top-left hide control is outside the page and its popups.
+Escape calls the page's `dismissTransient()` (popup/gallery, then search or
+filters) before hiding the Space; native menus can consume Escape through their
+normal shortcut override. Focus is restored only after the visible native
+surface activates.
+
 All Space headers use the shared activity indicator for concurrent work and
 progress. The host's page-opening indicator is a 28-pixel `BusySpinner` in the
 headers' red; `ui/` does not import Space modules. Idle headers have no status marker or history tooltip; completed jobs
@@ -108,7 +127,9 @@ Photos use an mtime URL suffix and no cache. `ProfileButton` launches Account to
 its own unit. See [account editor](#account-editor) for its data and write boundaries.
 
 `SessionService` makes on-demand capability/status/action requests to
-`spaces/backend.py`. Systemd owns shutdown scheduling. Supported delays are
+`spaces/backend.py`. Systemd owns shutdown scheduling; capabilities and any
+pending shutdown come from logind's `Can*` methods and `ScheduledShutdown`
+property, and the popover formats that time in the shell locale. Supported delays are
 15/30/60/90/120/180/240/300 minutes. `gaming` and `reload` call `session-mode`;
 see [session ownership](../hyprland/ARCHITECTURE.md#session-ownership).
 Destructive actions require a two-second hold. Popovers are mutually exclusive

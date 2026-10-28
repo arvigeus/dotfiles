@@ -492,11 +492,12 @@ FocusScope {
                 detailError = failure;
                 return;
             }
+            // A page hidden while the lookup ran must not switch Spaces behind the user.
             if (title.kind === kind)
                 openTitle(title);
-            else if (!host || !["movie", "tv"].includes(title.kind) || !host.openModule(title.kind === "movie" ? "movies" : "series", {
-                "title": title
-            }))
+            else if (active && (!host || !["movie", "tv"].includes(title.kind) || !host.openModule(title.kind === "movie" ? "movies" : "series", {
+                    "title": title
+                })))
                 detailError = "The matching media module is unavailable.";
         });
     }

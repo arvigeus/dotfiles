@@ -399,11 +399,16 @@ def playback_setup(root):
             audio.setframerate(8000)
             audio.writeframes(b'\0\0' * 16000)
     path = root / 'spaces/music/backend.py'
-    source = path.read_text().replace(
-        '    command.extend(("--user-agent=" + user_agent, "--", stream_url))',
-        '    command.extend(("--ao=null", "--user-agent=" + user_agent, "--", stream_url))',
+    source = path.read_text()
+    # Without a null output, mpv exits at once in the audio-less test session.
+    line = "    command.extend(('--user-agent=' + user_agent, '--', stream_url))"
+    assert line in source, 'mpv command line changed; update the --ao=null fixture'
+    path.write_text(
+        source.replace(
+            line,
+            "    command.extend(('--ao=null', '--user-agent=' + user_agent, '--', stream_url))",
+        )
     )
-    path.write_text(source)
 
 
 @unittest.skipUnless(support.QS, 'Quickshell required')

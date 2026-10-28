@@ -7,43 +7,8 @@ Singleton {
     property var host: null
     property string currentId: ""
     property var runningIds: []
+    // The single Spaces registry, in drawer order.
     readonly property var entries: [
-        {
-            id: "music",
-            name: qsTr("Music"),
-            icon: "music",
-            source: "../spaces/music/Main.qml"
-        },
-        {
-            id: "streaming",
-            name: qsTr("Streaming"),
-            icon: "video",
-            source: "../spaces/streaming/Main.qml"
-        },
-        {
-            id: "television",
-            name: qsTr("Television"),
-            icon: "antenna",
-            source: "../spaces/television/Main.qml"
-        },
-        {
-            id: "radio",
-            name: qsTr("Radio"),
-            icon: "boom-box",
-            source: "../spaces/radio/Main.qml"
-        },
-        {
-            id: "books",
-            name: qsTr("Books"),
-            icon: "book-open",
-            source: "../spaces/books/Main.qml"
-        },
-        {
-            id: "pictures",
-            name: qsTr("Pictures"),
-            icon: "image",
-            source: "../spaces/pictures/Main.qml"
-        },
         {
             id: "movies",
             name: qsTr("Movies"),
@@ -57,23 +22,56 @@ Singleton {
             source: "../spaces/series/Main.qml"
         },
         {
+            id: "music",
+            name: qsTr("Music"),
+            icon: "music",
+            source: "../spaces/music/Main.qml"
+        },
+        {
+            id: "streaming",
+            name: qsTr("Streaming"),
+            icon: "video",
+            source: "../spaces/streaming/Main.qml"
+        },
+        {
+            id: "radio",
+            name: qsTr("Radio"),
+            icon: "boom-box",
+            source: "../spaces/radio/Main.qml"
+        },
+        {
+            id: "television",
+            name: qsTr("Television"),
+            icon: "antenna",
+            source: "../spaces/television/Main.qml"
+        },
+        {
+            id: "pictures",
+            name: qsTr("Pictures"),
+            icon: "image",
+            source: "../spaces/pictures/Main.qml"
+        },
+        {
             id: "games",
             name: qsTr("Games"),
             icon: "gamepad-2",
             source: "../spaces/games/Main.qml"
+        },
+        {
+            id: "books",
+            name: qsTr("Books"),
+            icon: "book-open",
+            source: "../spaces/books/Main.qml"
         }
     ]
 
     function open(id, output, payload) {
-        if (!host || !entries.some(entry => entry.id === id))
-            return false;
-        const screen = output || host.focusedOutput();
-        if (!Quickshell.screens.includes(screen))
+        if (!host || !entries.some(entry => entry.id === id) || !Quickshell.screens.includes(output))
             return false;
         if (!runningIds.includes(id))
             runningIds = runningIds.concat([id]);
         currentId = id;
-        host.openOn(screen);
+        host.openOn(output);
         host.deliver(id, payload);
         return true;
     }

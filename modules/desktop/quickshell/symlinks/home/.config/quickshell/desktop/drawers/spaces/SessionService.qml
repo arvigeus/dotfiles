@@ -10,7 +10,7 @@ Singleton {
     id: root
     property var state: ({
             capabilities: {},
-            scheduledShutdown: ""
+            scheduledShutdown: null
         })
     property string actionError: ""
     readonly property string error: actionError || ComfortService.error

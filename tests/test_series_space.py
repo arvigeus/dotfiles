@@ -263,3 +263,65 @@ ShellRoot {
 }""",
             setup=setup,
         )
+
+    def test_related_anime_switches_spaces_only_while_shown(self):
+        def related_setup(root):
+            setup(root)
+            # Offline worker; the related lookup resolves late to the cached series.
+            (root / 'spaces/movies/backend.py').write_text(
+                """import sys,time,urllib.error,urllib.request
+def offline(*args,**kwargs):raise urllib.error.URLError('offline fixture')
+urllib.request.urlopen=offline
+sys.path.insert(0,%r)
+from spaces.movies.backend import Backend
+from spaces.movies.worker import serve
+backend=Backend()
+def handle(request):
+ if request['op']=='anime_entry':
+  time.sleep(0.4)
+  return dict(id='tt101',imdbId='tt101',kind='tv',title='Fixture series',year='2024')
+ return backend.handle(request)
+serve(handle)
+"""
+                % str(support.DESKTOP)
+            )
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState{id:interactions}
+ SpaceHost{id:host;interactionState:interactions}
+ property int step:0
+ property var movies:null
+ function check(value,message){if(!value)throw new Error(message);}
+ Timer{interval:50;running:true;repeat:true;onTriggered:{try{
+  const screen=Quickshell.screens[0];
+  if(step===0){SpaceState.open("movies",screen);step++;return;}
+  if(step===1){
+   const page=host.currentPage;if(!page||page.loading||page.titleLoading)return;
+   movies=page;page.openRelated({malId:7});check(page.relatedLoading,"related lookup did not start");
+   SpaceState.hide();step++;return;
+  }
+  if(step===2){
+   if(movies.relatedLoading)return;
+   check(!host.opened&&!interactions.activeSurface&&SpaceState.currentId==="movies"&&!SpaceState.runningIds.includes("series"),"hidden Movies switched or reopened Spaces");
+   check(movies.detailError==="","abandoned lookup reported an unavailable module");
+   SpaceState.open("movies",screen);movies.openRelated({malId:7});step++;return;
+  }
+  if(step===3){
+   if(movies.relatedLoading)return;
+   check(host.opened&&SpaceState.currentId==="series"&&!movies.active&&!movies.detailError,"shown Movies could not open the related series");
+   step++;return;
+  }
+  if(step===4){
+   if(host.currentPage?.selected.id!=="tt101")return;
+   SpaceState.close("series");SpaceState.close("movies");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(e){console.error("DISPLAY_FAIL",step,e);Qt.quit();}}}
+ Timer{interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",root.step);Qt.quit();}}
+}""",
+            setup=related_setup,
+        )
