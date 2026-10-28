@@ -6,12 +6,82 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
+import time
 import unittest
 
 import support
 
 DESKTOP = support.DESKTOP
 QS = support.QS
+
+
+def production_shell(root, driver):
+    """Prepare the unchanged shell.qml, ending with driver, on two outputs.
+
+    Returns the environment and the command that runs it on a private bus.
+    """
+    support.copy_theme_ui(root)
+    for name in (
+        'icons',
+        'drawers',
+        'spaces',
+        'bar',
+        'launcher',
+        'integrations',
+    ):
+        shutil.copytree(DESKTOP / name, root / name)
+    # The unchanged shell.qml composes every startup service. Helpers are
+    # inert and host commands are stubs, so nothing reaches the session.
+    for path in root.rglob('*.py'):
+        path.write_text('import sys\nsys.stdin.read()\n')
+    stubs = root / 'bin'
+    stubs.mkdir()
+    for name in ('hyprctl', 'notify-send', 'systemctl', 'uwsm'):
+        (stubs / name).write_text('#!/bin/sh\nexit 1\n')
+        (stubs / name).chmod(0o755)
+    support.floating_window(root / 'ui/InteractionWindow.qml', 640, 480)
+    support.floating_window(root / 'bar/Bar.qml', 640)
+    support.floating_window(root / 'spaces/pictures/WallpaperBackground.qml', 640, 480)
+    support.floating_window(root / 'drawers/notifications/NotificationPopups.qml')
+    # Layer-shell attachments on a FloatingWindow stall the offscreen QPA.
+    for name in ('ui/DrawerHost.qml', 'launcher/Launcher.qml'):
+        path = root / name
+        path.write_text(
+            re.sub(r'^    WlrLayershell\..*\n', '', path.read_text(), flags=re.M)
+        )
+    (root / 'screens.json').write_text(
+        '{"screens": ['
+        '{"name": "OUT-1", "x": 0, "y": 0, "width": 640, "height": 480},'
+        '{"name": "OUT-2", "x": 640, "y": 0, "width": 800, "height": 600}]}'
+    )
+    shell = (DESKTOP / 'shell.qml').read_text()
+    (root / 'shell.qml').write_text(shell[: shell.rstrip().rindex('}')] + driver)
+    (root / 'runtime').mkdir(mode=0o700)
+    (root / 'config/quickshell/desktop').mkdir(parents=True)
+    (root / 'config/quickshell/desktop/theme-mode').write_text('dark\n')
+    env = {
+        **os.environ,
+        'PATH': f'{stubs}{os.pathsep}{os.environ.get("PATH", "")}',
+        'QT_QPA_PLATFORM': f'offscreen:configfile={root / "screens.json"}',
+        'XDG_RUNTIME_DIR': str(root / 'runtime'),
+        'XDG_CONFIG_HOME': str(root / 'config'),
+        'XDG_DATA_HOME': str(root / 'data'),
+        'XDG_STATE_HOME': str(root / 'state'),
+        'XDG_CACHE_HOME': str(root / 'cache'),
+        'XDG_DATA_DIRS': str(root / 'empty'),
+        'PIPEWIRE_REMOTE': 'dotfiles-tests-unavailable',
+    }
+    for key in ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE'):
+        env.pop(key, None)
+    command = [
+        *support.private_bus(root),
+        QS,
+        '--no-color',
+        '-p',
+        str(root / 'shell.qml'),
+    ]
+    return env, command
 
 
 @unittest.skipUnless(QS, 'Quickshell is required')
@@ -594,51 +664,9 @@ ShellRoot {
     @unittest.skipUnless(shutil.which('dbus-run-session'), 'Private D-Bus is required')
     def test_production_shell_starts_routes_outputs_and_reloads(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            support.copy_theme_ui(root)
-            for name in (
-                'icons',
-                'drawers',
-                'spaces',
-                'bar',
-                'launcher',
-                'integrations',
-            ):
-                shutil.copytree(DESKTOP / name, root / name)
-            # The unchanged shell.qml composes every startup service. Helpers are
-            # inert and host commands are stubs, so nothing reaches the session.
-            for path in root.rglob('*.py'):
-                path.write_text('import sys\nsys.stdin.read()\n')
-            stubs = root / 'bin'
-            stubs.mkdir()
-            for name in ('hyprctl', 'notify-send', 'systemctl', 'uwsm'):
-                (stubs / name).write_text('#!/bin/sh\nexit 1\n')
-                (stubs / name).chmod(0o755)
-            support.floating_window(root / 'ui/InteractionWindow.qml', 640, 480)
-            support.floating_window(root / 'bar/Bar.qml', 640)
-            support.floating_window(
-                root / 'spaces/pictures/WallpaperBackground.qml', 640, 480
-            )
-            support.floating_window(
-                root / 'drawers/notifications/NotificationPopups.qml'
-            )
-            # Layer-shell attachments on a FloatingWindow stall the offscreen QPA.
-            for name in ('ui/DrawerHost.qml', 'launcher/Launcher.qml'):
-                path = root / name
-                path.write_text(
-                    re.sub(
-                        r'^    WlrLayershell\..*\n', '', path.read_text(), flags=re.M
-                    )
-                )
-            (root / 'screens.json').write_text(
-                '{"screens": ['
-                '{"name": "OUT-1", "x": 0, "y": 0, "width": 640, "height": 480},'
-                '{"name": "OUT-2", "x": 640, "y": 0, "width": 800, "height": 600}]}'
-            )
-            shell = (DESKTOP / 'shell.qml').read_text()
-            (root / 'shell.qml').write_text(
-                shell[: shell.rstrip().rindex('}')]
-                + """
+            env, command = production_shell(
+                Path(directory),
+                """
     PersistentProperties {
         id: lifecycleRun
         reloadableId: "lifecycleRun"
@@ -727,37 +755,10 @@ ShellRoot {
         }
     }
 }
-"""
+""",
             )
-            (root / 'runtime').mkdir(mode=0o700)
-            (root / 'config/quickshell/desktop').mkdir(parents=True)
-            (root / 'config/quickshell/desktop/theme-mode').write_text('dark\n')
-            env = {
-                **os.environ,
-                'PATH': f'{stubs}{os.pathsep}{os.environ.get("PATH", "")}',
-                'QT_QPA_PLATFORM': f'offscreen:configfile={root / "screens.json"}',
-                'XDG_RUNTIME_DIR': str(root / 'runtime'),
-                'XDG_CONFIG_HOME': str(root / 'config'),
-                'XDG_DATA_HOME': str(root / 'data'),
-                'XDG_STATE_HOME': str(root / 'state'),
-                'XDG_CACHE_HOME': str(root / 'cache'),
-                'XDG_DATA_DIRS': str(root / 'empty'),
-                'PIPEWIRE_REMOTE': 'dotfiles-tests-unavailable',
-            }
-            for key in ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE'):
-                env.pop(key, None)
             result = subprocess.run(
-                [
-                    *support.private_bus(root),
-                    QS,
-                    '--no-color',
-                    '-p',
-                    str(root / 'shell.qml'),
-                ],
-                env=env,
-                text=True,
-                capture_output=True,
-                timeout=30,
+                command, env=env, text=True, capture_output=True, timeout=30
             )
             log = result.stdout + result.stderr
             self.assertEqual(result.returncode, 0, log)
@@ -772,6 +773,65 @@ ShellRoot {
                 'is not a function',
             ):
                 self.assertNotIn(error, log)
+
+    @unittest.skipUnless(shutil.which('dbus-run-session'), 'Private D-Bus is required')
+    def test_window_order_refresh_survives_event_streams(self):
+        # Hyprland repeats activewindowv2 for each title change of the focused
+        # window; a refresh must not wait for such a stream to end.
+        stream = {}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env, command = production_shell(
+                root,
+                """
+    Connections {
+        target: Hyprland
+        function onRawEvent(event: HyprlandEvent): void {
+            if (event.name === "custom" && event.data === "test-done") {
+                console.log("INTERACTIONS_PASS");
+                Qt.quit();
+            }
+        }
+    }
+    Timer { interval: 15000; running: true; onTriggered: { console.error("INTERACTIONS_FAIL"); Qt.quit(); } }
+}
+""",
+            )
+            env['HYPRLAND_INSTANCE_SIGNATURE'] = 'test'
+            hyprland = support.FakeHyprland(
+                root / 'runtime/hypr/test', clients=[], workspaces=[], monitors=[]
+            )
+
+            def titles():
+                deadline = time.monotonic() + 10
+                while not hyprland.listeners and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                time.sleep(0.5)  # Let startup refreshes finish first.
+                stream['start'] = time.monotonic()
+                for _ in range(20):
+                    hyprland.send('activewindowv2>>a1')
+                    time.sleep(0.05)
+                stream['end'] = time.monotonic()
+                hyprland.send('custom>>test-done')
+
+            threading.Thread(target=titles, daemon=True).start()
+            try:
+                result = subprocess.run(
+                    command, env=env, text=True, capture_output=True, timeout=30
+                )
+            finally:
+                hyprland.close()
+        log = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, log)
+        self.assertIn('INTERACTIONS_PASS', log)
+        for error in ('INTERACTIONS_FAIL', 'TypeError', 'ReferenceError'):
+            self.assertNotIn(error, log)
+        refreshes = [
+            moment
+            for moment, request in hyprland.requests
+            if request == 'j/clients' and stream['start'] < moment < stream['end']
+        ]
+        self.assertTrue(refreshes, 'window order refresh waited for the stream')
 
     def test_style_preview_loads(self):
         source = (DESKTOP / 'preview.qml').read_text()

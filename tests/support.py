@@ -1,13 +1,18 @@
-"""Shared fixtures: repository paths, helper loaders and the isolated QML runner."""
+"""Shared fixtures: repository paths, helper loaders, the isolated QML runner and
+a fake Hyprland IPC."""
 
 import copy
 import importlib.util
+import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -115,6 +120,76 @@ def private_bus(root):
 </busconfig>
 """)
     return ['dbus-run-session', f'--config-file={config}', '--']
+
+
+class FakeHyprland:
+    """Answer Quickshell's Hyprland IPC from fixture state and record requests.
+
+    A dispatch of `fake:` + JSON is a test control message: `at` moves clients,
+    then `events` are sent on the event socket in order. Other dispatches are
+    recorded in `dispatches`; every request is logged with its monotonic time.
+    """
+
+    def __init__(self, directory, clients, workspaces, monitors):
+        self.state = dict(clients=clients, workspaces=workspaces, monitors=monitors)
+        self.dispatches = []
+        self.requests = []
+        self.listeners = []
+        self.servers = []
+        directory.mkdir(parents=True)
+        for name, handler in (('.socket.sock', self.answer), ('.socket2.sock', None)):
+            server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            server.bind(str(directory / name))
+            server.listen()
+            self.servers.append(server)
+            threading.Thread(
+                target=self.serve, args=(server, handler), daemon=True
+            ).start()
+
+    def serve(self, server, handler):
+        while True:
+            try:
+                connection, _ = server.accept()
+            except OSError:
+                return
+            if handler:
+                with connection:
+                    handler(connection)
+            else:
+                self.listeners.append(connection)
+
+    def answer(self, connection):
+        request = connection.recv(1 << 16).decode()
+        self.requests.append((time.monotonic(), request))
+        if request == 'j/status':
+            reply = json.dumps({'configProvider': 'lua'})
+        elif request.startswith('j/'):
+            reply = json.dumps(self.state.get(request[2:], []))
+        elif request.startswith('dispatch fake:'):
+            control = json.loads(request.removeprefix('dispatch fake:'))
+            moved = control.get('at', {})
+            for client in self.state['clients']:
+                client['at'] = moved.get(client['address'], client['at'])
+            self.send(*control.get('events', []))
+            reply = 'ok'
+        else:
+            self.dispatches.append(request.removeprefix('dispatch '))
+            reply = 'ok'
+        connection.sendall(reply.encode())
+
+    def send(self, *events):
+        for event in events:
+            for listener in self.listeners:
+                listener.sendall(f'{event}\n'.encode())
+
+    def close(self):
+        for endpoint in self.servers + self.listeners:
+            # Shutdown also wakes a thread blocked in accept().
+            try:
+                endpoint.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            endpoint.close()
 
 
 def copy_theme_ui(root):

@@ -92,12 +92,16 @@ ShellRoot {
     // dispatches the custom "desktop-layout-changed" event after layout actions.
     // If the window list order goes stale, check those hooks. External reorder
     // scripts: hyprctl dispatch 'hl.dsp.event("desktop-layout-changed")'
+    // Refresh once per burst, counted from its first event: Hyprland repeats
+    // activewindowv2 for every title change of the focused window, so restarting
+    // the timer could postpone the refresh indefinitely. Clients report target
+    // geometry, so an early refresh still sees the settled layout.
     Connections {
         target: Hyprland
         function onRawEvent(event: HyprlandEvent): void {
             DisplayService.handleEvent(event.name, event.data);
             if ((event.name === "custom" && event.data === "desktop-layout-changed") || ["openwindow", "closewindow", "activewindowv2", "movewindowv2", "changefloatingmode", "fullscreen", "workspacev2", "configreloaded", "monitoraddedv2", "monitorremoved"].includes(event.name))
-                layoutRefresh.restart();
+                layoutRefresh.start();
         }
     }
 

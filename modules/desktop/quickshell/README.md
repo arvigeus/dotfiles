@@ -24,8 +24,10 @@ displays, capture, clipboard history, calendar, notifications and system control
 
 Workspace navigation stays on the current display without wrapping. Empty
 workspaces disappear when left. Three-finger vertical swipes follow their natural
-direction; horizontal swipes scroll columns. Amber tabs/arrows indicate windows
-requesting attention. Apps must report urgency; unread browser tabs alone may not.
+direction; horizontal swipes scroll columns. With many windows, the bar's tabs
+narrow and then scroll; edge markers count hidden tabs and page through them.
+Amber tabs, arrows and markers indicate windows requesting attention. Apps must
+report urgency; unread browser tabs alone may not.
 
 ## Spaces and session controls
 

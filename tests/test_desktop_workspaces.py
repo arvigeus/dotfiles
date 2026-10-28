@@ -1,5 +1,6 @@
 """Exercise workspace navigation policy without moving real desktop windows."""
 
+import json
 import os
 from pathlib import Path
 import shutil
@@ -7,6 +8,7 @@ import subprocess
 import tempfile
 import unittest
 
+import support
 
 POLICY = (
     Path(__file__).resolve().parents[1]
@@ -349,10 +351,6 @@ assert(#actions == 0)
 """)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 @unittest.skipUnless(shutil.which('lua'), 'Lua is required for configuration tests')
 class ConfigurationLoadTests(unittest.TestCase):
     def test_components_and_input_policy_load_through_require(self):
@@ -398,3 +396,323 @@ assert(layouts[#layouts] == "us,bg")
                 ),
             )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+
+def client(address, workspace, x, title, monitor=0):
+    return {
+        'address': f'0x{address}',
+        'mapped': True,
+        'hidden': False,
+        'at': [x, 50],
+        'size': [400, 600],
+        'workspace': {'id': workspace, 'name': str(workspace)},
+        'floating': False,
+        'monitor': monitor,
+        'class': f'app-{address}',
+        'title': title,
+    }
+
+
+def workspace(id, monitor, monitor_id, windows):
+    return {
+        'id': id,
+        'name': str(id),
+        'monitor': monitor,
+        'monitorID': monitor_id,
+        'windows': windows,
+        'hasfullscreen': False,
+    }
+
+
+def monitor(id, name, active, focused):
+    return {
+        'id': id,
+        'name': name,
+        'description': name,
+        'x': 0,
+        'y': 0,
+        'width': 1280,
+        'height': 720,
+        'scale': 1,
+        'activeWorkspace': {'id': active, 'name': str(active)},
+        'focused': focused,
+    }
+
+
+BAR_SHELL = """import QtQuick
+import QtTest
+import Quickshell
+import Quickshell.Hyprland
+import "ui"
+import "bar"
+ShellRoot {
+    id: root
+    Variants {
+        id: outputs
+        model: Quickshell.screens
+        Bar { required property ShellScreen modelData; screen: modelData; visible: true }
+    }
+    TestCase { id: input; when: false }
+    function check(value, message) { if (!value) throw new Error(message); }
+    function find(item, name) {
+        if (item.objectName === name) return item;
+        for (const child of item.children || []) { const found = find(child, name); if (found) return found; }
+        return null;
+    }
+    function part(output, name) { return find(outputs.instances.find(bar => bar.screen.name === output).contentItem, name); }
+    function titles(output) { return part(output, "windowList").windows.map(window => window.title).join(","); }
+    function tab(output, address) { return part(output, "window:" + address); }
+    function arrows(output) { const list = part(output, "workspaceList"); return [list.urgentAbove, list.urgentBelow].join(","); }
+    function fake(control) { Hyprland.dispatch("fake:" + JSON.stringify(control)); }
+    function click(item) { input.mouseClick(item, item.width / 2, item.height / 2); }
+    // Whether a tab is wholly in view; clear also keeps it off the edge markers.
+    function inView(output, address, clear) {
+        const list = part(output, "windowList"), item = tab(output, address);
+        if (!item)
+            return false;
+        const x = item.mapToItem(list, 0, 0).x;
+        const left = clear && list.hiddenBefore ? part(output, "windowsBefore").width : 0;
+        const right = clear && list.hiddenAfter ? part(output, "windowsAfter").width : 0;
+        return x >= left - 0.5 && x + item.width <= list.width - right + 0.5;
+    }
+    property var tabs: ({})
+    // Each step waits for its condition, then asserts and acts.
+    readonly property var steps: [
+/* steps */
+    ]
+    property int step: 0
+    property int waits: 0
+    Timer { interval: 100; running: true; repeat: true; onTriggered: {
+        try {
+            if (!root.steps[root.step][0]()) {
+                check(++root.waits < 40, "timed out waiting");
+                return;
+            }
+            root.steps[root.step][1]();
+            root.step++;
+            root.waits = 0;
+        } catch (error) { console.error("BAR_FAIL", root.step, error.message); Qt.quit(); }
+    } }
+}
+"""
+
+NAVIGATION_STEPS = """        [() => titles("OUT-1") === "Left,Right" && titles("OUT-2") === "Other", () => {
+            check(arrows("OUT-1") === "false,false" && !tab("OUT-1", "a2").urgent, "attention before a request");
+            fake({events: ["urgent>>a2", "urgent>>a4", "urgent>>b1"]});
+        }],
+        // A scrolled-off column on the focused workspace keeps its request.
+        [() => tab("OUT-1", "a2").urgent, () => {
+            check(!tab("OUT-1", "a1").urgent && tab("OUT-2", "b1").urgent, "attention marked the wrong windows");
+            check(arrows("OUT-1") === "false,true" && arrows("OUT-2") === "false,false", "arrows crossed displays");
+            fake({events: ["workspacev2>>10001,10001"]});
+        }],
+        // Showing a workspace does not attend to its windows; focusing one does.
+        [() => titles("OUT-1") === "Below", () => {
+            check(tab("OUT-1", "a4").urgent, "visiting the workspace cleared attention");
+            check(!tab("OUT-1", "a4").modelData.urgent, "Quickshell now keeps visited windows urgent; Bar.attention may be unnecessary");
+            check(arrows("OUT-1") === "true,false", "attention above was lost");
+            fake({at: {"0xa1": [-900, 50]}, events: ["workspacev2>>10000,10000", "activewindowv2>>a2"]});
+        }],
+        [() => titles("OUT-1") === "Left,Right" && !tab("OUT-1", "a2").urgent, () => {
+            check(arrows("OUT-1") === "false,true", "attention below was lost after returning");
+            tabs = {a1: tab("OUT-1", "a1"), a2: tab("OUT-1", "a2")};
+            Hyprland.refreshToplevels();
+        }],
+        [() => titles("OUT-1") === "Right,Left", () => {
+            check(tab("OUT-1", "a1") === tabs.a1 && tab("OUT-1", "a2") === tabs.a2, "reordering recreated tabs");
+            fake({events: ["closewindow>>a4"]});
+        }],
+        [() => arrows("OUT-1") === "false,false", () => {
+            click(tab("OUT-1", "a2"));
+            click(part("OUT-1", "workspaceDown"));
+            click(part("OUT-2", "workspaceUp"));
+            fake({events: ["monitorremoved>>OUT-2"]});
+        }],
+        // A replaced Hyprland monitor reconnects its existing output's bar.
+        [() => titles("OUT-2") === "", () => fake({events: ["monitoraddedv2>>7,OUT-2,Fake output"]})],
+        [() => titles("OUT-2") === "Other", () => { console.log("BAR_PASS"); Qt.quit(); }]
+"""
+
+CROWDED_STEPS = """        [() => part("OUT-1", "windowList").windows.length === 14, () => {
+            const list = part("OUT-1", "windowList");
+            check(list.tabWidth === list.minimumCellWidth && list.width === list.maximumWidth, "crowded tabs did not shrink: " + list.tabWidth);
+            check(list.hiddenBefore === 0 && list.hiddenAfter > 0, "crowded strip did not overflow to the right");
+            check(!part("OUT-1", "windowsBefore").visible && part("OUT-1", "windowsAfter").visible, "edge markers do not match hidden tabs");
+            check(!find(tab("OUT-1", "c01"), "closeWindow").visible, "a shrunk tab kept its close button");
+            input.mouseMove(tab("OUT-1", "c01"), 20, 10);
+        }],
+        // Hovering a shrunk tab offers close; focus scrolls the strip to its tab.
+        [() => find(tab("OUT-1", "c01"), "closeWindow").visible, () => {
+            input.mouseMove(part("OUT-1", "spacesButton"), 5, 5);
+            fake({events: ["activewindowv2>>c13"]});
+        }],
+        [() => inView("OUT-1", "c13", true), () => {
+            const list = part("OUT-1", "windowList");
+            const shown = list.windows.filter(window => inView("OUT-1", window.address, false)).length;
+            check(list.hiddenAfter === 0 && list.hiddenBefore === 14 - shown, "counted " + list.hiddenBefore + " hidden with " + shown + " shown");
+            fake({events: ["activewindowv2>>c00"]});
+        }],
+        [() => part("OUT-1", "windowList").hiddenBefore === 0 && inView("OUT-1", "c00", true), () => fake({events: ["activewindowv2>>c10"]})],
+        [() => inView("OUT-1", "c10", true), () => {
+            check(part("OUT-1", "windowsBefore").visible && part("OUT-1", "windowsAfter").visible, "a middle tab lost an edge marker");
+            fake({events: ["urgent>>c11"]});
+        }],
+        // The marker on a hidden request's side turns amber and jumps to it.
+        [() => part("OUT-1", "windowList").urgentAfter, () => {
+            check(!part("OUT-1", "windowList").urgentBefore, "attention marked the wrong edge");
+            click(part("OUT-1", "windowsAfter"));
+        }],
+        [() => inView("OUT-1", "c11", true), () => {
+            const list = part("OUT-1", "windowList");
+            check(!list.urgentAfter && list.hiddenAfter > 0, "the marker kept amber or scrolled past the request");
+            fake({events: ["activewindowv2>>c11", "activewindowv2>>c02"]});
+        }],
+        // Revealing leftwards also keeps the tab clear of the left marker.
+        [() => inView("OUT-1", "c02", true), () => {
+            check(part("OUT-1", "windowsBefore").visible && !part("OUT-1", "windowList").urgentAfter, "focus left stale markers");
+            tabs = {hidden: part("OUT-1", "windowList").hiddenAfter};
+            click(part("OUT-1", "windowsAfter"));
+        }],
+        // Without a hidden request, a marker scrolls about a page.
+        [() => part("OUT-1", "windowList").hiddenAfter < tabs.hidden - 1, () => {
+            const list = part("OUT-1", "windowList");
+            tabs = {fit: Math.floor((list.available + Theme.spacingSmall) / (list.minimumCellWidth + Theme.spacingSmall))};
+            check(tabs.fit > 3 && tabs.fit < 14, "fixture cannot show shared widths: " + list.available);
+            fake({events: list.windows.slice(tabs.fit).map(window => "closewindow>>" + window.address)});
+        }],
+        // Tabs share the width before scrolling, and keep full width when few.
+        [() => part("OUT-1", "windowList").windows.length === tabs.fit, () => {
+            const list = part("OUT-1", "windowList");
+            check(list.hiddenBefore === 0 && list.hiddenAfter === 0 && list.width <= list.maximumWidth, "fitting tabs still scroll");
+            check(list.tabWidth > list.minimumCellWidth && list.tabWidth < list.cellWidth, "tabs did not share the width: " + list.tabWidth);
+            fake({events: list.windows.slice(3).map(window => "closewindow>>" + window.address)});
+        }],
+        [() => part("OUT-1", "windowList").windows.length === 3, () => {
+            check(part("OUT-1", "windowList").tabWidth === part("OUT-1", "windowList").cellWidth, "few tabs did not keep full width");
+            check(find(tab("OUT-1", "c00"), "closeWindow").visible, "a full-width tab hid its close button");
+            console.log("BAR_PASS"); Qt.quit();
+        }]
+"""
+
+
+@unittest.skipUnless(
+    support.QS and shutil.which('dbus-run-session'),
+    'Quickshell and a private D-Bus are required',
+)
+class BarNavigationTests(unittest.TestCase):
+    def run_bar(self, steps, clients, workspaces, monitors):
+        """Run BAR_SHELL's steps against a fake Hyprland and return it."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            support.copy_theme_ui(root)
+            for name in ('icons', 'drawers', 'bar'):
+                shutil.copytree(support.DESKTOP / name, root / name)
+            # Status widgets load with the bar; helpers and host commands are inert.
+            for path in root.rglob('*.py'):
+                path.write_text('import sys\nsys.stdin.read()\n')
+            stubs = root / 'bin'
+            stubs.mkdir()
+            for name in ('hyprctl', 'notify-send', 'systemctl', 'uwsm'):
+                (stubs / name).write_text('#!/bin/sh\nexit 1\n')
+                (stubs / name).chmod(0o755)
+            support.floating_window(root / 'bar/Bar.qml', 1920)
+            # Coincident screens keep each floating bar on its assigned output.
+            (root / 'screens.json').write_text(
+                json.dumps(
+                    {
+                        'screens': [
+                            dict(name=name, x=0, y=0, width=1920, height=1080)
+                            for name in ('OUT-1', 'OUT-2')
+                        ]
+                    }
+                )
+            )
+            (root / 'shell.qml').write_text(BAR_SHELL.replace('/* steps */\n', steps))
+            (root / 'config/quickshell/desktop').mkdir(parents=True)
+            (root / 'config/quickshell/desktop/theme-mode').write_text('dark\n')
+            runtime = root / 'runtime'
+            runtime.mkdir(mode=0o700)
+            hyprland = support.FakeHyprland(
+                runtime / 'hypr/test', clients, workspaces, monitors
+            )
+            env = {
+                **os.environ,
+                'PATH': f'{stubs}{os.pathsep}{os.environ.get("PATH", "")}',
+                'QT_QPA_PLATFORM': f'offscreen:configfile={root / "screens.json"}',
+                'HYPRLAND_INSTANCE_SIGNATURE': 'test',
+                'XDG_RUNTIME_DIR': str(runtime),
+                'XDG_CONFIG_HOME': str(root / 'config'),
+                'XDG_DATA_HOME': str(root / 'data'),
+                'XDG_STATE_HOME': str(root / 'state'),
+                'XDG_CACHE_HOME': str(root / 'cache'),
+                'XDG_DATA_DIRS': str(root / 'empty'),
+                'PIPEWIRE_REMOTE': 'dotfiles-tests-unavailable',
+            }
+            env.pop('WAYLAND_DISPLAY', None)
+            try:
+                result = subprocess.run(
+                    [
+                        *support.private_bus(root),
+                        support.QS,
+                        '--no-color',
+                        '-p',
+                        str(root / 'shell.qml'),
+                    ],
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    timeout=30,
+                )
+            finally:
+                hyprland.close()
+        log = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, log)
+        self.assertIn('BAR_PASS', log)
+        for error in ('BAR_FAIL', 'TypeError', 'ReferenceError', 'Binding loop'):
+            self.assertNotIn(error, log)
+        return hyprland
+
+    def test_bar_follows_hyprland_order_attention_and_outputs(self):
+        hyprland = self.run_bar(
+            NAVIGATION_STEPS,
+            clients=[
+                client('a1', 10000, 700, 'Right'),
+                client('a2', 10000, -500, 'Left'),
+                client('a3', 9999, 0, 'Above'),
+                client('a4', 10001, 0, 'Below'),
+                client('b1', 20000, 0, 'Other', monitor=7),
+            ],
+            workspaces=[
+                workspace(9999, 'OUT-1', 0, 1),
+                workspace(10000, 'OUT-1', 0, 2),
+                workspace(10001, 'OUT-1', 0, 1),
+                workspace(20000, 'OUT-2', 7, 1),
+            ],
+            monitors=[
+                monitor(0, 'OUT-1', 10000, True),
+                monitor(7, 'OUT-2', 20000, False),
+            ],
+        )
+        self.assertCountEqual(
+            hyprland.dispatches,
+            [
+                'hl.dsp.focus({window = "address:0xa2"})',
+                'function() DesktopWorkspaces.step(1, 0) end',
+                'function() DesktopWorkspaces.step(-1, 7) end',
+            ],
+        )
+
+    def test_crowded_strip_shrinks_follows_focus_and_marks_hidden_windows(self):
+        self.run_bar(
+            CROWDED_STEPS,
+            clients=[
+                client(f'c{index:02d}', 10000, index * 500, f'Window {index}')
+                for index in range(14)
+            ],
+            workspaces=[workspace(10000, 'OUT-1', 0, 14)],
+            monitors=[monitor(0, 'OUT-1', 10000, True)],
+        )
+
+
+if __name__ == '__main__':
+    unittest.main()

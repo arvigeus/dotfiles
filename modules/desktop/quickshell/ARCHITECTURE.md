@@ -122,8 +122,22 @@ attention request.
 
 Badges and status widgets read native services. Detailed telemetry belongs to
 open drawers. Window/workspace navigation uses the shared Hyprland Lua policy.
-The shell debounces layout refreshes; bindings send `desktop-layout-changed`
-after actions for which Hyprland lacks a native geometry/order event.
+Window order follows client positions, refreshed 180 ms after the first event of
+a burst; a steady stream such as focused-window title changes cannot postpone
+it. Bindings send `desktop-layout-changed` after actions for which Hyprland
+lacks a native geometry/order event.
+
+Each bar records attention from Hyprland's `urgent`, `activewindowv2` and
+`closewindow` events, so a request lasts until that window gains focus.
+Quickshell 0.3.2 instead clears every window once its workspace gains focus.
+Records start empty after a reload and on a newly attached output.
+
+Window tabs share the strip down to 96 px before it scrolls; shrunk tabs show
+their close button only on hover. The strip follows the focused window like the
+compositor view. Edge markers count tabs not wholly in view; clicking one
+reveals the nearest hidden window needing attention, otherwise scrolls a page.
+A marker's width includes its fade, so revealed tabs stay clear of both.
+`tests/test_desktop_workspaces.py` runs the bar against a fake Hyprland IPC.
 
 ## Clipboard
 

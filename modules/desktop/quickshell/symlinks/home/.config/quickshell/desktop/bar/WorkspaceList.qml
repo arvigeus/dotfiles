@@ -5,17 +5,19 @@ import "../ui"
 
 Surface {
     id: root
+    objectName: "workspaceList"
 
     required property HyprlandMonitor monitor
+    // Window addresses still needing attention, tracked by the bar.
+    required property var attention
     property real maximumWidth: Theme.controlHeight
     readonly property HyprlandWorkspace current: monitor?.activeWorkspace ?? null
     readonly property var workspaces: Hyprland.workspaces.values.filter(workspace => workspace && workspace.monitor === root.monitor && workspace.id > 0).sort((a, b) => a.id - b.id)
     readonly property int currentIndex: workspaces.indexOf(current)
     readonly property bool occupied: !!current && current.toplevels.values.length > 0
-    // Use the windows' live urgency: workspace urgency clears on workspace focus,
-    // even when a different window on that workspace still needs attention.
-    readonly property bool urgentAbove: !!current && workspaces.some(workspace => workspace.id < current.id && workspace.toplevels.values.some(window => window.urgent))
-    readonly property bool urgentBelow: !!current && workspaces.some(workspace => workspace.id > current.id && workspace.toplevels.values.some(window => window.urgent))
+    readonly property var urgentIds: Hyprland.toplevels.values.filter(window => attention.includes(window.address) && window.workspace?.monitor === root.monitor).map(window => window.workspace.id)
+    readonly property bool urgentAbove: !!current && urgentIds.some(id => id > 0 && id < current.id)
+    readonly property bool urgentBelow: !!current && urgentIds.some(id => id > current.id)
     readonly property bool canGoUp: Hyprland.usingLua && currentIndex >= 0 && (currentIndex > 0 || (occupied && current.id > 1))
     readonly property bool canGoDown: Hyprland.usingLua && currentIndex >= 0 && (currentIndex < workspaces.length - 1 || (occupied && current.id < 2147483646))
 
@@ -36,6 +38,7 @@ Surface {
 
     BarButton {
         id: up
+        objectName: "workspaceUp"
         width: root.width
         height: root.height / 2
         padding: 0
@@ -60,6 +63,7 @@ Surface {
 
     BarButton {
         id: down
+        objectName: "workspaceDown"
         y: root.height / 2
         width: root.width
         height: root.height / 2

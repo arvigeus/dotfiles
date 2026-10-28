@@ -130,8 +130,10 @@ ShellRoot {
   id:window;implicitWidth:480;implicitHeight:900;visible:true;color:Theme.background
   Item {id:canvas;anchors.fill:parent
   Rectangle {anchors.fill:parent;color:Theme.background}
-  KeyboardDrawer{id:drawer;x:16;y:16;width:448;height:700;active:true;service:mock;backlightService:light}
-  StatusIslands{id:status;y:740;inputLanguage:mock}
+  // Header actions sit above the page as in DrawerHost; popups open below them.
+  Loader{id:header;x:464-width;y:12;sourceComponent:drawer.headerActions}
+  KeyboardDrawer{id:drawer;x:16;y:60;width:448;height:700;active:true;service:mock;backlightService:light}
+  StatusIslands{id:status;y:780;inputLanguage:mock}
   }
  }
  function check(value,message){if(!value)throw new Error(message);}
@@ -180,21 +182,21 @@ ShellRoot {
    mock.language="bg";mock.secondary="bg";
    check(find(status,"keyboardButton").entry.badge==="BG","external change missing from bar");
    check(find(drawer,"language-bg").current,"external change missing from drawer");
-   find(drawer,"keyboardHelp").clicked();
+   find(header,"keyboardHelp").clicked();
   }else if(stage===3){
    check(drawer.referencePopup.visible&&drawer.escapeHandler,"reference did not open");
    const telex=find(drawer.referencePopup.contentItem,"keyboardTelexTab");
    const shortcuts=find(drawer.referencePopup.contentItem,"keyboardShortcutsTab");
-   check(shortcuts.x>=telex.x+telex.width+7,"tabs overlap");
-   check(Math.abs(telex.width-shortcuts.width)<1,"tab widths differ");
    const phonetic=find(drawer.referencePopup.contentItem,"keyboardPhoneticTab");
-   capture("telex",()=>{input.mouseClick(phonetic,phonetic.width/2,phonetic.height/2);check(drawer.referencePopup.currentTab===1,"phonetic tab did not switch");});
+   check(telex.x>=shortcuts.x+shortcuts.width+7&&phonetic.x>=telex.x+telex.width+7,"tabs overlap or lost their order");
+   check(Math.abs(telex.width-shortcuts.width)<1,"tab widths differ");
+   capture("shortcuts",()=>{input.mouseClick(phonetic,phonetic.width/2,phonetic.height/2);check(phonetic.checked,"phonetic tab did not switch");});
   }else if(stage===4){
    check(find(drawer.referencePopup.contentItem,"phonetic:в").keys==="W"&&find(drawer.referencePopup.contentItem,"phonetic:й").keys==="J","wrong phonetic variant");
    check(find(drawer.referencePopup.contentItem,"phonetic:ъ").keys==="Y"&&find(drawer.referencePopup.contentItem,"phonetic:я").keys==="Q","special phonetic keys");
-   const shortcuts=find(drawer.referencePopup.contentItem,"keyboardShortcutsTab");
-   capture("phonetic",()=>{input.mouseClick(shortcuts,shortcuts.width/2,shortcuts.height/2);check(drawer.referencePopup.currentTab===2,"shortcut tab did not switch");});
-  }else if(stage===5){capture("shortcuts");
+   const telex=find(drawer.referencePopup.contentItem,"keyboardTelexTab");
+   capture("phonetic",()=>{input.mouseClick(telex,telex.width/2,telex.height/2);check(telex.checked,"telex tab did not switch");});
+  }else if(stage===5){capture("telex");
   }else if(stage===6){drawer.escapeHandler();
    check(!drawer.referencePopup.visible&&drawer.active,"help Escape dismissed drawer");
    field.forceActiveFocus();input.keyClick(Qt.Key_A,Qt.ControlModifier);input.keyClick(Qt.Key_Backspace);check(field.text==="","clear test text");
@@ -202,10 +204,13 @@ ShellRoot {
    drawer.width=268;capture("narrow");
   }else if(stage===7){
    Theme.setMode("light");field.text="temporary";drawer.active=false;check(field.text==="","dismissal kept test text");drawer.active=true;
-   drawer.referencePopup.currentTab=1;find(drawer,"keyboardHelp").clicked();
-  }else if(stage===8){capture("phonetic-narrow");
+   find(header,"keyboardHelp").clicked();
+  }else if(stage===8){
+   check(find(drawer.referencePopup.contentItem,"keyboardShortcutsTab").checked,"reopened reference did not start on shortcuts");
+   const phonetic=find(drawer.referencePopup.contentItem,"keyboardPhoneticTab");
+   input.mouseClick(phonetic,phonetic.width/2,phonetic.height/2);capture("phonetic-narrow");
   }else if(stage===9){
-   const help=find(drawer,"keyboardHelp");input.mouseClick(help,help.width/2,help.height/2);
+   const help=find(header,"keyboardHelp");input.mouseClick(help,help.width/2,help.height/2);
    check(!drawer.referencePopup.visible,"second help click reopened the popup");capture("light");
   }else if(stage===10){
    light.values=[];check(!find(drawer,"keyboardBacklightSlider:test::kbd_backlight"),"unsupported keyboard retained a slider");

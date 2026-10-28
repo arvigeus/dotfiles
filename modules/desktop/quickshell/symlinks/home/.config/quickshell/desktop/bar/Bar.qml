@@ -19,7 +19,24 @@ PanelWindow {
     implicitHeight: Theme.pillHeight
     exclusiveZone: Theme.pillHeight
     color: "transparent"
-    readonly property HyprlandMonitor monitor: Hyprland.monitorFor(screen)
+    // Follow the model rather than calling monitorFor() once: Hyprland may report
+    // or replace its monitor after this output's bar exists.
+    readonly property HyprlandMonitor monitor: Hyprland.monitors.values.find(candidate => candidate.name === screen?.name) ?? null
+    // Addresses of windows that requested attention since this bar started.
+    // Hyprland keeps a window urgent until that window gains focus; Quickshell
+    // 0.3.2 clears every window once its workspace gains focus, hiding
+    // scrolled-off columns.
+    property var attention: []
+
+    Connections {
+        target: Hyprland
+        function onRawEvent(event: HyprlandEvent): void {
+            if (event.name === "urgent" && !bar.attention.includes(event.data))
+                bar.attention = bar.attention.concat([event.data]);
+            else if ((event.name === "activewindowv2" || event.name === "closewindow") && bar.attention.includes(event.data))
+                bar.attention = bar.attention.filter(address => address !== event.data);
+        }
+    }
 
     // Keep the reservation mapped while fullscreen windows cover the Top layer.
     WlrLayershell.layer: WlrLayer.Top
@@ -106,6 +123,7 @@ PanelWindow {
     WorkspaceList {
         id: workspaces
         monitor: bar.monitor
+        attention: bar.attention
         x: spacesButton.x + spacesButton.width + Theme.spacingMedium
         y: Theme.pillTopPadding
         maximumWidth: Math.max(0, status.x - x - launcherButton.width - Theme.spacingMedium * 2)
@@ -114,6 +132,7 @@ PanelWindow {
     WindowList {
         id: windows
         monitor: bar.monitor
+        attention: bar.attention
         x: workspaces.x + (workspaces.visible ? workspaces.width + Theme.spacingMedium : 0)
         y: Theme.pillTopPadding
         maximumWidth: Math.max(0, status.x - x - launcherButton.width - Theme.spacingMedium * 2)
