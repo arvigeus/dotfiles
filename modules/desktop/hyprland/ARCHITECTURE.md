@@ -23,6 +23,12 @@ Settings equal to Hyprland's built-in defaults are omitted. Hyprland itself impo
 its environment into systemd and notifies UWSM of readiness; `XCURSOR_SIZE` is
 declared in `environment.d` because X11 clients otherwise choose their own size.
 
+Automatic reload starts on the first `IN_CLOSE_WRITE` of a watched file and then
+re-creates every watch, discarding events still queued for the old ones. A burst
+of writes to several files therefore loads whichever versions existed at that
+first reload; 0.56.2 and upstream main do not coalesce them, so the README
+recommends an explicit `hyprctl reload config-only` after such bursts.
+
 Check Lua syntax with `luac -p` and live errors with `hyprctl configerrors`.
 Hyprland 0.56.2's offline `--verify-config` crashes on `hl.timer(...)`, including
 an otherwise empty configuration, so it cannot validate this configuration's
@@ -85,9 +91,12 @@ compositor shutdown.
 
 `workspaces.lua` owns navigation policy for shortcuts, gestures and the bar.
 Shortcuts use the active monitor; bar buttons pass their output's numeric monitor
-ID, resolved against `hl.get_monitors()`. `hl.get_monitor()` uses a monitor
-selector rather than a bare numeric ID. Regression coverage lives in
-`tests/test_desktop_workspaces.py` and mocks that native lookup contract.
+ID, resolved against `hl.get_monitors()`. Native monitor selectors, in
+`hl.get_monitor()` and dispatcher `monitor` fields, accept a bare number only
+below the active output count, while disabled or replugged outputs keep their IDs
+reserved, so dispatches name the output. Regression coverage lives in
+`tests/test_desktop_workspaces.py`, whose fake models these native lookup, monitor
+and timer contracts.
 
 `bindings.lua` assigns descriptions to keybinds with `hl.bind`'s `description`
 flag. Hyprland exposes those labels in `hyprctl -j binds`, which feeds the
@@ -95,16 +104,19 @@ Keyboard drawer's live shortcut reference. Keep descriptions concise and
 user-facing when adding or changing bindings; undocumented callbacks fall back
 to a generic action label.
 
-`DesktopWorkspaces.recover()` runs through a 150 ms native one-shot timer after
-`monitor.layout_changed`, and once after configuration load. Enabled independent
-outputs are recovery destinations; disabled/mirrored outputs and Hyprland's
-invisible `FALLBACK` are excluded. Workspaces whose output is unavailable move
-intact to the focused usable output or first survivor, retaining their separate
-stacks without switching focus. Mapped, non-hidden, non-fullscreen floating
-windows wholly outside all usable output rectangles are fitted into their
-workspace's surviving output (or the recovery destination), including reserved
-edges, scale and rotation. Reachable floats and tiled scrolling columns keep
-their placement. This policy launches no helper and has no repeating timer.
+Hyprland moves workspaces intact off removed, disabled and mirrored outputs,
+carries their floating windows along and returns them when their output
+reconnects. `DesktopWorkspaces.recover()` covers what that leaves behind, such
+as after a mode, scale or rotation change: mapped, non-hidden, non-fullscreen
+floating windows wholly outside every usable output's work area are fitted into
+their workspace's output, else the focused or first usable one, including
+reserved edges, scale and rotation. `hl.get_monitors()` lists enabled outputs
+only (`HL.Monitor` has no `enabled` field); mirrors and Hyprland's invisible
+`FALLBACK` are excluded. Reachable floats and tiled scrolling columns keep their
+placement. Recovery runs once, 150 ms after the last `monitor.layout_changed`,
+and not on configuration load. A fired one-shot `hl.timer` is released and
+cannot be re-armed, so a repeating timer disarms itself after each run. The
+policy launches no helper and polls nothing.
 The Quickshell display service owns re-enabling a disabled panel when no real
 independent output would survive; it excludes `FALLBACK` from its inventory.
 

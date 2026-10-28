@@ -97,8 +97,9 @@ end
 -- Laptop multimedia keys for volume and LCD brightness
 bind("XF86AudioRaiseVolume", hl.dsp.exec_cmd("wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+"), "Increase volume", { locked = true, repeating = true })
 bind("XF86AudioLowerVolume", hl.dsp.exec_cmd("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"), "Decrease volume", { locked = true, repeating = true })
-bind("XF86AudioMute",        hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"), "Mute or unmute volume", { locked = true, repeating = true })
-bind("XF86AudioMicMute",     hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"), "Mute or unmute microphone", { locked = true, repeating = true })
+-- Toggles fire once per press; holding them must not flip the state repeatedly.
+bind("XF86AudioMute",        hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"), "Mute or unmute volume", { locked = true })
+bind("XF86AudioMicMute",     hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"), "Mute or unmute microphone", { locked = true })
 bind("XF86MonBrightnessUp",  hl.dsp.exec_cmd("brightnessctl -e4 -n2 set 5%+"), "Increase display brightness", { locked = true, repeating = true })
 bind("XF86MonBrightnessDown",hl.dsp.exec_cmd("brightnessctl -e4 -n2 set 5%-"), "Decrease display brightness", { locked = true, repeating = true })
 

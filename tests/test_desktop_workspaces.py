@@ -17,25 +17,53 @@ POLICY = (
 )
 
 SETUP = r"""
-local monitors = { { id = 0, name = "DP-1" }, { id = 1, name = "DP-2" } }
+-- Models Hyprland 0.56.2's Lua API: HL.Monitor has no enabled field because
+-- hl.get_monitors() lists only enabled outputs.
+local outputs = { { id = 0, name = "DP-1" }, { id = 1, name = "DP-2" } }
+local monitors = { outputs[1], outputs[2] }
 local workspaces, actions, windows, timers = {}, {}, {}, {}
 local focused, activeWindow = monitors[1], nil
 local applyFocus, registered = false, {}
 local function add(id, name, monitor, windows)
     local workspace = { id = id, name = name or tostring(id),
-        monitor = monitors[monitor], windows = windows or 0 }
+        monitor = type(monitor) == "table" and monitor or outputs[monitor], windows = windows or 0 }
     table.insert(workspaces, workspace)
     return workspace
+end
+local function disable(output)
+    for index, monitor in ipairs(monitors) do
+        if monitor == outputs[output] then table.remove(monitors, index) end
+    end
+end
+-- A bare number selects an output by ID only below the active output count.
+local function resolve(selector)
+    for _, monitor in ipairs(monitors) do
+        if type(selector) == "number" then
+            if selector < #monitors and monitor.id == selector then return monitor end
+        elseif monitor.name == selector then
+            return monitor
+        end
+    end
 end
 local function selected() return actions[#actions][2].workspace end
 hl = {
     get_active_monitor = function() return focused end,
     get_monitors = function() return monitors end,
     on = function(event, callback) registered[event] = callback end,
+    -- A fired one-shot is released; later set_timeout/set_enabled calls do nothing.
     timer = function(callback, options)
-        assert(options.type == "oneshot")
-        local timer = { callback = callback, timeout = options.timeout, restarts = 0 }
-        function timer:set_timeout(timeout) self.timeout = timeout; self.restarts = self.restarts + 1 end
+        local timer = { callback = callback, timeout = options.timeout, kind = options.type,
+            armed = true, alive = true, runs = 0 }
+        function timer:set_timeout(timeout)
+            if self.alive then self.timeout, self.armed = timeout, true end
+        end
+        function timer:set_enabled(enabled) if self.alive then self.armed = enabled end end
+        function timer:fire()
+            if not (self.alive and self.armed) then return end
+            self.armed, self.runs = self.kind == "repeat", self.runs + 1
+            self.callback()
+            if self.kind == "oneshot" then self.alive = false end
+        end
         table.insert(timers, timer)
         return timer
     end,
@@ -47,12 +75,7 @@ hl = {
         end
         return result
     end,
-    -- Bare numeric IDs from the bar do not reliably resolve as native selectors.
-    get_monitor = function(name)
-        for _, monitor in ipairs(monitors) do
-            if name == monitor.name then return monitor end
-        end
-    end,
+    get_monitor = resolve,
     get_active_window = function() return activeWindow end,
     get_workspaces = function() return workspaces end,
     get_workspace = function(selector)
@@ -60,14 +83,17 @@ hl = {
             if selector == workspace.id then return workspace end
         end
     end,
+    -- An unresolved monitor leaves focus alone; a new workspace opens on the
+    -- focused output, and an existing one brings its own output into focus.
     dispatch = function(action)
         table.insert(actions, action)
         if applyFocus and action[1] == "focus" then
             local args = action[2]
-            if args.monitor then focused = monitors[args.monitor + 1] end
+            if args.monitor ~= nil then focused = resolve(args.monitor) or focused end
             if args.workspace then
                 local workspace = hl.get_workspace(args.workspace)
-                    or add(args.workspace, nil, focused.id + 1)
+                    or add(args.workspace, nil, focused)
+                focused = workspace.monitor
                 focused.active_workspace = workspace
             end
         end
@@ -83,7 +109,7 @@ hl = {
 }
 dofile(arg[1])
 local function panel(monitor, values)
-    monitor.enabled, monitor.is_mirror = true, false
+    monitor.is_mirror = false
     monitor.x, monitor.y, monitor.width, monitor.height = 0, 0, 1920, 1080
     monitor.scale, monitor.transform = 1, 0
     monitor.reserved = { left = 0, top = 44, right = 0, bottom = 0 }
@@ -111,38 +137,42 @@ class DesktopWorkspaceTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_recovery_moves_orphaned_workspaces_without_merging_or_changing_focus(self):
+    def test_recovery_leaves_workspaces_to_native_migration_and_rescues_their_floats(
+        self,
+    ):
         self.run_policy("""
-panel(monitors[1])
-panel(monitors[2], { enabled = false })
+panel(monitors[1]); panel(monitors[2], { x = 1920 })
 focused.active_workspace = add(10000, nil, 1, 2)
-add(20000, nil, 2, 3)
+local orphaned = add(20000, nil, 2, 1)
 local missing = add(30000, nil, 2, 1); missing.monitor = nil
-local special = add(-99, "special:scratch", 2, 1); special.special = true
+floating(orphaned, 2400, 300)
+floating(missing, 2400, 300)
+disable(2)
 DesktopWorkspaces.recover()
-assert(#actions == 3)
-assert(actions[1][1] == "workspace_move" and actions[1][2].workspace == 20000)
-assert(actions[2][2].workspace == 30000 and actions[3][2].workspace == "special:scratch")
-for _, action in ipairs(actions) do assert(action[2].monitor == "DP-1") end
-assert(focused.active_workspace.id == 10000)
+assert(#actions == 2, #actions)
+for _, action in ipairs(actions) do
+    assert(action[1] == "move" and action[2].x == 1320 and action[2].y == 300)
+end
+assert(focused == monitors[1] and focused.active_workspace.id == 10000)
 """)
 
     def test_fallback_and_mirrors_are_not_recovery_destinations(self):
         self.run_policy("""
 panel(monitors[1], { name = "FALLBACK" })
 panel(monitors[2], { is_mirror = true })
-add(10000, nil, 1, 2)
+floating(add(10000, nil, 1, 1), 8000, 300)
 DesktopWorkspaces.recover()
 assert(#actions == 0)
-panel(monitors[2])
+panel(monitors[2], { x = 1920 })
 DesktopWorkspaces.recover()
-assert(#actions == 1 and actions[1][2].monitor == "DP-2")
+assert(#actions == 1 and actions[1][2].x == 3240)
 """)
 
     def test_recovery_fits_stranded_floats_to_scaled_rotated_work_area(self):
         self.run_policy("""
 panel(monitors[1], { x = -900, y = -100, width = 2560, height = 1600, scale = 1.25, transform = 1 })
-panel(monitors[2], { enabled = false })
+panel(monitors[2])
+disable(2)
 local workspace = add(10000, nil, 1, 2)
 floating(workspace, 8000, 4000, 3000, 2500)
 DesktopWorkspaces.recover()
@@ -170,16 +200,24 @@ DesktopWorkspaces.recover()
 assert(#actions == 0)
 """)
 
-    def test_recovery_runs_once_after_layout_events_settle(self):
+    def test_recovery_runs_once_per_settled_layout_change_and_not_on_load(self):
         self.run_policy("""
-assert(#timers == 1 and timers[1].timeout == 150)
-panel(monitors[1]); panel(monitors[2], { enabled = false })
-add(20000, nil, 2, 1)
-registered["monitor.layout_changed"]()
-registered["monitor.layout_changed"]()
-assert(#actions == 0 and timers[1].restarts == 2)
-timers[1].callback()
-assert(#actions == 1 and actions[1][1] == "workspace_move")
+local recovery = timers[1]
+assert(#timers == 1 and not recovery.armed)
+panel(monitors[1]); panel(monitors[2])
+local stranded = floating(add(10000, nil, 1, 1), 8000, 300)
+recovery:fire()
+assert(#actions == 0 and recovery.runs == 0)
+for burst = 1, 2 do
+    registered["monitor.layout_changed"]()
+    registered["monitor.layout_changed"]()
+    assert(recovery.armed and recovery.timeout == 150)
+    recovery:fire()
+    recovery:fire()
+    assert(recovery.runs == burst and not recovery.armed)
+    assert(#actions == burst and actions[burst][2].window == "address:1")
+    stranded.at = { x = 8000, y = 300 }
+end
 """)
 
     def test_single_empty_workspace_cannot_extend_in_either_direction(self):
@@ -255,7 +293,7 @@ add(-1337, "desktop:0:0", 1, 1)
 DesktopWorkspaces.step(-1)
 assert(selected() == 9997)
 DesktopWorkspaces.step(-1, 1)
-assert(actions[#actions - 1][2].monitor == 1)
+assert(actions[#actions - 1][2].monitor == "DP-2")
 assert(selected() == 9999)
 actions = {}
 focused.active_special_workspace = special
@@ -267,14 +305,21 @@ assert(#actions == 0)
 """)
 
     def test_bar_targets_numeric_monitor_ids_in_both_directions(self):
+        # Output IDs outlive disabled or replugged outputs, so an ID can exceed
+        # the active count; the native numeric selector cannot reach it.
         self.run_policy("""
-focused.active_workspace = add(10000, nil, 1, 1)
+local first = add(10000, nil, 1, 1)
+focused.active_workspace = first
 monitors[2].id = 7
 monitors[2].active_workspace = add(80000, nil, 2, 1)
+applyFocus = true
 DesktopWorkspaces.step(-1, 7)
-assert(actions[#actions - 1][2].monitor == 7 and selected() == 79999)
+assert(actions[#actions - 1][2].monitor == "DP-2" and selected() == 79999)
+assert(monitors[2].active_workspace.id == 79999 and first.monitor.active_workspace == first)
 DesktopWorkspaces.step(1, 7)
-assert(actions[#actions - 1][2].monitor == 7 and selected() == 80001)
+assert(selected() == 80000 and monitors[2].active_workspace.id == 80000)
+DesktopWorkspaces.step(1, 7)
+assert(selected() == 80001 and monitors[2].active_workspace.id == 80001)
 actions = {}
 DesktopWorkspaces.step(1, 999)
 assert(#actions == 0)
@@ -313,6 +358,20 @@ assert(focused == monitors[1] and actions[#actions][2].window == "address:0x123"
 actions = {}
 DesktopWorkspaces.seed(monitors[2])
 assert(#actions == 0)
+""")
+
+    def test_seeding_reaches_an_output_whose_id_exceeds_the_active_count(self):
+        self.run_policy("""
+local first = add(10000, nil, 1, 1)
+focused.active_workspace = first
+monitors[2].id = 3
+monitors[2].active_workspace = add(1, nil, 2)
+activeWindow = { address = "0x123", workspace = first }
+applyFocus = true
+registered["monitor.added"](monitors[2])
+assert(monitors[2].active_workspace.id == 40000)
+assert(focused == monitors[1] and first.monitor.active_workspace == first)
+assert(actions[#actions - 1][2].monitor == "DP-1")
 """)
 
     def test_numeric_boundaries_do_not_wrap_or_renumber(self):
@@ -365,19 +424,30 @@ class ConfigurationLoadTests(unittest.TestCase):
             (state / 'secondary').write_text('vi\n')
             script = f"""
 package.path = {str(hypr / '?.lua')!r} .. ";" .. {str(method / '?.lua')!r}
-local layouts = {{}}
+local layouts, binds = {{}}, {{}}
 local stub
 stub = setmetatable({{}}, {{ __index = function() return stub end, __call = function() return stub end }})
 hl = setmetatable({{
     config = function(values)
         if values.input and values.input.kb_layout then table.insert(layouts, values.input.kb_layout) end
     end,
+    bind = function(keys, _, flags) binds[keys] = flags or {{}} end,
     get_monitors = function() return {{}} end,
     get_workspaces = function() return {{}} end,
 }}, {{ __index = function() return stub end }})
 dofile({str(hypr / 'hyprland.lua')!r})
 for _, name in ipairs({{"monitors", "appearance", "animations", "layout", "workspaces", "input", "bindings", "windows", "input-method"}}) do
     assert(package.loaded[name], name)
+end
+-- The Keyboard drawer lists these labels; held toggles must not flip repeatedly.
+for keys, flags in pairs(binds) do
+    assert(type(flags.description) == "string" and flags.description ~= "", keys)
+end
+for _, key in ipairs({{"XF86AudioMute", "XF86AudioMicMute", "XF86AudioPlay", "XF86AudioPause"}}) do
+    assert(binds[key] and not binds[key].repeating, key)
+end
+for _, key in ipairs({{"XF86AudioRaiseVolume", "XF86AudioLowerVolume", "XF86MonBrightnessUp", "XF86MonBrightnessDown"}}) do
+    assert(binds[key].repeating and binds[key].locked, key)
 end
 assert(not package.loaded["host-monitors"] and not package.loaded["displays"])
 assert(layouts[#layouts] == "us", "saved Vietnamese selection not reapplied")

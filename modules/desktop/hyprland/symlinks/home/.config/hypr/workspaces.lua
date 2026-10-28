@@ -1,6 +1,8 @@
 -- Shared by bindings, gestures and the bar's Lua IPC callback. Keep policy here
 -- so navigation also works without Quickshell. Native positive IDs are the order:
 -- slidevert compares those IDs, so names cannot supply animation direction.
+-- Dispatchers address outputs by name: a bare number selects an output by ID only
+-- below the active output count, which IDs of disabled or replugged outputs exceed.
 DesktopWorkspaces = {}
 
 local maxID = 2147483646
@@ -21,10 +23,10 @@ function DesktopWorkspaces.seed(monitor)
     if first >= maxID then return end
 
     local previousMonitor, previousWindow = hl.get_active_monitor(), hl.get_active_window()
-    hl.dispatch(hl.dsp.focus({ monitor = monitor.id }))
+    hl.dispatch(hl.dsp.focus({ monitor = monitor.name }))
     hl.dispatch(hl.dsp.focus({ workspace = first }))
     if previousMonitor and previousMonitor ~= monitor then
-        hl.dispatch(hl.dsp.focus({ monitor = previousMonitor.id }))
+        hl.dispatch(hl.dsp.focus({ monitor = previousMonitor.name }))
         if previousWindow then
             hl.dispatch(hl.dsp.focus({ window = "address:" .. previousWindow.address }))
         end
@@ -74,7 +76,7 @@ function DesktopWorkspaces.step(direction, monitorID, moveWindow)
         if selector < 1 or selector > maxID then return end
     end
 
-    hl.dispatch(hl.dsp.focus({ monitor = monitor.id }))
+    hl.dispatch(hl.dsp.focus({ monitor = monitor.name }))
     if moveWindow then
         hl.dispatch(hl.dsp.window.move({ workspace = selector, follow = true }))
     else
@@ -88,31 +90,21 @@ end
 hl.on("monitor.added", DesktopWorkspaces.seed)
 for _, monitor in ipairs(hl.get_monitors()) do DesktopWorkspaces.seed(monitor) end
 
--- Let native output migration finish before repairing anything left behind.
--- This also covers disabling an output and changing its position/mode/scale.
+-- Hyprland moves workspaces off removed, disabled and mirrored outputs and
+-- carries their floats along. A mode, scale or rotation change can still leave
+-- a float wholly outside every output; fit those back into reach.
 function DesktopWorkspaces.recover()
+    -- hl.get_monitors() lists enabled outputs only.
     local monitors, byName = {}, {}
     for _, monitor in ipairs(hl.get_monitors()) do
-        if monitor.enabled and not monitor.is_mirror and monitor.name ~= "FALLBACK" then
+        if not monitor.is_mirror and monitor.name ~= "FALLBACK" then
             table.insert(monitors, monitor)
             byName[monitor.name] = monitor
         end
     end
     local focused = hl.get_active_monitor()
-    local target = focused and byName[focused.name] or monitors[1]
-    if not target then return end
-
-    -- Move whole workspaces so tiled windows reflow and stacks stay separate.
-    local rescued = {}
-    for _, workspace in ipairs(hl.get_workspaces()) do
-        local monitor = workspace.monitor
-        if not monitor or not byName[monitor.name] then
-            local selector = workspace.special and ("special:" .. workspace.name:gsub("^special:", ""))
-                or workspace.id or workspace.name
-            hl.dispatch(hl.dsp.workspace.move({ workspace = selector, monitor = target.name }))
-            rescued[workspace.id or workspace.name] = target
-        end
-    end
+    local fallback = focused and byName[focused.name] or monitors[1]
+    if not fallback then return end
 
     local function bounds(monitor)
         local width, height = monitor.width, monitor.height
@@ -134,9 +126,8 @@ function DesktopWorkspaces.recover()
                 end
             end
             if not reachable then
-                local workspace = window.workspace
-                local monitor = workspace and (rescued[workspace.id or workspace.name] or workspace.monitor)
-                monitor = monitor and byName[monitor.name] or target
+                local monitor = window.workspace and window.workspace.monitor
+                monitor = monitor and byName[monitor.name] or fallback
                 local left, top, right, bottom = bounds(monitor)
                 local width, height = math.min(size.x, right - left), math.min(size.y, bottom - top)
                 local selector = "address:" .. window.address
@@ -151,5 +142,12 @@ function DesktopWorkspaces.recover()
     end
 end
 
-local recovery = hl.timer(DesktopWorkspaces.recover, { timeout = 150, type = "oneshot" })
+-- Run once per burst of layout changes. A fired one-shot hl.timer is released and
+-- cannot be re-armed, so a repeating timer disarms itself instead.
+local recovery
+recovery = hl.timer(function()
+    recovery:set_enabled(false)
+    DesktopWorkspaces.recover()
+end, { timeout = 150, type = "repeat" })
+recovery:set_enabled(false)
 hl.on("monitor.layout_changed", function() recovery:set_timeout(150) end)

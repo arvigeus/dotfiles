@@ -23,7 +23,6 @@ hl.animation({ leaf = "layersOut",     enabled = true,  speed = 1.5,  bezier = "
 hl.animation({ leaf = "fadeLayersIn",  enabled = true,  speed = 1.79, bezier = "almostLinear" })
 hl.animation({ leaf = "fadeLayersOut", enabled = true,  speed = 1.39, bezier = "almostLinear" })
 -- Native vertical slides use the same spring/timing as horizontal window moves.
+-- workspacesIn/Out and special workspaces inherit this leaf.
 hl.animation({ leaf = "workspaces",    enabled = true,  speed = 4.79, spring = "easy", style = "slidevert" })
-hl.animation({ leaf = "workspacesIn",  enabled = true,  speed = 4.79, spring = "easy", style = "slidevert" })
-hl.animation({ leaf = "workspacesOut", enabled = true,  speed = 4.79, spring = "easy", style = "slidevert" })
 hl.animation({ leaf = "zoomFactor",    enabled = true,  speed = 7,    bezier = "quick" })

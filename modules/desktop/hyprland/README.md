@@ -1,8 +1,11 @@
 # Hyprland
 
 This module configures the desktop and its session. Edit the Lua files under
-`symlinks/home/.config/hypr/`; Hyprland reloads them automatically. Run
-`hyprctl configerrors` if a change does not work as expected.
+`symlinks/home/.config/hypr/`; Hyprland reloads them automatically. After
+something rewrites several of them at once, such as a Git checkout, pull or
+rebase, run `hyprctl reload config-only`: the automatic reload can pick up a mix
+of old and new files. Run `hyprctl configerrors` if a change does not work as
+expected.
 
 Alt+Tab focuses and centers the next column to the right, wrapping from the last
 column to the first. Win+Left/Right also wrap between columns.

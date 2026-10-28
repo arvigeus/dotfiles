@@ -371,13 +371,15 @@ ordinary reloads. Dark panels defer restoration until the wake event. If
 undocking leaves only disabled outputs, emergency recovery enables one, preferring
 the internal panel, even when a saved profile is invalid. Replacements are verified
 before a saved panel-disable choice is applied. Unsupported saved modes report an
-actionable error and leave the source intact.
+actionable error and leave the source intact. Hyprland itself moves workspaces
+off outputs a layout disables; the [Hyprland workspace policy](../hyprland/ARCHITECTURE.md#desktop-integration)
+then fits floating windows left outside every output.
 
 Powersave caps enabled internal panels to an available mode at or below 60 Hz in
 live rules only; leaving Powersave restores their configured mode. Explicit
 refresh changes override the cap until the next profile change. Blank panels are
 not awakened for policy; wake events retry deferred work. The saved rules retain
-the uncapped choice. Display recovery also uses the Hyprland workspace policy.
+the uncapped choice.
 
 Physical brightness uses backlight/DDC providers and validates identity before
 writing. It is not restored from the layout. Identify/test-pattern windows are
