@@ -1,8 +1,34 @@
 """Production tray input, hot removal and layout; no real application actions."""
 
 import os
+import shutil
+import subprocess
+import sys
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 import support
+
+
+def run_isolated(test, body, setup=None, offscreen=False):
+    """Run with a private bus: SystemTray must never join the user's session."""
+    if not shutil.which('dbus-run-session'):
+        test.skipTest('Private D-Bus is required')
+    run = subprocess.run
+
+    def isolated(command, **kwargs):
+        if command[0] == support.QS:
+            root = Path(kwargs['env']['XDG_CONFIG_HOME']).parent
+            command = [*support.private_bus(root), *command]
+            if offscreen:
+                kwargs['env']['QT_QPA_PLATFORM'] = 'offscreen'
+        try:
+            return run(command, **kwargs)
+        except subprocess.TimeoutExpired as error:
+            test.fail((error.stdout or b'').decode() + (error.stderr or b'').decode())
+
+    with patch.object(support.subprocess, 'run', side_effect=isolated):
+        return support.run_qml(test, body, setup)
 
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
@@ -44,7 +70,7 @@ ShellRoot {
         )
 
     def test_live_items_keyboard_mouse_scrolling_and_dismissal(self):
-        support.run_qml(
+        run_isolated(
             self,
             """import QtQuick
 import QtQuick.Controls
@@ -57,13 +83,18 @@ ShellRoot {
  id:root
  property int closed:0
  property var scrolls:[]
- QtObject {id:service;property var items:({values:[first,second,third]})}
+ // Quickshell's own list model stands in for SystemTray.items.
+ ScriptModel {id:trayModel;values:[first,second,third]}
+ QtObject {id:service;property var items:trayModel}
  QtObject {id:first;property string id:"first";property string title:"Music player";property string tooltipTitle:"Music";property string tooltipDescription:"Playing a song";property string icon:"";property int status:Status.Active;property bool hasMenu:false;property bool onlyMenu:false;property var menu:null;property int activations:0;property int secondary:0
   function activate(){activations++;}function secondaryActivate(){secondary++;}function scroll(delta,horizontal){root.scrolls=root.scrolls.concat([{delta,horizontal}]);}}
  QtObject {id:second;property string id:"second";property string title:"";property string tooltipTitle:"Sync client";property string tooltipDescription:"";property string icon:"";property int status:Status.Passive;property bool hasMenu:false;property bool onlyMenu:false;property var menu:null;property int activations:0
   function activate(){activations++;}function secondaryActivate(){}function scroll(delta,horizontal){}}
  QtObject {id:third;property string id:"third";property string title:"Chat application with a long name";property string tooltipTitle:"";property string tooltipDescription:"Unread messages";property string icon:"";property int status:Status.NeedsAttention;property bool hasMenu:false;property bool onlyMenu:true;property var menu:null;property int activations:0
   function activate(){activations++;}function secondaryActivate(){}function scroll(delta,horizontal){}}
+ QtObject {id:fourth;property string id:"fourth";property string title:"Late starter";property string tooltipTitle:"";property string tooltipDescription:"";property string icon:"";property int status:Status.Active;property bool hasMenu:false;property bool onlyMenu:false;property var menu:null
+  function activate(){}function secondaryActivate(){}function scroll(delta,horizontal){}}
+ property Item kept:null
  FloatingWindow {id:window;implicitWidth:480;implicitHeight:400;visible:true;color:Theme.background
   TrayDrawer {id:drawer;x:16;y:16;width:Math.min(448,window.width-32);height:Math.min(368,window.height-32);active:true;tray:service;onCloseRequested:root.closed++}
  }
@@ -101,7 +132,9 @@ ShellRoot {
    list.forceActiveFocus();list.currentIndex=0;input.keyClick(Qt.Key_Down);input.keyClick(Qt.Key_Return);
    check(second.activations===1&&list.currentIndex===1,"list keyboard navigation lost");
    check(find(drawer,"trayItem:second").highlighted&&!card.highlighted,"keyboard highlight did not follow current item");
-   input.keyClick(Qt.Key_Tab);check(window.activeFocusItem!==list,"Tab did not reach app controls");
+   // Tab must walk each row's enabled controls, keeping the current row in step.
+   select.forceActiveFocus();const tabbed=[];for(let i=0;i<2;i++){input.keyClick(Qt.Key_Tab);tabbed.push(drawer.Window.activeFocusItem?.objectName+"@"+list.currentIndex);}
+   check(tabbed.join()==="trayActivate:second@1,trayActivate:third@2","Tab did not walk app controls in order: "+tabbed);
    drawer.activate(third,select,false);check(third.activations===0,"menu-only item activated");
    first.status=Status.NeedsAttention;drawer.width=236;
   }else if(stage===1){
@@ -112,15 +145,21 @@ ShellRoot {
    }
    const destination=Quickshell.env("DISPLAY_PREVIEW_DIR");
    if(destination)drawer.grabToImage(result=>result.saveToFile(destination+"/tray-narrow.png"));
-   service.items={values:[second,third]};
-   drawer.activate(first,select,false);check(first.activations===2,"removed item was activated");
+   kept=find(drawer,"trayItem:second");find(drawer,"trayActivate:second").forceActiveFocus();
+   trayModel.values=[first,second,third,fourth];
   }else if(stage===2){
-   check(list.count===2&&!find(drawer,"trayActivate:first"),"removed item retained");
+   // Other apps registering or leaving must not rebuild rows under the pointer or keyboard.
+   check(list.count===4&&find(drawer,"trayItem:second")===kept&&find(drawer,"trayActivate:second").activeFocus&&list.currentIndex===1,"registration rebuilt rows or dropped keyboard focus");
+   trayModel.values=[second,third,fourth];
+   drawer.activate(first,select,false);check(first.activations===2,"removed item was activated");
+  }else if(stage===3){
+   check(list.count===3&&!find(drawer,"trayActivate:first"),"removed item retained");
+   check(find(drawer,"trayItem:second")===kept&&find(drawer,"trayActivate:second").activeFocus&&list.currentIndex===0,"removal rebuilt rows or dropped keyboard focus");
    drawer.active=false;
    drawer.activate(second,find(drawer,"trayActivate:second"),false);check(second.activations===1,"dismissed drawer activated item");
    check(!find(drawer,"trayActivate:second").enabled&&!drawer.escapeHandler,"dismissed controls remain active");
-   service.items={values:[]};
-  }else if(stage===3){
+   trayModel.values=[];
+  }else if(stage===4){
    check(!list.count&&find(drawer,"trayEmpty").visible,"empty tray guidance missing");
    check(!drawer.menuItem&&!drawer.menuButton,"stale menu target retained");
    console.log("DISPLAY_PASS");Qt.quit();
@@ -130,15 +169,7 @@ ShellRoot {
 }""",
         )
 
-    def test_native_registration_menu_tree_actions_status_and_removal(self):
-        import shutil
-        import subprocess
-        import sys
-        from pathlib import Path
-        from unittest.mock import patch
-
-        if not shutil.which('dbus-run-session'):
-            self.skipTest('Private D-Bus is required')
+    def test_native_registration_menu_tree_actions_status_and_replacement(self):
         try:
             import gi  # noqa: F401
         except ImportError:
@@ -150,35 +181,21 @@ ShellRoot {
                 root / 'tray_service.py',
             )
 
-        run = subprocess.run
-
-        def isolated(command, **kwargs):
-            if command[0] == support.QS:
-                command = ['dbus-run-session', '--', *command]
-                # QTest's synthetic input has no compositor seat serial for a
-                # native grabbing menu. Test its actions/semantics offscreen;
-                # icon rendering has a separate native Wayland check above.
-                kwargs['env']['QT_QPA_PLATFORM'] = 'offscreen'
-            try:
-                return run(command, **kwargs)
-            except subprocess.TimeoutExpired as error:
-                self.fail(
-                    (error.stdout or b'').decode() + (error.stderr or b'').decode()
-                )
-
-        with patch.object(support.subprocess, 'run', side_effect=isolated):
-            startup = (
-                '\n'.join(
-                    line
-                    for line in (support.DESKTOP / 'shell.qml').read_text().splitlines()
-                    if line.startswith('//@ pragma ')
-                )
-                + '\n'
+        startup = (
+            '\n'.join(
+                line
+                for line in (support.DESKTOP / 'shell.qml').read_text().splitlines()
+                if line.startswith('//@ pragma ')
             )
-            support.run_qml(
-                self,
-                startup
-                + """import QtQuick
+            + '\n'
+        )
+        # QTest's synthetic input has no compositor seat serial for a native
+        # grabbing menu. Test its actions/semantics offscreen; icon rendering
+        # has a separate native Wayland check above.
+        run_isolated(
+            self,
+            startup
+            + """import QtQuick
 import QtTest
 import Quickshell
 import Quickshell.Io
@@ -190,10 +207,17 @@ ShellRoot {
  // Match the session root: the host must exist before the drawer is opened.
  readonly property var host:SystemTray
  property var messages:[]
+ property var replacementMessages:[]
+ property var original:null
  property int closed:0
  Process {id:app;command:["PYTHON","-B",Qt.resolvedUrl("tray_service.py").toString().replace("file://","")];running:true;stdinEnabled:true
   stdout:SplitParser {onRead:data=>{const message=JSON.parse(data);if(message.error)console.error("DISPLAY_FAIL",message.error);root.messages=root.messages.concat([message]);}}
   stderr:StdioCollector {onStreamFinished:if(text)console.error("DISPLAY_FAIL service",text)}
+ }
+ // The same app restarting: a new connection publishes the same item ID.
+ Process {id:replacement;command:app.command;running:false;stdinEnabled:true
+  stdout:SplitParser {onRead:data=>{const message=JSON.parse(data);if(message.error)console.error("DISPLAY_FAIL",message.error);root.replacementMessages=root.replacementMessages.concat([message]);}}
+  stderr:StdioCollector {onStreamFinished:if(text)console.error("DISPLAY_FAIL replacement",text)}
  }
  FloatingWindow {id:window;implicitWidth:480;implicitHeight:500;visible:true;color:Theme.background
   TrayDrawer {id:drawer;x:16;y:16;width:window.width-32;height:window.height-32;active:false;onCloseRequested:root.closed++}
@@ -203,11 +227,12 @@ ShellRoot {
  QsMenuOpener {id:submenu;menu:opener.children.values[3]??null}
  function check(value,message){if(!value)throw new Error(message);}
  function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const result=find(child,name);if(result)return result;}return null;}
- function received(action){return messages.filter(message=>message.action===action);}
+ function received(action,source=messages){return source.filter(message=>message.action===action);}
+ function anchor(){return drawer.data.find(item=>item.objectName==="trayNativeMenu");}
  property int stage:0
  property int attempts:0
  Timer {interval:100;repeat:true;running:true;onTriggered:{try{
-  check(++attempts<100,"native tray operation timed out at stage "+stage+" "+JSON.stringify(messages));
+  check(++attempts<100,"native tray operation timed out at stage "+stage+" "+JSON.stringify(messages.concat(replacementMessages)));
   if(stage===0){
    if(!drawer.items.length)return;
    check(!drawer.active&&host.items.values.length===1,"host not tracking while closed");
@@ -217,7 +242,7 @@ ShellRoot {
    check(button.enabled,"published menu unavailable");button.clicked();
   }else if(stage===2){
    if(opener.children.values.length!==5)return;
-   check(drawer.data.find(item=>item.objectName==="trayNativeMenu").visible,"native menu did not open");
+   check(anchor().visible,"native menu did not open");
    const entries=opener.children.values;
    check(entries[1].checkState===Qt.Checked&&entries[2].isSeparator&&entries[3].hasChildren&&!entries[4].enabled,"native menu semantics lost");
    if(submenu.children.values.length!==1)return;
@@ -248,8 +273,28 @@ ShellRoot {
    check(!drawer.menuItem&&!drawer.menuButton&&!drawer.escapeHandler,"dismissal retained app menu");
    drawer.active=true;
    find(drawer,"trayMenu:fixture-app").clicked();
-   app.write(JSON.stringify({op:"exit"})+"\\n");
+   original=drawer.items[0];replacement.running=true;
   }else if(stage===8){
+   if(drawer.items.length!==2)return;
+   check(drawer.menuItem===original&&drawer.menuButton&&anchor().visible,"another registration closed the menu or rebuilt its row");
+   app.write(JSON.stringify({op:"exit"})+"\\n");
+  }else if(stage===9){
+   if(drawer.items.length!==1||drawer.items[0]===original)return;
+   check(!drawer.menuItem&&!drawer.menuButton&&!drawer.escapeHandler&&!anchor().visible,"exited app retained menu");
+   input.mouseClick(find(drawer,"trayActivate:fixture-app"),60,20);
+  }else if(stage===10){
+   if(!received("Activate",replacementMessages).length)return;
+   check(closed===3&&received("Activate").length===1,"replacement activation misrouted");
+   find(drawer,"trayMenu:fixture-app").clicked();
+  }else if(stage===11){
+   if(opener.children.values.length!==5)return;
+   check(drawer.menuItem===drawer.items[0]&&anchor().visible,"replacement menu did not open");
+   opener.children.values[0].triggered();
+   drawer.closeMenu();
+  }else if(stage===12){
+   if(!received("menu",replacementMessages).some(event=>event.identifier===1&&event.event==="clicked"))return;
+   replacement.write(JSON.stringify({op:"exit"})+"\\n");
+  }else if(stage===13){
    if(drawer.items.length)return;
    check(!drawer.menuItem&&!drawer.menuButton&&!drawer.escapeHandler,"app exit retained menu");
    check(find(drawer,"trayEmpty").visible,"empty state missing after app exit");
@@ -258,16 +303,15 @@ ShellRoot {
   stage++;attempts=0;
  }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
 }""".replace('PYTHON', sys.executable),
-                setup,
-            )
+            setup,
+            offscreen=True,
+        )
 
     def test_bar_count_attention_notification_fallback_and_acknowledgement(self):
-        import shutil
-
         def setup(root):
             shutil.copytree(support.DESKTOP / 'bar', root / 'bar')
 
-        support.run_qml(
+        run_isolated(
             self,
             """import QtQuick
 import Quickshell
@@ -278,12 +322,18 @@ import "drawers"
 import "drawers/tray"
 ShellRoot {
  id:root
- QtObject {id:tray;property var items:({values:[chat,viber,background]})}
+ ScriptModel {id:trayModel;values:[chat,viber,background]}
+ QtObject {id:tray;property var items:trayModel}
  QtObject {id:chat;property string id:"zapzap";property string title:"ZapZap";property string tooltipTitle:"";property string tooltipDescription:"";property string icon:"";property int status:Status.Active;property bool hasMenu:false;property bool onlyMenu:false;property var menu:null;property int activations:0
   function activate(){activations++;}function secondaryActivate(){}function scroll(delta,horizontal){} }
  QtObject {id:viber;property string id:"viber";property string title:"Viber";property string tooltipTitle:"";property string tooltipDescription:"";property string icon:"";property int status:Status.Active;property bool hasMenu:false;property bool onlyMenu:false;property var menu:null
   function activate(){}function secondaryActivate(){}function scroll(delta,horizontal){} }
  QtObject {id:background;property string id:"background";property string title:"Background app";property string tooltipTitle:"";property string tooltipDescription:"";property string icon:"";property int status:Status.Passive;property bool hasMenu:false;property bool onlyMenu:false;property var menu:null
+  function activate(){}function secondaryActivate(){}function scroll(delta,horizontal){} }
+ // Electron publishes a generic ID and no title; its tooltip names the app.
+ QtObject {id:electron;property string id:"chrome_status_icon_1";property string title:"";property string tooltipTitle:"Signal";property string tooltipDescription:"";property string icon:"";property int status:Status.Active;property bool hasMenu:false;property bool onlyMenu:false;property var menu:null;property int activations:0
+  function activate(){activations++;}function secondaryActivate(){}function scroll(delta,horizontal){} }
+ QtObject {id:client;property string id:"org.example.Client";property string title:"";property string tooltipTitle:"";property string tooltipDescription:"";property string icon:"";property int status:Status.Active;property bool hasMenu:false;property bool onlyMenu:false;property var menu:null
   function activate(){}function secondaryActivate(){}function scroll(delta,horizontal){} }
  QtObject {id:notices;property var state:({items:[],paused:false});property int unseenCount:0
   function markSeen(id){state={items:state.items.map(row=>row.id===id?Object.assign({},row,{seen:true}):row),paused:false};}
@@ -320,14 +370,27 @@ ShellRoot {
    check(TrayService.needsAttention(viber),"acknowledgement erased app-owned native attention");
    check(!TrayService.needsAttention(chat),"substring sender produced false attention");
    viber.status=Status.Active;
-   notices.state={items:[],paused:false};
+   trayModel.values=[chat,viber,background,electron,client];
+   notices.state={items:[{id:"s",app:"Signal",desktopEntry:"signal-desktop",seen:false},{id:"c",app:"Other client",desktopEntry:"com.other.Client",seen:false},{id:"old",app:"Viber"}],paused:false};
   }else if(stage===4){
-   check(!button.selected&&!badge.highlighted&&!button.entry.attention,"cleared attention stuck");
-   tray.items={values:Array.from({length:105},(_,index)=>({id:"fixture-"+index,title:"Fixture app",status:Status.Passive,icon:"",hasMenu:false,tooltipTitle:"",tooltipDescription:""}))};
+   check(TrayService.nameFor(electron)==="Signal"&&find(drawer,"trayActivate:chrome_status_icon_1").text==="Signal","tooltip-named app has no usable name");
+   check(TrayService.needsAttention(electron),"tooltip-named app did not match its notifications");
+   check(button.entry.description.includes("Signal")&&!button.entry.description.includes("chrome_status_icon"),"bar tooltip does not name the tooltip-named app");
+   check(!TrayService.needsAttention(client),"desktop IDs sharing only a last segment matched");
+   check(!TrayService.needsAttention(viber),"record without seen state became unread");
+   drawer.activate(electron,find(drawer,"trayActivate:chrome_status_icon_1"),false);
+   check(electron.activations===1&&!TrayService.needsAttention(electron)&&notices.state.items.find(row=>row.id==="c").seen===false,"acknowledgement missed the app or touched another sender");
+   notices.state={items:[{id:"m",app:"Client",seen:false}],paused:false};
   }else if(stage===5){
-   check(badge.text==="99+"&&button.width===reservedWidth,"large count overflowed or shifted tray button");
-   tray.items={values:[]};
+   check(TrayService.needsAttention(client)&&TrayService.attentionItems.length===1,"desktop ID did not answer to its exact app name");
+   notices.state={items:[],paused:false};
   }else if(stage===6){
+   check(!button.selected&&!badge.highlighted&&!button.entry.attention,"cleared attention stuck");
+   trayModel.values=Array.from({length:105},(_,index)=>({id:"fixture-"+index,title:"Fixture app",status:Status.Passive,icon:"",hasMenu:false,tooltipTitle:"",tooltipDescription:""}));
+  }else if(stage===7){
+   check(badge.text==="99+"&&button.width===reservedWidth,"large count overflowed or shifted tray button");
+   trayModel.values=[];
+  }else if(stage===8){
    check(badge.text===""&&button.width===reservedWidth&&!button.selected,"empty tray count retained or shifted badge");
    check(TrayService.count===0&&!TrayService.attention,"removal retained tray state");
    // Release test-owned publishers before their QtObjects are destroyed.

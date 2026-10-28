@@ -94,7 +94,7 @@ Item {
                         badgeReserveText: "99+"
                         attention: root.trayStatus.attention
                         iconColor: attention ? Theme.accent : Theme.text
-                        description: (root.trayStatus.count === 1 ? qsTr("1 tray app") : qsTr("%1 tray apps").arg(root.trayStatus.count)) + (attention ? "\n" + qsTr("Needs attention: %1").arg(root.trayStatus.attentionItems.map(item => item.title || item.id || qsTr("Unknown application")).join(", ")) : "")
+                        description: (root.trayStatus.count === 1 ? qsTr("1 tray app") : qsTr("%1 tray apps").arg(root.trayStatus.count)) + (attention ? "\n" + qsTr("Needs attention: %1").arg(root.trayStatus.attentionItems.map(item => root.trayStatus.nameFor(item)).join(", ")) : "")
                     }
                 ]
                 onDrawerRequested: key => root.drawerRequested(key)

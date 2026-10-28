@@ -21,10 +21,6 @@ DrawerPage {
         return active && !!item && items.includes(item);
     }
 
-    function nameFor(item: var): string {
-        return item?.title || item?.tooltipTitle || item?.id || qsTr("Unknown application");
-    }
-
     function statusFor(item: var): string {
         if (item && TrayService.needsAttention(item))
             return qsTr("Needs attention");
@@ -80,6 +76,8 @@ DrawerPage {
     }
 
     // Native app menus preserve submenus, toggles, radio items and shortcuts.
+    // Close before retargeting: Quickshell 0.3.2 keeps an open anchor open and its
+    // old menu referenced when menu changes underneath it.
     QsMenuAnchor {
         id: nativeMenu
         objectName: "trayNativeMenu"
@@ -114,7 +112,9 @@ DrawerPage {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: Theme.spacingMedium
-            model: root.items
+            // The native model inserts/removes rows; a JS array would rebuild every
+            // row, dropping focus, hover and the open menu's anchor.
+            model: root.tray.items
             keyNavigationEnabled: true
             activeFocusOnTab: true
 
@@ -132,7 +132,8 @@ DrawerPage {
                 }
             }
 
-            delegate: Item {
+            // A focus scope keeps a tabbed control focused when the view makes its row current.
+            delegate: FocusScope {
                 id: card
                 required property var modelData
                 required property int index
@@ -177,7 +178,7 @@ DrawerPage {
                         padding: Theme.spacingMedium
                         hoverEnabled: true
                         enabled: root.active
-                        text: root.nameFor(card.modelData)
+                        text: TrayService.nameFor(card.modelData)
                         Accessible.name: text
                         Accessible.description: root.statusFor(card.modelData)
                         onActiveFocusChanged: if (activeFocus)
@@ -267,7 +268,7 @@ DrawerPage {
                         Layout.preferredHeight: Theme.controlHeight
                         padding: 8
                         hoverEnabled: true
-                        text: qsTr("Menu for %1").arg(root.nameFor(card.modelData))
+                        text: qsTr("Menu for %1").arg(TrayService.nameFor(card.modelData))
                         Accessible.name: text
                         enabled: root.active && card.modelData.hasMenu
                         opacity: enabled ? 1 : 0.4

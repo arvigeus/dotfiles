@@ -12,18 +12,26 @@ QtObject {
     readonly property var attentionItems: (items ?? []).filter(item => needsAttention(item))
     readonly property bool attention: (attentionItems?.length ?? 0) > 0
 
-    function identifiers(value: string): var {
-        const name = value.trim().toLowerCase().replace(/\.desktop$/, "");
-        if (!name)
-            return [];
-        // Match desktop IDs as well as display names, without substring guesses.
-        return /^[a-z0-9_-]+(?:\.[a-z0-9_-]+){2,}$/.test(name) ? [name, name.slice(name.lastIndexOf(".") + 1)] : [name];
+    // Electron items publish a generic ID and no title; the tooltip title names the app.
+    function nameFor(item: var): string {
+        return item?.title || item?.tooltipTitle || item?.id || qsTr("Unknown application");
     }
 
+    function canonical(value: string): string {
+        return value.trim().toLowerCase().replace(/\.desktop$/, "");
+    }
+
+    // A reverse-DNS desktop ID also answers to its last segment.
+    function alias(name: string): string {
+        return /^[a-z0-9_-]+(?:\.[a-z0-9_-]+){2,}$/.test(name) ? name.slice(name.lastIndexOf(".") + 1) : "";
+    }
+
+    // Whole names only, never substrings. An alias must equal the other side's full
+    // name: two desktop IDs sharing just their last segment are different apps.
     function matches(item: var, record: var): bool {
-        const app = identifiers(item.id || "").concat(identifiers(item.title || ""));
-        const sender = identifiers(record.desktopEntry || "").concat(identifiers(record.app || ""));
-        return app.some(name => sender.includes(name));
+        const app = [item.id || "", item.title || item.tooltipTitle || ""].map(value => canonical(value)).filter(Boolean);
+        const sender = [record.desktopEntry || "", record.app || ""].map(value => canonical(value)).filter(Boolean);
+        return app.some(name => sender.some(other => name === other || name === alias(other) || alias(name) === other));
     }
 
     function unseenFor(item: var): var {

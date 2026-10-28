@@ -120,10 +120,10 @@ last only for the shell lifetime.
 `SystemTray` remains registered while the drawer is closed. Tray delegates retain
 native items and their application-owned menus. Activation, secondary activation,
 scrolling and context menus use the native APIs; XEmbed is unsupported.
-Attention combines item status with unseen matching notifications. Activation
-acknowledges matching notification history. App matching must be unambiguous;
-ordinary unread application state cannot be inferred without a notification or
-attention request.
+Attention combines item status with unseen matching notifications; ordinary
+unread application state cannot be inferred without a notification or attention
+request. See [tray architecture](symlinks/home/.config/quickshell/desktop/drawers/tray/ARCHITECTURE.md)
+for naming, sender matching, acknowledgement and menu lifecycle.
 
 Badges and status widgets read native services. Detailed telemetry belongs to
 open drawers. Window/workspace navigation uses the shared Hyprland Lua policy.
