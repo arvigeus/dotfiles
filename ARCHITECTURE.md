@@ -33,8 +33,10 @@ settings and device aliases. Reusable accessories belong under
 Native archinstall fields control packages and services. Desktop dependencies
 are explicit module declarations rather than archinstall's bundled desktop
 presets; native application and network handlers still configure their services.
-`extra` holds custom metadata, including AUR/Cargo packages, Flatpak remotes/apps,
-assets, and hooks.
+`extra` holds custom metadata, including AUR/Cargo/uv tools, Flatpak
+remotes/apps, assets, and hooks. uv tools use `extra.uv_tools` entries with a
+tool `name` and install `source`; the package executor updates them from their
+declared source and removes tools previously managed by dotfiles when omitted.
 `extra.user_services` and `extra.masked_user_services` control global user-unit
 enablement/masking; `extra.disabled_services` disables system units. Native
 `services`, application and network handlers own enabled system units.

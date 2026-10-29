@@ -254,6 +254,25 @@ def preflight(raw, repo):
             for value in values
         ):
             raise ValueError(f'extra.{key} must be a list of names')
+    uv_tools = raw['extra'].get('uv_tools', [])
+    if not isinstance(uv_tools, list):
+        raise ValueError('extra.uv_tools must be a list of {name, source} records')
+    uv_names = []
+    for tool in uv_tools:
+        if (
+            not isinstance(tool, dict)
+            or set(tool) != {'name', 'source'}
+            or not isinstance(tool['name'], str)
+            or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', tool['name'])
+            or not isinstance(tool['source'], str)
+            or not tool['source']
+            or tool['source'].startswith('-')
+            or any(char.isspace() for char in tool['source'])
+        ):
+            raise ValueError(f'Invalid extra.uv_tools record: {tool}')
+        uv_names.append(tool['name'])
+    if len(uv_names) != len(set(uv_names)):
+        raise ValueError('extra.uv_tools contains duplicate tool names')
     if set(raw['extra'].get('user_services', [])) & set(
         raw['extra'].get('masked_user_services', [])
     ):

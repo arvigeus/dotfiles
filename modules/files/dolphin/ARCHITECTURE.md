@@ -3,9 +3,10 @@
 ## Preferences
 
 `scripts/50_dolphin-preferences.sh` writes into the executor's staging home using
-`kwriteconfig6`. `dolphinrc` enables `BrowseThroughArchives` and `GlobalViewProps`;
-`kdeglobals` sets `[KDE] SingleClick=true` for KDE file views. Archive KIO workers
-are an explicit dependency through `kio-extras`.
+`kwriteconfig6`. `dolphinrc` enables `BrowseThroughArchives` and `GlobalViewProps`
+and hides the menubar with `[MainWindow] MenuBar=Disabled`; `kdeglobals` sets
+`[KDE] SingleClick=true` for KDE file views. Archive KIO workers are an explicit
+dependency through `kio-extras`.
 
 The shared view defaults live in
 `$XDG_DATA_HOME/dolphin/view_properties/global/.directory`, using view-properties

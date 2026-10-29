@@ -188,7 +188,7 @@
         "aur_packages": [
             "claude-code",
             "chatgpt-desktop",
-            "pi-coding-agent",
+            "pi-coding-agent-bin",
             "arkenfox-user.js",
             "wallpiper-hyprland",
             "legendary",
@@ -709,6 +709,12 @@
         ],
         "disabled_services": [
             "warp-svc.service"
+        ],
+        "uv_tools": [
+            {
+                "name": "blender-mcp",
+                "source": "git+https://projects.blender.org/lab/blender_mcp.git#subdirectory=mcp"
+            }
         ],
         "repositories": {
             "database_optional": [
@@ -3960,6 +3966,7 @@
         "plasma5-integration",
         "qt5-wayland",
         "qt6-wayland",
+        "blender",
         "koko",
         "inkscape",
         "fooyin",

@@ -233,6 +233,10 @@ class Files:
                 'DISPLAY',
                 'WAYLAND_DISPLAY',
                 'XDG_RUNTIME_DIR',
+                'XDG_CONFIG_HOME',
+                'XDG_DATA_HOME',
+                'XDG_STATE_HOME',
+                'XDG_CACHE_HOME',
                 'DBUS_SESSION_BUS_ADDRESS',
                 'XAUTHORITY',
             )
@@ -249,6 +253,16 @@ class Files:
             account = pwd.getpwnam(username)
             if account.pw_uid == 0 or account.pw_uid != int(uid_text):
                 return False
+            home = account.pw_dir
+            user_environment = {
+                'HOME': home,
+                'USER': username,
+                'LOGNAME': username,
+                'XDG_CONFIG_HOME': f'{home}/.config',
+                'XDG_DATA_HOME': f'{home}/.local/share',
+                'XDG_STATE_HOME': f'{home}/.local/state',
+                'XDG_CACHE_HOME': f'{home}/.cache',
+            }
             with tempfile.TemporaryDirectory(prefix='dotfiles-diff-') as directory:
                 directory = Path(directory)
                 current = directory / f'installed-{target.name}'
@@ -267,6 +281,10 @@ class Files:
                         username,
                         '--',
                         'env',
+                        *(
+                            f'{name}={value}'
+                            for name, value in user_environment.items()
+                        ),
                         *(f'{name}={value}' for name, value in session.items()),
                         editor,
                         str(current),

@@ -18,7 +18,9 @@ if [[ " $* " != *' --dry-run '* && " $* " != *' --help '* && " $* " != *' -h '* 
     "$repo_dir/validate.sh"
 fi
 sudo_environment=(DOTFILES_DIFF_EDITOR=meld)
-for variable in DISPLAY WAYLAND_DISPLAY XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS XAUTHORITY; do
+for variable in DISPLAY WAYLAND_DISPLAY XDG_RUNTIME_DIR XDG_CONFIG_HOME \
+    XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME DBUS_SESSION_BUS_ADDRESS \
+    XAUTHORITY; do
     if [[ -n ${!variable:-} ]]; then
         sudo_environment+=("DOTFILES_DIFF_$variable=${!variable}")
     fi

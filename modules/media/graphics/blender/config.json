@@ -1,0 +1,13 @@
+{
+    "packages": [
+        "blender"
+    ],
+    "extra": {
+        "uv_tools": [
+            {
+                "name": "blender-mcp",
+                "source": "git+https://projects.blender.org/lab/blender_mcp.git#subdirectory=mcp"
+            }
+        ]
+    }
+}

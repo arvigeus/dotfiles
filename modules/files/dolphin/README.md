@@ -5,6 +5,9 @@ file sizes below names in Icons view (beside names in Compact view). The size
 option is under **View → Show Additional Information → Size**. Single-click
 opening also applies to other KDE file views.
 
+The menubar is hidden; press **Ctrl+M** to show or hide it. Its actions remain
+available from Dolphin's Control button.
+
 Keep the embedded Terminal panel hidden with **F4**; it requires Konsole, while
 the separate terminal action uses Kitty.
 

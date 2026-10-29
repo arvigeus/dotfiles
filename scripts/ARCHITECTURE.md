@@ -22,6 +22,9 @@ home with `publish-home.py`. During installation it first copies the checkout to
 the user's checkout. Everything runs in one archinstall custom command, because
 each command gets a fresh `arch-chroot -S` `/tmp`.
 
+AUR modules should declare concrete package targets when a package name has
+multiple providers, so noninteractive apply does not prompt for a provider.
+
 AUR installation uses Paru as the regular user. If Paru is missing or cannot run,
 the executor builds the source `paru` package with `makepkg`, linking it against
 the installed pacman libraries. This permits reinstalling the same version after
@@ -37,6 +40,19 @@ user, with `CARGO_HOME=~/.local/share/cargo`; it never installs into the staging
 home or compiles as root. Cargo skips installed current versions without forced
 rebuilds. Its toolchain must be declared by the owning language module. The
 system Cargo environment adds that directory's `bin` to the desktop PATH.
+
+`extra.uv_tools` is a list of `{name, source}` records. The installer runs
+`uv tool install --upgrade --from SOURCE NAME` as the regular user. It records
+managed names under `~/.local/state/dotfiles/uv-tools` and uninstalls only those
+names when their declarations disappear; unrelated uv tools remain untouched.
+An individual uv install, update or uninstall failure is reported as a warning
+and does not stop the remaining apply steps. Failed updates retain the prior
+managed record; failed removals stay recorded so a later apply retries them.
+Failed first-time installs are not recorded as managed. The `uv` executable
+belongs to the Python language module. Topgrade's `uv` step updates installed
+tools and managed Python installations. A failed `uv` step follows Topgrade's
+normal retry/continue/quit handling. Configuration apply reconciles declared
+tools from their configured sources.
 
 Home files are published atomically with user ownership. `files/home/` configs and
 generated files are copied; `symlinks/home/` configs link to the checkout.
@@ -74,9 +90,11 @@ conflict retains its prior ownership record and returns status 2, rather than
 claiming convergence. Initial installation can replace package/user defaults;
 the first live apply adopts matching files and reviews other existing files.
 For a text diff, `apply.sh` opens Meld as the invoking user when a graphical
-session and Meld are available. It compares temporary copies; otherwise review
-prints the existing unified diff. `apply.sh` forwards graphical session values
-under private variable names; reconciliation supplies them only to Meld.
+session and Meld are available. It compares temporary copies, with the invoking
+user's home and XDG directories so staged setup paths do not leak into the GUI;
+otherwise review prints the existing unified diff. `apply.sh` forwards graphical
+session and XDG values under private variable names; reconciliation supplies them
+only to Meld.
 
 Omitted tracked files are removed only when clean or explicitly approved. Empty
 directories and untracked files are not swept. Each replaced/removed entry is
