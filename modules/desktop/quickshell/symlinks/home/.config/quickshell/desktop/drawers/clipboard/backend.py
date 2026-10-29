@@ -44,7 +44,10 @@ def paused():
     # is-active succeeds when any listed unit is active.
     return (
         subprocess.run(
-            ['systemctl', '--user', 'is-active', '--quiet', *WATCHERS], timeout=5
+            ['systemctl', '--user', 'is-active', '--quiet', *WATCHERS],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
         ).returncode
         != 0
     )
@@ -89,7 +92,7 @@ def image_details(preview):
     return {'mime': mime, 'preview': label}
 
 
-def decoded_mime(data, image_hint=None):
+def decoded_mime(data):
     if data.startswith(b'\x89PNG\r\n\x1a\n'):
         return 'image/png'
     if data.startswith(b'\xff\xd8\xff'):
@@ -102,31 +105,36 @@ def decoded_mime(data, image_hint=None):
         return 'image/tiff'
     if data.startswith(b'RIFF') and data[8:12] == b'WEBP':
         return 'image/webp'
-    return image_hint or 'text/plain;charset=utf-8'
+    return 'text/plain;charset=utf-8'
 
 
-def entries(query=''):
+def entries(records, query=''):
     needle = query.casefold().strip()
     result = []
-    for item_id, preview in list_records():
+    for item_id, preview in records:
         details = image_details(preview)
         mime = details['mime'] if details else 'text/plain;charset=utf-8'
         label = details['preview'] if details else preview
         if needle and needle not in (mime + ' ' + label + ' ' + preview).casefold():
             continue
-        result.append(
-            {
-                'id': item_id,
-                'mime': mime,
-                'preview': label,
-                'image': details is not None,
-            }
-        )
+        result.append({'id': item_id, 'preview': label, 'image': details is not None})
     return result
 
 
 def decode(item_id):
     return command(['decode', str(int(item_id))], timeout=10).stdout
+
+
+def forget_previews(ids):
+    """Delete the preview files of ids and return the ids that had one."""
+    forgotten = []
+    for item_id in ids:
+        if item_id in cached_images:
+            cached_images.remove(item_id)
+            forgotten.append(item_id)
+        for path in cache_root().glob(f'{item_id}.*'):
+            path.unlink(missing_ok=True)
+    return forgotten
 
 
 def handle(request):
@@ -139,35 +147,36 @@ def handle(request):
         )
         return {'op': op, 'available': available, 'paused': paused(), 'entries': []}
     if op == 'list':
+        records = list_records()
+        known = {item_id for item_id, _ in records}
+        # Previews never outlive their history entry, however it was removed.
         return {
             'op': op,
             'available': True,
             'paused': paused(),
-            'entries': entries(str(request.get('query', ''))),
+            'entries': entries(records, str(request.get('query', ''))),
+            'expired': forget_previews([i for i in cached_images if i not in known]),
         }
     if op == 'pause':
         set_paused(bool(request.get('value')))
         return {'op': op, 'paused': paused()}
     if op == 'clear':
         command(['wipe'])
-        return {'op': op}
+        return {'op': op, 'expired': forget_previews(list(cached_images))}
     if op == 'delete':
-        command(['delete'], input_data=f'{int(request["id"])}\t\n'.encode())
-        return {'op': op}
+        item_id = int(request['id'])
+        command(['delete'], input_data=f'{item_id}\t\n'.encode())
+        return {'op': op, 'expired': forget_previews([item_id])}
     if op == 'copy':
         decoded = decode(request['id'])
-        mime = decoded_mime(
-            decoded,
-            request.get('mime')
-            if str(request.get('mime', '')).startswith('image/')
-            else None,
-        )
-        # wl-copy forks a server that keeps the selection after this call returns.
+        # wl-copy forks a server that keeps the selection after this call
+        # returns. The server inherits stderr, so a pipe there would not reach
+        # EOF until another selection replaces it.
         subprocess.run(
-            ['wl-copy', '--type', mime],
+            ['wl-copy', '--type', decoded_mime(decoded)],
             input=decoded,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             timeout=5,
             check=True,
         )
@@ -175,12 +184,7 @@ def handle(request):
     if op == 'thumbnail':
         item_id = int(request['id'])
         decoded = decode(item_id)
-        mime = decoded_mime(
-            decoded,
-            request.get('mime')
-            if str(request.get('mime', '')).startswith('image/')
-            else None,
-        )
+        mime = decoded_mime(decoded)
         if not mime.startswith('image/'):
             raise ValueError('Clipboard item is not an image.')
         folder = cache_root()
@@ -190,17 +194,11 @@ def handle(request):
         if item_id in cached_images:
             cached_images.remove(item_id)
         cached_images.append(item_id)
-        expired_images = []
-        while len(cached_images) > MAX_CACHED_IMAGES:
-            expired = cached_images.pop(0)
-            expired_images.append(expired)
-            for old in folder.glob(str(expired) + '.*'):
-                old.unlink(missing_ok=True)
         return {
             'op': op,
             'id': item_id,
             'url': path.as_uri(),
-            'expired': expired_images,
+            'expired': forget_previews(cached_images[:-MAX_CACHED_IMAGES]),
         }
     raise ValueError('Unknown clipboard operation.')
 

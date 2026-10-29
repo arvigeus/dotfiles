@@ -11,6 +11,8 @@ Singleton {
     property bool loading: false
     property bool started: false
     property string error: ""
+    // Refreshes after delete/clear keep the drawer's current search.
+    property string query: ""
     property var requestQueue: []
     property var thumbnails: ({})
     property var thumbnailPending: ({})
@@ -25,14 +27,13 @@ Singleton {
     }
     function refresh(): void {
         request({
-            op: "list"
-        });
-    }
-    function search(query: string): void {
-        request({
             op: "list",
             query
         });
+    }
+    function search(text: string): void {
+        query = text;
+        refresh();
     }
     function setPaused(value: bool): void {
         request({
@@ -51,14 +52,10 @@ Singleton {
             id
         });
     }
-    function mimeOf(id: int): string {
-        return entries.find(entry => entry.id === id)?.mime ?? "";
-    }
     function copy(id: int): void {
         request({
             op: "copy",
-            id,
-            mime: mimeOf(id)
+            id
         });
     }
     function loadThumbnail(id: int): void {
@@ -69,9 +66,16 @@ Singleton {
         });
         request({
             op: "thumbnail",
-            id,
-            mime: mimeOf(id)
+            id
         });
+    }
+    // Drop queued previews; one already sent still completes.
+    function cancelPreviews(): void {
+        requestQueue = requestQueue.filter(item => item.op !== "thumbnail");
+        const current = worker.busy && worker.current.op === "thumbnail" ? worker.current.id : null;
+        thumbnailPending = current === null ? {} : {
+            [current]: true
+        };
     }
     function request(value): void {
         if (!worker.running)
@@ -130,10 +134,13 @@ Singleton {
             const pending = Object.assign({}, thumbnailPending);
             delete pending[result.id];
             thumbnailPending = pending;
-            const images = Object.assign({}, thumbnails, {
+            thumbnails = Object.assign({}, thumbnails, {
                 [result.id]: result.url
             });
-            for (const expired of result.expired || [])
+        }
+        if (result.expired?.length) {
+            const images = Object.assign({}, thumbnails);
+            for (const expired of result.expired)
                 delete images[expired];
             thumbnails = images;
         }
@@ -158,6 +165,9 @@ Singleton {
         onExited: (code, status) => {
             root.started = false;
             busy = false;
+            // The next worker starts with an empty preview cache.
+            root.thumbnails = {};
+            root.thumbnailPending = {};
             root.loading = false;
             root.available = false;
             root.error = qsTr("Clipboard history service stopped.");

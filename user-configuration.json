@@ -33,7 +33,7 @@
         "uki": true
     },
     "custom_commands": [
-        "bash \"$(dirname -- \"$(readlink -f /run/system-configuration.json)\")/scripts/configure.sh\""
+        "bash \"${DOTFILES_REPO:-$(dirname -- \"$(readlink -f /run/system-configuration.json)\")}/scripts/configure.sh\""
     ],
     "disk_config": {
         "btrfs_options": {

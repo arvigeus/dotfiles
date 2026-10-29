@@ -174,10 +174,13 @@ They survive shell reload and are stopped with the graphical session.
 `clipboard/backend.py` controls the units and adapts list/copy/delete/wipe and
 image preview operations; pausing stops both units and is not persisted.
 
-History remains in cliphist's database. Preview files are private, limited to 32
-cached images and removed on helper exit/start. Copies decode by ID and pass bytes
-to wl-copy through stdin, never shell interpolation. Closing the drawer cancels
-preview work; clipboard collection is independent of the drawer.
+History remains in cliphist's database. Preview files are private and never
+outlive their history entry: delete and wipe remove theirs, and each listing
+removes those of entries trimmed or deleted elsewhere. At most 32 are cached, and
+the helper clears them at start/exit. Copies decode by ID and pass bytes
+to wl-copy through stdin, never shell interpolation. Closing the drawer drops
+queued previews; rows request them again when it reopens. Clipboard collection
+is independent of the drawer.
 
 ## Capture
 

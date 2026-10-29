@@ -54,7 +54,7 @@ LIST_SETTINGS = {
     ('mirror_config', 'custom_repositories'),
 }
 # A single archinstall custom command runs every module hook from the checkout.
-CONFIGURE = 'bash "$(dirname -- "$(readlink -f /run/system-configuration.json)")/scripts/configure.sh"'
+CONFIGURE = 'bash "${DOTFILES_REPO:-$(dirname -- "$(readlink -f /run/system-configuration.json)")}/scripts/configure.sh"'
 
 
 def unique_keys(pairs):

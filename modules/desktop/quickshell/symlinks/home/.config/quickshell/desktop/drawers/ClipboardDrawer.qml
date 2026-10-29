@@ -13,12 +13,12 @@ DrawerPage {
             root.closeRequested();
         }
     }
-    Component.onCompleted: searchField.submit()
     onActiveChanged: {
         if (active)
             searchField.submit();
+        else
+            ClipboardService.cancelPreviews();
     }
-    escapeHandler: null
 
     headerActions: RowLayout {
         spacing: 4
@@ -102,17 +102,25 @@ DrawerPage {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 8
-            model: ClipboardService.entries
+            model: KeyedModel {
+                values: ClipboardService.entries
+                keyField: "id"
+            }
             delegate: Rectangle {
                 id: card
                 required property var modelData
+                // Rows outlive a close during the exit animation; previews that
+                // closing cancelled are requested again when the page reopens.
+                readonly property bool needsPreview: root.active && modelData.image
                 objectName: "clipboardEntry:" + modelData.id
                 width: ListView.view.width
                 height: Math.max(58, row.implicitHeight + 12)
                 radius: Theme.radius
                 color: Theme.surface
                 border.color: Theme.border
-                Component.onCompleted: if (modelData.image)
+                onNeedsPreviewChanged: if (needsPreview)
+                    ClipboardService.loadThumbnail(modelData.id)
+                Component.onCompleted: if (needsPreview)
                     ClipboardService.loadThumbnail(modelData.id)
 
                 RowLayout {
@@ -136,6 +144,7 @@ DrawerPage {
                         contentItem: RowLayout {
                             spacing: 8
                             Item {
+                                id: thumbnailFrame
                                 visible: card.modelData.image
                                 Layout.preferredWidth: 88
                                 Layout.preferredHeight: 64
@@ -145,9 +154,13 @@ DrawerPage {
                                     color: Theme.background
                                 }
                                 Image {
+                                    objectName: "clipboardThumbnail:" + card.modelData.id
                                     anchors.fill: parent
                                     source: ClipboardService.thumbnails[card.modelData.id] || ""
                                     fillMode: Image.PreserveAspectFit
+                                    // Decode screenshots at preview size, not full resolution.
+                                    sourceSize.width: Math.ceil(thumbnailFrame.Layout.preferredWidth * Screen.devicePixelRatio)
+                                    sourceSize.height: Math.ceil(thumbnailFrame.Layout.preferredHeight * Screen.devicePixelRatio)
                                     asynchronous: true
                                     cache: false
                                     visible: status === Image.Ready

@@ -7,7 +7,10 @@ ConditionEnvironment=WAYLAND_DISPLAY
 
 [Service]
 Type=exec
-ExecStart=/usr/bin/wl-paste --type %i --watch /usr/bin/cliphist store
+# Nothing is stored while the pause marker exists. wl-paste runs the command for
+# the selection current at startup, so a running gated watcher (unlike a
+# restarted one) never stores an item copied during the pause.
+ExecStart=/usr/bin/wl-paste --type %i --watch /usr/bin/sh -c 'test -e %t/cliphist-paused || exec /usr/bin/cliphist store'
 Restart=on-failure
 RestartSec=2s
 

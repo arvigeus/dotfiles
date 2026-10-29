@@ -383,6 +383,7 @@ def main():
                 os.environ,
                 CONFIG_MODE='live',
                 DOTFILES_CONFIG=str(snapshot),
+                DOTFILES_REPO=str(repo),
                 DOTFILES_STATE_DIR=str(state_dir),
             )
             configure = ['bash', str(repo / 'scripts/configure.sh')]

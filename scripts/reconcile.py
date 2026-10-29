@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import stat
+import sys
 import tempfile
 import uuid
 
@@ -17,24 +18,30 @@ class Review:
 
     def choose(self, message, choices, default):
         stream = self.stream
+        input_stream = output_stream = stream
         owned = False
         if stream is None:
             try:
                 stream = open('/dev/tty', 'r+')
+                input_stream = output_stream = stream
                 owned = True
             except OSError:
-                print(f'{message}: {choices[default]} (no terminal)')
-                return default
+                if sys.stdin.isatty():
+                    input_stream = sys.stdin
+                    output_stream = sys.stderr
+                else:
+                    print(f'{message}: {choices[default]} (no terminal)')
+                    return default
         try:
             while True:
-                stream.write(
+                output_stream.write(
                     message
                     + '\n'
                     + ', '.join(f'[{key}] {label}' for key, label in choices.items())
                     + f' [{default}]: '
                 )
-                stream.flush()
-                answer = stream.readline()
+                output_stream.flush()
+                answer = input_stream.readline()
                 if not answer:
                     return default
                 answer = answer.strip().lower() or default

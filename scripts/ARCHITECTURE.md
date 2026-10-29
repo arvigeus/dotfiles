@@ -5,6 +5,9 @@ its existing handlers with a small live-system adapter. Its `--dry-run` option
 inspects installed packages and managed file differences without running hooks,
 package transactions, or service changes. It never constructs a disk
 installer or performs installation-only disk, bootloader, or account operations.
+Live custom commands receive `DOTFILES_REPO` so their script paths remain rooted
+in the checkout while `/run/system-configuration.json` points to a frozen
+configuration snapshot.
 
 `copy-checkout.py` is an archinstall plugin. Its `on_install` hook copies the
 checkout into `/root/system-configuration` inside the target and runs early setup
