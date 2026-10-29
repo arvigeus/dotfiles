@@ -4,12 +4,38 @@ import json
 import os
 import socket
 import threading
+import time
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
 import support
+
+
+def control_state(**values):
+    """One line from desktop-capture.service; commands get `reply=True`."""
+    return (
+        json.dumps(dict(available=True, error='', options={}, **values)) + '\n'
+    ).encode()
+
+
+def serve_control(root, handler):
+    """Answer the shell's first control connection in place of the service."""
+    directory = root / 'runtime/desktop-capture'
+    directory.mkdir(parents=True)
+    server = socket.socket(socket.AF_UNIX)
+    server.bind(str(directory / 'control.sock'))
+    server.listen()
+
+    def serve():
+        with server:
+            connection, _ = server.accept()
+            with connection:
+                connection.settimeout(4)
+                handler(connection)
+
+    threading.Thread(target=serve, daemon=True).start()
 
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
@@ -66,36 +92,11 @@ ShellRoot {
     def test_recording_start_waits_for_dismissal_and_survives_closed_page(self):
         seen = []
 
-        def setup(root):
-            # A fake service on the runtime control socket (systemd would own it).
-            directory = root / 'runtime/desktop-capture'
-            directory.mkdir(parents=True)
-            server = socket.socket(socket.AF_UNIX)
-            server.bind(str(directory / 'control.sock'))
-            server.listen()
-
-            def serve():
-                with server:
-                    connection, _ = server.accept()
-                    with connection, connection.makefile() as requests:
-                        for line in requests:
-                            seen.append(json.loads(line))
-                            connection.sendall(
-                                (
-                                    json.dumps(
-                                        dict(
-                                            phase='recording'
-                                            if seen[-1]['op'] == 'start'
-                                            else 'idle',
-                                            available=True,
-                                            elapsed=0,
-                                        )
-                                    )
-                                    + '\n'
-                                ).encode()
-                            )
-
-            threading.Thread(target=serve, daemon=True).start()
+        def answer(connection):
+            for line in connection.makefile():
+                seen.append(json.loads(line))
+                phase = 'recording' if seen[-1]['op'] == 'start' else 'idle'
+                connection.sendall(control_state(phase=phase, elapsed=0, reply=True))
 
         self.run_qml(
             """import QtQuick
@@ -123,9 +124,95 @@ ShellRoot {
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:4000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }""",
-            setup,
+            lambda root: serve_control(root, answer),
         )
         self.assertEqual(seen, [dict(op='start', source='DP-2')])
+
+    def test_reload_recovers_running_session_and_releases_it_when_saved(self):
+        seen = []
+
+        def answer(connection):
+            seen.append(json.loads(connection.makefile().readline()))
+            connection.sendall(control_state(phase='recording', elapsed=5, reply=True))
+            # The client must stay connected for later changes.
+            time.sleep(0.3)
+            connection.sendall(control_state(phase='recording', elapsed=6))
+            time.sleep(0.3)
+            connection.sendall(
+                control_state(phase='idle', elapsed=0, lastVideo='/tmp/saved.mp4')
+            )
+            saved = time.monotonic()
+            if connection.recv(1) == b'':
+                seen.append(time.monotonic() - saved)
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "drawers/capture"
+ShellRoot {
+ id:root
+ property var phases:[]
+ property int settled:0
+ Connections{target:CaptureService;function onRecorderChanged(){root.phases.push(CaptureService.recorder.phase+":"+CaptureService.recorder.elapsed);}}
+ Component.onCompleted:CaptureService.start()
+ function check(value,message){if(!value)throw new Error(message);}
+ Timer{interval:100;repeat:true;running:true;onTriggered:{try{
+  if(!CaptureService.recorder.lastVideo)return;
+  check(JSON.stringify(phases)===JSON.stringify(["recording:5","recording:6","idle:0"]),"session stream lost: "+JSON.stringify(phases));
+  check(!CaptureService.sessionActive&&!CaptureService.error,"saved session left stale state: "+CaptureService.error);
+  // Stay alive long enough to show the idle connection was released, not closed by exit.
+  if(++settled===8){console.log("DISPLAY_PASS");Qt.quit();}
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+ Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
+}""",
+            lambda root: serve_control(root, answer),
+        )
+        self.assertEqual(seen[0], dict(op='status'))
+        self.assertEqual(len(seen), 2, 'the idle connection was never released')
+        self.assertLess(seen[1], 0.6, 'the idle connection was held until exit')
+
+    def test_changes_do_not_answer_commands_and_stop_never_waits(self):
+        seen = []
+
+        def answer(connection):
+            requests = connection.makefile()
+            seen.append(json.loads(requests.readline()))
+            connection.sendall(control_state(phase='recording', elapsed=1, reply=True))
+            seen.append(json.loads(requests.readline()))
+            # A change reported before the pause reply is not that reply.
+            connection.sendall(control_state(phase='recording', elapsed=2))
+            seen.append(json.loads(requests.readline()))
+            connection.sendall(control_state(phase='paused', elapsed=2, reply=True))
+            connection.sendall(control_state(phase='stopping', elapsed=2, reply=True))
+            connection.sendall(control_state(phase='idle', elapsed=0))
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "drawers/capture"
+ShellRoot {
+ property int stage:0
+ Component.onCompleted:CaptureService.start()
+ function check(value,message){if(!value)throw new Error(message);}
+ Timer{interval:50;repeat:true;running:true;onTriggered:{try{
+  const state=CaptureService.recorder;
+  if(stage===0&&state.elapsed===1){CaptureService.pauseRecording();stage=1;
+  }else if(stage===1&&state.elapsed===2){
+   check(CaptureService.savingRecordingOption,"a change line was taken as the pause reply");
+   check(CaptureService.record("DP-2"),"stop waited for the pause reply");
+   stage=2;
+  }else if(stage===2&&state.phase==="idle"){
+   check(!CaptureService.savingRecordingOption&&!CaptureService.error,"replies were not counted: "+CaptureService.awaiting+" "+CaptureService.error);
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+ Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
+}""",
+            lambda root: serve_control(root, answer),
+        )
+        self.assertEqual(
+            [request['op'] for request in seen], ['status', 'pause', 'stop']
+        )
 
     def test_region_shortcut_selection_cancellation_and_stop(self):
         with tempfile.TemporaryDirectory() as directory:

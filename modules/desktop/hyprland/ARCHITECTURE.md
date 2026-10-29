@@ -159,8 +159,10 @@ image is created, and this path sends no notification, including on failure.
 
 The Capture drawer uses `output --output NAME` or `region`, plus `--report` and
 explicit editor/save flags, to read back a saved image path (or `clipboard`) and
-optionally launch the editor
-without keeping capture busy until the editor closes. Missing whole-display
+optionally start the editor as a `uwsm app` service, so capture is not busy
+until it closes and a shell restart cannot kill it. Area selection reads
+stdin from `/dev/null`; slurp would otherwise wait on any open non-terminal
+stdin. Missing whole-display
 images are failures rather than selection cancellation. The drawer owns delay
 and dismissal timing; the helper performs the capture immediately.
 

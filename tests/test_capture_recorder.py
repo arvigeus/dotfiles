@@ -1,6 +1,5 @@
 """Recording ownership, audio routing and native IPC without host capture."""
 
-import importlib.util
 import io
 import json
 import os
@@ -14,13 +13,10 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
-BACKEND = (
-    Path(__file__).resolve().parents[1]
-    / 'modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/recorder.py'
-)
-SPEC = importlib.util.spec_from_file_location('capture_recorder', BACKEND)
-recorder = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(recorder)
+import support
+
+BACKEND = support.DESKTOP / 'drawers/capture/recorder.py'
+recorder = support.load('capture_recorder', BACKEND)
 
 
 class RecorderTests(unittest.TestCase):
@@ -164,6 +160,64 @@ class RecorderTests(unittest.TestCase):
         with patch.object(recorder.time, 'monotonic', return_value=102):
             self.assertEqual(owner.snapshot()['elapsed'], 5)
 
+    def test_unresponsive_recorder_is_killed_and_frees_the_service(self):
+        owner = recorder.Recorder()
+        process = MagicMock()
+        process.poll.return_value = None
+        clock = MagicMock(return_value=100.0)
+        with (
+            patch.object(
+                recorder.shutil, 'which', return_value='/usr/bin/gpu-screen-recorder'
+            ),
+            patch.object(recorder.subprocess, 'Popen', return_value=process),
+            patch.object(recorder.time, 'monotonic', clock),
+        ):
+            owner.request(dict(op='start', source='DP-3'))
+            clock.return_value += recorder.START_TIMEOUT - 1
+            owner.tick()
+            self.assertEqual(owner.phase, 'starting')
+            # No first frame: the start watchdog asks the recorder to save and exit.
+            clock.return_value += 2
+            owner.tick()
+            process.send_signal.assert_called_once_with(signal.SIGINT)
+            self.assertEqual(owner.phase, 'stopping')
+            clock.return_value += recorder.STOP_TIMEOUT - 1
+            owner.tick()
+            process.kill.assert_not_called()
+            # It ignored SIGINT: kill once instead of staying busy forever.
+            clock.return_value += 2
+            owner.tick()
+            owner.tick()
+            process.kill.assert_called_once_with()
+            self.assertEqual(owner.phase, 'stopping')
+            process.poll.return_value = -signal.SIGKILL
+            owner.tick()
+            self.assertEqual(owner.phase, 'idle')
+            self.assertIn('took too long to start', owner.error)
+            self.assertIn('did not stop within', owner.error)
+            self.assertFalse(owner.last_video)
+
+            # A started recording that hangs while saving is reported the same way.
+            replacement = MagicMock()
+            replacement.poll.return_value = None
+            recorder.subprocess.Popen.return_value = replacement
+            owner.request(dict(op='start', source='DP-3'))
+            Path(owner.path + '.ts').write_text('first frame')
+            owner.tick()
+            self.assertEqual(owner.phase, 'recording')
+            clock.return_value += 3600
+            owner.tick()
+            replacement.kill.assert_not_called()
+            owner.request(dict(op='stop'))
+            clock.return_value += recorder.STOP_TIMEOUT + 1
+            owner.tick()
+            replacement.kill.assert_called_once_with()
+            replacement.poll.return_value = -signal.SIGKILL
+            owner.tick()
+            self.assertEqual(owner.phase, 'idle')
+            self.assertNotIn('took too long to start', owner.error)
+            self.assertIn('did not stop within', owner.error)
+
     def test_failed_start_reports_log_and_never_announces_saved_file(self):
         owner = recorder.Recorder()
         process = MagicMock()
@@ -272,48 +326,95 @@ while True:
                 process.terminate()
                 process.communicate(timeout=5)
 
-    def test_socket_activation_uses_inherited_listener_and_exits_when_idle(self):
+    def activate(self, *requests, idle_exit=30):
+        """Start the service on an inherited listener, as desktop-capture.socket does.
+
+        Each request is sent from its own client before the service starts.
+        """
         endpoint = self.root / 'desktop-capture/control.sock'
         listener = socket.socket(socket.AF_UNIX)
         listener.bind(str(endpoint))
         listener.listen()
         self.addCleanup(listener.close)
+        clients = []
+        for request in requests:
+            client = socket.socket(socket.AF_UNIX)
+            client.settimeout(4)
+            client.connect(str(endpoint))
+            client.sendall(request)
+            self.addCleanup(client.close)
+            clients.append(client)
         script = (
             'import os,runpy,sys\nos.dup2(int(sys.argv[2]),3)\nos.environ["LISTEN_PID"]=str(os.getpid())\n'
             'os.environ["LISTEN_FDS"]="1"\nimport importlib.util\n'
             'spec=importlib.util.spec_from_file_location("r",sys.argv[1]);r=importlib.util.module_from_spec(spec)\n'
-            'spec.loader.exec_module(r);r.IDLE_EXIT=0.3;r.location=lambda kind:r.Path(os.environ["XDG_RUNTIME_DIR"])/kind\n'
+            f'spec.loader.exec_module(r);r.IDLE_EXIT={idle_exit};'
+            'r.location=lambda kind:r.Path(os.environ["XDG_RUNTIME_DIR"])/kind\n'
             'r.serve()\n'
         )
-        client = socket.socket(socket.AF_UNIX)
-        client.connect(str(endpoint))
-        client.sendall(
-            b'{"op":"status"}\n{"op":"option","key":"pointer","value":false}\n'
-        )
         process = subprocess.Popen(
-            [sys.executable, '-c', script, str(BACKEND), str(listener.fileno())],
+            [sys.executable, '-B', '-c', script, str(BACKEND), str(listener.fileno())],
             pass_fds=(listener.fileno(),),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
-        try:
-            with client, client.makefile() as replies:
-                self.assertEqual(json.loads(replies.readline())['phase'], 'idle')
-                # Broadcasts may interleave with replies; the option reply follows in order.
-                self.assertTrue(
-                    any(
-                        not json.loads(replies.readline())['options']['pointer']
-                        for _ in range(3)
-                    )
-                )
-            # No client and no recording: the service exits; systemd keeps the socket.
-            self.assertEqual(process.wait(timeout=5), 0, process.stderr.read())
-            self.assertTrue(endpoint.exists())
-        finally:
+
+        def stop():
             if process.poll() is None:
                 process.kill()
-                process.wait()
+                process.communicate()
+
+        self.addCleanup(stop)
+        return endpoint, process, clients
+
+    def test_socket_activation_uses_inherited_listener_and_exits_when_idle(self):
+        endpoint, process, (client,) = self.activate(
+            b'{"op":"status"}\n{"op":"option","key":"pointer","value":false}\n',
+            idle_exit=0.3,
+        )
+        with client, client.makefile() as replies:
+            status, option = (json.loads(replies.readline()) for _ in range(2))
+        # One tagged reply per command; the requester is not sent its state again.
+        self.assertEqual((status['reply'], status['phase']), (True, 'idle'))
+        self.assertEqual((option['reply'], option['options']['pointer']), (True, False))
+        # No client and no recording: the service exits; systemd keeps the socket.
+        _, stderr = process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 0, stderr)
+        self.assertTrue(endpoint.exists())
+
+    def test_slow_reader_keeps_its_session_and_gets_the_newest_state(self):
+        _, process, (stalled, editor) = self.activate(
+            b'{"op":"status"}\n', b'{"op":"status"}\n'
+        )
+        with editor.makefile() as replies:
+            self.assertTrue(json.loads(replies.readline())['reply'])
+            # Far more changes than a socket buffer holds while one shell is stalled.
+            for change in range(1500):
+                value = bool(change % 2)
+                editor.sendall(
+                    json.dumps(dict(op='option', key='pointer', value=value)).encode()
+                    + b'\n'
+                )
+                reply = json.loads(replies.readline())
+                while not reply.get('reply'):
+                    reply = json.loads(replies.readline())
+                self.assertIs(reply['options']['pointer'], value)
+        lines = []
+        with stalled.makefile() as updates:
+            while not lines or lines[-1]['options']['pointer'] is not value:
+                line = updates.readline()
+                self.assertTrue(line.endswith('\n'), 'connection dropped: ' + line)
+                lines.append(json.loads(line))
+            self.assertTrue(lines[0]['reply'])
+            self.assertLess(len(lines), 1500, 'changes were not coalesced')
+            # The stalled shell still owns a working connection.
+            stalled.sendall(b'{"op":"status"}\n')
+            reply = json.loads(updates.readline())
+            while not reply.get('reply'):
+                reply = json.loads(updates.readline())
+            self.assertIs(reply['options']['pointer'], value)
+        self.assertIsNone(process.poll(), process.stderr)
 
 
 if __name__ == '__main__':

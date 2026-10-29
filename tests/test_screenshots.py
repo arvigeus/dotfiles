@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
-import time
 import unittest
 
 
@@ -24,6 +23,7 @@ class ScreenshotTests(unittest.TestCase):
         details=False,
         preference=None,
         save_preference=None,
+        stdin=None,
         **settings,
     ):
         with tempfile.TemporaryDirectory() as directory:
@@ -42,9 +42,11 @@ class ScreenshotTests(unittest.TestCase):
             log = root / 'editor.json'
             programs = {
                 'xdg-user-dir': '#!/bin/sh\nprintf "%s\\n" "$PICTURES"\n',
+                # Like slurp, read suggested boxes from any non-terminal stdin.
                 'slurp': """#!/usr/bin/env python3
 import json, os, pathlib, sys
-pathlib.Path(os.environ['SLURP_LOG']).write_text(json.dumps([sys.argv[1:], sys.stdin.read() if '-r' in sys.argv else '']))
+boxes = '' if sys.stdin.isatty() else sys.stdin.read()
+pathlib.Path(os.environ['SLURP_LOG']).write_text(json.dumps([sys.argv[1:], boxes]))
 if os.environ.get('CANCEL'):
     sys.exit(1)
 print('10,20 300x200')
@@ -56,10 +58,22 @@ pathlib.Path(os.environ['CAPTURE_LOG']).write_text(json.dumps(args))
 if os.environ.get('GRIM_FAIL'):
     sys.exit(1)
 image = bytes([137, 80, 78, 71, 13, 10, 26, 10]) + b'image'
+if not os.environ.get('GRIM_TRUNCATE'):
+    image += bytes(4) + b'IEND' + bytes([0xAE, 0x42, 0x60, 0x82])
 if args[-1] == '-':
     sys.stdout.buffer.write(image)
 else:
     pathlib.Path(args[-1]).write_bytes(b'image')
+""",
+                # Runs the app in place; systemd-run's status lines must not reach the report.
+                'uwsm': """#!/usr/bin/env python3
+import json, os, pathlib, sys
+pathlib.Path(os.environ['UWSM_LOG']).write_text(json.dumps(sys.argv[1:]))
+print('Running as unit: app-test.service')
+print('Running as unit: app-test.service', file=sys.stderr)
+sys.stdout.flush()
+command = sys.argv[sys.argv.index('--') + 1:]
+os.execvp(command[0], command)
 """,
                 'hyprctl': """#!/usr/bin/env python3
 import json, sys
@@ -97,6 +111,7 @@ pathlib.Path(os.environ['EDITOR_LOG']).write_text(json.dumps(sys.argv))
             env['SLURP_LOG'] = str(root / 'slurp.json')
             env['CLIPBOARD_LOG'] = str(root / 'clipboard.png')
             env['NOTICE_LOG'] = str(root / 'notification')
+            env['UWSM_LOG'] = str(root / 'uwsm.json')
             env.pop('DESKTOP_SCREENSHOT_EDITOR', None)
             env.update(settings)
             result = subprocess.run(
@@ -104,17 +119,13 @@ pathlib.Path(os.environ['EDITOR_LOG']).write_text(json.dumps(sys.argv))
                 env=env,
                 text=True,
                 capture_output=True,
+                stdin=stdin,
                 timeout=5,
             )
             self.assertEqual(result.returncode, expected_status, result.stderr)
             if details:
-                if '--edit' in options and expected_status == 0:
-                    # Report mode launches the editor independently of capture.
-                    for _ in range(100):
-                        if log.exists():
-                            break
-                        time.sleep(0.01)
                 capture = root / 'capture.json'
+                launcher = root / 'uwsm.json'
                 return dict(
                     result=result,
                     args=json.loads(capture.read_text()) if capture.exists() else None,
@@ -122,6 +133,9 @@ pathlib.Path(os.environ['EDITOR_LOG']).write_text(json.dumps(sys.argv))
                     if (root / 'slurp.json').exists()
                     else None,
                     editor=json.loads(log.read_text()) if log.exists() else None,
+                    launcher=json.loads(launcher.read_text())
+                    if launcher.exists()
+                    else None,
                     saved=list(pictures.rglob('*.png')),
                     clipboard=(root / 'clipboard.png').read_bytes()
                     if (root / 'clipboard.png').exists()
@@ -131,14 +145,17 @@ pathlib.Path(os.environ['EDITOR_LOG']).write_text(json.dumps(sys.argv))
             return json.loads(log.read_text()) if log.exists() else None
 
     def test_editor_receives_literal_path_of_saved_capture(self):
-        command = self.run_capture()
+        capture = self.run_capture(details=True)
+        command = capture['editor']
         self.assertEqual(Path(command[0]).name, 'ksnip')
         self.assertEqual(command[1], '--edit')
         self.assertIn('Pictures with spaces; $dollars/Screenshots/', command[2])
+        # Shortcuts already run in an app unit; the editor replaces the script.
+        self.assertIsNone(capture['launcher'])
 
     def test_selection_precedes_capture_and_cancellation_changes_nothing(self):
         capture = self.run_capture('region', details=True)
-        self.assertEqual(capture['slurp'][0], ['-d'])
+        self.assertEqual(capture['slurp'], [['-d'], ''])
         self.assertEqual(capture['args'][:2], ['-g', '10,20 300x200'])
         self.assertEqual(capture['clipboard'], b'image')
         for save in ('on', 'off'):
@@ -151,6 +168,18 @@ pathlib.Path(os.environ['EDITOR_LOG']).write_text(json.dumps(sys.argv))
                 capture['saved'] or capture['notified'] or capture['editor']
             )
         self.assertIsNone(self.run_capture('region', options=['--no-edit']))
+
+    def test_area_selection_does_not_wait_for_callers_open_stdin(self):
+        reader, writer = os.pipe()
+        try:
+            capture = self.run_capture(
+                'region', options=['--no-edit'], details=True, stdin=reader
+            )
+        finally:
+            os.close(reader)
+            os.close(writer)
+        self.assertEqual(capture['slurp'], [['-d'], ''])
+        self.assertTrue(capture['saved'])
 
     def test_windows_are_clipped_to_their_monitor(self):
         capture = self.run_capture('window', details=True)
@@ -172,7 +201,13 @@ pathlib.Path(os.environ['EDITOR_LOG']).write_text(json.dumps(sys.argv))
             'output', options=['--output', 'DP-2', '--report', '--edit'], details=True
         )
         self.assertEqual(capture['args'][:2], ['-o', 'DP-2'])
-        self.assertEqual(capture['result'].stdout.strip(), capture['editor'][2])
+        image = capture['editor'][2]
+        self.assertEqual(capture['result'].stdout, image + '\n')
+        # The editor outlives the shell service that waits for this report.
+        self.assertEqual(
+            capture['launcher'],
+            ['app', '-t', 'service', '--', 'ksnip', '--edit', image],
+        )
         self.assertFalse(capture['notified'])
         capture = self.run_capture('output', options=['--no-edit'], details=True)
         self.assertEqual(capture['args'][:2], ['-o', 'DP-1'])
@@ -222,15 +257,19 @@ pathlib.Path(os.environ['EDITOR_LOG']).write_text(json.dumps(sys.argv))
                 self.assertEqual(capture['result'].stdout.strip(), 'clipboard')
 
     def test_failed_clipboard_capture_keeps_clipboard_and_does_not_notify(self):
-        capture = self.run_capture(
-            'output',
-            save_preference='off',
-            details=True,
-            expected_status=1,
-            GRIM_FAIL='1',
-        )
-        self.assertIsNone(capture['clipboard'])
-        self.assertFalse(capture['notified'])
+        for failure in ('GRIM_FAIL', 'GRIM_TRUNCATE'):
+            with self.subTest(failure=failure):
+                capture = self.run_capture(
+                    'output',
+                    save_preference='off',
+                    options=['--report'],
+                    details=True,
+                    expected_status=1,
+                    **{failure: '1'},
+                )
+                self.assertIsNone(capture['clipboard'])
+                self.assertEqual(capture['result'].stdout, '')
+                self.assertFalse(capture['notified'])
 
     def test_explicit_save_override(self):
         capture = self.run_capture(

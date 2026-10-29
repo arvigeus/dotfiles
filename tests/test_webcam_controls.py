@@ -1,17 +1,11 @@
 """V4L2 readback and mutation checks without accessing camera hardware."""
 
-import importlib.util
-from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-BACKEND = (
-    Path(__file__).resolve().parents[1]
-    / 'modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/webcam.py'
-)
-SPEC = importlib.util.spec_from_file_location('desktop_webcam', BACKEND)
-webcam = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(webcam)
+import support
+
+webcam = support.load('desktop_webcam', support.DESKTOP / 'drawers/capture/webcam.py')
 
 CONTROLS = """User Controls
                      brightness 0x00980900 (int) : min=-64 max=64 step=2 default=0 value=12

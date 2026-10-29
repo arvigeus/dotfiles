@@ -60,7 +60,7 @@ lock/suspend remain available. See [desktop sessions](../hyprland/README.md).
 Screenshots save under Pictures/Screenshots and copy to the clipboard. Capture's
 editor/save preferences also apply to [screenshot shortcuts](../hyprland/README.md#screenshots-and-recording).
 Clipboard-only capture creates no image file and skips the editor/notification.
-Reopening Capture cancels its countdown.
+Reopen Capture during a countdown to cancel it.
 
 Recording uses GPU Screen Recorder and saves H.264/AAC MP4 in Videos/Recordings.
 It continues through shell reloads and saves when the graphical session ends.

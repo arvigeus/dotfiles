@@ -183,8 +183,9 @@ preview work; clipboard collection is independent of the drawer.
 
 Screenshots use `desktop-screenshot` (grim/slurp); see
 [Hyprland capture integration](../hyprland/ARCHITECTURE.md#desktop-integration).
-`CaptureService` freezes the selected options for countdowns, dismisses the drawer
-before capture and cancels a countdown when Capture reopens. `screenshot-editor`
+`CaptureService` freezes the selected options for countdowns and dismisses the
+drawer before capture, again if a surface opens in the last 400 ms; a reopened
+drawer offers Cancel. `screenshot-editor`
 and `screenshot-save` are user-owned on/off preferences shared with shortcuts.
 Clipboard-only capture overrides editing and produces no file or notification.
 Screenshot and recording-region processes explicitly close stdin after each
@@ -194,15 +195,26 @@ overlay; an open, unused Qt pipe otherwise leaves selection waiting indefinitely
 Recording belongs to socket-activated `desktop-capture.service`, independent of
 shell reloads. `desktop-capture.socket` exposes a private runtime Unix socket at
 `desktop-capture/control.sock`; QML connects directly and sends newline JSON.
-Each client receives state after requests and changes. The service exits after
-30 seconds with no recording/client, leaving systemd to reactivate it.
+Each command gets one state line tagged `reply`; untagged lines report later
+changes. QML counts only replies as answered commands, holds the connection while
+a session or command is pending, and sends Stop without waiting for earlier
+replies. A slow client is never dropped or sent part of a line: changes coalesce
+while its output is backlogged, and it receives the newest state once drained.
+The service exits after 30 seconds with no recording/client, leaving systemd to
+reactivate it. Change the tag protocol service-first: QML that expects tags
+cannot release a connection to a service started from older code.
 
-`capture/recorder.py` owns only its GPU Screen Recorder child and process group.
+`capture/recorder.py` owns only its GPU Screen Recorder child; `KillMode=mixed`
+lets it save that child before systemd kills the rest of the unit.
 Start/stop/pause/resume and preference changes use the socket; stopping the
-session finalizes the MP4 before bounded teardown. Recordings use XDG Videos under
-`Recordings`, H.264/AAC, with remembered system-audio/microphone/pointer choices in
-`recording.json`. Region selection uses Slurp and is cancelled on conflicting UI.
-A shell reconnect recovers the existing recording state rather than starting one.
+session finalizes the MP4 before bounded teardown. A recorder without a first
+frame after 20 seconds is stopped; one still running 15 seconds after SIGINT is
+killed, its file is left in place and the log tail is reported. Recordings use
+XDG Videos under `Recordings`, H.264/AAC, with remembered
+system-audio/microphone/pointer choices in `recording.json`. Region selection
+uses Slurp; its pre-selection delay restarts and dismisses again when another
+surface opens. A shell reconnect recovers the existing recording state rather
+than starting one.
 
 `WebcamService` enumerates through V4L2; `WebcamControls` reflects supported types,
 ranges and writability. Mutations validate device identity/control support.

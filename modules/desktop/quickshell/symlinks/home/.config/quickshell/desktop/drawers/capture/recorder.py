@@ -2,13 +2,16 @@
 
 The service outlives QML reloads. Only it owns the recorder and its IPC socket;
 no process-name matching or signals to recordings started by another program.
-Clients send newline-JSON commands; every connected client receives the state
-after each command and whenever it changes. Without a recording or client the
-service exits after a short idle period and systemd starts it on demand again.
+Clients send newline-JSON commands. Each command gets one state line marked
+`reply`; unmarked lines report later changes. A slow reader is never dropped or
+sent part of a line: it receives the newest state once it catches up. Without a
+recording or client the service exits after a short idle period and systemd
+starts it on demand again.
 """
 
 import datetime
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -22,6 +25,11 @@ import time
 
 DEFAULTS = {'systemAudio': True, 'microphone': False, 'pointer': True}
 IDLE_EXIT = 30
+# Seconds until the first captured frame, and from SIGINT until the file is saved.
+START_TIMEOUT = 20
+STOP_TIMEOUT = 15
+# Unsent replies beyond this mean a client sends commands without reading.
+OUTPUT_LIMIT = 1 << 16
 
 
 def config_dir():
@@ -149,7 +157,7 @@ class Recorder:
         self.error = ''
         self.elapsed = 0.0
         self.since = 0.0
-        self.started = 0.0
+        self.deadline = math.inf
         self.pictures = str(location('pictures') / 'Screenshots')
         self.videos = str(location('videos') / 'Recordings')
 
@@ -196,7 +204,7 @@ class Recorder:
                 raise
             self.path = str(path)
             self.phase = 'starting'
-            self.started = time.monotonic()
+            self.deadline = time.monotonic() + START_TIMEOUT
             self.elapsed = 0
             self.error = ''
         elif operation == 'stop':
@@ -206,6 +214,7 @@ class Recorder:
                 self.elapsed = self.snapshot()['elapsed']
                 self.process.send_signal(signal.SIGINT)
                 self.phase = 'stopping'
+                self.deadline = time.monotonic() + STOP_TIMEOUT
         elif operation == 'pause':
             if self.phase not in ('recording', 'paused'):
                 raise ValueError('The recorder is not ready to pause.')
@@ -271,22 +280,43 @@ class Recorder:
             if timestamp.exists() and timestamp.stat().st_size:
                 self.phase = 'recording'
                 self.since = time.monotonic()
+                self.deadline = math.inf
                 timestamp.unlink()
-            elif time.monotonic() - self.started > 20:
+            elif time.monotonic() > self.deadline:
+                self.note('The recorder took too long to start.')
                 self.request({'op': 'stop'})
-                self.error = 'The recorder took too long to start. See ' + str(
-                    self.log_path
-                )
+        elif self.phase == 'stopping' and time.monotonic() > self.deadline:
+            # A recorder that ignores SIGINT would otherwise keep the service
+            # busy forever. Its unfinished file is left in place.
+            self.note(
+                f'The recorder did not stop within {STOP_TIMEOUT} seconds and was killed.'
+            )
+            self.process.kill()
+            self.deadline = math.inf
+
+    def note(self, message):
+        """Add a service diagnosis to the log that failure messages quote."""
+        self.log.write(f'\n{message}\n')
+        self.log.flush()
 
     def close(self):
         if self.process:
-            self.process.send_signal(signal.SIGINT)
+            self.request({'op': 'stop'})
             try:
-                self.process.wait(timeout=15)
+                self.process.wait(timeout=STOP_TIMEOUT)
             except subprocess.TimeoutExpired:
                 self.process.kill()
                 self.process.wait()
             self.tick()
+
+
+class Client:
+    """A control connection: unparsed commands, unsent lines and the last state queued."""
+
+    def __init__(self, state):
+        self.input = bytearray()
+        self.output = bytearray()
+        self.state = state
 
 
 def listener(endpoint):
@@ -333,11 +363,28 @@ def serve():
         clients.pop(connection)
         connection.close()
 
-    def send(connection, state):
+    def flush(connection):
+        client = clients[connection]
         try:
-            connection.sendall(state.encode())
+            del client.output[: connection.send(client.output)]
+        except BlockingIOError:
+            pass
         except OSError:
             disconnect(connection)
+            return
+        if len(client.output) > OUTPUT_LIMIT:
+            disconnect(connection)
+            return
+        events = selectors.EVENT_READ | (selectors.EVENT_WRITE if client.output else 0)
+        if selector.get_key(connection).events != events:
+            selector.modify(connection, events)
+
+    def queue(connection, snapshot, reply=False):
+        client = clients[connection]
+        client.state = json.dumps(snapshot)
+        line = json.dumps(dict(snapshot, reply=True)) if reply else client.state
+        client.output += line.encode() + b'\n'
+        flush(connection)
 
     def receive(connection):
         try:
@@ -346,7 +393,7 @@ def serve():
             return
         except OSError:
             data = b''
-        buffer = clients[connection]
+        buffer = clients[connection].input
         buffer.extend(data)
         while b'\n' in buffer:
             line, _, rest = buffer.partition(b'\n')
@@ -363,13 +410,12 @@ def serve():
                 subprocess.SubprocessError,
             ) as error:
                 recorder.error = str(error)
-            send(connection, json.dumps(recorder.snapshot()) + '\n')
+            queue(connection, recorder.snapshot(), reply=True)
             if connection not in clients:
                 return
         if not data or len(buffer) > 8192:
             disconnect(connection)
 
-    previous = None
     idle_since = time.monotonic()
     try:
         while not stopping:
@@ -381,7 +427,7 @@ def serve():
             timeout = (
                 0.25 if recorder.process else None if owned or clients else IDLE_EXIT
             )
-            for key, _ in selector.select(timeout):
+            for key, events in selector.select(timeout):
                 connection = key.fileobj
                 if connection is wake:
                     wake.recv(1024)
@@ -391,16 +437,20 @@ def serve():
                     except BlockingIOError:
                         continue
                     client.setblocking(False)
-                    clients[client] = bytearray()
+                    clients[client] = Client(json.dumps(recorder.snapshot()))
                     selector.register(client, selectors.EVENT_READ)
-                elif connection in clients:
-                    receive(connection)
+                else:
+                    if events & selectors.EVENT_WRITE and connection in clients:
+                        flush(connection)
+                    if events & selectors.EVENT_READ and connection in clients:
+                        receive(connection)
             recorder.tick()
-            state = json.dumps(recorder.snapshot()) + '\n'
-            if state != previous:
-                previous = state
-                for connection in list(clients):
-                    send(connection, state)
+            snapshot = recorder.snapshot()
+            state = json.dumps(snapshot)
+            for connection, client in list(clients.items()):
+                # A backlogged reader gets only the newest state once it drains.
+                if client.state != state and not client.output:
+                    queue(connection, snapshot)
     finally:
         recorder.close()
         for connection in list(clients):

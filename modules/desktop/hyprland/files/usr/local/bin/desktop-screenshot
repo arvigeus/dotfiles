@@ -98,8 +98,9 @@ window_boxes() {
 }
 
 # Select before capturing: cancelling leaves no image and the clipboard unchanged.
+# Slurp reads boxes from any non-terminal stdin before it shows its overlay.
 case $mode in
-    region) geometry=$(slurp -d) || exit 0 ;;
+    region) geometry=$(slurp -d < /dev/null) || exit 0 ;;
     window) geometry=$(hyprctl -j clients | window_boxes visible | slurp -r) || exit 0 ;;
     active-window)
         geometry=$(hyprctl -j activewindow | window_boxes active)
@@ -113,12 +114,14 @@ esac
 if [[ $mode == output ]]; then target=(-o "$output"); else target=(-g "$geometry"); fi
 
 if ! $save; then
-    # Buffer in memory so a failed capture cannot replace the clipboard. No
-    # temporary image is written and no notification is sent.
+    # Buffer in memory so a failed or truncated capture cannot replace the
+    # clipboard. No temporary image is written and no notification is sent.
     grim "${target[@]}" - | python3 -c '
 import subprocess, sys
 image = sys.stdin.buffer.read()
-if not image.startswith(b"\x89PNG\r\n\x1a\n"):
+if not image.startswith(b"\x89PNG\r\n\x1a\n") or not image.endswith(
+    b"\0\0\0\0IEND\xae\x42\x60\x82"
+):
     raise SystemExit(1)
 subprocess.run(["wl-copy", "--type", "image/png"], input=image, check=True)
 if sys.argv[1] == "true":
@@ -155,7 +158,9 @@ case $editor in
         ;;
 esac
 if $report; then
-    "${editor_args[@]}" > /dev/null 2>&1 &
+    # The reporting caller waits for this script to exit, and an editor left in
+    # its service would be killed when that service restarts.
+    uwsm app -t service -- "${editor_args[@]}" > /dev/null || fail "Could not open $editor."
 else
     exec "${editor_args[@]}"
 fi

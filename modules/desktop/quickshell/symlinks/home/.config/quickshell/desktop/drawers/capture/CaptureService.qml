@@ -141,13 +141,12 @@ Singleton {
         grabber.running = true;
     }
     function record(source = output): bool {
-        if (recordingPending || awaiting || !recorder.available)
-            return false;
+        // Stopping never waits for an earlier reply; the service orders commands.
         if (sessionActive)
             return send({
                 op: "stop"
             });
-        if (!source)
+        if (recordingPending || awaiting || !recorder.available || !source)
             return false;
         error = "";
         recordingSource = source;
@@ -218,16 +217,20 @@ Singleton {
             });
     }
     function updateRecording(line: string): void {
-        awaiting = Math.max(0, awaiting - 1);
+        let state = null;
         try {
-            const state = JSON.parse(line);
-            if (state.phase)
-                recorder = state;
-            if (state.error)
-                error = state.error;
+            state = JSON.parse(line);
         } catch (_) {
             error = qsTr("Could not read recording status.");
         }
+        // Each command has one reply; untagged lines report later changes. An
+        // unreadable line must not leave a command outstanding.
+        if (!state || state.reply)
+            awaiting = Math.max(0, awaiting - 1);
+        if (state?.phase)
+            recorder = state;
+        if (state?.error)
+            error = state.error;
         Qt.callLater(release);
     }
     function disconnected(): void {
