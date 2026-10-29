@@ -179,9 +179,10 @@ Hypridle calls `desktop-idle blank` to turn off only unprotected monitors. Lock
 and suspend listeners use `desktop-idle allow-lock` and `allow-sleep` as their
 conditions, retrying every ten seconds. The wrapper invokes the Quickshell display
 helper, which owns the session-local Keep awake leases and independent temporary
-sleep/locking pauses; it exits 0 to allow, 1 to defer and any other status on
-failure. Helper failures allow locking but block automatic suspend. See
-[the display architecture](../quickshell/ARCHITECTURE.md#night-light-and-keep-awake)
+sleep/locking pauses; it exits 0 to allow, 1 to defer and 2 on failure. Python
+also exits 1 when the helper crashes, so the wrapper trusts status 1 only with
+the helper's printed `defer`. Helper failures allow locking but block automatic
+suspend. See [the display architecture](../quickshell/ARCHITECTURE.md#night-light-and-keep-awake)
 for liveness and hardware matching. Existing application inhibitors are respected.
 Manual lock and before-sleep commands remain unconditional. Idle and system resume
 turn every display on with the DPMS dispatcher, then emit

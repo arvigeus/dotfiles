@@ -458,6 +458,10 @@ only when unique by Hyprland's prefix matching, otherwise connectors. Both write
 use atomic replacement; persistence failure restores the source/cache and live
 layout. The app and shell helpers serialize through a session-local flock,
 including snapshots, so independent instances cannot interleave writes.
+Hyprland's watch treats the replaced file's `IN_IGNORED` event as a change, so
+every changed `displays.lua` reloads the whole configuration. It re-applies the
+saved rules; in Powersave that briefly restores the panel's configured refresh
+until `configreloaded` reapplies the cap.
 
 An unseen set starts enabled, independent and side by side without creating a
 saved profile. Startup/hotplug select saved preferences; native rules handle
@@ -492,9 +496,12 @@ are ignored. Disconnect/replacement prunes leases. Session sleep/locking pauses
 use separate leases. All end on shell exit/reload.
 
 Hypridle calls `desktop-idle`: blank only unprotected displays, defer automatic
-locking/suspend for active leases, and respect application inhibitors. Helper
-exit codes are 0 allow, 1 defer, 2 error. Locking proceeds on helper failure;
-suspend stays blocked. Manual lock and before-sleep locking are unconditional.
+locking/suspend for active leases, and respect application inhibitors. Only a
+live Keep awake lease makes these checks read the outputs; otherwise blanking is
+one global DPMS dispatch. The helper exits 0 to allow and 2 on error, and defers
+by exiting 1 and printing `defer`, since a Python crash also exits 1. Locking
+proceeds on any other result; suspend stays blocked. Manual lock and
+before-sleep locking are unconditional.
 
 ## Keyboard
 

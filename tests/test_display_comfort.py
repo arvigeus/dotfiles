@@ -1,6 +1,8 @@
 """Monitor-scoped idle policy and native night light; no host mutations."""
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -14,6 +16,7 @@ from unittest.mock import patch
 import support
 
 SOURCE = support.DESKTOP / 'drawers/displays/comfort.py'
+WRAPPER = support.REPO / 'modules/desktop/hyprland/files/usr/local/bin/desktop-idle'
 SPEC = importlib.util.spec_from_file_location('display_comfort', SOURCE)
 comfort = importlib.util.module_from_spec(SPEC)
 sys.path.insert(0, str(SOURCE.parent))
@@ -134,6 +137,8 @@ class ComfortTests(unittest.TestCase):
 
     def test_helper_errors_are_distinct_from_denial(self):
         # desktop-idle fails open on 2 (helper error); 1 always means "deny".
+        self.awake()
+        self.controller.action(dict(op='pause-locking', enabled=True))
         with patch.object(
             comfort.backend,
             'snapshot',
@@ -141,10 +146,43 @@ class ComfortTests(unittest.TestCase):
         ):
             for op in ('allow-lock', 'allow-sleep', 'blank'):
                 with self.subTest(op=op):
-                    self.assertEqual(comfort.cli(op), comfort.HELPER_ERROR)
-        self.controller.action(dict(op='pause-locking', enabled=True))
-        self.assertEqual(comfort.cli('allow-lock'), 1)
-        self.assertEqual(comfort.cli('allow-sleep'), 0)
+                    expected = 1 if op == 'allow-lock' else comfort.HELPER_ERROR
+                    # The pause decides before the lease needs the compositor.
+                    self.assertEqual(comfort.cli(op), expected)
+
+    def test_without_leases_idle_checks_skip_the_output_inventory(self):
+        # A crashed helper's lease files remain but no longer count.
+        self.awake()
+        os.close(self.controller.lease.fd)
+        self.controller.lease.fd = None
+        with (
+            patch.object(
+                comfort.backend,
+                'snapshot',
+                side_effect=RuntimeError('Hyprland is unavailable.'),
+            ) as snapshot,
+            patch.object(comfort.backend, 'command') as command,
+        ):
+            for op in ('allow-lock', 'allow-sleep', 'blank'):
+                with self.subTest(op=op):
+                    self.assertEqual(comfort.cli(op), 0)
+        snapshot.assert_not_called()
+        command.assert_called_once_with('dispatch', 'hl.dsp.dpms({action="off"})')
+
+    def test_only_deferrals_print_their_confirmation(self):
+        self.controller.action(dict(op='pause-sleep', enabled=True))
+        for op, status, output in (
+            ('allow-sleep', 1, 'defer\n'),
+            ('allow-lock', 0, ''),
+            ('unknown', comfort.HELPER_ERROR, ''),
+        ):
+            with (
+                self.subTest(op=op),
+                contextlib.redirect_stdout(io.StringIO()) as stdout,
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(comfort.cli(op), status)
+            self.assertEqual(stdout.getvalue(), output)
 
     def test_status_reads_do_not_clear_action_errors(self):
         with self.assertRaises(ValueError):
@@ -162,19 +200,6 @@ class ComfortTests(unittest.TestCase):
             'hl.dsp.dpms({action="on",monitor='
             + comfort.backend.lua_string('DP-"quoted')
             + '})',
-        )
-
-    def test_idle_wake_notifies_the_existing_display_policy_after_dpms(self):
-        with patch.object(comfort.backend, 'command') as command:
-            self.assertEqual(comfort.idle_action('wake'), 0)
-        self.assertEqual(
-            command.call_args_list,
-            [
-                unittest.mock.call('dispatch', 'hl.dsp.dpms({action="on"})'),
-                unittest.mock.call(
-                    'dispatch', 'hl.dsp.event("desktop-displays-changed")'
-                ),
-            ],
         )
 
     def test_night_toggle_uses_packaged_service_and_reads_external_state(self):
@@ -220,7 +245,7 @@ class ComfortTests(unittest.TestCase):
         self.assertEqual(comfort.idle_action('allow-lock'), 0)
         with patch.object(comfort.backend, 'command') as command:
             self.assertEqual(comfort.idle_action('blank'), 0)
-        self.assertEqual(command.call_count, 2)
+        command.assert_called_once_with('dispatch', 'hl.dsp.dpms({action="off"})')
         self.controller.action(dict(op='pause-locking', enabled=True))
         self.assertEqual(comfort.idle_action('allow-lock'), 1)
         self.controller.action(dict(op='pause-sleep', enabled=False))
@@ -289,6 +314,80 @@ c.main()
         self.assertFalse(comfort.paused('sleep'))
         self.assertFalse(comfort.paused('locking'))
         self.assertEqual(list(comfort.session_directory().iterdir()), [])
+
+
+class IdleWrapperTests(unittest.TestCase):
+    """The hypridle hook runs a private copy of the helper and a recording hyprctl."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        self.helper = root / 'config/quickshell/desktop/drawers/displays'
+        shutil.copytree(
+            SOURCE.parent, self.helper, ignore=shutil.ignore_patterns('__pycache__')
+        )
+        self.runtime = root / 'runtime'
+        self.runtime.mkdir(mode=0o700)
+        tools = root / 'bin'
+        tools.mkdir()
+        # Shadows the real hyprctl, so nothing reaches the session compositor.
+        (tools / 'hyprctl').write_text(
+            '#!/bin/sh\nprintf "%s\\n" "$*" >> "$HYPRCTL_LOG"\necho ok\n'
+        )
+        (tools / 'hyprctl').chmod(0o755)
+        self.log = root / 'hyprctl.log'
+        self.env = dict(
+            os.environ,
+            PATH=f'{tools}{os.pathsep}{os.environ["PATH"]}',
+            XDG_CONFIG_HOME=str(root / 'config'),
+            XDG_RUNTIME_DIR=str(self.runtime),
+            HYPRLAND_INSTANCE_SIGNATURE='test',
+            HYPRCTL_LOG=str(self.log),
+            PYTHONDONTWRITEBYTECODE='1',
+        )
+
+    def idle(self, op):
+        return subprocess.run(
+            [WRAPPER, op], env=self.env, capture_output=True, text=True, timeout=10
+        ).returncode
+
+    def test_real_helper_defers_for_pauses_and_fails_open_when_broken(self):
+        self.assertEqual((self.idle('allow-lock'), self.idle('allow-sleep')), (0, 0))
+        self.assertFalse(self.log.exists(), 'checked outputs without a lease')
+        self.assertEqual(self.idle('blank'), 0)
+        self.assertEqual(self.log.read_text(), 'dispatch hl.dsp.dpms({action="off"})\n')
+        pause = comfort.Lease('desktop-session-pauses')
+        with patch.dict(
+            os.environ,
+            XDG_RUNTIME_DIR=str(self.runtime),
+            HYPRLAND_INSTANCE_SIGNATURE='test',
+        ):
+            pause.publish(dict(locking=True))
+        self.addCleanup(pause.close)
+        self.assertEqual((self.idle('allow-lock'), self.idle('allow-sleep')), (1, 0))
+        # An import failure also exits 1; it must not hold locking off.
+        with (self.helper / 'backend.py').open('a') as stream:
+            stream.write('\ndef broken(:\n')
+        self.assertEqual((self.idle('allow-lock'), self.idle('allow-sleep')), (0, 2))
+
+    def test_only_a_confirmed_deferral_holds_locking_off(self):
+        cases = {
+            'print("defer"); raise SystemExit(1)': (1, 1),
+            'raise SystemExit(0)': (0, 0),
+            'raise RuntimeError("crashed")': (0, 2),
+            'raise SystemExit(2)': (0, 2),
+            'print("defer"); raise SystemExit(3)': (0, 2),
+            'def broken(:': (0, 2),
+        }
+        for source, expected in cases.items():
+            (self.helper / 'comfort.py').write_text(source + '\n')
+            with self.subTest(source=source):
+                self.assertEqual(
+                    (self.idle('allow-lock'), self.idle('allow-sleep')), expected
+                )
+        (self.helper / 'comfort.py').unlink()
+        self.assertEqual((self.idle('allow-lock'), self.idle('allow-sleep')), (0, 2))
 
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')

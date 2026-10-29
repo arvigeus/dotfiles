@@ -1,7 +1,8 @@
 """Native night light toggle and monitor-scoped Keep awake leases.
 
 As a CLI for hypridle (via desktop-idle) it exits 0 to allow, 1 to deny and
-2 when the helper itself failed, so callers can choose how to fail.
+2 when the helper itself failed, so callers can choose how to fail. A denial
+also prints `defer`: Python exits 1 on a crash too, before this code can run.
 """
 
 import fcntl
@@ -15,6 +16,7 @@ import tempfile
 
 import backend
 
+DEFER = 1
 HELPER_ERROR = 2
 
 
@@ -111,20 +113,20 @@ def paused(kind):
 
 
 def idle_action(op):
-    if op == 'wake':
-        backend.command('dispatch', 'hl.dsp.dpms({action="on"})')
-        backend.command('dispatch', 'hl.dsp.event("desktop-displays-changed")')
+    if op not in ('blank', 'allow-lock', 'allow-sleep'):
+        raise ValueError('Unknown idle action.')
+    if op != 'blank' and paused('locking' if op == 'allow-lock' else 'sleep'):
+        return DEFER
+    # Only a live Keep awake lease needs the output inventory. Without one, a
+    # failed compositor query must not block suspend.
+    if not any(live_leases()):
+        if op == 'blank':
+            backend.command('dispatch', 'hl.dsp.dpms({action="off"})')
         return 0
-    if op in ('allow-lock', 'allow-sleep') and paused(
-        'locking' if op == 'allow-lock' else 'sleep'
-    ):
-        return 1
     displays = backend.snapshot()['displays']
     awake = protected(displays)
-    if op in ('allow-lock', 'allow-sleep'):
-        return 1 if awake else 0
     if op != 'blank':
-        raise ValueError('Unknown idle action.')
+        return DEFER if awake else 0
     for row in displays:
         if row['enabled'] and row['name'] not in awake:
             backend.command(
@@ -283,10 +285,13 @@ def main():
 
 def cli(op):
     try:
-        return idle_action(op)
+        result = idle_action(op)
     except Exception as error:
         print(error, file=sys.stderr)
         return HELPER_ERROR
+    if result == DEFER:
+        print('defer')
+    return result
 
 
 if __name__ == '__main__':
