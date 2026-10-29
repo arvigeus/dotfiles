@@ -204,8 +204,14 @@ def copy_theme_ui(root):
         )
 
 
-def run_qml(test, body, setup=None):
-    """Run body as shell.qml over a copy of the shell with private config/runtime dirs."""
+def run_qml(test, body, setup=None, *, isolate_bus=False):
+    """Run body as shell.qml over a copy of the shell with private config/runtime dirs.
+
+    isolate_bus runs it on private_bus(), for pages that start session services
+    such as the bar's tray.
+    """
+    if isolate_bus and not shutil.which('dbus-run-session'):
+        test.skipTest('Private D-Bus is required')
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         copy_theme_ui(root)
@@ -241,8 +247,11 @@ def run_qml(test, body, setup=None):
             # Qt Multimedia's FFmpeg hardware probe opens $DISPLAY on the GUI thread.
             env.pop('WAYLAND_DISPLAY', None)
             env.pop('DISPLAY', None)
+        command = [QS, '--no-color', '-p', str(root / 'shell.qml')]
+        if isolate_bus:
+            command = [*private_bus(root), *command]
         result = subprocess.run(
-            [QS, '--no-color', '-p', str(root / 'shell.qml')],
+            command,
             env=env,
             check=False,
             capture_output=True,

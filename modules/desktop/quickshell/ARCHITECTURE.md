@@ -505,13 +505,20 @@ before-sleep locking are unconditional.
 
 ## Keyboard
 
-`InputLanguage` talks to the `input-method` controller; that module owns layouts,
-Fcitx and persistence. Native keyboard events update the bar. The drawer only
-selects languages, a secondary language and reference text; typing clears on close.
+`InputLanguage` runs the controller command that `input-method` declares in
+`$XDG_CONFIG_HOME/quickshell/input-language.json`; that module owns layouts, Fcitx
+and persistence, and the shell keeps no other language state. Requests run one at
+a time; a failure shows the controller's first stderr line and keeps the last
+confirmed state. Native keyboard events update the bar. Fcitx mode changes emit
+none, so status is read every second while Vietnamese is the secondary language.
+The drawer only selects languages, a secondary language and reference text;
+typing clears on close.
 
 Lighting providers live in `$XDG_CONFIG_HOME/devices/keyboard/backends/` and are
 installed by hardware modules. `BacklightService` validates provider/device
-identity and serializes writes. Brightness zero means off, not disabled input.
+identity and serializes writes. A queued brightness level is shown at once, and
+snapshots returned while later changes are queued are discarded so they cannot
+move the slider back. Brightness zero means off, not disabled input.
 Colors/effects/modes appear only when supported. The Logitech backend owns its
 manual/automatic mode transitions and rollback; see the peripheral architecture.
 
@@ -519,9 +526,9 @@ The Keyboard drawer's header info button sits beside input-method settings and
 opens the reference with Shortcuts first, followed by Telex and Phonetic maps.
 The shortcut tab reads `hyprctl -j binds` when opened, again every five seconds
 while visible, and after Hyprland config reloads. The helper excludes mouse
-binds, formats modifier masks and submaps, and uses each bind description or its
-dispatcher and arguments as a fallback. Lua callbacks without descriptions show
-as custom actions. This lists compositor binds; portal-assigned Quickshell global
+button and wheel binds, formats modifier masks and submaps, and uses each bind
+description as its label. Without one, a Lua dispatcher shows its name (its
+reported argument is an opaque handle) and a Lua callback shows as a custom action. This lists compositor binds; portal-assigned Quickshell global
 shortcuts are managed separately.
 
 ## Disks and system cleanup

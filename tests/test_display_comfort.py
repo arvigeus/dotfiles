@@ -398,7 +398,8 @@ class ComfortQmlTests(unittest.TestCase):
             if setup:
                 setup(root)
 
-        return support.run_qml(self, body, prepare)
+        # The bar's tray must never join the user's session bus.
+        return support.run_qml(self, body, prepare, isolate_bus=True)
 
     def test_simple_toggle_cog_checkmark_and_per_screen_indicator(self):
         rows = json.dumps([support.display(), support.display('DP-1')])

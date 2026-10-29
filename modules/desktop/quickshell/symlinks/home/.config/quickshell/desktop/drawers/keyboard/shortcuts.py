@@ -2,6 +2,7 @@
 """Read and format the active Hyprland keyboard bindings for the drawer."""
 
 import json
+import re
 import subprocess
 import sys
 
@@ -35,6 +36,10 @@ KEY_NAMES = {
     'backspace': 'Backspace',
     'delete': 'Delete',
     'insert': 'Insert',
+    'print': 'Print',
+    'period': '.',
+    'bracketleft': '[',
+    'bracketright': ']',
 }
 
 
@@ -74,13 +79,16 @@ def action_label(bind):
     if description:
         return description
     dispatcher = str(bind.get('dispatcher') or 'Binding').strip()
-    if dispatcher == '__lua':
+    if dispatcher.startswith('function:'):
         return 'Custom action'
+    # Lua configs report HL.Dispatcher(name) with an opaque handle as the argument.
+    native = re.fullmatch(r'HL\.Dispatcher\((\w+)\)', dispatcher)
+    if native and native[1] == 'exec_cmd':
+        return 'Run command'
+    if native:
+        return native[1].replace('_', ' ').capitalize()
     argument = str(bind.get('arg') or '').strip()
-    if dispatcher == 'exec':
-        label = 'Run: ' + argument if argument else 'Run command'
-    else:
-        label = dispatcher + (': ' + argument if argument else '')
+    label = dispatcher + (': ' + argument if argument else '')
     return label if len(label) <= 180 else label[:177].rstrip() + '…'
 
 
@@ -100,7 +108,8 @@ def bindings():
     for bind in parsed:
         if not isinstance(bind, dict) or bind.get('mouse'):
             continue
-        if str(bind.get('key') or '').lower().startswith('mouse:'):
+        # Buttons are mouse:N and wheel steps mouse_up/down/left/right.
+        if str(bind.get('key') or '').lower().startswith('mouse'):
             continue
         key = key_label(bind)
         if not key:

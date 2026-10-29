@@ -1,6 +1,5 @@
 """Keyboard LED targeting, native levels, and serialized production QML."""
 
-import importlib.util
 import sys
 from types import SimpleNamespace
 from pathlib import Path
@@ -19,20 +18,9 @@ ADAPTERS = {
     'logitech': REPO
     / 'modules/hardware/peripherals/logitech/symlinks/home/.config/devices/keyboard/backends/logitech.py',
 }
-SPEC = importlib.util.spec_from_file_location('keyboard_backlight', SOURCE)
-backlight = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(backlight)
-
-
-def load_adapter(name):
-    spec = importlib.util.spec_from_file_location(name, ADAPTERS[name])
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-lighting = load_adapter('asus')
-logitech = load_adapter('logitech')
+backlight = support.load('keyboard_backlight', SOURCE)
+lighting = support.load('asus', ADAPTERS['asus'])
+logitech = support.load('logitech', ADAPTERS['logitech'])
 
 
 class AuraTests(unittest.TestCase):
@@ -393,7 +381,7 @@ for line in sys.stdin:
  print(json.dumps(dict(ok=True,values=[s],error='')),flush=True)
 """)
 
-        fixtures.KeyboardQmlTests.run_qml(
+        fixtures.run_qml(
             self,
             """import QtQuick
 import Quickshell
@@ -421,8 +409,101 @@ ShellRoot {
             setup,
         )
 
+    def test_queued_brightness_is_never_replaced_by_an_older_snapshot(self):
+        def setup(root):
+            (root / 'drawers/keyboard/backlight.py').write_text("""import json,sys,time
+s=dict(key='kb::kbd_backlight',identity='t',maximum=10,value=1,available=True,reason='',history='')
+for line in sys.stdin:
+ r=json.loads(line);time.sleep(.3)
+ if r['op']=='set':s['value']=r['value'];s['history']+=str(r['value'])+','
+ print(json.dumps(dict(ok=True,values=[s],error='')),flush=True)
+""")
+
+        fixtures.run_qml(
+            self,
+            """import QtQuick
+import QtTest
+import Quickshell
+import "drawers"
+import "drawers/keyboard"
+ShellRoot {
+ TestCase{id:input;when:false;parent:window.contentItem}
+ QtObject{id:language;property string language:"en";property string secondary:"bg";property bool available:true;property bool loaded:true;property bool selecting:false;property string selectingLanguage:"";property string error:"";signal selectionFinished(string code,bool success);function refresh(){}}
+ FloatingWindow{id:window;visible:true;implicitWidth:480;implicitHeight:900;KeyboardDrawer{id:drawer;anchors.fill:parent;active:true;service:language}}
+ function find(item,name){if(item.objectName===name)return item;for(let child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ property int stage:0
+ property int expected:0
+ property var seen:[]
+ Timer{interval:40;repeat:true;running:true;onTriggered:{try{
+  const slider=find(drawer,"keyboardBacklightSlider:kb::kbd_backlight");
+  if(expected)seen.push(slider.value);
+  if(stage===0&&slider&&BacklightService.loaded&&!BacklightService.busy){
+   // Arrow keys while a read is in flight: the read predates the change.
+   BacklightService.refresh();slider.forceActiveFocus();
+   for(let i=0;i<3;i++)input.keyClick(Qt.Key_Right);
+   expected=4;seen=[slider.value];stage++;
+  }else if(stage===1&&!BacklightService.busy){
+   if(seen.some(value=>value!==4)||BacklightService.values[0].history!=="4,")throw new Error("keyboard steps were undone: "+seen+" "+BacklightService.values[0].history);
+   // A drag finishes before the slow device confirms its first level.
+   input.mousePress(slider,slider.leftPadding+2,slider.height/2);
+   input.mouseMove(slider,slider.leftPadding+slider.availableWidth*0.8,slider.height/2);
+   input.mouseRelease(slider,slider.leftPadding+slider.availableWidth*0.8,slider.height/2);
+   expected=8;seen=[slider.value];stage++;
+  }else if(stage===2&&!BacklightService.busy){
+   if(seen.some(value=>value!==8)||BacklightService.values[0].value!==8)throw new Error("released slider jumped: "+seen);
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+ Timer{interval:8000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
+}
+""",
+            setup,
+        )
+
+    def test_helper_stop_reports_status_and_lost_changes_separately(self):
+        def setup(root):
+            # The first status read and the first write each kill the helper.
+            (root / 'drawers/keyboard/backlight.py').write_text("""import json,os,sys
+from pathlib import Path
+here=Path(__file__).parent
+s=dict(key='kb::kbd_backlight',identity='t',maximum=3,value=1,available=True,reason='')
+for line in sys.stdin:
+ r=json.loads(line);marker=here/('stopped-'+r['op'])
+ if not marker.exists():marker.touch();os._exit(3)
+ if r['op']=='set':s['value']=r['value']
+ print(json.dumps(dict(ok=True,values=[s],error='')),flush=True)
+""")
+
+        fixtures.run_qml(
+            self,
+            """import QtQuick
+import Quickshell
+import "drawers/keyboard"
+ShellRoot {
+ QtObject{id:owner}
+ property int stage:0
+ Timer{interval:80;repeat:true;running:true;onTriggered:{try{
+  if(stage===0){BacklightService.observe(owner,true);stage++;}
+  else if(stage===1&&!BacklightService.busy&&BacklightService.statusError){
+   if(BacklightService.actionError)throw new Error("a read was reported as a lost change");
+   stage++;
+  }else if(stage===2&&BacklightService.loaded&&!BacklightService.busy){
+   if(BacklightService.error)throw new Error("recovered read kept its error: "+BacklightService.error);
+   BacklightService.setBrightness(BacklightService.values[0],3);stage++;
+  }else if(stage===3&&!BacklightService.busy&&!BacklightService.refreshPending){
+   if(!BacklightService.actionError.includes("stopped"))throw new Error("lost change was not reported");
+   if(BacklightService.values[0].value!==1)throw new Error("unconfirmed level stayed visible after the hardware was read");
+   BacklightService.observe(owner,false);console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+ Timer{interval:6000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
+}
+""",
+            setup,
+        )
+
     def test_cards_filter_color_effect_and_logitech_mode_controls(self):
-        fixtures.KeyboardQmlTests.run_qml(
+        fixtures.run_qml(
             self,
             """import QtQuick
 import QtQuick.Controls

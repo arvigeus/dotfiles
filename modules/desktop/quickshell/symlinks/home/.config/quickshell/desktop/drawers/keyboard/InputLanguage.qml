@@ -17,6 +17,9 @@ Singleton {
     property bool requestActive: false
     property bool refreshPending: false
     property string selectionPending: ""
+    // The controller bounds each of its own steps; this only ends a hang.
+    property int requestTimeout: 90000
+    readonly property var controller: controllerCommand(controllerFile.text())
     readonly property bool busy: requestActive || selectionPending !== ""
     readonly property string selectingLanguage: selectionPending || (requestActive && worker.action === "select" ? worker.code : "")
     readonly property bool selecting: selectingLanguage !== ""
@@ -30,6 +33,17 @@ Singleton {
                 bg: "Български",
                 vi: "Tiếng Việt"
             })[code] || code;
+    }
+    function controllerCommand(text: string): var {
+        try {
+            const command = JSON.parse(text).command;
+            if (Array.isArray(command) && command.length && command.every(argument => typeof argument === "string" && argument !== ""))
+                return command;
+        } catch (_) {}
+        return null;
+    }
+    function validState(state): bool {
+        return ["en", "bg", "vi"].includes(state?.language) && ["bg", "vi"].includes(state.secondary) && typeof state.available === "boolean";
     }
     function refresh(): void {
         request("status", keyboard);
@@ -51,13 +65,32 @@ Singleton {
         worker.action = action;
         worker.code = code;
         worker.failure = "";
-        worker.received = false;
-        worker.result = null;
         if (action === "select")
             selectionError = "";
-        worker.command = ["python3", Quickshell.shellPath("drawers/keyboard/backend.py"), action, code];
         requestActive = true;
+        if (!controller) {
+            finish(qsTr("The input language controller is not installed."), null);
+            return;
+        }
+        worker.command = controller.concat(code ? [action, code] : [action]);
         worker.running = true;
+    }
+    function finish(failure: string, state): void {
+        if (!failure) {
+            language = state.language;
+            secondary = state.secondary;
+            available = state.available;
+            loaded = true;
+        }
+        requestActive = false;
+        if (worker.action === "select") {
+            selectionError = failure;
+            if (failure)
+                refreshPending = true;
+            selectionFinished(worker.code, !failure);
+        } else
+            statusError = failure;
+        Qt.callLater(root.next);
     }
     function next(): void {
         if (requestActive)
@@ -78,49 +111,50 @@ Singleton {
         } else if (name === "configreloaded")
             layoutChanged.restart();
     }
+    // hardware/keyboard/input-method declares its controller here.
+    FileView {
+        id: controllerFile
+        path: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/quickshell/input-language.json"
+        blockLoading: true
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+    }
     Process {
         id: worker
         property string action: "status"
         property string code: ""
         property string failure: ""
-        property bool received: false
-        property var result: null
         stdout: StdioCollector {
-            onStreamFinished: {
-                if (!text.trim())
-                    return;
-                try {
-                    const state = JSON.parse(text);
-                    if (!["en", "bg", "vi"].includes(state.language) || !["bg", "vi"].includes(state.secondary) || typeof state.available !== "boolean")
-                        throw new Error("Invalid state");
-                    worker.result = state;
-                    worker.received = true;
-                } catch (error) {
-                    worker.failure = qsTr("Could not read the input language.");
-                }
-            }
+            id: output
         }
         stderr: StdioCollector {
-            onStreamFinished: if (text.trim())
-                worker.failure = text.trim()
+            id: diagnostics
         }
-        onExited: (exitCode, exitStatus) => {
-            const failureText = failure || (exitCode || !received ? qsTr("Could not change or read the input language.") : "");
-            if (!failureText) {
-                root.language = result.language;
-                root.secondary = result.secondary;
-                root.available = result.available;
-                root.loaded = true;
-            }
-            if (action === "select") {
-                root.selectionError = failureText;
-                if (failureText)
-                    root.refreshPending = true;
-                root.selectionFinished(code, !failureText);
-            } else
-                root.statusError = failureText;
-            root.requestActive = false;
-            Qt.callLater(root.next);
+        onExited: exitCode => {
+            let state = null;
+            try {
+                state = JSON.parse(output.text);
+            } catch (_) {}
+            // The controller states the reason first; later lines are diagnostics.
+            const reason = diagnostics.text.trim().split("\n")[0];
+            if (failure)
+                root.finish(failure, null);
+            else if (exitCode)
+                root.finish(reason || qsTr("Could not change or read the input language."), null);
+            else
+                root.finish(root.validState(state) ? "" : qsTr("Could not read the input language."), state);
+        }
+        // A controller that fails to start emits no exited signal.
+        onRunningChanged: if (!running && root.requestActive)
+            root.finish(qsTr("Could not start the input language controller."), null)
+    }
+    Timer {
+        interval: root.requestTimeout
+        running: root.requestActive
+        onTriggered: {
+            worker.failure = qsTr("The input language controller did not respond.");
+            worker.running = false;
         }
     }
     Timer {

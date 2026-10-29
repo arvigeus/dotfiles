@@ -6,22 +6,25 @@ config_dir=${XDG_CONFIG_HOME:-$HOME/.config}
 notify=false
 rollback=false
 directory=
+reason=
 
 run() { timeout --foreground 10s "$@"; }
+# The first stderr line is the reason callers show; fail() states it itself.
 fail() {
-    printf '%s\n' "$*" >&2
+    reason=$*
+    printf '%s\n' "$reason" >&2
     return 1
 }
 on_error() {
-    local code=$? command=$BASH_COMMAND
+    local code=$? message=${reason:-"Input method failed: $BASH_COMMAND"}
     trap - ERR
+    [[ -n $reason ]] || printf '%s\n' "$message" >&2
     if [[ $rollback == true ]]; then
         rollback=false
         stop_input || true
     fi
-    printf 'Input method failed: %s\n' "$command" >&2
     if [[ $notify == true ]] && command -v notify-send > /dev/null; then
-        notify-send 'Input method' "Could not change input language. $command" || true
+        notify-send 'Input method' "Could not change input language. $message" || true
     fi
     exit "$code"
 }

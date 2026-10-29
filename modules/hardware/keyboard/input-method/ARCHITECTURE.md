@@ -13,4 +13,6 @@ started only on request.
 command for the integrated Quickshell UI. This is our UI's configuration, not a
 built-in Quickshell setting. The provider supports `status [keyboard]` and
 `select en|bg|vi`, returning `available`, `secondary`, `language`, and `running`
-as JSON. No separate shell checkout is needed for Hyprland keyboard defaults.
+as JSON. A failure exits non-zero with its reason as the first stderr line; the
+shell shows that line, and `--notify` sends it. No separate shell checkout is
+needed for Hyprland keyboard defaults.

@@ -2082,10 +2082,6 @@
                 "target": "home/.config/quickshell/desktop/drawers/keyboard/InputLanguage.qml"
             },
             {
-                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/keyboard/backend.py",
-                "target": "home/.config/quickshell/desktop/drawers/keyboard/backend.py"
-            },
-            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/keyboard/backlight.py",
                 "target": "home/.config/quickshell/desktop/drawers/keyboard/backlight.py"
             },

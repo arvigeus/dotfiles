@@ -40,6 +40,11 @@ Singleton {
         }, fields);
         change.coalesce = record.key + ":" + op + (op === "lighting" ? (fields.color ? ":color" : ":effect") : "");
         queue = queue.filter(item => item.coalesce !== change.coalesce).concat([change]);
+        // Show a requested level until the helper reports the result.
+        if (op === "set")
+            values = values.map(row => row.key === record.key ? Object.assign({}, row, {
+                    value: fields.value
+                }) : row);
         pump();
     }
     function setBrightness(record, value: real): void {
@@ -103,7 +108,8 @@ Singleton {
             };
         }
         const failure = result.error || (!result.ok ? qsTr("Could not read or change keyboard lighting.") : "");
-        if (!failure) {
+        // Queued changes return newer snapshots; this one would undo them.
+        if (!failure && !queue.length) {
             values = result.values;
             loaded = true;
         }
@@ -128,7 +134,13 @@ Singleton {
         stderr: StdioCollector {}
         onExited: {
             if (root.request) {
-                root.actionError = qsTr("Keyboard lighting helper stopped. Reopen the drawer to retry.");
+                const failure = qsTr("Keyboard lighting helper stopped.");
+                // Lost changes leave the hardware state unknown; read it once.
+                if (root.request.op !== "status" || root.queue.length) {
+                    root.actionError = failure;
+                    root.refreshPending = true;
+                } else
+                    root.statusError = failure;
                 root.request = null;
                 root.queue = [];
             }
