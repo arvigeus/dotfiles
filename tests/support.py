@@ -238,7 +238,9 @@ def run_qml(test, body, setup=None):
             env['XDG_RUNTIME_DIR'] = os.environ['XDG_RUNTIME_DIR']
         env.pop('HYPRLAND_INSTANCE_SIGNATURE', None)
         if env['QT_QPA_PLATFORM'] == 'offscreen':
+            # Qt Multimedia's FFmpeg hardware probe opens $DISPLAY on the GUI thread.
             env.pop('WAYLAND_DISPLAY', None)
+            env.pop('DISPLAY', None)
         result = subprocess.run(
             [QS, '--no-color', '-p', str(root / 'shell.qml')],
             env=env,

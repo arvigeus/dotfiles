@@ -3,6 +3,10 @@
 
 Reads one JSON request from stdin and prints one JSON response. Authorization is
 firewalld's polkit check; this client runs as the calling user.
+
+It calls firewalld's runtime zone interface over D-Bus, the same methods and
+polkit actions firewall-cmd uses, without starting firewall-cmd's Python client
+for every query. python-gobject is a firewalld dependency.
 """
 import ipaddress
 import json
@@ -10,7 +14,8 @@ import re
 import subprocess
 import sys
 
-FIREWALL_CMD = '/usr/bin/firewall-cmd'
+FIREWALLD = 'org.fedoraproject.FirewallD1'
+ZONE = FIREWALLD + '.zone'
 IP = '/usr/bin/ip'
 INTERFACE = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}')
 RULE = re.compile(r'rule family="ipv4" source address="([0-9./]+)" destination address="([0-9.]+)" '
@@ -21,22 +26,36 @@ class PortError(Exception):
     """A failure the drawer can show."""
 
 
-def firewall(*args, failure):
+def dbus(method, signature=None, *args):
+    """Call one runtime zone method and return its unpacked reply tuple."""
+    from gi.repository import Gio, GLib
+    bus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
+    # Never activate a stopped firewall; report it instead.
+    return bus.call_sync(FIREWALLD, '/org/fedoraproject/FirewallD1', ZONE, method,
+                         GLib.Variant(signature, args) if signature else None, None,
+                         Gio.DBusCallFlags.NO_AUTO_START, 15000, None).unpack()
+
+
+def firewall(method, *args, failure):
     try:
-        result = subprocess.run([FIREWALL_CMD, *args], capture_output=True, text=True, timeout=15, check=False)
-    except FileNotFoundError as error:
+        import gi
+        gi.require_version('Gio', '2.0')
+        from gi.repository import Gio, GLib
+    except (ImportError, ValueError) as error:
         raise PortError('firewalld is not installed.') from error
-    except subprocess.TimeoutExpired as error:
-        raise PortError('The firewall did not respond. Try again.') from error
-    except OSError as error:
-        raise PortError(failure) from error
-    if result.returncode == 252:
-        raise PortError('The firewall is not running.')
-    if result.returncode == 253:
-        raise PortError('Firewall access requires an active local administrator session.')
-    if result.returncode:
-        raise PortError(failure)
-    return result.stdout
+    try:
+        return dbus(method, *args)
+    except GLib.Error as error:
+        name = Gio.DBusError.get_remote_error(error) or ''
+        if name in ('org.freedesktop.DBus.Error.ServiceUnknown', 'org.freedesktop.DBus.Error.NameHasNoOwner'):
+            raise PortError('The firewall is not running.') from None
+        if 'NotAuthorizedException' in name:
+            raise PortError('Firewall access requires an active local administrator session.') from None
+        if error.matches(Gio.io_error_quark(), Gio.IOErrorEnum.TIMED_OUT) \
+                or name in ('org.freedesktop.DBus.Error.NoReply', 'org.freedesktop.DBus.Error.Timeout'):
+            raise PortError('The firewall did not respond. Try again.') from None
+        # firewalld messages can name zones and rules; keep the drawer's wording.
+        raise PortError(failure) from None
 
 
 def rule(network, port):
@@ -67,14 +86,8 @@ def networks():
 
 
 def active_zones():
-    zones, zone = {}, None
-    for line in firewall('--get-active-zones', failure='Could not read the firewall. Try again.').splitlines():
-        if line.strip() and not line[0].isspace():
-            zone = line.split()[0]
-            zones[zone] = []
-        elif zone and line.strip().startswith('interfaces:'):
-            zones[zone] = line.split(':', 1)[1].split()
-    return zones
+    (zones,) = firewall('getActiveZones', failure='Could not read the firewall. Try again.')
+    return {zone: list(value.get('interfaces', [])) for zone, value in zones.items()}
 
 
 def state():
@@ -85,8 +98,8 @@ def state():
         zones.update(dict.fromkeys(interfaces, zone))
         if not names:
             continue
-        listed = firewall(f'--zone={zone}', '--list-rich-rules', failure='Could not read the firewall. Try again.')
-        for line in listed.splitlines():
+        (listed,) = firewall('getRichRules', '(s)', zone, failure='Could not read the firewall. Try again.')
+        for line in listed:
             match = RULE.fullmatch(line.strip())
             if not match:
                 continue
@@ -123,13 +136,14 @@ def handle(request):
         if interface not in zones:
             raise PortError('This network has no firewall zone.')
         network = addresses[interface][0]
-        firewall(f'--zone={zones[interface]}', f'--add-rich-rule={rule(network, port)}',
+        # A zero timeout keeps the runtime rule until reload/reboot.
+        firewall('addRichRule', '(ssi)', zones[interface], rule(network, port), 0,
                  failure='Could not open the port. Try again.')
         rows.append({'interface': interface, 'port': port, 'address': str(network.ip), 'zone': zones[interface]})
     elif op == 'close':
         closing = {row['rule']: row['zone'] for row in rows if row['interface'] == interface and row['port'] == port}
         for text, zone in closing.items():
-            firewall(f'--zone={zone}', f'--remove-rich-rule={text}', failure='Could not close the port. Try again.')
+            firewall('removeRichRule', '(ss)', zone, text, failure='Could not close the port. Try again.')
         rows = [row for row in rows if row['rule'] not in closing]
     return public(rows)
 

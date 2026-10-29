@@ -559,6 +559,9 @@ int main(int argc, char** argv) {
                 DBUS_SESSION_BUS_ADDRESS='unix:path=' + str(root / 'no-session-bus'),
             )
             env.pop('QT_STYLE_OVERRIDE', None)
+            # The offscreen Qt 5 client still opened $DISPLAY and hung on a stalled
+            # Xwayland; keep the session's X server out of the test.
+            env.pop('DISPLAY', None)
             icons.generate(icons.load_accents(PALETTE), root / 'data/icons')
             for mode in ('dark', 'light'):
                 with patch.dict(os.environ, env):
@@ -661,6 +664,7 @@ ShellRoot {
             )
             env.pop('HYPRLAND_INSTANCE_SIGNATURE', None)
             env.pop('WAYLAND_DISPLAY', None)
+            env.pop('DISPLAY', None)
 
             def run():
                 result = subprocess.run(

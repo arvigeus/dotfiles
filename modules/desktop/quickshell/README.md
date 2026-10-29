@@ -91,8 +91,8 @@ exit/reload. Detailed readings do not wake sleeping GPUs.
 
 Wi-Fi, Ethernet, VPN and Cloudflare WARP controls share connection information and
 an internet speed test following the current route. The public IPv4 lookup runs
-only on opening information and caches for ten minutes. Enterprise/WEP networks
-use the connection editor.
+only on opening information and caches for ten minutes. A new network is saved
+only once it connects. Enterprise/WEP networks use the connection editor.
 
 **Devices on this network** discovers reachable IPv4 devices on the connected
 private network (up to 256 addresses). Hover for gateway/local-device labels and
@@ -101,7 +101,9 @@ response times when available. Sleeping or firewalled devices may not respond.
 Ports opens TCP/IPv4 access from the current local subnet. Openings disappear on
 firewalld reload/reboot. A changed address/subnet makes them inactive; they can
 apply again if that network returns. Closing a rule may leave established
-connections active. See [firewall access](../../system/security/firewall/README.md).
+connections active. Firewall changes made elsewhere while the drawer is open (for
+example `firewall-cmd --reload`) appear the next time you open it.
+See [firewall access](../../system/security/firewall/README.md).
 
 ## Displays and keyboard
 

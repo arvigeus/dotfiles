@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import Mock, patch
 from support import copy_theme_ui
@@ -338,6 +339,42 @@ class NetworkTests(unittest.TestCase):
         self.assertEqual(connection.get_setting_wireless_security().get_psk(), secret)
         command.assert_not_called()
 
+    def test_failed_join_removes_only_the_profile_it_created(self):
+        for failure in ('activation', 'request'):
+            with self.subTest(failure=failure):
+                n = self.network()
+                created = Mock()
+                n.client.get_connection_by_uuid = Mock(return_value=created)
+                message = 'Could not connect. Check the password and signal.'
+                if failure == 'activation':
+                    n.wait_active.side_effect = ValueError(message)
+                else:
+                    n.call.side_effect = [ValueError(message), True]
+                with self.assertRaisesRegex(ValueError, 'Could not connect'):
+                    n.join(
+                        {
+                            'ssid': 'cafe',
+                            'security': 'wpa-psk',
+                            'password': 'wrong-password',
+                            'interface': 'wlan0',
+                        }
+                    )
+                connection = n.call.call_args_list[0].args[2]
+                n.client.get_connection_by_uuid.assert_called_once_with(
+                    connection.get_uuid()
+                )
+                self.assertEqual(n.call.call_args.args, (created, 'delete_async'))
+
+    def test_successful_join_keeps_its_profile_and_cleanup_errors_stay_quiet(self):
+        n = self.network()
+        n.client.get_connection_by_uuid = Mock()
+        n.join({'ssid': 'cafe', 'security': 'open', 'interface': 'wlan0'})
+        n.client.get_connection_by_uuid.assert_not_called()
+        n.wait_active.side_effect = ValueError('Could not connect.')
+        n.call.side_effect = [Mock(), ValueError('denied')]
+        with self.assertRaisesRegex(ValueError, '^Could not connect.$'):
+            n.join({'ssid': 'cafe', 'security': 'open', 'interface': 'wlan0'})
+
     def test_validation_does_not_create_profiles(self):
         for request in [
             {'ssid': 'x' * 33},
@@ -422,6 +459,70 @@ class NetworkTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'Unknown'):
                     backend.handle({'op': op})
         network.assert_not_called()
+
+
+class HelperProcessTests(unittest.TestCase):
+    """Run backend.py as Quickshell does, with fake systemctl/warp-cli on PATH."""
+
+    def run_helper(self, root, request, **popen):
+        helper = subprocess.Popen(
+            [sys.executable, str(DESKTOP / 'drawers/network/backend.py')],
+            env={
+                **os.environ,
+                'PATH': f'{root}:{os.environ["PATH"]}',
+                'PYTHONDONTWRITEBYTECODE': '1',
+            },
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+            **popen,
+        )
+        helper.stdin.write(json.dumps(request) + '\n')
+        helper.stdin.flush()
+        return helper
+
+    def test_reply_is_one_json_line_from_the_request_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            helper = self.run_helper(directory, {'op': 'forget'})
+            output = helper.communicate(timeout=10)[0]
+        self.assertEqual(helper.returncode, 0)
+        self.assertEqual(
+            json.loads(output), {'ok': False, 'error': 'Unknown network operation.'}
+        )
+
+    def test_shell_reload_does_not_abandon_a_failed_warp_setup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / 'log'
+            (root / 'systemctl').write_text(
+                f'#!/bin/sh\necho "systemctl $*" >> {log}\n'
+            )
+            (root / 'warp-cli').write_text(
+                f'#!/bin/sh\necho "warp-cli $*" >> {log}\n'
+                'case "$*" in *" connect") sleep 0.5; exit 1;; esac\necho "{{}}"\n'
+            )
+            for name in ('systemctl', 'warp-cli'):
+                (root / name).chmod(0o755)
+            helper = self.run_helper(
+                root, {'op': 'warp', 'action': 'connect', 'mode': 'warp'}
+            )
+
+            def logged(text):
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    if log.exists() and text in log.read_text():
+                        return True
+                    time.sleep(0.05)
+                return False
+
+            self.assertTrue(logged('warp-cli --accept-tos connect'), 'no connect')
+            # Destroying a Quickshell Process (a shell reload) SIGKILLs the helper.
+            helper.kill()
+            helper.communicate(timeout=5)
+            self.assertTrue(
+                logged('systemctl --no-ask-password stop warp-svc.service'),
+                'failed WARP setup left its daemon running',
+            )
 
 
 @unittest.skipUnless(QS, 'Quickshell is required')
@@ -525,6 +626,18 @@ FloatingWindow {
   function cancel() { running = false; }
  }
  QtObject {
+  id: portsFake
+  property bool observing: false
+  property bool available: true
+  property bool busy: false
+  property string error: ""
+  property var ports: []
+  property int refreshes: 0
+  signal completed(string operation, bool success)
+  function refresh() { refreshes++; }
+  function run(op) { throw new Error("Unexpected port action " + op); }
+ }
+ QtObject {
   id: discovery
   property bool running: false
   property bool loaded: false
@@ -556,7 +669,7 @@ FloatingWindow {
   width: 448; height: 900 - y - 16; x: 16; y: header.y + header.height + 33
   asynchronous: true
   sourceComponent: Component {
-   WifiDrawer { service: fake; networking: fakeNetworking; speedTest: speed; deviceDiscovery: discovery; active: true; trafficRoot: Quickshell.env("WIFI_TRAFFIC_ROOT")
+   WifiDrawer { service: fake; networking: fakeNetworking; speedTest: speed; deviceDiscovery: discovery; portsService: portsFake; active: true; trafficRoot: Quickshell.env("WIFI_TRAFFIC_ROOT")
     Rectangle { anchors.fill: parent; color: UI.Theme.background; z: -1 }
    }
   }
@@ -819,6 +932,13 @@ FloatingWindow {
     check(find(drawer, "networkDevicesSection").summary === "1 device", "single device count is incorrect");
     drawer.active = true;
     check(!find(drawer, "networkDevicesSection").expanded, "reopening the drawer restored a pending expansion");
+    check(find(drawer, "networkDevicesSection").summary === "1 device" && portsFake.observing, "reopening discarded device results");
+    const refreshes = portsFake.refreshes;
+    fake.state = Object.assign({}, fake.state, {details: {wlan0: Object.assign({}, fake.state.details.wlan0, {ipv4: ["192.0.2.9/24"]})}});
+    check(find(drawer, "networkDevicesSection").summary === "" && !discovery.loaded, "address change kept devices from the old network");
+    check(portsFake.refreshes === refreshes + 1, "address change did not refresh port openings");
+    fake.state = Object.assign({}, fake.state, {profiles: []});
+    check(portsFake.refreshes === refreshes + 1, "unrelated network state refreshed port openings");
    } else {
     drawerLoader.active = false;
     check(!wifi.scannerEnabled, "destroyed drawer left scanning on");

@@ -10,6 +10,8 @@ ColumnLayout {
     property bool active: false
     property string interfaceName: ""
     property bool connected: false
+    // Changes whenever the interface or its addresses do; openings depend on both.
+    property string context: ""
     readonly property bool popupOpen: editor.visible
     readonly property var ports: service.ports.filter(port => port.interface === root.interfaceName)
     readonly property bool canEdit: active && connected && service.available && !service.busy
@@ -29,6 +31,8 @@ ColumnLayout {
     onInterfaceNameChanged: closePopup()
     onConnectedChanged: if (!connected)
         closePopup()
+    onContextChanged: if (active)
+        service.refresh()
     Component.onCompleted: service.observing = active
     Component.onDestruction: service.observing = false
     Connections {

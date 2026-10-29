@@ -3,6 +3,9 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
+// Each status read starts the helper and queries firewalld, so there is no
+// polling: the controls refresh on opening and on interface/address changes,
+// and every reply carries the complete current state.
 Singleton {
     id: root
     readonly property alias process: process
@@ -14,18 +17,22 @@ Singleton {
     property string operation: ""
     property var request: null
     property var queuedAction: null
+    property bool refreshQueued: false
     property bool received: false
     readonly property bool busy: queuedAction !== null || (operation !== "" && operation !== "status")
     signal completed(string operation, bool success)
     function run(op: string, values = {}): void {
         if (operation !== "" || process.running || request) {
-            if (op !== "status" && !busy)
+            if (op === "status")
+                refreshQueued = true;
+            else if (!busy)
                 queuedAction = {
                     op,
                     values
                 };
             return;
         }
+        refreshQueued = false;
         operation = op;
         request = Object.assign({
             op
@@ -54,6 +61,11 @@ Singleton {
             const action = queuedAction;
             queuedAction = null;
             run(action.op, action.values);
+        } else if (refreshQueued) {
+            // Opening the controls again refreshes anyway.
+            refreshQueued = false;
+            if (observing)
+                refresh();
         }
     }
     onObservingChanged: if (observing)
@@ -98,12 +110,5 @@ Singleton {
         }
         stderr: StdioCollector {}
         onExited: root.finish()
-    }
-    Timer {
-        id: refreshTimer
-        interval: 5000
-        repeat: true
-        running: root.observing
-        onTriggered: root.refresh()
     }
 }

@@ -27,7 +27,16 @@ _bytecode_disabled = sys.dont_write_bytecode
 sys.dont_write_bytecode = True
 loader.exec_module(ports)
 sys.dont_write_bytecode = _bytecode_disabled
+# setUp replaces ports.dbus; keep the real call for its own test.
+REAL_DBUS = ports.dbus
 QS = shutil.which('qs')
+try:
+    import gi
+
+    gi.require_version('Gio', '2.0')
+    from gi.repository import Gio, GLib
+except (ImportError, ValueError):
+    Gio = None
 OPENED = (
     'rule family="ipv4" source address="192.168.1.0/24" destination address="192.168.1.10" '
     'port port="5173" protocol="tcp" accept'
@@ -36,7 +45,7 @@ OTHER_RULE = 'rule family="ipv4" source address="10.0.0.0/8" service name="ssh" 
 
 
 class Host:
-    """Fake firewall-cmd and ip; records every argv."""
+    """Fake firewalld runtime zone methods and ip; records every call."""
 
     def __init__(self):
         self.zones = {
@@ -57,50 +66,60 @@ class Host:
             },
         ]
         self.calls = []
-        self.status = {}
+        self.errors = {}
 
-    def __call__(self, argv, **_):
-        self.calls.append(argv)
-        if argv[0] == ports.IP:
-            return Mock(returncode=0, stdout=json.dumps(self.links))
-        option = argv[-1].split('=', 1)[0]
-        if option in self.status:
-            return Mock(returncode=self.status[option], stdout='')
-        if argv[1:] == ['--get-active-zones']:
-            lines = []
-            for name, zone in self.zones.items():
-                if zone['interfaces']:
-                    lines += [
-                        name + (' (default)' if name == 'public' else ''),
-                        '  interfaces: ' + ' '.join(zone['interfaces']),
-                    ]
-            return Mock(returncode=0, stdout='\n'.join(lines) + '\n')
-        zone = self.zones[argv[1].removeprefix('--zone=')]
-        if argv[2] == '--list-rich-rules':
-            return Mock(returncode=0, stdout='\n'.join(zone['rules']) + '\n')
-        value = argv[2].split('=', 1)[1]
-        if option == '--add-rich-rule':
-            zone['rules'].append(value)
-        elif option == '--remove-rich-rule':
-            zone['rules'].remove(value)
-        else:
+    def run(self, argv, **_):
+        self.calls.append(tuple(argv))
+        if argv[0] != ports.IP:
             raise AssertionError(argv)
-        return Mock(returncode=0, stdout='success\n')
+        return Mock(returncode=0, stdout=json.dumps(self.links))
+
+    def dbus(self, method, signature=None, *args):
+        self.calls.append((method, *args))
+        if method in self.errors:
+            raise self.errors[method]
+        if method == 'getActiveZones':
+            return (
+                {
+                    name: {'interfaces': zone['interfaces'], 'sources': []}
+                    for name, zone in self.zones.items()
+                    if zone['interfaces']
+                },
+            )
+        zone = self.zones[args[0]]
+        if method == 'getRichRules':
+            self.assertSignature(signature, '(s)')
+            return (list(zone['rules']),)
+        if method == 'addRichRule':
+            self.assertSignature(signature, '(ssi)')
+            zone['rules'].append(args[1])
+        elif method == 'removeRichRule':
+            self.assertSignature(signature, '(ss)')
+            zone['rules'].remove(args[1])
+        else:
+            raise AssertionError(method)
+        return (args[0],)
+
+    @staticmethod
+    def assertSignature(actual, expected):
+        if actual != expected:
+            raise AssertionError((actual, expected))
 
     def writes(self):
         return [
-            call
-            for call in self.calls
-            if any(arg.startswith(('--add', '--remove')) for arg in call)
+            call for call in self.calls if call[0] in ('addRichRule', 'removeRichRule')
         ]
 
 
+@unittest.skipUnless(Gio, 'python-gobject is required')
 class FirewallPortTests(unittest.TestCase):
     def setUp(self):
         self.host = Host()
-        patcher = patch.object(ports.subprocess, 'run', side_effect=self.host)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        for name, fake in (('run', self.host.run), ('dbus', self.host.dbus)):
+            target = ports.subprocess if name == 'run' else ports
+            patcher = patch.object(target, name, side_effect=fake)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def request(self, op='open', **values):
         return ports.handle({'op': op, 'interface': 'wlan0', 'port': 5173, **values})
@@ -116,14 +135,12 @@ class FirewallPortTests(unittest.TestCase):
             'zone': 'public',
         }
         self.assertEqual(self.request(), [row])
-        self.assertEqual(
-            self.host.writes(),
-            [[ports.FIREWALL_CMD, '--zone=public', '--add-rich-rule=' + OPENED]],
-        )
+        # Zero timeout: a runtime rule until reload/reboot, never permanent config.
+        self.assertEqual(self.host.writes(), [('addRichRule', 'public', OPENED, 0)])
         self.assertEqual(self.request('status'), [row])
         self.assertEqual(self.request('close'), [])
         self.assertEqual(self.host.zones, baseline)
-        self.assertFalse(any('--permanent' in call for call in self.host.calls))
+        self.assertEqual(ports.ZONE, 'org.fedoraproject.FirewallD1.zone')
 
     def test_status_is_read_only_and_only_reports_rules_for_current_addresses(self):
         stale = OPENED.replace('192.168.1.10', '192.168.1.99')
@@ -134,8 +151,8 @@ class FirewallPortTests(unittest.TestCase):
         ]
         self.assertEqual([row['port'] for row in self.request('status')], [5173])
         self.assertEqual(self.host.writes(), [])
-        listed = [call[1] for call in self.host.calls if '--list-rich-rules' in call]
-        self.assertEqual(listed, ['--zone=public', '--zone=libvirt'])
+        listed = [call[1] for call in self.host.calls if call[0] == 'getRichRules']
+        self.assertEqual(listed, ['public', 'libvirt'])
         self.request('close')
         self.assertEqual(
             self.host.zones['public']['rules'],
@@ -192,31 +209,60 @@ class FirewallPortTests(unittest.TestCase):
         self.assertEqual(self.request()[0]['address'], '169.254.3.4')
         self.assertIn('source address="169.254.0.0/16"', self.host.writes()[0][2])
 
-    def test_firewall_failures_become_drawer_messages(self):
-        for code, message in (
-            (252, 'not running'),
-            (253, 'administrator session'),
-            (1, 'Could not open'),
+    def test_firewall_failures_become_drawer_messages_without_details(self):
+        timeout = GLib.Error.new_literal(
+            Gio.io_error_quark(), 'Timeout was reached', Gio.IOErrorEnum.TIMED_OUT
+        )
+        for error, message in (
+            ('org.freedesktop.DBus.Error.ServiceUnknown', 'not running'),
+            ('org.freedesktop.DBus.Error.NameHasNoOwner', 'not running'),
+            ('org.fedoraproject.FirewallD1.NotAuthorizedException', 'administrator'),
+            ('org.freedesktop.DBus.Error.NoReply', 'did not respond'),
+            (timeout, 'did not respond'),
+            ('org.fedoraproject.FirewallD1.Exception', '^Could not open the port'),
         ):
-            self.host.status = {'--add-rich-rule': code}
+            if isinstance(error, str):
+                error = Gio.DBusError.new_for_dbus_error(error, 'INVALID_ZONE: private')
+            self.host.errors = {'addRichRule': error}
             with (
-                self.subTest(code=code),
-                self.assertRaisesRegex(ports.PortError, message),
+                self.subTest(error=error.message),
+                self.assertRaisesRegex(ports.PortError, message) as raised,
             ):
                 self.request()
-        self.host.status = {'--get-active-zones': 252}
+            self.assertNotIn('private', str(raised.exception))
+        self.host.errors = {
+            'getActiveZones': Gio.DBusError.new_for_dbus_error(
+                'org.freedesktop.DBus.Error.ServiceUnknown', 'gone'
+            )
+        }
         with self.assertRaisesRegex(ports.PortError, 'not running'):
             self.request('status')
-        for error, message in (
-            (FileNotFoundError(), 'not installed'),
-            (subprocess.TimeoutExpired('firewall-cmd', 15), 'did not respond'),
+        with (
+            patch.dict(sys.modules, {'gi': None}),
+            self.assertRaisesRegex(ports.PortError, 'not installed'),
         ):
-            with (
-                self.subTest(error=error),
-                patch.object(ports.subprocess, 'run', side_effect=error),
-                self.assertRaisesRegex(ports.PortError, message),
-            ):
-                ports.firewall('--get-active-zones', failure='unused')
+            ports.firewall('getActiveZones', failure='unused')
+
+    def test_calls_use_the_runtime_zone_interface_without_activation(self):
+        bus = Mock()
+        bus.call_sync.return_value = GLib.Variant('(as)', ([OPENED],))
+        with patch.object(Gio, 'bus_get_sync', return_value=bus):
+            self.assertEqual(REAL_DBUS('getRichRules', '(s)', 'public'), ([OPENED],))
+        destination, path, interface, method, parameters, _, flags, timeout, _ = (
+            bus.call_sync.call_args.args
+        )
+        self.assertEqual(
+            (destination, path, interface, method),
+            (
+                'org.fedoraproject.FirewallD1',
+                '/org/fedoraproject/FirewallD1',
+                'org.fedoraproject.FirewallD1.zone',
+                'getRichRules',
+            ),
+        )
+        self.assertEqual(parameters.unpack(), ('public',))
+        self.assertEqual(flags, Gio.DBusCallFlags.NO_AUTO_START)
+        self.assertEqual(timeout, 15000)
 
     def test_main_speaks_one_json_line(self):
         for line, expected in (
@@ -420,6 +466,54 @@ ShellRoot {
   else if(stage===2){
    check(!PortsService.observing&&PortsService.ports[0]?.port===5173,"dismissal lost opening");
    check(!PortsService.busy&&!PortsService.queuedAction,"finished operation retained busy state");
+   console.log("FEATURE_PASS");Qt.quit();return;
+  }
+  stage++;
+ }catch(e){console.error("FEATURE_FAIL",stage,e.message);Qt.quit();}}}
+}
+""",
+            setup,
+        )
+
+    def test_refreshes_requested_during_work_coalesce_without_polling(self):
+        def setup(root):
+            (root / 'port-worker.py').write_text(
+                'import json,sys,time\n'
+                'request=json.loads(sys.stdin.readline());time.sleep(.15)\n'
+                'print(json.dumps(dict(ok=True,ports=[],error="")),flush=True)\n'
+            )
+            path = root / 'drawers/network/PortsService.qml'
+            path.write_text(
+                path.read_text().replace(
+                    'command: ["/usr/local/libexec/firewall-ports"]',
+                    'command: ["python3", '
+                    + json.dumps(str(root / 'port-worker.py'))
+                    + ']',
+                )
+            )
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "drawers/network"
+ShellRoot {
+ property int stage:0
+ property var started:[]
+ Connections{target:PortsService;function onOperationChanged(){if(PortsService.operation)started=started.concat([PortsService.operation]);}}
+ function check(value,message){if(!value)throw Error(message);}
+ function idle(){return PortsService.operation===""&&!PortsService.refreshQueued;}
+ Timer{interval:120;running:true;repeat:true;onTriggered:{try{
+  if(stage===0){PortsService.observing=true;PortsService.refresh();PortsService.refresh();}
+  else if(!idle())return;
+  else if(stage===1){
+   check(started.join()==="status,status","refreshes during a read were not coalesced: "+started);
+   PortsService.run("open",{interface:"wlan0",port:5173});PortsService.refresh();
+  }else if(stage===2){
+   check(started.join()==="status,status,open,status","refresh during an action was lost: "+started);
+   PortsService.observing=false;PortsService.run("close",{interface:"wlan0",port:5173});PortsService.refresh();
+  }else if(stage===3){stage++;return;}
+  else if(stage===4){
+   check(started.join()==="status,status,open,status,close","dismissed controls kept refreshing: "+started);
    console.log("FEATURE_PASS");Qt.quit();return;
   }
   stage++;

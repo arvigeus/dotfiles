@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Discover reachable devices on a connected private IPv4 network on request."""
 
+import ctypes
 import ipaddress
 import json
+import os
 import signal
 import subprocess
 import sys
@@ -12,6 +14,7 @@ PRIVATE = [
     ipaddress.ip_network(cidr)
     for cidr in ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16')
 ]
+PR_SET_PDEATHSIG = 1
 
 
 def scope(interface, addresses):
@@ -59,6 +62,13 @@ def parse_hosts(document):
     return sorted(hosts, key=lambda h: ipaddress.IPv4Address(h['address']))
 
 
+def exit_with_parent(parent):
+    """Quickshell SIGTERMs this helper to cancel and SIGKILLs it on reload."""
+    ctypes.CDLL(None, use_errno=True).prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
+    if os.getppid() != parent:  # The helper exited before prctl applied.
+        os._exit(1)
+
+
 def discover(interface):
     addresses = subprocess.run(
         ['ip', '-json', '-4', 'address', 'show'],
@@ -68,6 +78,7 @@ def discover(interface):
         check=True,
     )
     target = scope(interface, json.loads(addresses.stdout))
+    parent = os.getpid()
     child = subprocess.Popen(
         [
             'nmap',
@@ -84,20 +95,19 @@ def discover(interface):
             target,
         ],
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
         text=True,
+        preexec_fn=lambda: exit_with_parent(parent),
     )
-    previous = signal.signal(signal.SIGTERM, lambda *_: child.terminate())
     try:
         output, _ = child.communicate(timeout=75)
-        if child.returncode:
-            raise ValueError('Device discovery stopped. Try again.')
-        return {'subnet': target, 'hosts': parse_hosts(output)}
     finally:
         if child.poll() is None:
             child.kill()
             child.communicate()
-        signal.signal(signal.SIGTERM, previous)
+    if child.returncode:
+        raise ValueError('Device discovery stopped. Try again.')
+    return {'subnet': target, 'hosts': parse_hosts(output)}
 
 
 if __name__ == '__main__':

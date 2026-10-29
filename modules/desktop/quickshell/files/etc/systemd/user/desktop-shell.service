@@ -11,6 +11,14 @@ Type=exec
 UMask=0077
 ExecStart=/usr/bin/qs --no-duplicate --path "%E/quickshell/desktop/shell.qml" --no-color
 Environment=QT_QPA_PLATFORM=wayland
+# Temporary: listing cameras makes Qt 6.12's FFmpeg backend create its default
+# hardware devices (VDPAU, VAAPI, QSV, Vulkan) on the GUI thread. VDPAU opens
+# $DISPLAY, so opening Capture started Xwayland, or froze the shell when Xwayland
+# stalled. Both lists must be set; empty creates no devices. The shell decodes only
+# the webcam preview. Remove both lines when the canary in
+# tests/test_capture_drawer.py reports that the X11 probe is gone.
+Environment=QT_FFMPEG_DECODING_HW_DEVICE_TYPES=
+Environment=QT_FFMPEG_ENCODING_HW_DEVICE_TYPES=
 Slice=session.slice
 Restart=on-failure
 RestartSec=2s

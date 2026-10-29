@@ -402,10 +402,11 @@ class Network:
             )
         if sec == 'sae' and not 1 <= len(password) <= 63:
             raise ValueError('Enter a WPA3 password of 1–63 characters.')
+        identity = str(uuid.uuid4())
         connection = NM.SimpleConnection.new()
         setting = NM.SettingConnection.new()
         setting.set_property('id', ssid)
-        setting.set_property('uuid', str(uuid.uuid4()))
+        setting.set_property('uuid', identity)
         setting.set_property('type', '802-11-wireless')
         setting.add_permission('user', pwd.getpwuid(os.getuid()).pw_name, None)
         connection.add_setting(setting)
@@ -420,15 +421,30 @@ class Network:
                 auth.set_property('psk', password)
             connection.add_setting(auth)
         connection.normalize()
-        self.wait_active(
-            self.call(
-                self.client,
-                'add_and_activate_connection_async',
-                connection,
-                device,
-                None,
+        try:
+            self.wait_active(
+                self.call(
+                    self.client,
+                    'add_and_activate_connection_async',
+                    connection,
+                    device,
+                    None,
+                )
             )
-        )
+        except ValueError:
+            # NetworkManager saves the profile before activating it. Like nmcli,
+            # keep none for a network that never connected: it would otherwise
+            # appear saved and autoconnect with a wrong password.
+            self.remove(identity)
+            raise
+
+    def remove(self, identity):
+        profile = self.client.get_connection_by_uuid(identity)
+        if profile:
+            try:
+                self.call(profile, 'delete_async')
+            except ValueError:
+                pass  # Report the connection failure, not the cleanup.
 
 
 def handle(request):
@@ -459,9 +475,26 @@ def handle(request):
 
 
 def main():
+    line = sys.stdin.readline(65536)
+    # Quickshell SIGKILLs a helper whose Process is destroyed, as on a shell
+    # reload. The request runs in its own session so a started WARP setup still
+    # stops a failed daemon and a failed join still removes its profile; this
+    # process only waits for it.
+    child = os.fork()
+    if child:
+        sys.exit(os.waitstatus_to_exitcode(os.waitpid(child, 0)[1]))
+    os.setsid()
+    result = respond(line)
     try:
-        request = json.loads(sys.stdin.readline(65536))
-        result = {'ok': True, 'data': handle(request)}
+        print(json.dumps(result), flush=True)
+    except OSError:
+        # The shell went away; the change has finished regardless.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+
+
+def respond(line):
+    try:
+        result = {'ok': True, 'data': handle(json.loads(line))}
     except ValueError as error:
         result = {'ok': False, 'error': str(error)}
     except ImportError:
@@ -475,7 +508,7 @@ def main():
             'ok': False,
             'error': 'Network control failed. Check NetworkManager, WARP and desktop authorization.',
         }
-    print(json.dumps(result), flush=True)
+    return result
 
 
 if __name__ == '__main__':

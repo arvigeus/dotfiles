@@ -47,7 +47,7 @@ uv_state_dir="$user_home/.local/state/dotfiles"
 uv_state="$uv_state_dir/uv-tools"
 if ((${#uv_tools[@]})) || [[ -f $uv_state ]]; then
     install -d -o "$user" -g "$(id -gn "$user")" -m 0700 "$uv_state_dir"
-    mapfile -t previous_uv_tools < <(cat "$uv_state" 2>/dev/null || true)
+    mapfile -t previous_uv_tools < <(cat "$uv_state" 2> /dev/null || true)
     declared_uv_names=()
     managed_uv_names=()
     uv_failures=()

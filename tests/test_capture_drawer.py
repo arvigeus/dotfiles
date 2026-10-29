@@ -3,6 +3,7 @@
 import json
 import os
 import socket
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -566,6 +567,108 @@ ShellRoot {
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }""")
+
+
+SHELL_UNIT = (
+    support.REPO
+    / 'modules/desktop/quickshell/files/etc/systemd/user/desktop-shell.service'
+)
+HW_DEVICE_TYPES = {
+    'QT_FFMPEG_DECODING_HW_DEVICE_TYPES',
+    'QT_FFMPEG_ENCODING_HW_DEVICE_TYPES',
+}
+
+
+@unittest.skipUnless(support.QS, 'Quickshell is required')
+class FfmpegX11ProbeTests(unittest.TestCase):
+    """Canary for the temporary hardware-device lines in desktop-shell.service."""
+
+    def x11_connections(self, overrides):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'runtime').mkdir(mode=0o700)
+            (root / 'shell.qml').write_text("""import QtQuick
+import QtMultimedia
+import Quickshell
+ShellRoot {
+ MediaDevices { id: devices }
+ Timer { interval: 100; running: true; onTriggered: { console.log("CAMERAS_LISTED", devices.videoInputs.length); Qt.quit(); } }
+}
+""")
+            # A private X server in the abstract namespace, which libxcb tries
+            # first; it counts and drops connections so the session's stays unused.
+            server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            for display in range(150, 250):
+                try:
+                    server.bind(f'\0/tmp/.X11-unix/X{display}')
+                    break
+                except OSError:
+                    continue
+            server.listen(8)
+            server.settimeout(0.05)
+            accepted, stop = [], threading.Event()
+
+            def serve():
+                while not stop.is_set():
+                    try:
+                        client, _ = server.accept()
+                    except TimeoutError:
+                        continue
+                    accepted.append(True)
+                    client.close()
+
+            thread = threading.Thread(target=serve, daemon=True)
+            thread.start()
+            env = {
+                key: value
+                for key, value in os.environ.items()
+                if key not in HW_DEVICE_TYPES
+                and key not in ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE')
+            }
+            env.update(
+                overrides,
+                DISPLAY=f':{display}',
+                QT_QPA_PLATFORM='offscreen',
+                XDG_RUNTIME_DIR=str(root / 'runtime'),
+                XDG_CONFIG_HOME=str(root / 'config'),
+                DBUS_SESSION_BUS_ADDRESS='unix:path=' + str(root / 'no-session-bus'),
+                PIPEWIRE_REMOTE='dotfiles-tests-unavailable',
+            )
+            try:
+                result = subprocess.run(
+                    [support.QS, '--no-color', '-p', str(root / 'shell.qml')],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                )
+            finally:
+                stop.set()
+                thread.join()
+                server.close()
+        self.assertIn('CAMERAS_LISTED', result.stdout + result.stderr)
+        return len(accepted)
+
+    def test_shell_hardware_probe_workaround_is_needed_and_works(self):
+        unit = {}
+        for line in SHELL_UNIT.read_text().splitlines():
+            if line.startswith('Environment='):
+                name, _, value = line.removeprefix('Environment=').partition('=')
+                unit[name] = value
+        workaround = {key: unit[key] for key in HW_DEVICE_TYPES if key in unit}
+        self.assertEqual(set(workaround), HW_DEVICE_TYPES)
+        self.assertEqual(
+            self.x11_connections(workaround),
+            0,
+            "desktop-shell.service's values no longer keep camera listing off X11",
+        )
+        self.assertGreater(
+            self.x11_connections({}),
+            0,
+            'Qt Multimedia no longer opens $DISPLAY to list cameras. Remove the '
+            'QT_FFMPEG_*_HW_DEVICE_TYPES lines from desktop-shell.service, this '
+            'test and the Capture note in the Quickshell ARCHITECTURE.md.',
+        )
 
 
 if __name__ == '__main__':

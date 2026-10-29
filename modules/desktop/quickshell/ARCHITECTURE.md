@@ -224,6 +224,17 @@ ranges and writability. Mutations validate device identity/control support.
 Preview belongs to the drawer and stops on dismissal or device loss. Privacy is
 available only when the camera exposes it; other apps may change camera settings.
 
+Temporary workaround: with its default hardware-device lists, Qt 6.12's FFmpeg
+backend creates VDPAU, VAAPI, QSV and Vulkan devices on the GUI thread whenever
+`MediaDevices` lists cameras. VDPAU opens `$DISPLAY`, which starts Xwayland or
+blocks the shell when Xwayland is not accepting. `desktop-shell.service` sets
+`QT_FFMPEG_DECODING_HW_DEVICE_TYPES` and `QT_FFMPEG_ENCODING_HW_DEVICE_TYPES` to
+empty; both are required, and explicit lists create no devices while listing. The
+webcam preview is the shell's only Qt video, so it decodes in software.
+`FfmpegX11ProbeTests` in `tests/test_capture_drawer.py` fails once Qt stops opening
+`$DISPLAY` without the variables. Then remove the variables, that test and this
+note.
+
 ## System
 
 `system/backend.py` reads Arch/systemd information on demand: boot phases, slow
@@ -243,8 +254,13 @@ stable; sorting uses connected, saved, signal-icon level and name.
 `NetworkService` invokes `network/backend.py` for VPN/WireGuard profiles, WARP,
 IP details and new user-scoped Wi-Fi profiles. It refreshes every ten seconds only
 while observed. Mutations finish after dismissal and take priority over reads.
+Each request runs in its own session, so a shell reload's SIGKILL of the helper
+cannot abandon a started change or its cleanup.
 Passwords use stdin/D-Bus and never argv, status records or diagnostics.
-Enterprise/WEP configurations open the connection editor.
+NetworkManager saves a joined network's profile before activating it; a join that
+fails or times out deletes the profile it created, as nmcli does, so a wrong
+password never becomes a saved, autoconnecting network. A retry from the drawer
+keeps the typed password. Enterprise/WEP configurations open the connection editor.
 WARP starts on demand, reuses registration or creates it only when missing, and
 stops on disconnect or setup failure. Its menu selects operating mode; registration
 requires no separate switch. See the [WARP lifecycle](../../internet/cloudflare/ARCHITECTURE.md).
@@ -273,6 +289,12 @@ Openings are runtime IPv4 rich rules scoped to the current source subnet and
 local destination address. A network change makes mismatched rules inert; rules
 can apply again if the same address/subnet/zone returns. Reload/reboot removes
 them. Closing a rule does not terminate established connections.
+Each status read starts the helper and queries firewalld, so `PortsService`
+does not poll. `PortsControls` refreshes on opening and when the drawer's network
+context (selected interface and its IPv4 addresses) changes; open/close replies
+carry the complete state. Refreshes requested during a request run once after it,
+and only while observed. Changes made outside the drawer appear on the next
+opening or context change.
 
 `DeviceDiscoveryService` starts when the collapsed Devices heading is clicked.
 The heading fills the available width with no separate refresh control. The body
@@ -292,9 +314,11 @@ reachable IPv4 addresses and reported response times. Device tooltips identify
 local addresses and the gateway from the selected interface's existing connection
 details, and show response time when available. Device rows are informational.
 Dismissal, route/interface changes and cancellation stop the owned scanner;
-no periodic discovery runs. Nmap belongs to
-`hardware/network`, not the shell or Dolphin. Public/unsupported networks fail
-without a scan. Results remain until refreshed or the connection context changes.
+no periodic discovery runs. Nmap gets a parent-death signal, so it also stops
+when cancellation's SIGTERM or a shell reload's SIGKILL ends the helper. Nmap
+belongs to `hardware/network`, not the shell or Dolphin. Public/unsupported
+networks fail without a scan. Results remain across dismissal until refreshed or
+the network context changes; the context does not depend on the page being active.
 
 ## Bluetooth
 
@@ -572,8 +596,10 @@ private config/runtime/state and fake hardware/helpers; native panel checks need
 a Wayland backend. `tests/support.py` holds shared QML fixtures; session-service
 tests own a bus from `support.private_bus`. Run the suite under `dbus-run-session`,
 so any remaining helper cannot reach the user's bus, and with `PIPEWIRE_REMOTE` set
-to an unavailable test remote. Tests must never start real recordings or mutate
-host radio/audio/power state.
+to an unavailable test remote. Offscreen runs drop `WAYLAND_DISPLAY` and
+`DISPLAY`, so no Qt client reaches the session's X server (see the camera-listing
+workaround under Capture). Tests must never start real recordings or mutate host
+radio/audio/power state.
 
 Validate generated configuration and run ShellCheck with `--shell=bash` for
 sourced fragments. After apply, verify installed links as well as repository

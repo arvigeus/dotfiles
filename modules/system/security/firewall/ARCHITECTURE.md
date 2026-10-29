@@ -18,8 +18,15 @@ forwarding when it starts a NAT or routed network, so no sysctl is declared.
 
 `/usr/local/libexec/firewall-ports` is the unprivileged client behind the
 Quickshell Ports controls. It reads one JSON request (`status`, or `open`/`close`
-with an interface and port 1–65535) and prints one JSON response. It invokes
-`firewall-cmd` and `ip` with argv lists, never `--permanent`.
+with an interface and port 1–65535) and prints one JSON response. It runs `ip`
+with an argv list and calls firewalld's runtime zone interface
+(`org.fedoraproject.FirewallD1.zone`: `getActiveZones`, `getRichRules`,
+`addRichRule` with no timeout, `removeRichRule`) through Gio, never the permanent
+configuration. These are the methods and polkit actions `firewall-cmd` uses, but
+a status read takes about a quarter of the time without its Python client per
+query. Calls never activate a stopped firewalld. python-gobject comes with
+firewalld. Error replies map to fixed drawer messages; firewalld's text is not
+forwarded.
 
 An opening is a runtime rich rule in the zone of the interface:
 
@@ -42,6 +49,7 @@ policy and `.all` actions keep the packaged authentication defaults.
 
 ## Validation
 
-`tests/test_network_ports.py` replaces `firewall-cmd` and `ip` with an in-memory
-host. It covers rule shape, zone lookup, read-only status, input validation,
-error mapping, the polkit rule and the zone and policy assets.
+`tests/test_network_ports.py` replaces firewalld's zone methods and `ip` with an
+in-memory host. It covers rule shape, zone lookup, read-only status, input
+validation, D-Bus call shape, error mapping, the polkit rule and the zone and
+policy assets.

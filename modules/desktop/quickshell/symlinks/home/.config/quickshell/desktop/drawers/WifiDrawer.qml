@@ -46,8 +46,10 @@ DrawerPage {
     readonly property string localAddress: (details?.ipv4?.[0] ?? "").split("/")[0]
     readonly property var statsDevice: adapter?.connected ? adapter : wiredDevices.find(d => d.connected) ?? null
     readonly property string statsInterface: active ? statsDevice?.name ?? "" : ""
-    readonly property string discoveryContext: JSON.stringify([statsInterface, networkState.details?.[statsInterface]?.ipv4 ?? []])
-    onDiscoveryContextChanged: deviceDiscovery.clear()
+    // Device results and port openings belong to this interface and address.
+    // Independent of active, so results survive dismissal until it changes.
+    readonly property string networkContext: JSON.stringify([statsDevice?.name ?? "", networkState.details?.[statsDevice?.name ?? ""]?.ipv4 ?? []])
+    onNetworkContextChanged: deviceDiscovery.clear()
     readonly property string routeContext: service.loaded ? JSON.stringify([networkState.active, networkState.warp.connected ? networkState.warp.mode : ""]) : ""
     readonly property string errorText: service.error || connectionError
     readonly property var securityNames: ({
@@ -241,13 +243,15 @@ DrawerPage {
         passwordText = "";
         passwordRequired = false;
     }
-    function choose(network): void {
+    function choose(network, askPassword = false): void {
         if (selected !== network) {
             passwordText = "";
             showPassword = false;
             passwordRequired = !network.known && needsPassword(network);
         }
         selected = network;
+        if (askPassword)
+            passwordRequired = true;
         if (!passwordRequired)
             return;
         // The column scrolls the focused field into view once it is laid out.
@@ -302,11 +306,8 @@ DrawerPage {
     }
     function connectionFailed(network, reason): void {
         connectionError = reason === ConnectionFailReason.NoSecrets ? qsTr("%1 needs a password.").arg(network.name) : reason === ConnectionFailReason.WifiNetworkLost ? qsTr("%1 is out of range.").arg(network.name) : qsTr("Could not connect to %1. Check the password and signal.").arg(network.name);
-        if (!needsPassword(network))
-            return;
-        choose(network);
-        passwordRequired = true;
-        choose(network);
+        if (needsPassword(network))
+            choose(network, true);
     }
     function warpAction(): void {
         service.run("warp", {
@@ -407,10 +408,8 @@ DrawerPage {
                 return;
             if (success)
                 root.clearSelection();
-            else if (root.needsPassword(root.selected)) {
-                root.passwordRequired = true;
-                root.choose(root.selected);
-            }
+            else if (root.needsPassword(root.selected))
+                root.choose(root.selected, true);
         }
     }
     component WarpModeItem: ShellMenuItem {
@@ -765,6 +764,7 @@ DrawerPage {
                 active: root.active
                 interfaceName: root.statsDevice?.name ?? ""
                 connected: interfaceName !== ""
+                context: root.networkContext
                 onPopupOpened: {
                     warpMenu.close();
                     root.informationPopup?.close();

@@ -42,7 +42,7 @@ FloatingWindow {
   id:fakePublic;property string context:"";property string label:"Checking…";property string address:"";property int calls:0
   function lookup(){calls++;}
  }
- QtObject {id:portService;property bool observing:false;property bool available:true;property bool busy:false;property string error:"";property var ports:[];signal completed(string operation,bool success)}
+ QtObject {id:portService;property bool observing:false;property bool available:true;property bool busy:false;property string error:"";property var ports:[];property int refreshes:0;signal completed(string operation,bool success);function refresh(){refreshes++;}}
  QtObject {id:speed;property bool running:false;property var result:null;property string error:"";function cancel(){}}
  QtObject {id:laptop;property string name:"Laptop";property string adapterId:"hci0";property bool enabled:true;property bool discovering:false;property int state:BluetoothAdapterState.Enabled;property var devices:({values:[]})}
  QtObject {id:usb;property string name:"USB";property string adapterId:"hci1";property bool enabled:true;property bool discovering:false;property int state:BluetoothAdapterState.Enabled;property var devices:({values:[]})}
@@ -87,9 +87,10 @@ FloatingWindow {
    input.keyClick(Qt.Key_Escape);check(!drawer.informationPopup&&drawer.active,"Escape dismissed drawer or retained popover");
    check(info.activeFocus,"dismissal did not restore focus");click(info);
   }else if(stage===3){
-   const context=fakePublic.context;const calls=fakePublic.calls;
+   const context=fakePublic.context;const calls=fakePublic.calls;const refreshes=portService.refreshes;
    network.state=Object.assign({},network.state,{details:{wlan0:Object.assign({},network.state.details.wlan0,{ipv4:["192.0.2.3/24"]})}});
    check(fakePublic.context===context&&fakePublic.calls===calls,"address details invalidated public lookup");
+   check(portService.refreshes===refreshes+1,"address details did not refresh port openings");
    network.state=Object.assign({},network.state,{active:["home","vpn"]});
   }else if(stage===4){
    check(fakePublic.calls===3,"connection change did not refresh open information");

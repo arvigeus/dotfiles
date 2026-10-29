@@ -72,7 +72,10 @@ def production_shell(root, driver):
         'XDG_DATA_DIRS': str(root / 'empty'),
         'PIPEWIRE_REMOTE': 'dotfiles-tests-unavailable',
     }
-    for key in ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE'):
+    # Offscreen tests must not reach the session's displays. Qt Multimedia's
+    # FFmpeg hardware probe opens $DISPLAY on the GUI thread (Capture's camera
+    # list), which blocks when Xwayland is not accepting.
+    for key in ('WAYLAND_DISPLAY', 'DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE'):
         env.pop(key, None)
     command = [
         *support.private_bus(root),
@@ -636,7 +639,7 @@ ShellRoot {
                 'PIPEWIRE_REMOTE': 'dotfiles-tests-unavailable',
                 'XDG_DATA_DIRS': str(root / 'empty'),
             }
-            for key in ('WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE'):
+            for key in ('WAYLAND_DISPLAY', 'DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE'):
                 env.pop(key, None)
             result = subprocess.run(
                 [QS, '--no-color', '-p', str(root / 'shell.qml')],

@@ -1,7 +1,14 @@
 """LAN discovery stays on a connected private subnet and performs host discovery only."""
 
 import importlib.util
+import json
+import os
+import shlex
+import signal
 import subprocess
+import sys
+import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -13,6 +20,27 @@ PATH = (
 SPEC = importlib.util.spec_from_file_location('network_discovery', PATH)
 discovery = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(discovery)
+
+
+def wait(condition, timeout=5):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            value = condition()
+        except OSError:
+            value = None
+        if value:
+            return value
+        time.sleep(0.05)
+    return None
+
+
+def alive(pid):
+    try:
+        state = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[0]
+    except OSError:
+        return False
+    return state != 'Z'
 
 
 def addresses(ip='192.168.7.42', prefix=24, interface='wlan0', state='UP'):
@@ -51,9 +79,7 @@ class NetworkDiscoveryTests(unittest.TestCase):
             ['192.168.7.3', '192.168.7.20'],
         )
 
-    def test_scanner_is_unprivileged_host_discovery_and_cancellation_owns_child(self):
-        import json
-
+    def test_scanner_is_unprivileged_host_discovery_and_dies_with_the_helper(self):
         child = Mock(returncode=0)
         child.communicate.return_value = ('<nmaprun/>', '')
         child.poll.return_value = 0
@@ -64,17 +90,43 @@ class NetworkDiscoveryTests(unittest.TestCase):
                 return_value=Mock(stdout=json.dumps(addresses())),
             ),
             patch.object(discovery.subprocess, 'Popen', return_value=child) as popen,
-            patch.object(discovery.signal, 'signal') as signal,
         ):
             result = discovery.discover('wlan0')
-            handler = signal.call_args_list[0].args[1]
-            handler(None, None)
         command = popen.call_args.args[0]
         self.assertIn('-sn', command)
         self.assertIn('--unprivileged', command)
-        self.assertEqual(command[-1], '192.168.7.0/24')
+        self.assertEqual(command[-2:], ['--', '192.168.7.0/24'])
+        self.assertTrue(callable(popen.call_args.kwargs['preexec_fn']))
         self.assertEqual(result['hosts'], [])
-        child.terminate.assert_called_once()
+
+    def test_cancellation_and_reload_stop_the_scan(self):
+        # Quickshell SIGTERMs the helper to cancel and SIGKILLs it on reload.
+        for signum in (signal.SIGTERM, signal.SIGKILL):
+            with (
+                self.subTest(signal=signum),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                root = Path(directory)
+                (root / 'ip').write_text(
+                    '#!/bin/sh\necho ' + shlex.quote(json.dumps(addresses())) + '\n'
+                )
+                (root / 'nmap').write_text(
+                    '#!/bin/sh\necho $$ > "$(dirname "$0")/scan.pid"\nexec sleep 30\n'
+                )
+                for name in ('ip', 'nmap'):
+                    (root / name).chmod(0o755)
+                helper = subprocess.Popen(
+                    [sys.executable, str(PATH), 'wlan0'],
+                    env={**os.environ, 'PATH': f'{root}:{os.environ["PATH"]}'},
+                    stdout=subprocess.DEVNULL,
+                )
+                pid_file = root / 'scan.pid'
+                self.assertTrue(wait(pid_file.exists), 'scan did not start')
+                scan = int(wait(lambda: pid_file.read_text().strip()))
+                self.addCleanup(lambda pid=scan: alive(pid) and os.kill(pid, 9))
+                helper.send_signal(signum)
+                helper.wait(timeout=5)
+                self.assertTrue(wait(lambda: not alive(scan)), 'scan outlived helper')
 
     def test_response_time_uses_reported_microseconds_and_omits_unknown_values(self):
         xml = """<nmaprun>
@@ -94,8 +146,6 @@ class NetworkDiscoveryTests(unittest.TestCase):
         )
 
     def test_timeout_kills_the_exact_scan_process(self):
-        import json
-
         child = Mock(returncode=None)
         child.communicate.side_effect = [
             subprocess.TimeoutExpired('nmap', 75),
@@ -109,7 +159,6 @@ class NetworkDiscoveryTests(unittest.TestCase):
                 return_value=Mock(stdout=json.dumps(addresses())),
             ),
             patch.object(discovery.subprocess, 'Popen', return_value=child),
-            patch.object(discovery.signal, 'signal'),
             self.assertRaises(subprocess.TimeoutExpired),
         ):
             discovery.discover('wlan0')
