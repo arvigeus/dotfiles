@@ -348,6 +348,17 @@ else: raise SystemExit('Unexpected mutation: '+str(sys.argv))
             next(d for d in devices if d['key'] == 'virtual')['profiles'], []
         )
 
+    def test_card_identity_uses_device_name_not_object_ids(self):
+        # A card's index is its object serial; device.id is an unrelated object id.
+        other = dict(CARD, name='other', index=46)
+        usb = dict(CARD, name='usb', index=130)
+        sink = dict(SINK, properties={'device.name': 'usb', 'device.id': '46'})
+        self.assertIs(backend.card_for(sink, [other, usb]), usb)
+        virtual = dict(SINK, name='virtual', properties={'device.id': '46'})
+        self.assertIsNone(backend.card_for(virtual, [other, usb]))
+        _, devices = backend.output_inventory([sink, virtual], [other, usb], CONFIG)
+        self.assertEqual([d['card'] for d in devices], ['', 'usb'])
+
     def test_changing_connection_applies_route_cap_and_keeps_default_and_mute(self):
         sink = dict(
             SINK,
@@ -379,6 +390,8 @@ else: raise SystemExit('Unexpected mutation: '+str(sys.argv))
                 [
                     ('set-sink-volume', 'laptop', int(85 * 65536 / 100)),
                     ('set-sink-port', 'laptop', 'jack'),
+                    # Held muted as soon as the remembered unmuted route appears.
+                    ('set-sink-mute', 'laptop', '1'),
                     ('set-sink-volume', 'laptop', int(85 * 65536 / 100)),
                     ('set-sink-mute', 'laptop', '1'),
                 ],
@@ -430,6 +443,118 @@ else: raise SystemExit('Unexpected mutation: '+str(sys.argv))
         ):
             with self.assertRaisesRegex(ValueError, 'did not finish'):
                 backend.select_port('sink', SINK, 'jack')
+
+    def test_route_wait_holds_a_muted_endpoint_muted(self):
+        # Policy restores the new route's remembered unmuted state mid-wait.
+        for keep_muted in (True, False):
+            clock = [0.0]
+            sink = dict(SINK, mute=True)
+            muted_at = []
+
+            def read(kind):
+                if clock[0] >= 0.08 and sink['active_port'] != 'jack':
+                    sink.update(active_port='jack', mute=False)
+                return [dict(sink)]
+
+            def command(*args):
+                if args[0] == 'set-sink-mute':
+                    sink['mute'] = args[2] == '1'
+                    muted_at.append(clock[0])
+
+            with (
+                patch.object(backend, 'read', side_effect=read),
+                patch.object(backend, 'command', side_effect=command),
+                patch.object(backend.time, 'monotonic', side_effect=lambda: clock[0]),
+                patch.object(
+                    backend.time,
+                    'sleep',
+                    side_effect=lambda seconds: clock.__setitem__(
+                        0, clock[0] + seconds
+                    ),
+                ),
+            ):
+                updated = backend.select_port(
+                    'sink', SINK, 'jack', keep_muted=keep_muted
+                )
+            self.assertEqual(muted_at, [0.08] if keep_muted else [])
+            self.assertEqual(updated['mute'], keep_muted)
+
+    def test_started_action_finishes_when_the_shell_kills_its_helper(self):
+        fake = r"""#!/usr/bin/env python3
+import json,os,sys,time
+from pathlib import Path
+root=Path(os.environ['FAKE_AUDIO'])
+state=json.loads((root/'state').read_text())
+args=sys.argv[1:]
+if args[:3]==['-f','json','list']: print(json.dumps(state[args[3]]))
+elif args[0] in ('set-sink-port','set-sink-mute'):
+ if args[0]=='set-sink-port':
+  (root/'started').touch(); time.sleep(float(os.environ['FAKE_DELAY']))
+  state['sinks'][0]['active_port']=args[2]; (root/'state').write_text(json.dumps(state))
+ with (root/'log').open('a') as log: log.write(' '.join(args)+'\n')
+else: raise SystemExit('Unexpected: '+str(args))
+"""
+
+        def request(port):
+            values = dict(op='output-port', name='laptop', port=port)
+            return json.dumps(values) + '\n'
+
+        def wait(condition):
+            deadline = time.monotonic() + 5
+            while not condition() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            return condition()
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'pactl').write_text(fake)
+            (root / 'pactl').chmod(0o755)
+            (root / 'state').write_text(json.dumps({'sinks': [SINK]}))
+            env = {
+                **os.environ,
+                'PATH': str(root) + os.pathsep + os.environ['PATH'],
+                'FAKE_AUDIO': str(root),
+                'FAKE_DELAY': '0',
+                'XDG_CONFIG_HOME': str(root / 'config'),
+            }
+            command = [sys.executable, '-B', str(DESKTOP / 'drawers/audio/backend.py')]
+            unplugged = 'This output connection is disconnected.'
+            for port, result in (
+                ('speaker', dict(ok=True)),
+                ('jack', dict(ok=False, error=unplugged)),
+            ):
+                run = subprocess.run(
+                    command,
+                    env=env,
+                    input=request(port),
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                self.assertEqual(json.loads(run.stdout), result, run.stderr)
+            log = root / 'log'
+            log.unlink()
+            (root / 'started').unlink()
+            helper = subprocess.Popen(
+                command,
+                env=dict(env, FAKE_DELAY='0.5'),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+            )
+            helper.stdin.write(request('speaker'))
+            helper.stdin.flush()
+            self.assertTrue(wait((root / 'started').exists), 'action did not start')
+            # Destroying a Quickshell Process (a shell reload) SIGKILLs the helper.
+            helper.kill()
+            self.assertEqual(helper.communicate(timeout=5)[0], '')
+            # Restoring mute follows the route wait, after the in-flight command.
+            self.assertTrue(
+                wait(
+                    lambda: log.exists() and 'set-sink-mute laptop 0' in log.read_text()
+                ),
+                'the started change was abandoned',
+            )
 
     def test_profile_reduction_does_not_overlay_two_outputs_or_their_apps(self):
         card = dict(
@@ -642,6 +767,73 @@ class MicrophoneBackendTests(unittest.TestCase):
             self.stereo + '+' + self.capture,
         )
 
+    def test_mode_description_names_the_profile_it_activates(self):
+        # PipeWire lists the duplex variant first. With capture disabled, a mode's
+        # hover text must not claim the microphone profile.
+        duplex = self.stereo + '+' + self.capture
+        profiles = self.card['profiles']
+        self.card['profiles'] = {duplex: profiles[duplex]} | profiles
+
+        def descriptions():
+            modes = backend.playback_profiles(self.card, {})
+            return {mode['name']: mode['description'] for mode in modes}
+
+        self.assertEqual(
+            descriptions(),
+            {
+                self.stereo: 'Analog Stereo Output',
+                self.surround: 'Analog Surround 4.0 Output',
+                'pro-audio': 'Pro Audio',
+            },
+        )
+        self.card['active_profile'] = duplex
+        self.assertEqual(
+            descriptions(),
+            {
+                self.stereo: 'Analog Stereo Duplex',
+                self.surround: 'Analog Surround 4.0 Output + Analog Stereo Input',
+                'pro-audio': 'Pro Audio',
+            },
+        )
+
+    def test_new_inputs_are_muted_before_playback_restoration(self):
+        # Policy can restore a remembered unmuted route on a new input. A waiting
+        # recorder must not hear it while playback routes settle.
+        source = dict(self.source, mute=False)
+        sink = dict(SINK, properties={'device.name': 'card', 'alsa.device': '0'})
+        enabled = [False]
+        mutations = []
+
+        def read(kind):
+            if kind == 'sources':
+                return [source] if enabled[0] else []
+            return {'sinks': [sink], 'sink-inputs': [], 'source-outputs': []}[kind]
+
+        def command(*args):
+            if args == ('-f', 'json', 'info'):
+                return '{}'
+            mutations.append(args)
+            if args[0] == 'set-card-profile':
+                enabled[0] = True
+            elif args[0] == 'set-source-port':
+                source['mute'] = False  # asynchronous route restoration
+            elif args[0] == 'set-source-mute':
+                source['mute'] = args[2] == '1'
+            return ''
+
+        with (
+            patch.object(backend, 'read', side_effect=read),
+            patch.object(backend, 'command', side_effect=command),
+        ):
+            backend.change_profile(
+                self.card,
+                dict(name=self.stereo + '+' + self.capture, sinks=1, sources=1),
+            )
+        ops = [args[0] for args in mutations]
+        self.assertEqual(mutations[1], ('set-source-mute', 'microphone', '1'))
+        self.assertNotIn('set-sink-port', ops[: ops.index('set-source-mute', 2) + 1])
+        self.assertTrue(source['mute'])
+
     def test_disabled_devices_have_no_fake_sources_and_monitors_are_excluded(self):
         monitor = dict(
             self.source, name='laptop.monitor', properties={'device.class': 'monitor'}
@@ -669,7 +861,6 @@ class MicrophoneBackendTests(unittest.TestCase):
             data['sources'].append(self.source)
             state = backend.snapshot()
             self.assertEqual(len(state['inputs']), 1)
-            self.assertEqual(state['inputs'][0]['icon'], 'mic')
             self.assertTrue(state['inputDevices'][0]['canToggle'])
             self.card['active_profile'] = 'pro-audio'
             state = backend.snapshot()
@@ -757,6 +948,7 @@ class MicrophoneBackendTests(unittest.TestCase):
                 [
                     ('set-source-port', 'microphone', 'headset-mic'),
                     ('set-source-mute', 'microphone', '1'),
+                    ('set-source-mute', 'microphone', '1'),
                 ],
             )
             self.assertTrue(source['mute'])
@@ -809,6 +1001,7 @@ class MicrophoneBackendTests(unittest.TestCase):
                 [c.args for c in command.call_args_list],
                 [
                     ('set-source-port', 'microphone', 'mic'),
+                    ('set-source-mute', 'microphone', '1'),
                     ('set-source-mute', 'microphone', '1'),
                 ],
             )
@@ -901,8 +1094,9 @@ class MicrophoneBackendTests(unittest.TestCase):
                 self.assertTrue(extra['mute'])
 
     def test_hardware_disable_removes_capture_and_preserves_each_playback_layout(self):
-        for mode in (self.stereo, self.surround):
+        for mode, muted in ((self.stereo, True), (self.surround, False)):
             self.card['active_profile'] = mode + '+' + self.capture
+            source = dict(self.source, mute=muted)
             capture_enabled = [True]
             mutations = []
             display = dict(
@@ -913,7 +1107,7 @@ class MicrophoneBackendTests(unittest.TestCase):
                 return {
                     'cards': [self.card],
                     'sinks': [SINK, display],
-                    'sources': [self.source] if capture_enabled[0] else [],
+                    'sources': [source] if capture_enabled[0] else [],
                     'sink-inputs': [],
                     'source-outputs': [],
                 }[kind]
@@ -945,10 +1139,18 @@ class MicrophoneBackendTests(unittest.TestCase):
                     )
                 )
             self.assertFalse(capture_enabled[0])
-            self.assertEqual(mutations[0], ('set-card-profile', 'card', mode))
+            # A live input is muted first so policy remembers its route muted and
+            # re-enabling cannot briefly restore a live microphone.
+            premute = [] if muted else [('set-source-mute', 'microphone', '1')]
+            self.assertEqual(
+                mutations[: len(premute) + 1],
+                premute + [('set-card-profile', 'card', mode)],
+            )
+            self.assertEqual(
+                [c for c in mutations if c[0] == 'set-source-mute'], premute
+            )
             self.assertIn(('set-default-sink', 'display'), mutations)
             self.assertIn(('set-sink-volume', 'laptop', 32768, 32768), mutations)
-            self.assertFalse(any(c[0] == 'set-source-mute' for c in mutations))
 
         self.card['active_profile'] = 'pro-audio'
         with (
@@ -1153,6 +1355,16 @@ class AudioConfigurationTests(unittest.TestCase):
             audio, warning = backend.load_config(directory)
             self.assertEqual(warning, '')
             self.assertEqual(len(audio['rules']), 9)
+            # Drop-ins use only the documented rule fields; others would be dead config.
+            fields = {
+                'match',
+                'contains',
+                'label',
+                'deviceLabel',
+                'maxVolume',
+                'priority',
+            }
+            self.assertTrue(all(rule.keys() <= fields for rule in audio['rules']))
             self.assertIn('pro-audio', audio['profiles'])
             self.assertFalse(
                 any(
@@ -1544,6 +1756,106 @@ ShellRoot {
             setup,
         )
 
+    def test_resuming_observation_before_watcher_exit_is_not_a_failure(self):
+        def setup(root):
+            (
+                root / 'drawers/audio/backend.py'
+            ).write_text(r"""import json,signal,sys,time
+from pathlib import Path
+starts=Path(__file__).parent/'starts'
+count=len(starts.read_text()) + 1 if starts.exists() else 1
+starts.write_text('x'*count)
+def stop(*_):
+ time.sleep(0.3)  # releasing the subscription takes time
+ sys.exit(0)
+signal.signal(signal.SIGTERM, stop)
+print(json.dumps({'ok':True,'data':{'available':True,'outputs':[],'outputDevices':[],'inputs':[],'inputDevices':[],'warning':'','starts':count}}),flush=True)
+time.sleep(0.6 if count == 2 else 30)
+sys.exit(1)
+""")
+
+        self.run_qml(
+            r"""import QtQuick
+import Quickshell
+import "drawers/audio"
+ShellRoot {
+ property int stage: 0
+ property int failures: 0
+ property int wipes: 0
+ property var owner: ({})
+ Connections {
+  target: AudioService
+  function onErrorChanged() { if (AudioService.error !== "") failures++; }
+  function onStateChanged() { if (!AudioService.state.available) wipes++; }
+ }
+ function check(value, message) { if (!value) throw new Error(message); }
+ Timer { interval: 50; repeat: true; running: true; onTriggered: {
+  try {
+   if (stage === 0) {
+    AudioService.observe(owner, true); stage++;
+   } else if (stage === 1 && AudioService.state.starts === 1) {
+    // Switching between Sound and Microphone resumes before the old watcher exits.
+    AudioService.observe(owner, false); AudioService.observe(owner, true); stage++;
+   } else if (stage === 2 && AudioService.state.starts === 2) {
+    check(failures === 0 && wipes === 0, "a requested watcher exit was reported as a failure");
+    stage++;
+   } else if (stage === 3 && AudioService.error !== "") {
+    check(AudioService.error === "Audio helper stopped. Refresh to retry." && !AudioService.state.available, "an unexpected watcher exit was hidden");
+    console.log("AUDIO_PASS"); Qt.quit();
+   }
+  } catch (error) { console.error("AUDIO_FAIL", error.message); Qt.quit(); }
+ } }
+}
+""",
+            setup,
+        )
+
+    def test_recordings_exclude_captures_of_output_audio(self):
+        self.run_qml(
+            r"""import QtQuick
+import Quickshell
+import Quickshell.Services.Pipewire
+import "drawers/audio"
+ShellRoot {
+ component Node: QtObject {
+  property string name
+  property bool isStream: true
+  property bool isSink: false
+  property bool ready: true
+  property string description: ""
+  property var properties: ({"object.serial": name.length, "application.name": name})
+  property QtObject audio: QtObject { property bool muted: false }
+ }
+ component Link: QtObject { property var source; property var target; property int state: PwLinkState.Active }
+ Node { id: mic; name: "mic"; isStream: false }
+ Node { id: speakers; name: "speakers"; isStream: false; isSink: true }
+ Node { id: player; name: "player"; isSink: true }
+ Node { id: call; name: "call" }
+ Node { id: screen; name: "screen recorder" }
+ Node { id: tap; name: "stream tap" }
+ Node { id: waiting; name: "waiting call" }
+ Link { id: playing; source: player; target: speakers }
+ Link { id: calling; source: mic; target: call }
+ // A sink monitor and another app's output are linked from sink-type nodes.
+ Link { id: monitor; source: speakers; target: screen }
+ Link { id: tapping; source: player; target: tap }
+ function check(value, message) { if (!value) throw new Error(message); }
+ Timer { interval: 50; running: true; onTriggered: {
+  try {
+   const nodes = [mic, speakers, player, call, screen, tap, waiting];
+   const links = [playing, calling, monitor, tapping];
+   const recordings = AudioService.records(false, nodes, links);
+   check(recordings.map(r => r.label).join() === "call,waiting call", "output captures listed as microphone use: " + recordings.map(r => r.label));
+   check(recordings[0].target === "mic" && recordings[0].active && recordings[1].target === "" && !recordings[1].active, "microphone link state");
+   const streams = AudioService.records(true, nodes, links);
+   check(streams.length === 1 && streams[0].label === "player" && streams[0].target === "speakers", "playback streams changed");
+   console.log("AUDIO_PASS"); Qt.quit();
+  } catch (error) { console.error("AUDIO_FAIL", error.message); Qt.quit(); }
+ } }
+}
+"""
+        )
+
     def test_microphone_independent_controls_routes_default_and_lifetime(self):
         device = dict(
             key='card',
@@ -1573,7 +1885,6 @@ ShellRoot {
             maxVolume=150,
             available=True,
             label='USB microphone',
-            icon='mic',
             routes=[],
         )
         builtin = dict(
@@ -1620,7 +1931,10 @@ FAKE_SERVICE MicrophoneDrawer { id: drawer; width: 448; height: 688; x: 16; y: 1
  function check(value, message) { if (!value) throw new Error(message); }
  function click(item) { input.mouseClick(item, item.width/2, item.height/2); }
  function last() { return fake.calls[fake.calls.length-1]; }
- function capture(name) { drawer.grabToImage(result => result.saveToFile((Quickshell.env("AUDIO_PREVIEW_DIR") || "/tmp") + "/" + name)); }
+ function capture(name) {
+  const directory = Quickshell.env("AUDIO_PREVIEW_DIR");
+  if (directory) drawer.grabToImage(result => result.saveToFile(directory + "/" + name));
+ }
  property int stage: 0
  property var savedInput: null
  property var savedSlider: null
@@ -1780,7 +2094,7 @@ import "bar"
 import "ui" as UI
 FloatingWindow {
  implicitWidth: 80; implicitHeight: 40
- QtObject { id: audio; property real volume: 0; property bool muted: false }
+ QtObject { id: audio; property real volume: 0; property var volumes: []; property bool muted: false }
  AudioStatus { id: status; sink: ({audio, nickname: "Dell S2722DC", description: "Graphics audio", name: "display"}) }
  MicrophoneStatus { id: micStatus; source: ({audio, nickname: "Built-in microphone", name: "microphone", properties: {}}) }
  StatusButton {
@@ -1799,6 +2113,11 @@ FloatingWindow {
     check(icon.color.toString() === (level > 1 ? UI.Theme.accent : UI.Theme.text).toString(), "status volume color " + level);
     check(status.description === "Volume: " + Math.round(level * 100) + "%\nDell S2722DC", "volume/device tooltip " + level);
    }
+   // PwNodeAudio.volume is the channel average; the bar matches the drawer's loudest channel.
+   audio.volumes = [0.4, 0.8];
+   check(status.description === "Volume: 80%\nDell S2722DC" && icon.name === "volume-2", "bar does not show the loudest channel");
+   check(micStatus.description === "Microphone: 80%\nBuilt-in microphone", "microphone bar does not show the loudest channel");
+   audio.volumes = [];
    check(micStatus.iconName === "mic", "microphone bar icon missing");
    audio.muted = true;
    check(micStatus.iconName === "mic-off" && micStatus.description.includes("muted"), "microphone bar missed mute");
@@ -2018,7 +2337,10 @@ FAKE_SERVICE QtObject {
  function check(value, message) { if (!value) throw new Error(message); }
  function click(item) { input.mouseClick(item, item.width/2, item.height/2); }
  function last() { return fake.calls[fake.calls.length-1]; }
- function capture(name) { drawer.grabToImage(result => result.saveToFile((Quickshell.env("AUDIO_PREVIEW_DIR") || "/tmp") + "/" + name)); }
+ function capture(name) {
+  const directory = Quickshell.env("AUDIO_PREVIEW_DIR");
+  if (directory) drawer.grabToImage(result => result.saveToFile(directory + "/" + name));
+ }
  property int stage: 0
  property var savedOutput: null
  property var savedSlider: null

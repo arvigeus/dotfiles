@@ -73,6 +73,10 @@ locally changed destinations require individual diff/replace/keep review. A kept
 conflict retains its prior ownership record and returns status 2, rather than
 claiming convergence. Initial installation can replace package/user defaults;
 the first live apply adopts matching files and reviews other existing files.
+For a text diff, `apply.sh` opens Meld as the invoking user when a graphical
+session and Meld are available. It compares temporary copies; otherwise review
+prints the existing unified diff. `apply.sh` forwards graphical session values
+under private variable names; reconciliation supplies them only to Meld.
 
 Omitted tracked files are removed only when clean or explicitly approved. Empty
 directories and untracked files are not swept. Each replaced/removed entry is

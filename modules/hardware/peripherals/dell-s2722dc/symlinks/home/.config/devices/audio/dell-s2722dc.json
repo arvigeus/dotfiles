@@ -5,8 +5,7 @@
                 "node.description": "DELL S2722DC"
             },
             "priority": 10,
-            "label": "Dell S2722DC speakers",
-            "icon": "monitor"
+            "label": "Dell S2722DC speakers"
         }
     ]
 }

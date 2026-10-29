@@ -315,8 +315,11 @@ and only releases discovery owned by this drawer.
 `AudioService` uses native PipeWire nodes, audio controls and link groups for
 volume, mute, default devices, routing display and app streams. `PwObjectTracker`
 binds detailed objects only while a drawer observes. Levels use the loudest
-channel; changing level preserves channel balance. Link state distinguishes
-recording from paused capture. MPRIS controls associate only with uniquely
+channel (`ui/AudioIcons.js`), in the drawers and the bar alike; native
+`PwNodeAudio.volume` is the channel average. Changing level preserves channel
+balance. Link state distinguishes recording from paused capture. Captures linked
+from a sink (its monitor) or a playback stream record output audio, so they are
+not listed as microphone use. MPRIS controls associate only with uniquely
 matching application streams. When several streams match the same desktop
 application, a unique media identity/application label pair can distinguish them
 (for example Radio and a separate mpv player); otherwise controls stay in the
@@ -326,14 +329,26 @@ Playback section.
 availability. It subscribes to Pulse card/sink/source events, debounces reads and
 publishes only changed inventory. Endpoint change events are needed for external
 port switches, even though they can also be native volume/mute changes. The
-subscription dies with its watcher. One-shot helper operations cover card
-profiles, output/input ports, hardware input enablement and stream moves.
+subscription dies with its watcher. Exits requested by dismissal or refresh are
+not failures; when observation resumes first, as when switching between Sound
+and Microphone, Quickshell restarts the watcher after it exits. One-shot helper
+operations cover card profiles, output/input ports, hardware input enablement
+and stream moves. Each runs in a forked child in its own session: Quickshell
+SIGKILLs a helper whose `Process` is destroyed (a shell reload), and the child
+still finishes a started transition while the parent only relays its result.
+Nodes belong to a card by `device.name`: a Pulse card index is an object serial,
+unrelated to a node's `device.id`.
 
 Boost is a per-device `boostDevices` map in `audio.ini`. Disabling it caps that
 device and its streams immediately. Moving playback to a device without boost
 caps that stream to 100%. Route changes enforce the route ceiling, preserve mute
 and recheck identity/availability. Default changes do not move existing streams.
 Hardware input enablement is separate from mute and preserves playback profiles.
+WirePlumber restores each route's remembered volume and mute asynchronously. Live
+inputs are muted before hardware disablement, so the route is remembered muted.
+Capture endpoints that a profile change creates are muted as soon as they appear,
+before playback routes are restored. While a route settles, an endpoint that must
+stay muted is muted again on the first poll that shows it unmuted.
 
 ## Audio configuration
 
@@ -342,12 +357,11 @@ Files contain `rules` and an optional `profiles` map of native profile IDs to
 labels. A rule needs a nonempty `label`, plus `match` (exact property values) or
 `contains` (substrings); both combine with AND. Node/port properties also expose
 `node.name`, `node.description`, `port.name` and `port.description`.
-Optional fields are `deviceLabel`, `icon`, `maxVolume` (1–150, default 150) and
-numeric `priority` (default 0). The first matching rule wins after descending
-priority sort; ties keep file/rule order. `{port}` in a label inserts the
-connection name. Icons are volume-2, headphones, monitor, bluetooth, speaker,
-mic or mic-off. Malformed files and conflicting profile labels are skipped with
-warnings; valid files remain usable.
+Optional fields are `deviceLabel`, `maxVolume` (1–150, default 150) and numeric
+`priority` (default 0). The first matching rule wins after descending priority
+sort; ties keep file/rule order. `{port}` in a label inserts the connection name.
+Malformed files and conflicting profile labels are skipped with warnings; valid
+files remain usable.
 
 `AudioTestService` runs `audio/probe.py` only during a test. Playback visits native
 channels; microphone capture is bounded and requires a live unmuted input.

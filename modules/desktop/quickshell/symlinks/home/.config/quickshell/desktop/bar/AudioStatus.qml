@@ -11,9 +11,9 @@ Scope {
         id: tracker
         objects: [sink].filter(n => n)
     }
-    readonly property real volume: (sink?.audio?.volume ?? 0) * 100
+    readonly property real volume: AudioIcons.level(sink?.audio)
     readonly property string iconName: AudioIcons.volume(volume, !sink?.audio || sink.audio.muted)
     readonly property color iconColor: volume > 100 ? Theme.accent : Theme.text
     readonly property string outputName: sink?.nickname || sink?.description || sink?.name || qsTr("Default output")
-    readonly property string description: !sink?.audio ? qsTr("No audio output") : qsTr("Volume: %1%").arg(Math.round(volume)) + (sink.audio.muted ? qsTr(" (muted)") : "") + "\n" + outputName
+    readonly property string description: !sink?.audio ? qsTr("No audio output") : qsTr("Volume: %1%").arg(volume) + (sink.audio.muted ? qsTr(" (muted)") : "") + "\n" + outputName
 }

@@ -78,16 +78,6 @@ def read_config(path):
                 not isinstance(v, str) for v in rule.get(key, {}).values()
             ):
                 raise ValueError('matching values must be strings')
-        if rule.get('icon', 'volume-2') not in (
-            'volume-2',
-            'headphones',
-            'monitor',
-            'bluetooth',
-            'speaker',
-            'mic',
-            'mic-off',
-        ):
-            raise ValueError('unknown device icon')
         limit = rule.get('maxVolume', 150)
         if (
             isinstance(limit, bool)
@@ -163,7 +153,6 @@ def matching_rules(node, port, config):
 
 
 def describe(sink, port, config):
-    props = identity(sink, port)
     rule = next(iter(matching_rules(sink, port, config)), {})
     description = sink.get('description') or sink['name']
     port_name = port.get('description', '')
@@ -189,19 +178,7 @@ def describe(sink, port, config):
         if port_name and port_name.lower() not in description.lower()
         else description
     )
-    kind = str(port.get('type', '')).lower()
-    icon = rule.get('icon') or (
-        'headphones'
-        if kind in ('headphones', 'headset')
-        else 'monitor'
-        if kind in ('hdmi', 'displayport')
-        else 'mic'
-        if props.get('media.class') == 'Audio/Source' or kind in ('mic', 'microphone')
-        else 'bluetooth'
-        if sink['name'].startswith('bluez_')
-        else 'speaker'
-    )
-    return dict(label=label, icon=icon, maxVolume=rule.get('maxVolume', 150))
+    return dict(label=label, maxVolume=rule.get('maxVolume', 150))
 
 
 def volume(node):
@@ -215,30 +192,22 @@ def volume(node):
     )
 
 
-def limit_volume(kind, node, ceiling):
+def limit_volume(sink, ceiling):
     """Lower gain without changing channel balance, mute, defaults or routing."""
-    levels = [channel.get('value', 0) for channel in node.get('volume', {}).values()]
+    levels = [channel.get('value', 0) for channel in sink.get('volume', {}).values()]
     peak = max(levels, default=0)
     cap = int(ceiling * 65536 / 100)
     if peak > cap:
         command(
-            'set-' + kind + '-volume',
-            node['name'] if kind == 'sink' else node['index'],
-            *(value * cap // peak for value in levels),
+            'set-sink-volume', sink['name'], *(value * cap // peak for value in levels)
         )
 
 
 def card_for(node, cards):
-    props = node.get('properties', {})
-    return next(
-        (
-            card
-            for card in cards
-            if card['name'] == props.get('device.name')
-            or str(card['index']) == str(node.get('card', props.get('device.id')))
-        ),
-        None,
-    )
+    # PipeWire's Pulse JSON has no card index, and a card's index is its object
+    # serial whereas device.id is an object id; only the device name is shared.
+    name = node.get('properties', {}).get('device.name')
+    return next((card for card in cards if card['name'] == name), None)
 
 
 def capture_source(node):
@@ -316,7 +285,8 @@ def playback_profiles(card, config, port=None):
             label=label,
             selected=profile_parts(active)[0] == outputs,
             enabled=target is not None,
-            description=profile.get('description', name),
+            # Describe the profile this mode activates, not the first one listed.
+            description=(target or profile).get('description', name),
             reason=''
             if target
             else 'This mode cannot preserve the current microphone or output connection.',
@@ -339,8 +309,12 @@ def endpoint_match(old, candidates, allow_fallback=True):
     return candidates[0] if allow_fallback and len(candidates) == 1 else None
 
 
-def select_port(direction, node, port):
-    """Wait for session policy to restore the route before overriding its state."""
+def select_port(direction, node, port, keep_muted=False):
+    """Wait for session policy to restore the route before overriding its state.
+
+    With keep_muted, a remembered unmuted route is muted again as soon as it is
+    seen instead of after the wait.
+    """
     command('set-' + direction + '-port', node['name'], port)
     deadline = time.monotonic() + 2
     previous, stable_since = None, None
@@ -362,6 +336,8 @@ def select_port(direction, node, port):
             )
         )
         state = (updated.get('active_port'), updated.get('mute'), levels)
+        if keep_muted and not updated.get('mute'):
+            command('set-' + direction + '-mute', node['name'], '1')
         if updated.get('active_port') != port or state != previous:
             stable_since = None
         elif stable_since is None:
@@ -409,26 +385,37 @@ def change_profile(card, target):
             if time.monotonic() >= deadline:
                 raise ValueError('The audio device did not finish changing mode.')
             time.sleep(0.04)
-        for kind, direction, stream_kind in (
-            ('sinks', 'sink', 'sink-inputs'),
-            ('sources', 'source', 'source-outputs'),
-        ):
-            restored = set()
+        matches = {'sinks': [], 'sources': []}
+        for kind, pairs in matches.items():
+            taken = set()
             for old in before[kind]:
                 node = endpoint_match(
                     old,
-                    [n for n in after[kind] if n['name'] not in restored],
+                    [n for n in after[kind] if n['name'] not in taken],
                     allow_fallback=len(before[kind]) == 1,
                 )
-                if not node:
-                    continue
-                restored.add(node['name'])
+                if node:
+                    taken.add(node['name'])
+                    pairs.append((old, node))
+        matched = {node['name'] for _, node in matches['sources']}
+        fresh = [n for n in after['sources'] if n['name'] not in matched]
+        # Policy may restore a new input's remembered unmuted route. Mute it at
+        # once and settle inputs before the slower playback route waits.
+        for node in fresh:
+            command('set-source-mute', node['name'], '1')
+        for kind, direction, stream_kind in (
+            ('sources', 'source', 'source-outputs'),
+            ('sinks', 'sink', 'sink-inputs'),
+        ):
+            for old, node in matches[kind]:
                 port = old.get('active_port')
                 if port and any(
                     p['name'] == port and available(p.get('availability'))
                     for p in entries(node.get('ports'))
                 ):
-                    node = select_port(direction, node, port)
+                    node = select_port(
+                        direction, node, port, keep_muted=bool(old.get('mute'))
+                    )
                 levels = [v['value'] for v in old.get('volume', {}).values()]
                 if levels:
                     levels = (
@@ -454,20 +441,19 @@ def change_profile(card, target):
                             'move-' + stream_kind[:-1], stream['index'], node['name']
                         )
             if kind == 'sources':
-                for node in after[kind]:
-                    if node['name'] not in restored:
-                        port = next(
-                            (
-                                p
-                                for p in entries(node.get('ports'))
-                                if p['name'] == node.get('active_port')
-                                and available(p.get('availability'))
-                            ),
-                            None,
-                        )
-                        if port:
-                            select_port('source', node, port['name'])
-                        command('set-source-mute', node['name'], '1')
+                for node in fresh:
+                    port = next(
+                        (
+                            p
+                            for p in entries(node.get('ports'))
+                            if p['name'] == node.get('active_port')
+                            and available(p.get('availability'))
+                        ),
+                        None,
+                    )
+                    if port:
+                        select_port('source', node, port['name'], keep_muted=True)
+                    command('set-source-mute', node['name'], '1')
         # An unaffected default (for example a monitor) must also survive policy
         # reacting to newly created nodes on this card.
         for kind, direction in (('sinks', 'sink'), ('sources', 'source')):
@@ -774,9 +760,9 @@ def control(request, config_dir=CONFIG_DIR):
             150 if request.get('boost') is True else 100,
         )
         muted = bool(sink.get('mute'))
-        limit_volume('sink', sink, cap)
-        updated = select_port('sink', sink, port['name'])
-        limit_volume('sink', updated, cap)
+        limit_volume(sink, cap)
+        updated = select_port('sink', sink, port['name'], keep_muted=muted)
+        limit_volume(updated, cap)
         command('set-sink-mute', sink['name'], '1' if muted else '0')
     elif op == 'input-port':
         source = next(
@@ -800,7 +786,7 @@ def control(request, config_dir=CONFIG_DIR):
         if not port or not available(port.get('availability')):
             raise ValueError('This microphone connection is disconnected.')
         muted = bool(source.get('mute'))
-        select_port('source', source, port['name'])
+        select_port('source', source, port['name'], keep_muted=muted)
         command('set-source-mute', source['name'], '1' if muted else '0')
     elif op == 'input-enabled':
         enabled = request.get('enabled')
@@ -823,6 +809,16 @@ def control(request, config_dir=CONFIG_DIR):
             raise ValueError(
                 'This device cannot change input availability while keeping its playback mode. Use mute or advanced settings.'
             )
+        if not enabled:
+            # Policy remembers each route's mute, so inputs re-enabled later
+            # start muted instead of briefly restoring a live microphone.
+            for source in read('sources'):
+                if (
+                    capture_source(source)
+                    and card_for(source, [card])
+                    and not source.get('mute')
+                ):
+                    command('set-source-mute', source['name'], '1')
         change_profile(card, target)
         if enabled and port_name:
             candidates = [
@@ -840,7 +836,7 @@ def control(request, config_dir=CONFIG_DIR):
                 raise ValueError(
                     'The microphone did not become available. Refresh to retry.'
                 )
-            select_port('source', source, port_name)
+            select_port('source', source, port_name, keep_muted=True)
             command('set-source-mute', source['name'], '1')
         # Enabling availability neither unmutes nor selects a new default.
     elif op == 'move':
@@ -943,19 +939,38 @@ def main():
         except BrokenPipeError:
             pass
         return
-    try:
-        control(json.loads(sys.stdin.readline()))
-        result = dict(ok=True)
-    except (
-        OSError,
-        ValueError,
-        TypeError,
-        KeyError,
-        AttributeError,
-        subprocess.SubprocessError,
-    ) as error:
-        result = dict(ok=False, error=failure(error))
-    print(json.dumps(result), flush=True)
+    line = sys.stdin.readline()
+    # Quickshell SIGKILLs a helper whose Process is destroyed, as on a shell
+    # reload. The change runs in its own session so a started device transition
+    # still restores routes, levels and mutes; this process only relays the result.
+    reader, writer = os.pipe()
+    if os.fork() == 0:
+        os.close(reader)
+        os.setsid()
+        devnull = os.open(os.devnull, os.O_RDWR)
+        os.dup2(devnull, 0)
+        os.dup2(devnull, 1)
+        try:
+            control(json.loads(line))
+            result = dict(ok=True)
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            subprocess.SubprocessError,
+        ) as error:
+            result = dict(ok=False, error=failure(error))
+        try:
+            os.write(writer, json.dumps(result).encode())
+        except BrokenPipeError:
+            pass
+        os._exit(0)
+    os.close(writer)
+    with open(reader, 'rb') as stream:
+        output = stream.read().decode()
+    print(output or json.dumps(dict(ok=False, error=failure(None))), flush=True)
 
 
 if __name__ == '__main__':

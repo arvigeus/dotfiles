@@ -4,6 +4,7 @@ import QtCore
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Pipewire
+import "../../ui/AudioIcons.js" as AudioIcons
 
 // Levels, mute, defaults and application streams are native PipeWire objects.
 // backend.py supplies the device inventory (labels, routes, profiles) and runs
@@ -15,7 +16,9 @@ Singleton {
     property bool loaded: false
     property string error: ""
     property bool readFailed: false
-    property bool restarting: false
+    // The watcher exit was requested (dismissal or refresh), so it is not a failure.
+    // Observation can resume before that exit; Process then restarts the watcher.
+    property bool stopping: false
     property var boosts: ({})
     property var state: ({
             available: false,
@@ -39,8 +42,8 @@ Singleton {
                 map[node.name] = node;
         return map;
     }
-    readonly property var streams: records(true)
-    readonly property var recordings: records(false)
+    readonly property var streams: records(true, Pipewire.nodes.values, Pipewire.linkGroups.values)
+    readonly property var recordings: records(false, Pipewire.nodes.values, Pipewire.linkGroups.values)
     // Test hooks for the helper processes.
     readonly property alias watcher: watcher
     readonly property alias worker: worker
@@ -66,11 +69,12 @@ Singleton {
 
     // Application streams, excluding the drawer's own test client. Playback
     // streams are sinks in Quickshell's model (they accept audio for output).
-    function records(playback: bool): var {
-        const links = Pipewire.linkGroups.values;
-        return Pipewire.nodes.values.filter(node => node.audio && node.isStream && node.isSink === playback && node.ready && node.properties["application.id"] !== "dotfiles.audio-test").map(node => {
+    // Capturing a sink monitor or another stream records output, not a microphone.
+    function records(playback: bool, nodes: var, links: var): var {
+        const linkFor = node => links.find(group => playback ? group.source === node : group.target === node);
+        return nodes.filter(node => node.audio && node.isStream && node.isSink === playback && node.ready && node.properties["application.id"] !== "dotfiles.audio-test" && (playback || !linkFor(node)?.source?.isSink)).map(node => {
             const props = node.properties;
-            const link = links.find(group => playback ? group.source === node : group.target === node);
+            const link = linkFor(node);
             const device = playback ? link?.target : link?.source;
             return {
                 key: String(props["object.serial"] ?? node.id),
@@ -86,10 +90,9 @@ Singleton {
             };
         }).sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()) || a.key.localeCompare(b.key));
     }
-    // Percent of the loudest channel, matching pactl; changes preserve balance.
+    // Percent of the loudest channel, as the bar shows; changes preserve balance.
     function level(node): real {
-        const volumes = Array.from(node?.audio?.volumes ?? []);
-        return Math.round((volumes.length ? Math.max(...volumes) : node?.audio?.volume ?? 0) * 100);
+        return AudioIcons.level(node?.audio);
     }
     function setLevel(node, percent: real): void {
         const audio = node?.audio;
@@ -163,7 +166,7 @@ Singleton {
     function refresh(): void {
         error = "";
         if (watcher.running) {
-            restarting = true;
+            stopping = true;
             watcher.signal(15);
         } else
             watcher.running = observing;
@@ -189,7 +192,11 @@ Singleton {
             warning: ""
         };
     }
-    onObservingChanged: watcher.running = observing
+    onObservingChanged: {
+        if (!observing && watcher.running)
+            stopping = true;
+        watcher.running = observing;
+    }
 
     PwObjectTracker {
         objects: root.observing ? Pipewire.nodes.values.filter(node => node.audio).concat(Pipewire.linkGroups.values.filter(group => group.source?.isStream || group.target?.isStream)) : []
@@ -218,8 +225,8 @@ Singleton {
         }
         stderr: StdioCollector {}
         onExited: {
-            if (root.restarting) {
-                root.restarting = false;
+            if (root.stopping) {
+                root.stopping = false;
                 running = root.observing;
             } else if (root.observing)
                 root.fail(qsTr("Audio helper stopped. Refresh to retry."));

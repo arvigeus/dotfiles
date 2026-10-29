@@ -5,8 +5,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import pwd
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import uuid
@@ -199,19 +201,86 @@ class Files:
             print('File exceeds the 1 MiB diff limit.')
         else:
             try:
-                print(
-                    ''.join(
-                        difflib.unified_diff(
-                            target.read_text().splitlines(True),
-                            source.read_text().splitlines(True),
-                            fromfile=str(target),
-                            tofile=str(source),
-                        )
-                    ),
-                    end='',
-                )
+                target_text = target.read_text()
+                source_text = source.read_text()
             except UnicodeError:
                 print('Binary files differ.')
+                return
+            if self._meld_difference(target, source):
+                return
+            print(
+                ''.join(
+                    difflib.unified_diff(
+                        target_text.splitlines(True),
+                        source_text.splitlines(True),
+                        fromfile=str(target),
+                        tofile=str(source),
+                    )
+                ),
+                end='',
+            )
+
+    @staticmethod
+    def _meld_difference(target, source):
+        if (
+            os.environ.get('DOTFILES_DIFF_EDITOR') != 'meld'
+            or os.geteuid() != 0
+        ):
+            return False
+        username = os.environ.get('SUDO_USER')
+        uid_text = os.environ.get('SUDO_UID')
+        editor = shutil.which('meld')
+        session = {
+            name: os.environ[f'DOTFILES_DIFF_{name}']
+            for name in (
+                'DISPLAY',
+                'WAYLAND_DISPLAY',
+                'XDG_RUNTIME_DIR',
+                'DBUS_SESSION_BUS_ADDRESS',
+                'XAUTHORITY',
+            )
+            if os.environ.get(f'DOTFILES_DIFF_{name}')
+        }
+        if (
+            not username
+            or not uid_text
+            or not editor
+            or not (session.get('WAYLAND_DISPLAY') or session.get('DISPLAY'))
+        ):
+            return False
+        try:
+            account = pwd.getpwnam(username)
+            if account.pw_uid == 0 or account.pw_uid != int(uid_text):
+                return False
+            with tempfile.TemporaryDirectory(prefix='dotfiles-diff-') as directory:
+                directory = Path(directory)
+                current = directory / f'installed-{target.name}'
+                configured = directory / f'configured-{source.name}'
+                current.write_bytes(target.read_bytes())
+                configured.write_bytes(source.read_bytes())
+                os.chmod(current, 0o600)
+                os.chmod(configured, 0o600)
+                os.chown(current, account.pw_uid, account.pw_gid)
+                os.chown(configured, account.pw_uid, account.pw_gid)
+                os.chown(directory, account.pw_uid, account.pw_gid)
+                subprocess.run(
+                    [
+                        'runuser',
+                        '-u',
+                        username,
+                        '--',
+                        'env',
+                        *(f'{name}={value}' for name, value in session.items()),
+                        editor,
+                        str(current),
+                        str(configured),
+                    ],
+                    check=True,
+                )
+            return True
+        except (OSError, subprocess.CalledProcessError, ValueError):
+            print('Meld could not be opened; showing the unified diff.')
+            return False
 
     def approved(self, target, source):
         if self.force:
