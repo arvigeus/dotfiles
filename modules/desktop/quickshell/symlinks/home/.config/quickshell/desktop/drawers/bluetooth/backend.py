@@ -54,7 +54,8 @@ class Pairing:
         self.connecting = (
             False  # Pair() succeeded; trust and connect survive cancellation.
         )
-        self.canceled = False
+        # Why pairing was canceled; it outranks the error BlueZ then reports.
+        self.canceled = ''
         self.done = False
         self.prompt = None
         self.invocation = None
@@ -122,15 +123,16 @@ class Pairing:
 
     def registered(self, error):
         if error or self.canceled:
-            self.finish(error or 'Pairing canceled.')
+            self.finish(self.canceled or error)
         else:
             self.call(self.key, DEVICE, 'Pair', done=self.paired, timeout=65000)
 
     def paired(self, error):
         self.clear_prompt()
-        if error or self.canceled:
-            self.finish(error or 'Pairing canceled.')
+        if error:
+            self.finish(self.canceled or error)
             return
+        # A cancellation that reached BlueZ after pairing completed changed nothing.
         self.connecting = True
         self.emit(dict(type='connecting'))
         # Completed pairing authorizes this device's future reconnections.
@@ -180,12 +182,12 @@ class Pairing:
 
     def expire(self):
         self.timer = 0
-        self.cancel()
+        self.cancel('Pairing timed out.')
         return False
 
-    def cancel(self):
+    def cancel(self, reason='Pairing canceled.'):
         if not self.connecting and not self.canceled and not self.done:
-            self.canceled = True
+            self.canceled = reason
             self.clear_prompt()
             self.call(self.key, DEVICE, 'CancelPairing')
 
@@ -279,6 +281,14 @@ class Pairing:
 
 
 def main():
+    # Quickshell SIGKILLs a helper whose Process is destroyed, as on a shell
+    # reload. Pairing runs in a child in its own session, so a paired device is
+    # still trusted and connected; this process only waits for it. The child
+    # shares stdin, so the closed pipe still cancels an unfinished pairing.
+    child = os.fork()
+    if child:
+        sys.exit(os.waitstatus_to_exitcode(os.waitpid(child, 0)[1]))
+    os.setsid()
     loop = GLib.MainLoop()
 
     def emit(value):
@@ -315,7 +325,9 @@ def main():
                 emit(dict(type='error', error=str(exc)))
         return True
 
-    GLib.io_add_watch(sys.stdin.fileno(), GLib.IO_IN | GLib.IO_HUP, read_input)
+    GLib.io_add_watch(
+        sys.stdin.fileno(), GLib.PRIORITY_DEFAULT, GLib.IO_IN | GLib.IO_HUP, read_input
+    )
     pairing.start()
     if not pairing.done:
         loop.run()

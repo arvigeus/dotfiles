@@ -13,8 +13,6 @@ DrawerPage {
     property var bluetooth: Bluetooth
     property QtObject chosenAdapter: null
     property Popup informationPopup: null
-    // Adapter whose discovery this drawer started; stopped after 30 s or on dismissal.
-    property QtObject scanAdapter: null
     readonly property var adapters: bluetooth.adapters.values
     readonly property var adapter: adapters.includes(chosenAdapter) ? chosenAdapter : bluetooth.defaultAdapter ?? adapters[0] ?? null
     readonly property bool blocked: adapter?.state === BluetoothAdapterState.Blocked
@@ -36,24 +34,9 @@ DrawerPage {
             return service.pairingConnects ? qsTr("Connecting…") : qsTr("Pairing…");
         return device.state === BluetoothDeviceState.Connecting ? qsTr("Connecting…") : device.state === BluetoothDeviceState.Disconnecting ? qsTr("Disconnecting…") : "";
     }
-    function startScan(): void {
-        stopScan();
-        adapter.discovering = true;
-        scanAdapter = adapter;
-    }
-    function stopScan(): void {
-        if (scanAdapter?.discovering)
-            scanAdapter.discovering = false;
-        scanAdapter = null;
-    }
     function release(): void {
-        stopScan();
+        service.stopScan();
         service.cancel();
-    }
-    Timer {
-        interval: 30000
-        running: !!root.scanAdapter
-        onTriggered: root.stopScan()
     }
     onActiveChanged: if (!active)
         release()
@@ -115,17 +98,11 @@ DrawerPage {
             objectName: "bluetoothScan"
             iconName: "refresh-cw"
             checked: !!root.adapter?.discovering
-            enabled: root.active && (checked || (root.canAct && !root.pairing))
+            // BlueZ lets only the client that started discovery stop it.
+            enabled: root.active && (checked ? root.service.scanning && root.service.scanAdapter === root.adapter : root.canAct && !root.pairing)
             iconColor: checked ? Theme.accent : Theme.muted
             text: checked ? qsTr("Stop searching") : qsTr("Search for devices")
-            onClicked: {
-                if (!checked) {
-                    root.startScan();
-                    return;
-                }
-                root.adapter.discovering = false;
-                root.scanAdapter = null;
-            }
+            onClicked: checked ? root.service.stopScan() : root.service.startScan(root.adapter)
         }
         IconButton {
             objectName: "bluetoothEdit"
@@ -198,7 +175,7 @@ DrawerPage {
                 model: root.adapters.map(a => a.name || a.adapterId)
                 currentIndex: root.adapters.indexOf(root.adapter)
                 onActivated: index => {
-                    root.stopScan();
+                    root.service.stopScan();
                     root.chosenAdapter = root.adapters[index];
                 }
             }
@@ -338,10 +315,8 @@ DrawerPage {
                                             root.service.disconnect(entry.device);
                                         else if (entry.device.paired)
                                             root.service.connect(entry.device);
-                                        else {
-                                            root.stopScan();
+                                        else
                                             root.service.pair(entry.device);
-                                        }
                                     }
                                     PassiveToolTip {
                                         target: deviceAction

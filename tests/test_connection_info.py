@@ -47,7 +47,7 @@ FloatingWindow {
  QtObject {id:laptop;property string name:"Laptop";property string adapterId:"hci0";property bool enabled:true;property bool discovering:false;property int state:BluetoothAdapterState.Enabled;property var devices:({values:[]})}
  QtObject {id:usb;property string name:"USB";property string adapterId:"hci1";property bool enabled:true;property bool discovering:false;property int state:BluetoothAdapterState.Enabled;property var devices:({values:[]})}
  QtObject {id:fakeBluetooth;property var adapters:({values:[laptop,usb]});property var defaultAdapter:laptop}
- QtObject {id:bt;property QtObject pairingDevice:null;property var prompt:null;property string error:"";property string errorKey:"";property bool pairingConnects:false;function cancel(){}}
+ QtObject {id:bt;property QtObject pairingDevice:null;property var prompt:null;property string error:"";property string errorKey:"";property bool pairingConnects:false;property QtObject scanAdapter:null;property bool scanning:false;function stopScan(){}function cancel(){}}
  ColumnLayout {
   anchors.fill:parent;anchors.margins:16;spacing:16
   RowLayout {

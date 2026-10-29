@@ -300,15 +300,34 @@ without a scan. Results remain until refreshed or the connection context changes
 
 The drawer reads native `Quickshell.Bluetooth` adapters/devices and issues native
 power, connect, disconnect and forget operations. Connecting explicitly trusts a
-device for future reconnection; observation never does. Native failures expose no
-reason text, so the service reports a generic connection failure.
+device for future reconnection; observation never does. BlueZ asks only a default
+agent to authorize incoming services and none runs (the Blueman applet is masked),
+so an untrusted device cannot reconnect by itself. Native failures expose no
+reason text, so the service watches each connect/disconnect until its device
+settles and reports a generic failure on that device.
+
+`BluetoothService` owns discovery started from the drawer. It ends after 30
+seconds, when pairing starts or on dismissal. BlueZ lets only the client that
+started discovery stop it, so another application's search is shown but cannot be
+stopped here. Quickshell sends Start/StopDiscovery only when its cached
+`Discovering` disagrees, and BlueZ refuses to stop a start still in flight, so a
+stop requested before discovery is reported is applied once it is. The service
+holds that state because the page is destroyed after dismissal.
 
 Only pairing uses `bluetooth/backend.py`: it registers an Agent1 on a private
 D-Bus connection and makes Pair() itself so BlueZ routes prompts to that agent.
 It checks BlueZ sender/device identity, validates PIN/passkey responses, and
-cancels after 60 seconds or drawer dismissal. After Pair() succeeds, trust/connect
-finishes independently of dismissal. Searching stops after 30 seconds or dismissal
-and only releases discovery owned by this drawer.
+cancels after 60 seconds, on drawer dismissal or when its stdin closes. A cancel
+reports its own reason rather than the error BlueZ then returns. Once Pair()
+succeeds, trust and connect finish even if a cancel arrives late. The work runs in
+a forked child in its own session: a shell reload SIGKILLs the helper and closes
+its pipes, which cancels an unfinished pairing but lets a paired device finish.
+Helper stderr goes to the shell log.
+
+`tests/test_bluetooth_drawer.py` runs the drawer, service and real helper against
+a fake BlueZ (`tests/fixtures/bluez_service.py`) on a private bus that serves as
+both system and session bus. It covers discovery ownership and delayed starts,
+agent prompts, rejection, dismissal, reload, failed connects and vanished devices.
 
 ## Playback
 

@@ -222,10 +222,7 @@ class Files:
 
     @staticmethod
     def _meld_difference(target, source):
-        if (
-            os.environ.get('DOTFILES_DIFF_EDITOR') != 'meld'
-            or os.geteuid() != 0
-        ):
+        if os.environ.get('DOTFILES_DIFF_EDITOR') != 'meld' or os.geteuid() != 0:
             return False
         username = os.environ.get('SUDO_USER')
         uid_text = os.environ.get('SUDO_UID')

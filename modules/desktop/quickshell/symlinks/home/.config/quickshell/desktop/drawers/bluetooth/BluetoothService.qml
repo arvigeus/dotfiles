@@ -15,9 +15,14 @@ Singleton {
     property string error: ""
     // dbusPath of the device the error belongs to; "" for drawer-wide errors.
     property string errorKey: ""
-    property QtObject watched: null
-    property string watchedOp: ""
     property bool finished: false
+    // Discovery started from the drawer; it ends after 30 s, when pairing starts
+    // or when the drawer stops it. Quickshell sends Start/StopDiscovery only when
+    // its cached Discovering disagrees, and BlueZ refuses to stop a start still in
+    // flight, so a stop requested before discovery is reported is applied once it
+    // is. The drawer page is destroyed too soon after dismissal to wait for that.
+    property QtObject scanAdapter: null
+    property bool scanning: false
 
     function fail(device, message: string): void {
         error = message;
@@ -25,8 +30,10 @@ Singleton {
     }
     function watch(device, op: string): void {
         error = "";
-        watched = device;
-        watchedOp = op;
+        settleWatch.createObject(root, {
+            target: device,
+            op
+        });
     }
     function connect(device): void {
         watch(device, "connect");
@@ -43,9 +50,24 @@ Singleton {
         error = "";
         device.forget();
     }
+    function startScan(adapter): void {
+        stopScan();
+        scanAdapter = adapter;
+        scanning = true;
+        adapter.discovering = true;
+    }
+    function stopScan(): void {
+        scanning = false;
+        if (scanAdapter?.discovering) {
+            scanAdapter.discovering = false;
+            scanAdapter = null;
+        }
+    }
     function pair(device): void {
         if (pairingDevice || pairer.running)
             return;
+        // Discovery competes with pairing for the radio.
+        stopScan();
         error = "";
         prompt = null;
         pairingConnects = false;
@@ -94,18 +116,36 @@ Singleton {
         }
     }
 
-    // Native calls report failure only by returning to the previous state.
+    Timer {
+        interval: 30000
+        running: root.scanning
+        onTriggered: root.stopScan()
+    }
     Connections {
-        target: root.watched
-        function onStateChanged(): void {
-            const device = root.watched;
-            if (device.state === BluetoothDeviceState.Connecting || device.state === BluetoothDeviceState.Disconnecting)
-                return;
-            if (root.watchedOp === "connect" && !device.connected)
-                root.fail(device, qsTr("Could not connect. Make sure the device is awake and nearby."));
-            else if (root.watchedOp === "disconnect" && device.connected)
-                root.fail(device, qsTr("Could not disconnect this device."));
-            root.watched = null;
+        target: root.scanning ? null : root.scanAdapter
+        function onDiscoveringChanged(): void {
+            root.stopScan();
+        }
+    }
+
+    // Native calls report failure only by returning to the previous state, so
+    // each connect/disconnect is watched until its device settles.
+    Component {
+        id: settleWatch
+        Connections {
+            id: settling
+            property string op
+            function onStateChanged(): void {
+                const device = settling.target;
+                if (device.state === BluetoothDeviceState.Connecting || device.state === BluetoothDeviceState.Disconnecting)
+                    return;
+                if (op === "connect" && !device.connected)
+                    root.fail(device, qsTr("Could not connect. Make sure the device is awake and nearby."));
+                else if (op === "disconnect" && device.connected)
+                    root.fail(device, qsTr("Could not disconnect this device."));
+                settling.target = null;
+                settling.destroy();
+            }
         }
     }
     Process {
@@ -114,7 +154,11 @@ Singleton {
         stdout: SplitParser {
             onRead: line => root.receive(line)
         }
-        onExited: {
+        stderr: SplitParser {
+            onRead: line => console.warn("Bluetooth pairing helper:", line)
+        }
+        // A helper that fails to start emits no exited signal.
+        onRunningChanged: if (!running) {
             if (!root.finished)
                 root.fail(root.pairingDevice, qsTr("Bluetooth pairing helper stopped."));
             root.pairingDevice = null;

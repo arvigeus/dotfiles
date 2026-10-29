@@ -131,12 +131,6 @@ if __name__=="__main__":
             (root / 'drawers/displays/brightness.py').write_text(
                 'import json,sys;json.loads(sys.stdin.readline());print(json.dumps(dict(ok=True,values=[])))'
             )
-            (root / 'drawers/bluetooth/backend.py').write_text("""import json,sys
-for line in sys.stdin:
- request=json.loads(line)
- if request.get('active'):print(json.dumps(dict(type='state',available=True,adapters=[dict(key='a',name='Laptop',address='00',powered=True)],devices=[])),flush=True)
- else:print(json.dumps(dict(type='scan',key='')),flush=True)
-""")
             # Storage uses fixture inventory; opening or dismissing must never touch host disks.
             (root / 'drawers/disks/backend.py').write_text("""import json,sys
 volume=dict(key="vault",identity="vault",label="Vault",device="/dev/test1",fs="crypto_LUKS",size=1000,capacity=None,free=None,used=None,capacityError="",mounts=[],encrypted=True,locked=True,canMount=False,canUnmount=False,reason="",target="/")
