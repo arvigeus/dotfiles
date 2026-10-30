@@ -7,7 +7,7 @@ With an empty keyring password, autologin needs no unlock prompt. The keyring is
 then unencrypted and relies on disk encryption and user-only file permissions.
 With a nonempty password, unlock it when first needed each session.
 
-Keyring data is backed up in `dotfiles-private`. A nonempty keyring password
+A nonempty keyring password
 must be remembered when restoring on another machine.
 
 ```sh

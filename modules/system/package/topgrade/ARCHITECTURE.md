@@ -1,10 +1,9 @@
 # Update integration
 
 The System drawer launches `system-update` through its terminal helper, falling
-back to `topgrade` if the launcher is unavailable. `system-update` invokes the
-optional private `system-agent update` command, or ordinary Topgrade. It adds no
-root wrapper or automatic-confirmation flags. The Topgrade module already
-declares the AUR package; it must be installed before
+back to `topgrade` if the launcher is unavailable. `system-update` invokes
+Topgrade. It adds no root wrapper or automatic-confirmation flags. The Topgrade
+module already declares the AUR package; it must be installed before
 using the button. User-owned main configuration retains Topgrade's normal
 precedence over the managed `topgrade.d/maintenance.toml` fragment.
 
@@ -95,17 +94,3 @@ References: [Topgrade configuration](https://github.com/topgrade-rs/topgrade/blo
 
 Verification uses `tests/test_package_maintenance.py`, `tests/test_system_drawer.py`
 and the generation suite. No test runs Topgrade against the host's package state.
-
-## Private maintainer integration
-
-Topgrade conditionally invokes `system-agent snapshot` before updating and
-`system-agent after-update` after `package-maintenance`. Without the private
-command these hooks are no-ops. The private update runner captures native Topgrade
-output in a PTY and defers its own hooks to avoid duplicate snapshots/reviews.
-The maintainer's implementation, policies, source recipes, model settings,
-retention and tests belong to its project in dotfiles-private.
-
-`extra.private.files` includes `home/.local/share/system-agent`, containing only
-bounded durable knowledge, findings and proposals. Runtime evidence and HTTP
-caches are outside this directory. Backup coordination is described in the
-[private backup execution notes](../../../../scripts/ARCHITECTURE.md#private-backups).

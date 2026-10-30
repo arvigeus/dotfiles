@@ -29,7 +29,6 @@ Configure the shared `~/.config/quickshell/desktop/integrations/torrents.json` u
 only needs `{"url":"http://127.0.0.1:8080"}`. Imported archives/installers open in
 the file manager; they are never automatically executed.
 
-Close Games before `backup.sh`. On a fresh installation, apply the public modules
-and restore the private checkout with its `apply.sh`. Game files, Wine prefixes,
+Game files, Wine prefixes,
 saves, Heroic settings and custom Steam artwork need their own backup. See
 [architecture](ARCHITECTURE.md) for storage, provider and lifecycle details.

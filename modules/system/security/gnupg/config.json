@@ -1,12 +1,5 @@
 {
     "packages": [
         "gnupg"
-    ],
-    "extra": {
-        "private": {
-            "files": [
-                "home/.gnupg"
-            ]
-        }
-    }
+    ]
 }

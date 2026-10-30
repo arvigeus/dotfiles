@@ -318,23 +318,34 @@ for(const id of [base+'.all',base+'.direct',base+'.policies','org.freedesktop.po
             )
             self.assertEqual(root.get('target'), 'CONTINUE')
             self.assertEqual(
-                {service.get('name') for service in root.iter('service')}, {name}
+                {service.get('name') for service in root.iter('service')},
+                {'kdeconnect', 'mdns'} if name == 'kdeconnect' else {name},
             )
-        sources = [
-            source.get('address')
-            for source in ET.parse(policies['kdeconnect']).getroot().iter('source')
-        ]
-        self.assertEqual(
-            sources,
-            [
-                '10.0.0.0/8',
-                '172.16.0.0/12',
-                '192.168.0.0/16',
-                '169.254.0.0/16',
-                'fc00::/7',
-                'fe80::/10',
-            ],
-        )
+        kdeconnect = ET.parse(policies['kdeconnect']).getroot()
+        self.assertEqual(len(kdeconnect.findall('rule')), 12)
+        self.assertEqual(kdeconnect.findall('service'), [])
+        for service in ('kdeconnect', 'mdns'):
+            with self.subTest(service=service):
+                rules = [
+                    rule
+                    for rule in kdeconnect.findall('rule')
+                    if rule.find('service').get('name') == service
+                ]
+                self.assertEqual(
+                    [
+                        (rule.get('family'), rule.find('source').get('address'))
+                        for rule in rules
+                    ],
+                    [
+                        ('ipv4', '10.0.0.0/8'),
+                        ('ipv4', '172.16.0.0/12'),
+                        ('ipv4', '192.168.0.0/16'),
+                        ('ipv4', '169.254.0.0/16'),
+                        ('ipv6', 'fc00::/7'),
+                        ('ipv6', 'fe80::/10'),
+                    ],
+                )
+                self.assertTrue(all(rule.find('accept') is not None for rule in rules))
         self.assertEqual(
             json.loads((FIREWALL / 'config.json').read_text())['app_config'],
             {'firewall_config': {'firewall': 'firewalld'}},

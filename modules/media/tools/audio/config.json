@@ -2,12 +2,5 @@
     "packages": [
         "pyside6",
         "python-mutagen"
-    ],
-    "extra": {
-        "private": {
-            "files": [
-                "home/.config/audio-tools/lyrics.json"
-            ]
-        }
-    }
+    ]
 }

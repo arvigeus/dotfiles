@@ -18,8 +18,5 @@ movie folder, or the associated torrent and all its downloaded files.
 X and Escape hide Movies; the X beside its running entry in Spaces closes it.
 Downloads accepted by qBittorrent continue; reopening Movies resumes indexing.
 
-Private configuration and favorites use the regular `backup.sh` / private
-`apply.sh` workflow. Close Movies before backing up its library. On a fresh
-installation, apply the public modules, then restore the private checkout.
 Media files themselves need a separate backup or mount at their original paths.
 See [architecture](ARCHITECTURE.md) for configuration and storage details.

@@ -1,12 +1,5 @@
 {
     "packages": [
         "rclone"
-    ],
-    "extra": {
-        "private": {
-            "files": [
-                "home/.config/rclone/rclone.conf"
-            ]
-        }
-    }
+    ]
 }

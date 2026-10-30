@@ -43,11 +43,6 @@ enablement/masking; `extra.disabled_services` disables system units. Native
 Declare shared script/build tools in their owning modules rather than repeating
 them in application modules.
 
-`extra.private.files` and `extra.private.symlinks` declare private live paths for
-the separate backup/restore workflow. See [private backups](scripts/ARCHITECTURE.md#private-backups)
-for the schema and private module executor. Public installation/apply does not
-copy these paths into this checkout or restore them.
-
 ## Selection and hooks
 
 | Source            | Purpose                                                                                         |

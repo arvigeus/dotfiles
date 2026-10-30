@@ -1,12 +1,5 @@
 {
     "packages": [
         "git"
-    ],
-    "extra": {
-        "private": {
-            "files": [
-                "home/.config/git/config"
-            ]
-        }
-    }
+    ]
 }

@@ -1,8 +1,9 @@
 # Firewall
 
 firewalld rejects unsolicited inbound traffic. Modules allow only their own
-services: KDE Connect from private and link-local addresses, SSH when the SSH
-server module is selected, and DNS/DHCP for libvirt guests.
+services: KDE Connect and its mDNS discovery from private and link-local
+addresses, SSH when the SSH server module is selected, and DNS/DHCP for libvirt
+guests.
 
 NetworkManager connections use the default `public` zone unless assigned another.
 Other stock zones keep firewalld's defaults; `home` and `work`, for example, allow

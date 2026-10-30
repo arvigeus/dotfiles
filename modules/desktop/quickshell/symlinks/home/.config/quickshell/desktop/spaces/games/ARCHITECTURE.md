@@ -134,16 +134,16 @@ The host's top-left X remains reachable.
 
 ## Configuration, private data and provisioning
 
-The owning quickshell module declares three Games `extra.private.files` paths:
+User configuration and state:
 
-- `home/.config/quickshell/desktop/spaces/games/games.json`
-- `home/.config/quickshell/desktop/spaces/games/games-ui.ini`
-- `home/.local/share/quickshell/desktop/spaces/games/library.sqlite`
+- `~/.config/quickshell/desktop/spaces/games/games.json`
+- `~/.config/quickshell/desktop/spaces/games/games-ui.ini`
+- `~/.local/share/quickshell/desktop/spaces/games/library.sqlite`
 
 The JSON game's keys are `igdb_client_id`, `igdb_client_secret`, optional
 `steam_api_key`, `steam_id` and `proton_path`. qBittorrent connection settings
-are shared by all Spaces at `home/.config/quickshell/desktop/integrations/torrents.json`
-and declared once; see [integration ownership](../../integrations/ARCHITECTURE.md#qbittorrent).
+are shared by all Spaces at `~/.config/quickshell/desktop/integrations/torrents.json`
+; see [integration ownership](../../integrations/ARCHITECTURE.md#qbittorrent).
 Missing keys disable only the
 corresponding provider. The file reloads on mtime changes. Provider failures are
 sanitized; keys, sessions and response bodies are not logged to QML. Private
@@ -159,20 +159,11 @@ stay owned by their launchers. Fresh installs must sign in again and reinstall o
 remount games. `proton_path` is machine-specific and must point to an installed
 Proton if supplied.
 
-`backup.sh` reads the generated module selection and snapshots these paths into
-its generated `modules/backup`. Private `apply.sh` restores standalone copies,
-creates private parents, restores modes and preserves destination collisions.
-Close Games before a snapshot. The public quickshell, Steam, browser/XDG and
-qBittorrent modules supply runtime requirements; `gaming/launchers/legendary`
-declares Legendary from AUR and the repository UMU launcher. No new Python
-dependency is required. Epic authentication belongs to Legendary.
-
 ## Validation
 
 `test_games_backend.py` ports the existing 70 parser/provider/store-action tests.
 `test_games_extras.py` covers HLTB auth, route discovery, exact/ambiguous matching,
-direct links, stale/offline responses, custom local art, account selection and
-private clone/restore. `test_games_space.py` drives the production worker and
+direct links, stale/offline responses, custom local art, account selection. `test_games_space.py` drives the production worker and
 fullscreen host with isolated providers: opening, rail/grid preference,
 badge assets, HLTB hover/link/manual-match behavior, inline Find tabs, compact
 favorite/refresh/website actions, branded store action changes, image-strip

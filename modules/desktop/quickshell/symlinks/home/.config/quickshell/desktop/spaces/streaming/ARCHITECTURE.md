@@ -185,11 +185,10 @@ video/model/question. Download associations have a 10,000-record ceiling, suppor
 local-first playback and keep the most recent file per video and type.
 Older collision-preserved copies remain on disk.
 
-The desktop module declares the key, settings, library and resume directory in
-`extra.private.files`, consumed by `backup.sh`. Private records are 0600 with
+The key, settings, library and resume directory use 0600 files with
 0700 leaf directories. Credentials, portable state, runtime sockets, active jobs,
 caches and media payloads stay outside source assets. Media payloads and caches
-are excluded from dotfiles backups. Removing local files updates availability
+require independent storage. Removing local files updates availability
 without changing Nextcloud.
 
 ## Validation
@@ -198,7 +197,7 @@ Run `python3 -m unittest discover -s tests -p 'test_streaming*.py' -v` with loca
 socket access. Tests cover URL validation, feed/search paging and offline reads,
 serialized state, API redaction/cache behavior, explicit analysis, cancellation
 and partial cleanup, owned player IPC, real FFmpeg tags/cover, Music's tag reader,
-a `backup.sh` restore round trip, and the retained Quickshell page with both
+and the retained Quickshell page with both
 layouts, toolbar search, Posts parsing/pagination and avatars, automatic rail/grid/
 Posts loading, scroll retention, hidden/error/exhausted/repeated-page guards,
 canonical subscriptions,

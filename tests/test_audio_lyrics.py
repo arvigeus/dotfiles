@@ -155,45 +155,6 @@ class SharedLyricsTests(unittest.TestCase):
                 audio_lyrics.lookup(self.song, [provider])
         self.assertEqual(self.requests, [])
 
-    def test_shared_settings_are_in_private_backup_and_restore(self):
-        import subprocess
-
-        paths = json.loads(
-            (support.REPO / 'modules/media/tools/audio/config.json').read_text()
-        )['extra']['private']['files']
-        config = self.root / 'declaration.json'
-        config.write_text(json.dumps(dict(extra=dict(private=dict(files=paths)))))
-        live = self.root / 'config/audio-tools/lyrics.json'
-        # The backup engine resolves home/ paths independently of XDG variables.
-        home = self.root / 'home'
-        target = home / '.config/audio-tools/lyrics.json'
-        target.parent.mkdir(parents=True)
-        target.write_bytes(live.read_bytes())
-        target.chmod(0o600)
-        private = self.root / 'private'
-        env = dict(os.environ, HOME=str(home))
-        result = subprocess.run(
-            [
-                'bash',
-                str(support.REPO / 'backup.sh'),
-                '--config',
-                str(config),
-                '--destination',
-                str(private),
-            ],
-            env=env,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        target.unlink()
-        result = subprocess.run(
-            ['bash', str(private / 'apply.sh')], env=env, capture_output=True, text=True
-        )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(target.read_bytes(), live.read_bytes())
-        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
-
 
 if __name__ == '__main__':
     unittest.main()

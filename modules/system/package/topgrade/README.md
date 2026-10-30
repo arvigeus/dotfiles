@@ -10,12 +10,6 @@ reboot.
 Claude Code and Pi update through the system package manager; their plugins and
 extensions update separately through Topgrade.
 
-When the private `system-agent` is installed, updates capture their output and
-package versions, then offer an investigation after maintenance. Its project and
-instructions live in `~/Projects/dotfiles-private/projects/system-agent/`.
-Without it, updates run ordinary Topgrade. Running `topgrade` directly still
-provides version snapshots and the optional review, with limited console context.
-
 Pacnew review uses Meld. `pacnew-review` also runs it independently, using
 sudoedit for protected files. Without a terminal or graphical session, it only
 lists unresolved files. The default scan follows installed package backup entries;

@@ -110,13 +110,13 @@ directly rather than sending that synthetic UUID to Radio Browser.
 
 ## Private state and installation
 
-The quickshell module owns three Radio `extra.private.files` paths:
+User configuration and state:
 
-- `home/.config/quickshell/desktop/spaces/radio/radio-ui.json`: country, genre and
+- `~/.config/quickshell/desktop/spaces/radio/radio-ui.json`: country, genre and
   per-station quality preferences.
-- `home/.local/share/quickshell/desktop/spaces/radio/favorites.json`: station
+- `~/.local/share/quickshell/desktop/spaces/radio/favorites.json`: station
   records, stable provider UUIDs and stream variants.
-- `home/.local/share/quickshell/desktop/spaces/radio/sync.json`: account-scoped
+- `~/.local/share/quickshell/desktop/spaces/radio/sync.json`: account-scoped
   remote links, pending writes and verified station matches.
 
 Files use atomic 0600 replacement and their new parent directories use 0700.
@@ -124,17 +124,9 @@ Search text and playback state stay in the retained instance. Regenerable API
 responses live under `$XDG_CACHE_HOME/quickshell/desktop/spaces/radio/`; sockets
 live in an owner-only `quickshell-radio-UID` runtime directory. Neither is backed
 up. Nextcloud Music sync also uses the shared `nextcloud.json` and
-`nextcloud-music-api-key`, each declared once by the quickshell module. They share
+`nextcloud-music-api-key`, shared by all consumers. They share
 the existing Nextcloud integration directory with the DAV app password; Radio has
 no separate account configuration.
-
-`backup.sh` uses generated module declarations to snapshot these files into the
-private checkout's `modules/backup/` tree. On a clean machine install the public
-quickshell module, then run that private checkout's
-standalone `apply.sh` as the regular user. It creates parents, restores modes and
-keeps collisions beside their replacements as `.before-private-*`. A valid restored
-Music key needs no additional authentication; a revoked key must be regenerated
-in Nextcloud Music settings and saved in the shared integration.
 
 ## Validation
 
@@ -148,9 +140,7 @@ host audio devices or plays sound.
 with fixture APIs/player. It covers toolbar geometry, black background, light
 desktop theme, scrolling/pagination, favorites, nested Escape, pause/resume,
 hide/restore, navigation, explicit close, fresh-instance restore and a late
-resolution arriving after Stop. `tests/test_radio_private.py` exercises the real
-backup → Git clone → standalone restore path, saved variants/preferences,
-permissions and collision preservation in isolated homes.
+resolution arriving after Stop.
 
 `tests/test_radio_sync.py` covers initial union, add/remove in both directions,
 remote edits, offline retry, lost create/delete replies, account isolation,

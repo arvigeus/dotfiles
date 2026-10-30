@@ -80,27 +80,17 @@ an Open Library account; this shell neither stores nor backs up browser sessions
 
 ## Storage and fresh-install restore
 
-Portable `extra.private.files` entries owned by the quickshell module:
+User configuration and state:
 
-- `home/.config/quickshell/desktop/spaces/books/books.json`
-- `home/.config/quickshell/desktop/spaces/books/books-ui.ini`
-- `home/.config/quickshell/desktop/spaces/books/providers`
-- `home/.local/share/quickshell/desktop/spaces/books/library.sqlite`
+- `~/.config/quickshell/desktop/spaces/books/books.json`
+- `~/.config/quickshell/desktop/spaces/books/books-ui.ini`
+- `~/.config/quickshell/desktop/spaces/books/providers`
+- `~/.local/share/quickshell/desktop/spaces/books/library.sqlite`
 
 The library contains favorites and cached metadata, local file associations and
 Books torrent job records. Settings/provider packages and database files use
 owner-only permissions. Response/artwork caches live under
-`$XDG_CACHE_HOME/quickshell/desktop/spaces/books/` and are regenerable. No ebook
-payloads, temporary downloads, artwork, sockets or browser account sessions enter
-private backups. Database backup requires quiescent writes; `backup.sh` is a file
-snapshot rather than an application-consistent SQLite backup.
-
-`backup.sh` snapshots the selected module declarations to `modules/backup` with
-permissions. On a clean machine, install the public quickshell/ebook-reader/
-qBittorrent modules and run the private checkout's standalone `apply.sh` as the
-regular user. It creates parents, restores restrictive modes and preserves
-collisions under `.before-private-*`. Restore media separately and ensure saved
-local paths/mounts exist. Browser borrowing accounts require ordinary sign-in.
+`$XDG_CACHE_HOME/quickshell/desktop/spaces/books/` and are regenerable. Ebook payloads and browser sessions need independent storage and account sign-in.
 
 ## Validation
 
@@ -111,9 +101,6 @@ redacted errors, downloads, collisions, cancellation and owned child shutdown.
 `test_books_space.py` drives the production host and workers for toolbar/grid/rail,
 search/filter Escape, author/edition/scan views, hide/restore, hidden transfer
 completion, independent Movies close, fresh instances and saved layout.
-`test_books_private.py` performs backup → synthetic commit → clone → standalone
-restore, checks bytes/modes/collisions and browses a restored private package with
-the production worker. Fixtures use isolated state and no real account.
 
 Native multi-monitor scaling/hotplug, actual ebook reader handoff and live torrent
 completion still require interactive validation. Test fixtures do not prove those

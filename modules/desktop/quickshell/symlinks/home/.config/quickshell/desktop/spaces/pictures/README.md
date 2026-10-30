@@ -15,8 +15,6 @@ subscriptions/downloads; Wallpaper Engine and Proton must be installed in Steam.
 Wallpiper playback remains experimental. Video providers use silent looping
 MP4 playback and a still frame on the lock screen.
 
-Settings, private provider packages and favorites use the normal private backup.
-Wallpaper images and videos, including the current image, are excluded by request.
 After reinstalling, apply a wallpaper again. External media/Steam libraries need
 their own backup or mounts.
 

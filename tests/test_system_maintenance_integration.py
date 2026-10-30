@@ -1,4 +1,4 @@
-"""Optional private integrations without package updates or real agent execution."""
+"""System update launcher without package updates."""
 
 import os
 from pathlib import Path
@@ -24,8 +24,7 @@ class MaintenanceIntegrationTests(unittest.TestCase):
         path.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
         path.chmod(0o755)
 
-    def test_update_prefers_private_agent_and_preserves_literal_arguments(self):
-        self.program('system-agent')
+    def test_update_preserves_literal_topgrade_arguments(self):
         self.program('topgrade')
         result = subprocess.run(
             [str(UPDATE), '--config', 'space ; $(literal).toml'],
@@ -35,45 +34,5 @@ class MaintenanceIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(
-            result.stdout.splitlines(),
-            ['update', '--config', 'space ; $(literal).toml'],
+            result.stdout.splitlines(), ['--config', 'space ; $(literal).toml']
         )
-
-    def test_update_uses_native_topgrade_when_private_project_is_absent(self):
-        self.program('topgrade')
-        result = subprocess.run(
-            [str(UPDATE), '--no-ask-retry'],
-            env=self.env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.splitlines(), ['--no-ask-retry'])
-
-    def test_backup_passes_existing_options_through_private_lock_wrapper(self):
-        self.program('system-agent')
-        result = subprocess.run(
-            [
-                str(REPO / 'backup.sh'),
-                '--dry-run',
-                '--destination',
-                str(self.root / 'private'),
-            ],
-            env=self.env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            result.stdout.splitlines(),
-            [
-                '--dotfiles',
-                str(REPO),
-                'backup',
-                '--',
-                '--dry-run',
-                '--destination',
-                str(self.root / 'private'),
-            ],
-        )
-        self.assertFalse((self.root / 'private').exists())

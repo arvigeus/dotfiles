@@ -151,44 +151,28 @@ notes/URLs, local file records and torrent import records remain in
 `$XDG_DATA_HOME/quickshell/desktop/spaces/movies/library.sqlite`. Metadata refresh
 preserves personal records.
 
-SQLite uses short transactions and per-request connections. The private engine
-backs up files, not online SQLite snapshots: close Movies before `backup.sh`.
+SQLite uses short transactions and per-request connections.
 Cache entries in the database are included with personal records; image caches,
 large media, sockets and generated OpenSubtitles sessions are not portable inputs.
 
 ## Private configuration and provisioning
 
 Private files are stored alongside their owning Space under the current shell's
-XDG namespace. The owning quickshell module declares these portable paths in
-`extra.private.files`:
+XDG namespace:
 
-- `home/.config/quickshell/desktop/spaces/movies/media.json`: metadata API keys, named playback
+- `~/.config/quickshell/desktop/spaces/movies/media.json`: metadata API keys, named playback
   templates, region, player argv, optional anime adapters and OpenSubtitles account.
-- `home/.config/quickshell/desktop/spaces/movies/media-ui.ini`: view preferences.
-- `home/.local/share/quickshell/desktop/spaces/movies/library.sqlite`: personal/library state.
+- `~/.config/quickshell/desktop/spaces/movies/media-ui.ini`: view preferences.
+- `~/.local/share/quickshell/desktop/spaces/movies/library.sqlite`: personal/library state.
 
 Examples are secret-free and do not get copied over user configuration. Keys remain in Python;
 QML sees provider labels and resolved playback targets. Worker stderr is reduced
 to a generic diagnostic rather than publishing provider exceptions or URLs.
 
 All Spaces read one qBittorrent connection from
-`home/.config/quickshell/desktop/integrations/torrents.json`, declared once by the
-quickshell module. See [shared integration settings](../../integrations/ARCHITECTURE.md#qbittorrent)
-for authentication and backup ownership. Torrent jobs, libraries and worker
+`~/.config/quickshell/desktop/integrations/torrents.json`. See [shared integration settings](../../integrations/ARCHITECTURE.md#qbittorrent)
+for authentication. Torrent jobs, libraries and worker
 lifetimes remain independent per Space.
-
-`backup.sh` uses generated module selection, writes `modules/backup` in the private
-checkout, and refreshes its standalone restore engine. Private `apply.sh` restores
-copies, creates parents and preserves collisions beside the destination.
-Configuration and database files must be user-owned 0600; the private backup
-repository retains owner-only directory modes, and restore creates missing
-destination parents as 0700. A fresh
-system needs the public quickshell, mpv, qBittorrent, ffmpeg and browser/XDG modules
-before private restore. `python-guessit` belongs to quickshell; the other runtime
-packages belong to their existing modules. Providers may expire keys/accounts;
-reauthenticate in media.json or torrents.json when required. Remote qBittorrent
-needs the same absolute download paths mounted locally. Media payloads and machine
-mounts are outside this configuration backup.
 
 ## Validation
 
@@ -208,7 +192,6 @@ primary images finish, and stale-response rejection. Backdrop fixtures cover
 fast transitions, poster fallback, failed images and superseded downloads.
 Native Wayland smoke checks cover real fullscreen geometry and opening/closing
 in dark and light modes. `test_movies_worker.py` checks subprocess cleanup while
-retaining a detached application; `test_movies_private.py` checks a synthetic
-backup → Git clone → restore with private permissions, favorites and ID aliases.
+retaining a detached application.
 Multi-monitor focus/stacking, scaling, hotplug, real playback and real download
 completion still require desktop/device interaction.

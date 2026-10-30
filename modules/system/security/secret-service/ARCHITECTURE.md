@@ -18,13 +18,11 @@ protection at rest. Applications own their authentication dialogs and saved entr
 There are no custom startup overrides, unlock keys, credential importers, or
 PAM changes.
 
-`extra.private.files` declares `home/.local/share/keyrings`. The store
-is backed up and restored by the normal private workflow. Stop credential
+Credential storage lives in `~/.local/share/keyrings`. Stop credential
 consumers and the daemon before restoring keyring files, then start the daemon
 again. The user supplies the keyring password; it is not stored in dotfiles.
 
-Validate module discovery and private restore using
-`python3 -m unittest tests.test_generation tests.test_private_files`.
+Validate module discovery using `python3 -m unittest tests.test_generation`.
 
 References: [GNOME Keyring](https://help.gnome.org/seahorse/keyring.html)
 and [KWallet Secret Service support](https://github.com/KDE/kwallet/blob/v6.31.0/README.md).

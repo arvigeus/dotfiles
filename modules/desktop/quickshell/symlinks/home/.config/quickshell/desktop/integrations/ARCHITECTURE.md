@@ -26,7 +26,7 @@ install -Dm600 /dev/stdin ~/.config/quickshell/desktop/integrations/nextcloud-ap
 The second command reads the app password from standard input; end it with
 Ctrl+D. Runtime reads require a current-user-owned regular file with mode 0600,
 refuse symlinks, and reject empty or multiline secrets. Do not put real
-credentials in managed module assets.
+credentials in public module assets.
 
 `DAVClient` accepts an explicit consumer scope. Authenticated requests and redirects
 must remain within that path on the configured HTTPS origin, without traversal,
@@ -41,9 +41,7 @@ separately; feature configuration cannot override account identity or the passwo
 `subsonic.py` owns the shared Music transport. Radio's station adapter and
 Music's library/stream clients use `load_account()` and `music_api_key()` from
 this integration. The Music key uses the same ownership, 0600 and no-symlink rules
-as the DAV secret. It is declared once in the quickshell module's `extra.private`
-and restored alongside the existing account/password through `backup.sh` and the
-private checkout's standalone apply. No per-Space credential copy is used.
+as the DAV secret. No per-Space credential copy is used.
 The client scopes requests to `index.php/apps/music/subsonic/rest/` beneath the
 HTTPS instance root, sends credentials only in POST form bodies, rejects redirects
 and redacts provider errors. See [Radio sync](../spaces/radio/ARCHITECTURE.md) and
@@ -55,10 +53,8 @@ and [CalDAV](https://docs.nextcloud.com/server/latest/user_manual/en/groupware/s
 ## qBittorrent
 
 Movies, TV Series and Games read one connection configuration from
-`$XDG_CONFIG_HOME/quickshell/desktop/integrations/torrents.json`. The quickshell
-module owns its single `extra.private.files` declaration. `backup.sh` stores
-one matching file under the private repository's generated `modules/backup`;
-standalone private restore recreates it with 0600 permissions and private parents.
+`$XDG_CONFIG_HOME/quickshell/desktop/integrations/torrents.json`, with 0600
+permissions and private parents.
 There are no per-Space copies or compatibility fallbacks. Each Space still owns
 its torrent worker, jobs, import records, tags and library database.
 

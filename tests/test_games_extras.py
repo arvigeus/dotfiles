@@ -1,9 +1,8 @@
-"""Beat-time matching, stale cache preservation, local artwork and private restore."""
+"""Beat-time matching, stale cache preservation and local artwork."""
 
 import json
 import os
 from pathlib import Path
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -183,98 +182,3 @@ class GamesPersistenceTests(unittest.TestCase):
             files = self.backend.handle(dict(op='local_files', title=title))
             self.assertTrue(Path(files[0]['path']).is_relative_to(self.data))
         self.assertTrue(self.backend._favorite_games('', 0)['items'][0]['favorite'])
-
-    def test_backup_clone_and_restore_keep_matches_favorites_and_modes(self):
-        request = dict(gameId=self.game['id'])
-        self.backend.set_favorite(dict(request, favorite=True))
-        self.backend.set_hltb_match(dict(request, externalId='15'))
-        preferences = self.config.with_name('games-ui.ini')
-        preferences.write_text('[catalogue]\ngrid=true\n')
-        preferences.chmod(0o600)
-        module = json.loads(
-            (support.REPO / 'modules/desktop/quickshell/config.json').read_text()
-        )
-        paths = [
-            path
-            for path in module['extra']['private']['files']
-            if '/spaces/games/' in path
-        ]
-        self.assertEqual(len(paths), 3)
-        shared = 'home/.config/quickshell/desktop/integrations/torrents.json'
-        self.assertEqual(module['extra']['private']['files'].count(shared), 1)
-        paths.append(shared)
-        torrents = self.home / shared.removeprefix('home/')
-        torrents.parent.mkdir(parents=True, mode=0o700)
-        torrents.write_text('{"url":"http://127.0.0.1:8080"}')
-        torrents.chmod(0o600)
-        declaration = self.root / 'selected.json'
-        declaration.write_text(json.dumps({'extra': {'private': {'files': paths}}}))
-        private = self.root / 'private'
-
-        def run(argv, home):
-            result = subprocess.run(
-                argv,
-                env={
-                    **os.environ,
-                    'HOME': str(home),
-                    'GIT_CONFIG_GLOBAL': os.devnull,
-                    'GIT_CONFIG_NOSYSTEM': '1',
-                },
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-        run(
-            [
-                'bash',
-                str(support.REPO / 'backup.sh'),
-                '--config',
-                str(declaration),
-                '--destination',
-                str(private),
-            ],
-            self.home,
-        )
-        run(['git', '-C', str(private), 'add', '.'], self.home)
-        run(
-            [
-                'git',
-                '-C',
-                str(private),
-                '-c',
-                'user.name=Fixture',
-                '-c',
-                'user.email=fixture@example.invalid',
-                'commit',
-                '-qm',
-                'Fixture',
-            ],
-            self.home,
-        )
-        clone = self.root / 'clone'
-        run(
-            ['git', 'clone', '--quiet', '--no-hardlinks', str(private), str(clone)],
-            self.home,
-        )
-        restored = self.root / 'restored'
-        restored.mkdir()
-        run(['bash', str(clone / 'apply.sh')], restored)
-        for path in paths:
-            relative = path.removeprefix('home/')
-            self.assertEqual(
-                (self.home / relative).read_bytes(), (restored / relative).read_bytes()
-            )
-            self.assertEqual((restored / relative).stat().st_mode & 0o777, 0o600)
-        restored_backend = GamesBackend(
-            restored / self.config.relative_to(self.home),
-            restored / self.data.relative_to(self.home),
-        )
-        with restored_backend._db() as connection:
-            self.assertEqual(
-                connection.execute('SELECT external_id FROM hltb_matches').fetchone()[
-                    0
-                ],
-                '15',
-            )
-        self.assertTrue(restored_backend._favorite_games('', 0)['items'][0]['favorite'])

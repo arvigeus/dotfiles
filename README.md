@@ -91,21 +91,5 @@ alone. See [reconciliation details](scripts/ARCHITECTURE.md#reconciliation).
 Hyprland starts automatically on TTY1; see the [desktop README](modules/desktop/hyprland/README.md)
 for the session, gaming mode and shortcuts.
 
-## Private backups
-
-Declare private paths under `extra.private` in their module's `config.json`, then
-regenerate configuration. Run as your regular user with Python 3 and Git:
-
-```sh
-./backup.sh --dry-run
-./backup.sh
-```
-
-This creates or updates `~/Projects/dotfiles-private`, including a standalone
-`apply.sh` for a new system. It supports copies, symlinks, and custom private
-modules with installation hooks. Review and commit the private repo yourself.
-Close applications that write backed-up files first; missing paths retain their
-previous backup. See the [private configuration conventions](scripts/ARCHITECTURE.md#private-backups).
-
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the module conventions and execution
 model, and [execution-tool details](scripts/ARCHITECTURE.md) for the scripts.

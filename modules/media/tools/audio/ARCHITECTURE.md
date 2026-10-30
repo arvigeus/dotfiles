@@ -100,8 +100,7 @@ completed edit; it never performs file copying or conversion on the UI thread.
 `audio_lyrics.py` is shared with the Music space, which imports it from
 `/usr/local/lib/audio-tools`. Both read
 `$XDG_CONFIG_HOME/audio-tools/lyrics.json` on each provider lookup. The file is
-private and declared in this module's `extra.private.files`; it is preserved by
-the standalone backup/restore workflow. A missing file uses LRCLIB, and invalid
+private. A missing file uses LRCLIB, and invalid
 settings are reported without replacing them.
 
 The schema is `{"version":1,"providers":[...]}` with up to eight providers.
@@ -131,7 +130,7 @@ throwaway fixtures: all seven presets, Unicode and cleared tags, covers,
 unchanged audio, backups, source changes, output races, job errors/cancellation
 and the real offscreen dialog. Native application queries verify audio MIME registration.
 Lyrics fixtures check shared settings, authenticated requests, cancellation,
-stale drafts, MP3/FLAC saving, provider failures and private backup/restore.
+stale drafts, MP3/FLAC saving, provider failures.
 `python3 -m unittest tests.test_media_tools_gui` verifies single-file registration,
 picker cancellation and native dark/light palette changes in both dialogs. The
 live theme test uses an isolated D-Bus session and temporary XDG directories.

@@ -26,7 +26,7 @@ improve a lossy source.
 My Library uses the shared Nextcloud account, Music API key and rclone remote.
 Discover needs `music.json` with a catalogue token; full-track playback and downloads
 also require a configured provider. An Apple Music subscription alone does not
-configure that provider. Restore your private checkout after installation.
+configure that provider.
 
 Music never evicts cached songs or propagates filesystem deletions. Server errors
 keep local edits; overwritten server versions are retained in `Music-history`.

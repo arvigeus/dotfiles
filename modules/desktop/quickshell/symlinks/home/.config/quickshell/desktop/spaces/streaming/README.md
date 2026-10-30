@@ -16,8 +16,7 @@ The subscription action switches to **Unsubscribe** for followed creators.
 **Summarize video** and **Ask Gemini** analyze the actual public video on request.
 Answers are cached. These actions send the video URL and your question to Gemini;
 API quotas apply. The key lives in
-`~/.config/quickshell/desktop/integrations/gemini-api-key` and is included in
-`backup.sh`.
+`~/.config/quickshell/desktop/integrations/gemini-api-key`.
 
 **Download video** saves to `~/Videos/Streaming`. **Download audio** keeps the best
 available Opus or AAC audio without re-encoding, with tags and cover art in
@@ -26,6 +25,5 @@ in Music’s My Library for metadata review and explicit upload.
 
 Playback, downloads and analysis continue while hidden. The bell shows progress
 and cancellation; closing Streaming stops its owned work. Completed files stay.
-Settings, download associations, answers and resume positions are backed up; downloaded
-media needs your separate media backup. Keep yt-dlp current if YouTube stops
+Downloaded media needs a separate media backup. Keep yt-dlp current if YouTube stops
 working. See [ARCHITECTURE.md](ARCHITECTURE.md) for configuration and internals.

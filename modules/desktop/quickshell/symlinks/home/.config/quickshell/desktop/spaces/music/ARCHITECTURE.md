@@ -185,19 +185,19 @@ resolutions after Stop. Close cancels owned jobs and keeps completed media files
 
 ## State and validation
 
-Portable files are declared in the desktop module's `extra.private.files`:
+Persistent state consists of
 `music.json`, `music-ui.json`, and the data `library.sqlite` with local associations
-and cache baselines. Favorites controls are absent from both tabs. Shared
-Nextcloud credentials and private `rclone.conf` are declared by their owning
-modules. All private snapshots use 0600 files and 0700 leaf directories. Metadata
+and cache baselines. Favorites controls are absent from both tabs. Nextcloud
+credentials and `rclone.conf` are shared integrations.
+Private files use 0600 and leaf directories use 0700. Metadata
 caches, runtime sockets, active playback and large audio payloads are excluded
-from dotfiles backups. New, unuploaded music needs a separate media backup.
+from library state. New, unuploaded music needs a separate media backup.
 
 Run `python3 -m unittest discover -s tests -p 'test_music*.py' -v`.
 Fixtures cover complete/offline indexes, Unicode search, merging and deduplication,
 local removal isolation, failed snapshot publication, complete queues, explicit
 uploads, file collisions/moves, source-version conflicts, real FFmpeg tag edits,
-provider downloads, secure stream proxying, private restore, retained QML views,
+provider downloads, secure stream proxying, retained QML views,
 the information dialog and real mpv pause/seek/hidden queue completion.
 Loopback HTTP/IPC tests need socket access. Fixture tests do not mutate real media
 or upload/delete real server songs. Newly added QML/Python/icon files need their

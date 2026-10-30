@@ -90,7 +90,7 @@ Movies, TV Series, Games, Pictures, Books, Radio, Television, Streaming and Musi
 `ui/SpaceState.entries` is the only registry; the Spaces drawer lists it in that order. Space modules use their own immersive
 presentation rather than the shell's gray controls or light/dark variants, and omit in-module Spaces links.
 See the presentation contract in [Movies architecture](symlinks/home/.config/quickshell/desktop/spaces/movies/ARCHITECTURE.md)
-for provider, worker and private restoration details.
+for provider, worker and persistent settings details.
 
 `SpaceState` owns running IDs and the current Space; opening one requires a
 connected output. `SpaceHost` owns asynchronous loaders and binds effective page
@@ -118,7 +118,7 @@ For Games providers, artwork and beat times, see the
 [Games architecture](symlinks/home/.config/quickshell/desktop/spaces/games/ARCHITECTURE.md).
 For Books metadata, private providers and local reading, see the
 [Books architecture](symlinks/home/.config/quickshell/desktop/spaces/books/ARCHITECTURE.md).
-For Music catalogue/providers, queue playback and private restoration, see
+For Music catalogue/providers, queue playback and persistent settings, see
 [Music architecture](symlinks/home/.config/quickshell/desktop/spaces/music/ARCHITECTURE.md).
 For YouTube feeds, native playback, Gemini analysis and downloads, see
 [Streaming architecture](symlinks/home/.config/quickshell/desktop/spaces/streaming/ARCHITECTURE.md).
@@ -449,7 +449,6 @@ fallback. Ambiguous or anonymous devices require the connector and therefore
 cannot reliably follow a port change. Disabled but connected devices belong to
 the set. Profiles match exact sets, never subsets. Only explicit settings edits
 or Apply arrangement update the source; hotplug, wake and Powersave never do.
-The private backup declaration covers this source file.
 
 `displays.lua` is the generated active profile, loaded after host defaults and
 reconstructed on startup/hotplug. It contains native `hl.monitor` rules for only

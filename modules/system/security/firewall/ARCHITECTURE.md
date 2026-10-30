@@ -9,10 +9,16 @@ accepts SSH, to accept only DHCPv6 replies. NetworkManager binds each connection
 to its configured zone, or the default one.
 
 Feature modules ship `/etc/firewalld/policies/<feature>.xml` policies from `ANY`
-to `HOST` instead of editing a shared zone file: KDE Connect from private and
-link-local source ranges, SSH only from the SSH server module. libvirt ships its own
-zones and policies. Its network driver adds bridges to them and enables IPv4
+to `HOST` instead of editing a shared zone file: KDE Connect and mDNS from private
+and link-local source ranges, SSH only from the SSH server module. libvirt ships
+its own zones and policies. Its network driver adds bridges to them and enables IPv4
 forwarding when it starts a NAT or routed network, so no sysctl is declared.
+
+KDE Connect needs both the `kdeconnect` service (TCP/UDP 1714–1764) and `mdns`
+for discovery. The stock `mdns` service limits UDP 5353 to the multicast
+destinations `224.0.0.251` and `ff02::fb`; the module's rich rules also restrict
+source addresses to the same private and link-local ranges as its pairing ports.
+No per-SSID zone assignment is needed.
 
 ## Desktop ports
 

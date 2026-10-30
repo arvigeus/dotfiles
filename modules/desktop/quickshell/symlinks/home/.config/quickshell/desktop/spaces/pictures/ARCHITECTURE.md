@@ -38,15 +38,15 @@ or an ownership journal needing cleanup starts its worker. Background layer
 surfaces cover each output without reserving space or taking keyboard focus.
 The shell yields an output only after the external renderer supplies frames.
 
-## Storage, backup and restore
+## Storage
 
-The quickshell module declares these `extra.private.files` destinations:
+User configuration and state:
 
-- `home/.config/quickshell/desktop/spaces/pictures/pictures.json`
-- `home/.config/quickshell/desktop/spaces/pictures/pictures-ui.json`
-- `home/.config/quickshell/desktop/spaces/pictures/wallpaper.json`
-- `home/.config/quickshell/desktop/spaces/pictures/providers`
-- `home/.local/share/quickshell/desktop/spaces/pictures/favorites.json`
+- `~/.config/quickshell/desktop/spaces/pictures/pictures.json`
+- `~/.config/quickshell/desktop/spaces/pictures/pictures-ui.json`
+- `~/.config/quickshell/desktop/spaces/pictures/wallpaper.json`
+- `~/.config/quickshell/desktop/spaces/pictures/providers`
+- `~/.local/share/quickshell/desktop/spaces/pictures/favorites.json`
 
 Config contains optional `providers` and `wallpaper_engine` objects. Preferences
 save grid/strip, selected provider and per-provider applied filters. Favorites
@@ -70,13 +70,6 @@ and artwork are regenerable under
 `$XDG_CACHE_HOME/quickshell/desktop/spaces/pictures/`. Videos and Steam Workshop
 payloads also need independent storage/backup. Machine-specific Steam library
 paths and Proton overrides must match the fresh machine.
-
-`backup.sh` snapshots declared paths into the private checkout's `modules/backup`.
-The private standalone `apply.sh` restores copies, creates private parents,
-preserves modes and renames
-collisions beside their destinations. Restore private data in addition to the
-public quickshell module; public apply never hydrates secrets. Provider packages
-and their env files stay in the private repository, never in public examples.
 
 ## Providers and playback
 
@@ -133,11 +126,6 @@ favorites, hidden action completion, retained identity, independent Movies close
 fresh instances and saved grid preference, plus the shared random action.
 `test_pictures_worker.py` exercises the production protocol and owned converter
 group shutdown without terminating detached applications.
-`test_pictures_private.py` checks backup → synthetic commit → clone → standalone
-restore, private modes and destination collision preservation, excluding images.
-The restored generic command package is discovered and browsed through the real
-Pictures worker. UI fixtures drive provider-choice activation, empty loading state,
-private video results and a failed provider without exposing any real private code.
 
 Live Wallhaven downloads, native surfaces and lock configuration are checked
 separately. Actual locking, animation/decoding quality, multiple monitor scales,

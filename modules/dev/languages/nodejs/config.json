@@ -4,12 +4,5 @@
         "extra/npm",
         "bun",
         "pnpm"
-    ],
-    "extra": {
-        "private": {
-            "files": [
-                "home/.config/npm/npmrc"
-            ]
-        }
-    }
+    ]
 }

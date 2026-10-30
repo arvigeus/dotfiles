@@ -1,12 +1,5 @@
 {
     "packages": [
         "chaotic-aur/topgrade"
-    ],
-    "extra": {
-        "private": {
-            "files": [
-                "home/.local/share/system-agent"
-            ]
-        }
-    }
+    ]
 }

@@ -89,25 +89,19 @@ observes its exit and any generic stream failure. Closing the shell ends playbac
 
 ## Portable state and fresh install
 
-The quickshell module owns these `extra.private.files` declarations:
+User configuration and state:
 
-- `home/.config/quickshell/desktop/spaces/television/television-ui.json`: country,
+- `~/.config/quickshell/desktop/spaces/television/television-ui.json`: country,
   language/category choices and selected stream IDs by channel ID.
-- `home/.local/share/quickshell/desktop/spaces/television/favorites.json`: complete
+- `~/.local/share/quickshell/desktop/spaces/television/favorites.json`: complete
   favorite channel/stream snapshots, including public provider headers.
 
 Files use atomic 0600 replacement and their leaf directories use 0700. Search
 text and active playback remain in the retained instance. The
 regenerable catalogue is under `$XDG_CACHE_HOME/quickshell/desktop/spaces/television/`;
 mpv sockets are under the owner-only `quickshell-television-UID` runtime directory.
-Caches, sockets and streamed video are excluded from private backups. Television
+Caches and sockets are regenerable; streamed video is not stored. Television
 has no account, secret or machine-bound credential to recover.
-
-`backup.sh` snapshots the generated declarations into its `modules/backup/` tree.
-On a clean system install the public quickshell module, then run the private
-checkout's standalone `apply.sh` as the regular user. It creates parents,
-restores file modes and preserves existing destinations as `.before-private-*`.
-The optional mpv module restores the managed player UI/configuration.
 
 ## Validation
 
@@ -123,9 +117,6 @@ private normal-config inheritance, pause/resume and cleanup.
 workers, fixture provider data and a fake native player. It checks the compact
 layout, icon, website spacing, paging, nested Escape, favorites, native-player
 handoff, hidden timers, restore, independent close and fresh-instance preferences.
-`test_television_private.py` verifies backup → temporary Git clone → standalone
-restore, all stream fields/preferences, restrictive permissions and collision
-preservation, with no account or cached directory required.
 
 Run `python3 -m unittest discover -s tests -p 'test_television*.py' -v`.
 Interactive native window focus, audible output and multi-monitor hotplug require live use;

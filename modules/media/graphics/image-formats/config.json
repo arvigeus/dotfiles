@@ -1,0 +1,7 @@
+{
+    "packages": [
+        "kimageformats",
+        "libheif",
+        "qt6-imageformats"
+    ]
+}

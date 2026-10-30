@@ -1,8 +1,13 @@
 # Blender
 
-Installs Blender and configures Blender Lab's MCP server for Codex. The Blender
-add-on starts its local bridge automatically when Blender opens; Codex launches
-the separate MCP server when it connects.
+Installs Blender, Blender Lab's MCP add-on and its MCP server for the ChatGPT
+desktop app and Codex. The add-on starts its local bridge automatically when
+Blender opens; the AI client launches the separate MCP server when it connects.
+
+Close Blender before applying configuration. Setup enables **Allow Online
+Access**, which the add-on requires even for localhost, and **Auto Start**.
+Open Blender afterward to use its MCP tools; `/mcp` shows the connection in
+ChatGPT or Codex.
 
 Topgrade upgrades the MCP server from its upstream Git source; reapplying the
 dotfiles configuration also updates it. The add-on updates through Blender's

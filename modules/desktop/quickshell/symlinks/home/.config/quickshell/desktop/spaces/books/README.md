@@ -11,8 +11,7 @@ No account or API key is required. Optional settings live in
 Open Library requests. Language filters use three-letter codes such as `eng` or
 `vie`. Downloaded books go beneath the XDG Documents `Books` folder.
 
-Restore the private checkout alongside the public shell to recover favorites,
-preferences and private providers. Ebook files require their own backup. Reading
+Ebook files require their own backup. Reading
 opens your browser or installed reader; reading progress is not synchronized.
 
 See [architecture](ARCHITECTURE.md) for providers, storage and validation.

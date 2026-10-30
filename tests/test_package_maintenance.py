@@ -230,18 +230,9 @@ raise SystemExit(int(os.environ['FAKE_PACDIFF_STATUS']))
         )
         self.assertFalse(config['misc']['cleanup'])
         self.assertTrue(config['linux']['show_arch_news'])
+        self.assertNotIn('pre_commands', config)
         self.assertEqual(
-            list(config['pre_commands'].values()),
-            [
-                'if command -v system-agent >/dev/null 2>&1; then system-agent snapshot; fi'
-            ],
-        )
-        self.assertEqual(
-            list(config['post_commands'].values()),
-            [
-                'package-maintenance',
-                'if command -v system-agent >/dev/null 2>&1; then system-agent after-update; fi',
-            ],
+            list(config['post_commands'].values()), ['package-maintenance']
         )
 
 

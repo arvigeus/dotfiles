@@ -35,17 +35,17 @@ No worker changes process-global environment from a request. Closing one instanc
 releases only its owned workers; the qBittorrent client and external players remain
 independent. Hidden idle job polling stops; active imports continue intentionally.
 
-Portable private inputs declared by the quickshell module in `extra.private.files`:
+User configuration and state:
 
-- `home/.config/quickshell/desktop/spaces/series/media.json`: API keys, region,
+- `~/.config/quickshell/desktop/spaces/series/media.json`: API keys, region,
   playback providers/player, optional anime adapters and OpenSubtitles account.
-- `home/.config/quickshell/desktop/spaces/series/media-ui.ini`: layout preference.
-- `home/.local/share/quickshell/desktop/spaces/series/library.sqlite`: favorites,
+- `~/.config/quickshell/desktop/spaces/series/media-ui.ini`: layout preference.
+- `~/.local/share/quickshell/desktop/spaces/series/library.sqlite`: favorites,
   aliases, metadata cache, local-file inventory, subtitle records and import jobs.
 
 Metadata cache entries live in the Series database; OpenSubtitles login tokens
 stay in memory. The shared qBittorrent connection is declared once as
-`home/.config/quickshell/desktop/integrations/torrents.json`; see
+`~/.config/quickshell/desktop/integrations/torrents.json`; see
 [integration ownership](../../integrations/ARCHITECTURE.md#qbittorrent).
 Artwork intentionally uses the existing shared `ImageCache` singleton and bounded Movies
 artwork directory: overlapping poster/gallery consumers share downloads, and closing
@@ -63,14 +63,6 @@ dependencies; no additional package is needed. Provider templates need `series_u
 Remote qBittorrent paths must also exist on this machine. Expired API credentials
 or account sessions require renewal in the Series configuration.
 
-`generate-config.py` includes the Series assets and private declarations.
-`backup.sh` snapshots them into the existing private repository’s `modules/backup`;
-its standalone `apply.sh` restores owner-only files and missing parents, retaining
-collisions beside their destinations. Close both media Spaces before backup because
-the engine snapshots files, not live SQLite databases. Media payloads, artwork,
-runtime sockets and generated OpenSubtitles sessions are excluded. Fresh install:
-apply the public modules, restore the private repository, then restore media/mounts.
-
 ## Validation
 
 Use the repository unittest discovery command. `test_series_space.py` uses the real
@@ -78,8 +70,6 @@ host, drawer, page and worker transport over isolated cached metadata: drawer op
 seasons, episode switching, compact rating pairs, independent preferences/favorites,
 hide/restore, explicit close and fresh reopen. `test_series_media.py` exercises the
 Series environment across all three backends, episode imports and local/provider
-playback resolution. `test_movies_private.py` verifies both Spaces’ declarations
-through synthetic backup → commit → clone → standalone restore, preserving private
-modes and aliases. Existing Movies/provider/worker tests cover the reused code.
+playback resolution. Existing Movies/provider/worker tests cover the reused code.
 Real playback/download completion and multi-monitor focus/hotplug require
 interactive validation.

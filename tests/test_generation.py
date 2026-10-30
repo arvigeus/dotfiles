@@ -144,10 +144,6 @@ class GenerationTests(unittest.TestCase):
                     files['/usr/local/bin/package-maintenance']['mode'], '0755'
                 )
                 self.assertEqual(files['/usr/local/bin/system-update']['mode'], '0755')
-                self.assertIn(
-                    'home/.local/share/system-agent',
-                    config['extra']['private']['files'],
-                )
                 self.assertNotIn('/usr/local/bin/package-changelogs', files)
                 self.assertNotIn(
                     '/usr/local/lib/package_changelogs/collector.py', files

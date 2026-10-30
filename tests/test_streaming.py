@@ -1,4 +1,4 @@
-"""Streaming identity boundaries, private restore, analysis, owned jobs and media."""
+"""Streaming identity boundaries, analysis, owned jobs and media."""
 
 import copy
 import json
@@ -537,62 +537,6 @@ class StreamingTests(unittest.TestCase):
                 info['formats'] = [
                     f for f in info['formats'] if f['format_id'] == 'vorbis512'
                 ]
-
-    def test_backup_sh_roundtrip_includes_gemini_settings_library_and_resume(self):
-        manifest = json.loads(
-            (support.REPO / 'modules/desktop/quickshell/config.json').read_text()
-        )
-        paths = [
-            p
-            for p in manifest['extra']['private']['files']
-            if '/streaming/' in p or p.endswith('integrations/gemini-api-key')
-        ]
-        self.assertEqual(len(paths), 4)
-        home = self.root / 'home'
-        restored = self.root / 'restored'
-        private = self.root / 'private'
-        for path in paths:
-            target = home / path.removeprefix('home/')
-            if target.name == 'resume':
-                target = target / 'fixture'
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.parent.chmod(0o700)
-            target.write_text('private fixture')
-            target.chmod(0o600)
-        config = self.root / 'backup.json'
-        config.write_text(json.dumps(dict(extra=dict(private=dict(files=paths)))))
-        env = dict(os.environ, HOME=str(home), PATH=os.defpath)
-        result = subprocess.run(
-            [
-                'bash',
-                str(support.REPO / 'backup.sh'),
-                '--config',
-                str(config),
-                '--destination',
-                str(private),
-            ],
-            env=env,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        result = subprocess.run(
-            ['bash', str(private / 'apply.sh')],
-            env=dict(env, HOME=str(restored)),
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        key = restored / '.config/quickshell/desktop/integrations/gemini-api-key'
-        self.assertEqual(key.read_text(), 'private fixture')
-        self.assertEqual(key.stat().st_mode & 0o777, 0o600)
-        self.assertEqual(
-            (
-                restored
-                / '.local/share/quickshell/desktop/spaces/streaming/resume/fixture'
-            ).read_text(),
-            'private fixture',
-        )
 
 
 if __name__ == '__main__':
