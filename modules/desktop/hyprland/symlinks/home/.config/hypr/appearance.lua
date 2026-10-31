@@ -21,6 +21,10 @@ hl.config({
         blur = {
             size = 3,
         },
+
+        motion_blur = {
+            enabled = true,
+        },
     },
 
     misc = {

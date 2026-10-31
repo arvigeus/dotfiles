@@ -1,8 +1,10 @@
 hl.config({
     cursor = { no_warps = true },
+    binds = { drag_center_window = false },
     input = {
-        -- Hover routes pointer input; clicking changes keyboard focus.
+        -- Hover routes pointer input; the first click only changes keyboard focus.
         follow_mouse = 2,
+        swallow_focus_click = true,
         float_switch_override_focus = 0,
     },
 })

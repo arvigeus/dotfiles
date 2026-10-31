@@ -23,6 +23,12 @@ Settings equal to Hyprland's built-in defaults are omitted. Hyprland itself impo
 its environment into systemd and notifies UWSM of readiness; `XCURSOR_SIZE` is
 declared in `environment.d` because X11 clients otherwise choose their own size.
 
+`appearance.lua` enables window motion blur with Hyprland's default sample count.
+`input.lua` combines detached pointer focus (`follow_mouse = 2`) with
+`swallow_focus_click`, so focus clicks do not reach applications. It disables
+`binds.drag_center_window` to preserve the relative grab point when dragging a
+tiled or fullscreen window into floating mode. Spring curves use `damping`.
+
 Automatic reload starts on the first `IN_CLOSE_WRITE` of a watched file and then
 re-creates every watch, discarding events still queued for the old ones. A burst
 of writes to several files therefore loads whichever versions existed at that

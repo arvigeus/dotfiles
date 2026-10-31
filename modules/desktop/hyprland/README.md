@@ -10,6 +10,8 @@ expected.
 Alt+Tab focuses and centers the next column to the right, wrapping from the last
 column to the first. Win+Left/Right also wrap between columns.
 
+The first click on an inactive window only focuses it; click again to interact.
+
 ## Desktop and gaming mode
 
 The desktop starts automatically on TTY1. Win+1 or Ctrl+Alt+Delete opens Spaces;
