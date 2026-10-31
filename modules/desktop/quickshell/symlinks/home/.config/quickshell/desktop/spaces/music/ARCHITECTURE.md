@@ -158,6 +158,34 @@ owned by [Audio tools](../../../../../../../../../media/tools/audio/ARCHITECTURE
 Providers specify `search_url`, `stream_url`, optional headers/result mappings,
 and `download.track`/`download.album` URL templates or `stream`. Templates escape
 metadata. Secrets remain in private configuration and sanitized worker errors.
+Provider order defines preference. HTTP providers can set `timeout` (1–60
+seconds, default 24); an endpoint error immediately advances to the next provider
+instead of repeating searches against the same failed endpoint. Empty results
+still try ISRC, artist/title and title-only queries with the same match threshold.
+Stream downloads try every eligible provider in order for each song, including
+after an unreadable or failed audio transfer. Failed attempts revoke their stream
+and remove partial output before retrying. Cancellation and local filesystem
+errors propagate without switching sources. Album progress counts completed songs,
+independently of provider attempts, and successful songs are not downloaded again.
+
+A provider can instead use `command` (a direct argument array) or `plugin` (a
+directory relative to Music's configuration directory, containing an API-v1
+`manifest.json`). These use the shared command-package loader, literal `env` and
+`env_file`, bounded runner and process-group cleanup. Their configuration and
+adapters can live entirely outside the public checkout. Command providers declare
+the same `download` capabilities as HTTP providers. No shell evaluates commands.
+The worker sends one JSON request on stdin and expects one JSON object on stdout:
+
+- `{"op":"search","query":"artist title","limit":30}` returns
+  `{"success":true,"results":[{"id":"opaque","title":"Song","artist":"Artist","artistNames":["Artist"],"isrc":"","ref":{}}]}`.
+  Artist/title or ISRC matching stays in Music. `ref` is opaque JSON passed to
+  resolution; candidate lists and references are never persisted or sent to QML.
+- `{"op":"resolve","ref":{}}` returns
+  `{"success":true,"url":"https://example.test/audio","headers":{}}`.
+  Only HTTP(S) media URLs are accepted. Static and resolved headers stay inside
+  Python's existing stream gateway. Command errors become generic Music errors;
+  provider stderr and private locations are not presented by Music.
+
 Catalogue access does not supply subscription authentication or downloadable
 full tracks. Stream downloads encode decoded audio losslessly as tagged FLAC,
 use the collection's title/artist/album/full-date filename convention, preserve

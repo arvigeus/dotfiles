@@ -21,7 +21,8 @@ The notifications bell holds transfer progress and controls.
 catalogue. Artist and album pickers search online as you type. Downloads save
 tagged FLAC files named `Title - Artist - Album (YYYY-MM-DD).flac` in `~/Music`,
 ready to review and upload. FLAC preserves the source's decoded audio; it does not
-improve a lossy source.
+improve a lossy source. Downloads try configured sources in order when a source
+cannot match or save a song.
 
 My Library uses the shared Nextcloud account, Music API key and rclone remote.
 Discover needs `music.json` with a catalogue token; full-track playback and downloads

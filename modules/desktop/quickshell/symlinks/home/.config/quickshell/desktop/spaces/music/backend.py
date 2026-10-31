@@ -41,6 +41,8 @@ from spaces.music.records import (
 )
 from spaces.music.storage import CONFIG, DATA, atomic_write, read_json
 from spaces.music.storage import MusicIpc as MpvIpc
+from spaces.pictures.command_provider import CommandRunner, safe_url
+from spaces.pictures.provider_plugins import ProviderError, configured_providers
 
 APPLE_API = 'https://api.music.apple.com/v1/catalog'
 USER_AGENT = (
@@ -59,6 +61,7 @@ _artist_biography_cache = {}
 _artist_biography_lock = Lock()
 JOBS = Jobs(errors=(MusicError, ValueError))
 STREAMS = StreamBroker()
+COMMANDS = CommandRunner(label='Music')
 _download_processes = set()
 _download_partials = set()
 _download_processes_lock = Lock()
@@ -89,6 +92,22 @@ def music_config():
         raise MusicError('Music providers must be a JSON array.')
     providers = [item for item in providers[:12] if isinstance(item, dict)]
     for provider in providers:
+        if 'command' in provider or 'plugin' in provider:
+            try:
+                provider.update(
+                    configured_providers({'providers': [provider]}, CONFIG)[0]
+                )
+            except ProviderError as error:
+                raise MusicError('A Music command provider is invalid.') from error
+        timeout = provider.get('timeout', 24)
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not 1 <= timeout <= 60
+        ):
+            raise MusicError(
+                'A Music provider timeout must be between 1 and 60 seconds.'
+            )
         download = provider.get('download')
         if download is None:
             continue
@@ -99,10 +118,14 @@ def music_config():
             raise MusicError(
                 "A Music provider download must contain optional track and album URL templates or 'stream'."
             )
-        if any(
-            str(download.get(key) or '').strip() == 'stream'
-            for key in ('track', 'album')
-        ) and (not provider.get('search_url') or not provider.get('stream_url')):
+        if (
+            any(
+                str(download.get(key) or '').strip() == 'stream'
+                for key in ('track', 'album')
+            )
+            and not provider.get('command')
+            and (not provider.get('search_url') or not provider.get('stream_url'))
+        ):
             raise MusicError(
                 "Stream downloads require the provider's search_url and stream_url."
             )
@@ -152,9 +175,9 @@ def request_body(url, headers=None, timeout=24):
         raise MusicError('A configured music endpoint timed out.') from error
 
 
-def request_json(url, headers=None):
+def request_json(url, headers=None, timeout=24):
     try:
-        return json.loads(request_body(url, headers).decode('utf-8'))
+        return json.loads(request_body(url, headers, timeout).decode('utf-8'))
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise MusicError(
             'A configured music endpoint returned unreadable JSON.'
@@ -933,12 +956,16 @@ def provider_template(provider, template_name, values, require_values=False):
     return template
 
 
+def download_providers(kind):
+    return [
+        provider
+        for provider in music_config()['providers']
+        if str((provider.get('download') or {}).get(kind) or '').strip()
+    ]
+
+
 def download_provider(kind):
-    for provider in music_config()['providers']:
-        download = provider.get('download') or {}
-        if isinstance(download, dict) and str(download.get(kind) or '').strip():
-            return provider
-    return None
+    return next(iter(download_providers(kind)), None)
 
 
 def download_capabilities():
@@ -989,7 +1016,7 @@ def save_stream_track(track, provider, directory):
     check_cancelled()
     progress(detail='Saving ' + title)
     resolved = resolve_track(track, providers=[provider], local_first=False)
-    headers = provider_headers(provider)
+    headers = {**provider_headers(provider), **clean_headers(resolved.get('headers'))}
     command = ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-y']
     if not any(name.lower() == 'user-agent' for name in headers):
         command += ['-user_agent', USER_AGENT]
@@ -1058,7 +1085,6 @@ def save_stream_track(track, provider, directory):
                                     0.99, int(values[-1]) / 1000000 / duration
                                 )
                                 progress(done=base + fraction)
-                progress(done=base + 1)
         except subprocess.TimeoutExpired as error:
             process.kill()
             process.communicate()
@@ -1108,6 +1134,7 @@ def save_stream_track(track, provider, directory):
 
 def stop_downloads(*_):
     JOBS.stop()
+    COMMANDS.close()
     STREAMS.close()
     with _download_processes_lock:
         processes = list(_download_processes)
@@ -1127,16 +1154,35 @@ def stop_downloads(*_):
         player_ipc.cleanup(path)
 
 
+def save_track_with_fallback(track, providers, directory):
+    job = current_job()
+    base = job.snapshot()['done'] if job else 0
+    last_error = None
+    for provider in providers:
+        check_cancelled()
+        progress(done=base)
+        try:
+            path = save_stream_track(track, provider, directory)
+            progress(done=base + 1)
+            return path
+        except MusicError as error:
+            last_error = error
+    if last_error:
+        raise last_error
+    raise MusicError('No download provider is configured for this item.')
+
+
 def save_stream_download(kind, item, provider):
     if kind not in ('track', 'album') or not isinstance(item, dict):
         raise MusicError('Choose a song or album to download.')
     if not shutil.which('ffmpeg'):
         raise MusicError('Install ffmpeg to save music streams.')
     directory = xdg_dir('XDG_MUSIC_DIR', 'Music')
+    providers = provider if isinstance(provider, list) else [provider]
     if kind == 'track':
         progress(total=1, unit='tracks')
         try:
-            path = save_stream_track(item, provider, directory)
+            path = save_track_with_fallback(item, providers, directory)
         except OSError as error:
             raise MusicError('Could not write the music download.') from error
         return {'saved': 1, 'failed': 0, 'path': path}
@@ -1157,7 +1203,7 @@ def save_stream_download(kind, item, provider):
         check_cancelled()
         progress(done=index)
         try:
-            save_stream_track(track, provider, directory)
+            save_track_with_fallback(track, providers, directory)
             saved += 1
         except (MusicError, OSError) as error:
             if first_failure is None:
@@ -1176,7 +1222,12 @@ def open_download(args):
     if provider is None:
         raise MusicError('No download provider is configured for this item.')
     if provider['download'][kind].strip() == 'stream':
-        return save_stream_download(kind, args.get('item'), provider)
+        providers = [
+            candidate
+            for candidate in download_providers(kind)
+            if candidate['download'][kind].strip() == 'stream'
+        ]
+        return save_stream_download(kind, args.get('item'), providers)
     url = download_url(kind, args.get('item'))
     try:
         subprocess.Popen(
@@ -1282,6 +1333,17 @@ def lookup_lyrics(song, providers):
 
 
 def provider_results(provider, wanted, query):
+    if provider.get('command'):
+        try:
+            response = COMMANDS.call(
+                provider, {'op': 'search', 'query': query, 'limit': 30}
+            )
+        except ProviderError as error:
+            raise MusicError('A configured music command could not search.') from error
+        results = response.get('results')
+        if not isinstance(results, list):
+            raise MusicError('A music command returned invalid search results.')
+        return [row for row in results[:100] if isinstance(row, dict)]
     url = provider_template(
         provider,
         'search_url',
@@ -1295,7 +1357,9 @@ def provider_results(provider, wanted, query):
     )
     if not url:
         return []
-    response = request_json(url, provider_headers(provider))
+    response = request_json(
+        url, provider_headers(provider), timeout=provider.get('timeout', 24)
+    )
     raw_items = value_at_path(response, provider.get('results_path', 'tracks'))
     if not isinstance(raw_items, list):
         return []
@@ -1332,6 +1396,39 @@ def provider_results(provider, wanted, query):
     return candidates
 
 
+def provider_stream(provider, candidate, values):
+    headers = provider_headers(provider)
+    if provider.get('command'):
+        try:
+            response = COMMANDS.call(
+                provider,
+                {
+                    'op': 'resolve',
+                    'ref': candidate.get('ref', candidate.get('id')),
+                },
+            )
+        except ProviderError as error:
+            raise MusicError(
+                'A configured music command could not resolve this song.'
+            ) from error
+        url = safe_url(response.get('url'))
+        if not url:
+            raise MusicError('A music command returned an invalid stream URL.')
+        headers.update(clean_headers(response.get('headers')))
+    else:
+        stream_id = safe_stream_id(candidate.get('id'))
+        url = provider_template(
+            provider,
+            'stream_url',
+            {
+                **values,
+                'id': stream_id,
+                'track_id': stream_id,
+            },
+        )
+    return {'url': url, 'headers': headers}
+
+
 def local_library():
     DATA.mkdir(parents=True, exist_ok=True, mode=0o700)
     DATA.chmod(0o700)
@@ -1358,33 +1455,36 @@ def resolve_track(track, providers=None, local_first=True):
     queries = ([isrc] if isrc else []) + [f'{artist} {title}', title]
     provider_errors = 0
     for provider in providers:
-        if not provider.get('search_url') or not provider.get('stream_url'):
+        check_cancelled()
+        if not provider.get('command') and (
+            not provider.get('search_url') or not provider.get('stream_url')
+        ):
             continue
         for query in queries:
             try:
                 candidates = provider_results(provider, track, query)
             except MusicError:
                 provider_errors += 1
-                continue
+                break
             ranked = sorted(
                 candidates, key=lambda item: score_candidate(track, item), reverse=True
             )
             if not ranked or score_candidate(track, ranked[0]) < 120:
                 continue
-            stream_id = safe_stream_id(ranked[0].get('id'))
-            stream_url = provider_template(
-                provider,
-                'stream_url',
-                {
-                    'id': stream_id,
-                    'track_id': stream_id,
-                    'query': query,
-                    'artist': artist,
-                    'title': title,
-                    'isrc': isrc,
-                },
-            )
-            return {'url': stream_url, 'headers': provider_headers(provider)}
+            try:
+                return provider_stream(
+                    provider,
+                    ranked[0],
+                    {
+                        'query': query,
+                        'artist': artist,
+                        'title': title,
+                        'isrc': isrc,
+                    },
+                )
+            except MusicError:
+                provider_errors += 1
+                break
     if provider_errors:
         raise MusicError(
             'The configured playback providers could not resolve this song.'

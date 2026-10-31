@@ -15,6 +15,7 @@ import support
 
 sys.path.insert(0, str(support.DESKTOP))
 from spaces.music import backend as music
+from spaces.music.records import clean_duration
 
 
 class MusicTests(unittest.TestCase):
@@ -83,7 +84,7 @@ class MusicTests(unittest.TestCase):
             dict(id='1', attributes={'durationInMillis': 1000}), 'songs'
         )
         self.assertEqual(song['duration'], 1)
-        self.assertEqual(music.clean_duration(float('nan')), 0)
+        self.assertEqual(clean_duration(float('nan')), 0)
 
     def test_title_only_provider_search_still_requires_confident_artist_match(self):
         wanted = {
@@ -307,7 +308,9 @@ class MusicTests(unittest.TestCase):
                 'releaseDate': '2020-07-03',
             }
             with (
-                patch.object(music, 'download_provider', return_value=provider),
+                patch.object(
+                    music, 'music_config', return_value={'providers': [provider]}
+                ),
                 patch.object(
                     music,
                     'resolve_track',
