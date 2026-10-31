@@ -36,6 +36,7 @@ Popup {
     readonly property bool editable: song?.source === "nextcloud" || song?.source === "music-local"
     readonly property bool dirty: editing && (!!coverDraft || JSON.stringify(original) !== JSON.stringify(draft))
     readonly property bool pathDirty: relativePath !== originalPath
+    readonly property string playCountText: song?.playCount !== undefined && song?.playCount !== null ? String(song.playCount) + (song.playCount === 1 ? " play" : " plays") : ""
     property alias coverPicker: coverChooser
     signal saved(var song, var result)
     width: Math.min(820, parent.width - 40)
@@ -375,8 +376,8 @@ Popup {
                 MovieText {
                     objectName: "musicFileInfo"
                     Layout.fillWidth: true
-                    visible: !!root.fileInfo
-                    text: root.fileInfo
+                    visible: !!text
+                    text: [root.fileInfo, root.playCountText].filter(value => !!value).join(" · ")
                     color: MovieStyle.muted
                     wrapMode: Text.Wrap
                 }

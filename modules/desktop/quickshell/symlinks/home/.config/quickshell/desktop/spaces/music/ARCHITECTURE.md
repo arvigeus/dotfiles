@@ -13,13 +13,17 @@ Subsonic `getArtistInfo2`, then Apple when needed. Enrichment never changes the
 library identity or playback source. Songs and Albums remain separate views.
 
 `MusicInfo.qml` has separate read-only and editing states. Opening it requests
-`song-info`: existing local files supply FFprobe tags; otherwise Subsonic `getSong`
-supplies the server metadata and Music-relative path. This never downloads audio
+`song-info`: Subsonic `getSong` supplies fresh server metadata, the read-only
+`playCount` property and Music-relative path. Existing local files override tags
+and format details through FFprobe, while retaining the server play count; server
+failures preserve local previews and any previously known count. Missing play
+counts are omitted rather than becoming zero. This never downloads audio
 or starts a lyric lookup. All tag fields remain visible, with placeholders for
 missing values. Format/rate/bit-depth details reflect whatever the source exposes.
 A missing server path disables editing and moving rather than guessing a filename.
-The title and file-detail subtitle share the header with the editing controls:
-Edit metadata becomes Cancel while editing, with Save beside it.
+The title and muted subtitle with file details and play count share the header
+with the editing controls: Edit metadata becomes Cancel while editing, with Save
+beside it.
 
 Edit metadata starts one owned `info` file job to prepare a local copy and capture
 its authoritative tags/signature. Only then do fields and the cover pencil become

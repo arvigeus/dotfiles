@@ -68,6 +68,9 @@ def record(raw, kind, account):
             discNumber=int(raw.get('discNumber') or 0),
             trackNumber=int(raw.get('track') or 0),
             serverPath=str(raw.get('path') or ''),
+            playCount=int(raw['playCount'])
+            if raw.get('playCount') is not None
+            else None,
         )
     return item
 
@@ -343,7 +346,7 @@ class CloudLibrary:
         )
 
     def song_info(self, item):
-        raw = self.request('getSong', id=self.checked(item)).get('song')
+        raw = self.request('getSong', refresh=True, id=self.checked(item)).get('song')
         if not isinstance(raw, dict):
             raise MusicError('The server did not return song information.')
         tags = {

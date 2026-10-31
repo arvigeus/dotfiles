@@ -181,6 +181,7 @@ for line in sys.stdin:
   action=r['action'];rel=r.get('relativePath',r.get('song',{}).get('serverPath','/album/song.flac').lstrip('/'))
   if action=='save':
    assert 'relativePath' not in r,'Save must not move the file'
+   assert 'playCount' not in r['tags'],'Save must not edit play count'
    tags.update(r['tags'])
   if action=='move':assert 'tags' not in r and 'artwork' not in r,'Move must not edit metadata'
   value=dict(action=action,path='/home/fixture/Music/'+rel,synced=action!='info',relativePath=rel,local=action!='move',tags=dict(tags),signature=[1,2,len(jobs)],pendingUpload=False,fileInfo='FLAC · 24-bit · 96 kHz · Stereo')
@@ -205,7 +206,7 @@ ShellRoot {
  QtObject {
   id:preview;property int reads:0;property int lyricReads:0
   function request(op,args,callback){
-   if(op==="song-info"){reads++;Qt.callLater(()=>callback({tags:{title:"Saved song",artist:"Artist",album:"Album",lyrics:""},relativePath:"album/song.flac"},""));}
+   if(op==="song-info"){reads++;Qt.callLater(()=>callback({song:{playCount:17},tags:{title:"Saved song",artist:"Artist",album:"Album",lyrics:""},relativePath:"album/song.flac"},""));}
    else if(op==="lyrics"){lyricReads++;Qt.callLater(()=>callback({available:true,lyrics:"Fetched lyrics",provider:"Fixture"},""));}
   }
  }
@@ -225,6 +226,11 @@ ShellRoot {
    if(!find(info.contentItem,"musicInfoCover").imageReady)return;
    check(!info.editing&&!info.ready&&!info.dirty&&files.jobs.length===0,"viewing prepared a local file");
    check(preview.reads===1&&preview.lyricReads===0,"lyrics fetched automatically");
+   const subtitle=find(info.contentItem,"musicFileInfo");check(subtitle.text==="17 plays"&&subtitle.parent.objectName==="musicInfoHeading","server play count missing from header");
+   info.song=Object.assign({},info.song,{playCount:0});check(subtitle.text==="0 plays","zero play count hidden");
+   info.song=Object.assign({},info.song,{playCount:1});check(subtitle.text==="1 play","singular play count incorrect");
+   info.song=Object.assign({},info.song,{playCount:null});check(subtitle.text===""&&!subtitle.visible,"missing count shown as zero");
+   info.song=Object.assign({},info.song,{playCount:17});
    const comment=find(info.contentItem,"musicTag:comment");check(comment.parent.visible&&comment.readOnly&&comment.placeholderText,"missing fields are hidden or editable");
    check(find(info.contentItem,"musicTag:title").readOnly&&find(info.contentItem,"musicLyrics").readOnly,"preview fields editable");
    check(info.relativePath==="album/song.flac"&&!find(info.contentItem,"musicMovePath").readOnly,"server path missing");
@@ -238,6 +244,7 @@ ShellRoot {
   }
   if(root.step===4){
    check(info.editing&&info.ready&&!find(info.contentItem,"musicTag:title").readOnly,"Edit did not prepare metadata");
+   check(find(info.contentItem,"musicFileInfo").text===info.fileInfo+" · 17 plays"&&info.draft.playCount===undefined,"editing changed play count or made it a tag");
    const header=find(info.contentItem,"musicInfoHeader"),heading=find(info.contentItem,"musicInfoHeading");
    check(find(info.contentItem,"musicCancelMetadata").parent===header&&find(info.contentItem,"musicCancelMetadata").text==="Cancel"&&!find(info.contentItem,"musicEditMetadata"),"Edit did not become Cancel in the header");
    check(find(info.contentItem,"musicSaveTags").parent===header,"Save is outside the header");

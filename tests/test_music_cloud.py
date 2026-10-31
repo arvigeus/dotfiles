@@ -7,13 +7,13 @@ import unittest
 from urllib.error import URLError
 from urllib.parse import parse_qs
 from urllib.request import urlopen
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 import sys
 import support
 
 sys.path.insert(0, str(support.DESKTOP))
 from integrations.subsonic import MusicError
-from spaces.music.cloud import CloudLibrary, LibraryClient
+from spaces.music.cloud import CloudLibrary, LibraryClient, record
 from spaces.music.cloud_stream import StreamBroker
 
 
@@ -37,6 +37,8 @@ class Client:
             artistId='a1',
             genre='Rock',
             duration=123,
+            path='/album/song.flac',
+            playCount=17,
         )
         album = dict(id='b1', name='Album', artist='Artist', artistId='a1', song=[song])
         artist = dict(
@@ -49,6 +51,7 @@ class Client:
             'getArtists': {'artists': {'index': [{'artist': [artist]}]}},
             'getAlbumList2': {'albumList2': {'album': [album]}},
             'getAlbum': {'album': dict(album, id=args.get('id', 'b1'))},
+            'getSong': {'song': song},
             'getArtist': {'artist': artist},
             'getStarred2': {'starred2': {'song': [dict(song, starred='date')]}},
             'getGenres': {'genres': {'genre': [{'value': 'Rock'}]}},
@@ -65,6 +68,23 @@ class CloudLibraryTests(unittest.TestCase):
         self.client = Client()
         self.library = CloudLibrary(self.client, Path(self.tmp.name) / 'cache')
         self.library.index.start = lambda *args: None
+
+    def test_song_play_count_preserves_zero_and_missing_values(self):
+        for value in (None, 0, 17, 3_000_000_000):
+            with self.subTest(value=value):
+                raw = dict(id='s1', playCount=value)
+                self.assertEqual(record(raw, 'song', 'fixture')['playCount'], value)
+        self.assertIsNone(record(dict(id='s1'), 'song', 'fixture')['playCount'])
+
+    def test_song_information_refreshes_server_play_count(self):
+        from spaces.music import local_files
+
+        song = dict(id='s1', account=self.client.account_id)
+        with patch.object(local_files, 'DATA', Path(self.tmp.name) / 'data'):
+            self.assertEqual(self.library.song_info(song)['song']['playCount'], 17)
+            self.client.calls.clear()
+            self.assertEqual(self.library.song_info(song)['song']['playCount'], 17)
+        self.assertEqual(self.client.calls, [('getSong', {'id': 's1'})])
 
     def test_library_search_categories_genres_and_starred_are_source_scoped(self):
         songs = self.library.browse({'category': 'songs', 'query': 'Song'})['items']

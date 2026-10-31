@@ -1668,12 +1668,16 @@ def song_information(args):
             path = local_files.cached(song) if song.get('serverPath') else None
         except (MusicError, ValueError, OSError):
             path = None
-        if path:
-            return result | tags.read(path, local_files.run)
         if song.get('source') == 'nextcloud':
             from spaces.music.cloud import CloudLibrary
 
-            return result | CloudLibrary().song_info(song)
+            try:
+                result |= CloudLibrary().song_info(song)
+            except MusicError:
+                if not path:
+                    raise
+        if path:
+            result |= tags.read(path, local_files.run)
     return result
 
 

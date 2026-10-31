@@ -33,6 +33,33 @@ class MusicTests(unittest.TestCase):
             context.start()
             self.addCleanup(context.stop)
 
+    def test_cached_song_information_keeps_server_play_count_and_local_tags(self):
+        from spaces.music import cloud, local_files, tags
+
+        song = dict(id='s1', source='nextcloud', serverPath='/song.flac', playCount=2)
+        local = dict(tags={'title': 'Local edit'}, fileInfo='FLAC · 24-bit')
+        with (
+            patch.object(
+                local_files, 'cached', return_value=Path('/fixture/song.flac')
+            ),
+            patch.object(tags, 'read', return_value=local),
+            patch.object(cloud.CloudLibrary, 'song_info') as info,
+            patch.object(cloud.CloudLibrary, '__init__', return_value=None),
+        ):
+            info.return_value = dict(
+                song=dict(song, playCount=17),
+                tags={'title': 'Server title'},
+                fileInfo='FLAC · 800 kbps',
+            )
+            result = music.song_information({'song': song})
+            self.assertEqual(result['song']['playCount'], 17)
+            self.assertEqual(result['tags'], local['tags'])
+            self.assertEqual(result['fileInfo'], local['fileInfo'])
+            info.side_effect = music.MusicError('Offline')
+            result = music.song_information({'song': song})
+            self.assertEqual(result['song']['playCount'], 2)
+            self.assertEqual(result['tags'], local['tags'])
+
     def test_discovery_playlist_continues_past_500_and_genre_filter_preserves_cursor(
         self,
     ):
