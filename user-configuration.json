@@ -926,6 +926,11 @@
                 "mode": "0755"
             },
             {
+                "source": "modules/dev/editors/zed/files/usr/local/share/applications/zed-folder.desktop",
+                "target": "/usr/local/share/applications/zed-folder.desktop",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/dev/languages/go/files/etc/environment.d/go.conf",
                 "target": "/etc/environment.d/go.conf",
                 "mode": "0644"

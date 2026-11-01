@@ -29,6 +29,8 @@ selected files or folders; MIME defaults are not changed. Audio/Video tools and
 Project tools register their own applications. Native editors, Ark, Fooyin,
 MKVToolNix, LibreOffice, Okular, Meld and Filelight own their existing workflows.
 gImageReader uses its packaged desktop entry for image/PDF recognition.
+Zed registers a separate folder-only desktop entry from its own module; it does
+not change the default folder application.
 
 The database hook refreshes the shared MIME and desktop application databases so
 the checksum MIME types and installed application entries are available to KDE.

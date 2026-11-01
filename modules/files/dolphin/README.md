@@ -42,7 +42,7 @@ and verifies checksum manifests and copies text/image contents to the clipboard.
 
 **Open with** offers [Project tools](../../dev/tools/projects/README.md)
 on folders for project-local tasks and Git maintenance. Audio tools and Video
-tools are also normal Open with applications. Network discovery lives in the WiFi
-drawer.
+tools are also normal Open with applications. Use **Open Folder With → Zed** to
+open a folder in Zed. Network discovery lives in the WiFi drawer.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for integration details.

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Zed
+GenericName=Code Editor
+Comment=Open a folder in Zed
+Exec=zeditor %f
+TryExec=zeditor
+Icon=zed
+MimeType=inode/directory;
+Categories=Development;IDE;
+Terminal=false

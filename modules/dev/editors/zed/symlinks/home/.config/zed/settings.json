@@ -37,6 +37,7 @@
         "csharp": true,
         "graphql": true,
         "toml": true,
+        "lua": true,
         "comment": true,
         "env": true,
         "git-firefly": true,
