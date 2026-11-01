@@ -28,10 +28,12 @@ The page owns one JSON-lines `Worker` running `backend.py`. Catalogue reads have
 their own bounded lane; mutations/player commands are ordered through the shared
 worker's control lane. Browse/detail generations discard stale responses. Hidden
 pages stop player polling and visual work, while accepted jobs continue polling
-to deliver completion/error notifications. Video handoff hides the Space using
-its owner-scoped host only once mpv reports a playback position, so failed opens
-leave the error visible. Audio playback leaves it visible. Close terminates this
-worker's commands, transfer staging directories and mpv process group.
+to deliver completion/error notifications. Notified outcomes are not repeated in
+the page error banner; Operations retains the job details. Video handoff hides
+the Space using its owner-scoped host only once mpv reports a playback position,
+so failed opens leave the error visible. Audio playback leaves it visible. Close
+terminates this worker's commands, transfer staging directories and mpv process
+group.
 
 ## YouTube and playback
 

@@ -85,11 +85,14 @@ Item {
         onFailed: message => root.error = message
         onJobStartFailed: message => root.error = message
         onJobFinished: job => {
-            root.notifyJob(job, service);
-            if (job.error)
-                root.error = job.error;
-            else
+            const notified = root.notifyJob(job, service);
+            const failure = job.error || job.result?.error;
+            if (failure) {
+                if (!notified)
+                    root.error = failure;
+            } else {
                 root.observeFiles();
+            }
         }
     }
     Worker {
@@ -112,13 +115,15 @@ Item {
         observeBackgroundJobs: true
         onJobStartFailed: message => root.error = message
         onJobFinished: job => {
-            root.notifyJob(job, cacheService);
+            const notified = root.notifyJob(job, cacheService);
             if (info.busy && String(job.job_id) === info.jobId)
                 info.complete(job.result || {}, job.error || (job.state === "cancelled" ? "Operation cancelled." : ""));
-            else if (job.error)
-                root.error = job.error;
-            else
+            else if (job.error) {
+                if (!notified)
+                    root.error = job.error;
+            } else if (!notified) {
                 root.notice = "Song cached in Music.";
+            }
             root.observeFiles(true);
         }
     }
@@ -142,13 +147,18 @@ Item {
     }
     function notifyJob(job, owner) {
         if (!visibleJob(job, owner) || job.state === "cancelled")
-            return;
+            return false;
         const action = owner.jobRequests[job.job_id]?.args.action || job.result?.action;
         const failure = job.error || job.result?.error;
-        if (failure)
+        if (failure) {
             deliverNotification(job.title || "Music", failure);
-        else if (action !== "save" && action !== "lyrics")
+            return true;
+        }
+        if (action !== "save" && action !== "lyrics") {
             deliverNotification(job.title || "Music", job.result?.message || "Completed.");
+            return true;
+        }
+        return false;
     }
     OperationCenter {
         id: activity

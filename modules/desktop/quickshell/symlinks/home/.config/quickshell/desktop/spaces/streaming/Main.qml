@@ -391,8 +391,7 @@ Item {
                     if (value.kind === "download") {
                         notice = value.audio ? "Saved to Music. Review and upload it in My Library." : "Video saved to Videos/Streaming.";
                     }
-                } else if (job.state === "failed")
-                    error = job.error || "The operation failed.";
+                }
                 if (job.state !== "cancelled")
                     root.notify(["notify-send", "-a", "Streaming", job.state === "finished" ? job.title + " complete" : job.title + " failed", job.state === "finished" ? job.result?.path || "Your video analysis is ready." : job.error || "Try again."]);
             }

@@ -113,7 +113,9 @@ surface activates.
 All Space headers use the shared activity indicator for concurrent work and
 progress. The host's page-opening indicator is a 28-pixel `BusySpinner` in the
 headers' red; `ui/` does not import Space modules. Idle headers have no status marker or history tooltip; completed jobs
-remain in notification/activity panels. Actionable errors remain inline.
+remain in notification/activity panels. Page-level status avoids repeating outcomes
+already announced by desktop notifications; task-specific errors stay with their
+recovery controls.
 For Games providers, artwork and beat times, see the
 [Games architecture](symlinks/home/.config/quickshell/desktop/spaces/games/ARCHITECTURE.md).
 For Books metadata, private providers and local reading, see the
