@@ -14,10 +14,11 @@ The first click on an inactive window only focuses it; click again to interact.
 
 ## Desktop and gaming mode
 
-The desktop starts automatically on TTY1. Win+1 or Ctrl+Alt+Delete opens Spaces;
-hold its **Switch to gaming mode** button for two seconds to enter Steam's dedicated
-gaming session. Steam's **Go to Desktop** or **Exit Steam** returns to the
-desktop. Rebooting always starts Hyprland.
+The desktop starts automatically on TTY1. Win+1 or Shift+Tab opens Spaces; hold
+its **Switch to gaming mode** button for two seconds to enter Steam's dedicated
+gaming session. Ctrl+Shift+Tab opens Performance, and Ctrl+Alt+Delete launches
+btop in Kitty. Steam's **Go to Desktop** or **Exit Steam** returns to the desktop.
+Rebooting always starts Hyprland.
 
 **Restart → Reload** starts a fresh desktop session, closing running applications.
 Gaming exits, startup failures and a compositor startup timeout return to Hyprland.

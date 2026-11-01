@@ -8,8 +8,10 @@ displays, capture, clipboard history, calendar, notifications and system control
 | Shortcut                 | Action                                       |
 | ------------------------ | -------------------------------------------- |
 | Win+R                    | Application search                           |
-| Win+1 or Ctrl+Alt+Delete | Spaces and session actions                   |
-| Win+Shift+P              | Performance, including over fullscreen apps  |
+| Win+1 or Shift+Tab       | Spaces and session actions                   |
+| Ctrl+Shift+Tab           | Performance, including over fullscreen apps  |
+| Ctrl+Alt+Delete          | Launch btop in Kitty                         |
+| Win+Shift+P              | Performance                                  |
 | Ctrl+D in search         | Favorite the selected app                    |
 | Ctrl+Win+Up / Down       | Previous / next workspace on this display    |
 | Ctrl+Win+Shift+Up / Down | Move the window to that workspace and follow |
