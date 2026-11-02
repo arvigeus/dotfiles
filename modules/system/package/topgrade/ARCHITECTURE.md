@@ -26,7 +26,9 @@ and still updates its tools/Python installations; mise checks `mise doctor` for
 self-update availability (false for the installed Arch build). pip3 respects
 Python's externally managed marker. Keep these steps and npm/pnpm/Cargo/plugin
 updates enabled rather than disabling everything whose launcher belongs to
-pacman. Topgrade's installed build has no self-update feature enabled.
+pacman. The module declares `cargo-update` through `extra.cargo_packages`; its
+`cargo-install-update` executable is required for Topgrade to upgrade Cargo tools.
+Topgrade's installed build has no self-update feature enabled.
 
 Topgrade's built-in `config_update` launches pacdiff as root and preserves
 DIFFPROG, but does not use pacdiff's sudoedit mode. This fragment disables that

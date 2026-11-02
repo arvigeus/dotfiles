@@ -641,7 +641,8 @@
             }
         },
         "cargo_packages": [
-            "tokei"
+            "tokei",
+            "cargo-update"
         ],
         "masked_user_services": [
             "app-blueman@autostart.service",
@@ -2833,6 +2834,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/badges/protondb-silver.svg",
                 "target": "home/.config/quickshell/desktop/spaces/games/badges/protondb-silver.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/content.py",
+                "target": "home/.config/quickshell/desktop/spaces/games/content.py"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/games/games.example.json",

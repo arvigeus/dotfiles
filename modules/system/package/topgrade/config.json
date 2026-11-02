@@ -1,5 +1,10 @@
 {
     "packages": [
         "chaotic-aur/topgrade"
-    ]
+    ],
+    "extra": {
+        "cargo_packages": [
+            "cargo-update"
+        ]
+    }
 }
