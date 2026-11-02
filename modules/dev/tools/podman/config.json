@@ -2,6 +2,7 @@
     "packages": [
         "podman",
         "podman-docker",
+        "fuse-overlayfs",
         "docker-compose",
         "podman-compose"
     ],

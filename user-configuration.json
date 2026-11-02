@@ -3834,6 +3834,7 @@
         "mise",
         "podman",
         "podman-docker",
+        "fuse-overlayfs",
         "docker-compose",
         "podman-compose",
         "shellcheck",
