@@ -18,6 +18,12 @@ Item {
     readonly property int toolbarHeight: 46
     readonly property var initialFocus: searchOpen ? search : gridMode ? grid : rail
     property var titles: []
+    property var allTitles: []
+    property bool hideNsfw: true
+    property var contentQueue: []
+    property int contentBusy: 0
+    readonly property int contentUnclassified: hideNsfw ? allTitles.filter(game => game.content?.supported && game.content.nsfw === null).length : 0
+    readonly property int contentHidden: hideNsfw ? allTitles.filter(game => game.content?.nsfw === true).length : 0
     property var selected: ({})
     property var availability: ({
             stores: []
@@ -39,6 +45,12 @@ Item {
     property bool initializing: true
     property bool detailLoading: false
     property bool actionBusy: false
+    property var installJobs: []
+    property bool installsLoading: false
+    property string installsError: ""
+    property bool installsChanged: false
+    property int installGeneration: 0
+    readonly property bool installing: installJobs.some(job => job.state === "running")
     property bool setupRequired: false
     property string error: ""
     property string detailError: ""
@@ -122,6 +134,7 @@ Item {
         poster: root.poster
         ownerKey: root.selected.id || ""
         gridMode: root.gridMode
+        retainPreviousFor: 0
     }
     ImageGallery {
         id: gallery
@@ -175,11 +188,18 @@ Item {
             searchDelay.stop();
             detailDelay.stop();
             metadataDelay.stop();
+            contentDelay.stop();
             pagination.stop();
         } else {
+            if (installsChanged) {
+                installsChanged = false;
+                browse(false);
+                hydrateSelection(false);
+            }
             if (detailLoading)
                 detailDelay.restart();
             metadataDelay.restart();
+            contentDelay.restart();
             pagination.restart();
             if (search.text)
                 searchDelay.restart();
@@ -189,16 +209,81 @@ Item {
         Browser.open(url, "games", "", host);
     }
     function updateCatalogue(items, append) {
-        titles = Catalogue.update(catalogue, titles, items, append);
+        const seen = new Set(append ? allTitles.map(game => game.id) : []);
+        const additions = (items || []).filter(game => {
+            if (!game.id || seen.has(game.id))
+                return false;
+            seen.add(game.id);
+            return true;
+        });
+        allTitles = append ? allTitles.concat(additions) : additions;
+        applyContentFilter();
+    }
+    function applyContentFilter() {
+        const visible = allTitles.filter(game => !hideNsfw || !game.content?.supported || game.content.nsfw === false);
+        titles = Catalogue.update(catalogue, titles, visible, false);
+        if (selected.id && !titles.some(game => game.id === selected.id)) {
+            gallery.close();
+            matching.close();
+            uninstall.close();
+            clearSelection();
+        }
+        if (!selected.id && titles.length)
+            selectGame(titles[0]);
+    }
+    function setNsfwIncluded(included) {
+        hideNsfw = !included;
+        preferences.setValue("catalogue/hideNsfw", hideNsfw);
+        applyContentFilter();
+        contentQueue = allTitles.filter(game => game.content?.pending).map(game => ({
+                    id: game.id,
+                    refresh: false
+                }));
+        contentDelay.restart();
+        pagination.restart();
+    }
+    function hydrateContent() {
+        if (!active || !hideNsfw || loading)
+            return;
+        while (contentBusy < 2 && contentQueue.length) {
+            const queue = contentQueue.slice();
+            const entry = queue.shift();
+            const gameId = entry.id;
+            contentQueue = queue;
+            const generation = browseGeneration;
+            ++contentBusy;
+            service.request("content_rating", {
+                gameId: gameId,
+                refresh: entry.refresh
+            }, (result, failure) => {
+                --contentBusy;
+                if (generation === browseGeneration) {
+                    if (!failure)
+                        patchGame(result);
+                    else {
+                        const game = allTitles.find(game => game.id === gameId);
+                        if (game)
+                            patchGame({
+                                id: gameId,
+                                content: Object.assign({}, game.content, {
+                                    pending: false
+                                })
+                            });
+                    }
+                }
+                contentDelay.restart();
+                pagination.restart();
+            });
+        }
     }
     function patchGame(game) {
-        const index = titles.findIndex(item => item.id === game.id);
+        const index = allTitles.findIndex(item => item.id === game.id);
         if (index < 0)
             return;
-        const next = titles.slice();
+        const next = allTitles.slice();
         next[index] = Object.assign({}, next[index], game);
-        titles = next;
-        catalogue.setProperty(index, "payload", JSON.stringify(next[index]));
+        allTitles = next;
+        applyContentFilter();
     }
     function showMode(value) {
         mode = value;
@@ -217,6 +302,7 @@ Item {
         if (!append) {
             nextOffset = 0;
             metadataQueue = [];
+            contentQueue = [];
         }
         if (mode === "local") {
             service.request("local_list", {}, (result, failure) => {
@@ -255,6 +341,11 @@ Item {
             setupRequired = !!result.setupRequired;
             notice = result.warning || "";
             updateCatalogue(result.items || [], append);
+            contentQueue = contentQueue.concat((result.items || []).filter(game => refresh ? game.content?.supported : game.content?.pending).map(game => ({
+                        id: game.id,
+                        refresh: !!refresh
+                    })));
+            contentDelay.restart();
             nextOffset = Number(result.next || 0);
             if (!append) {
                 rail.positionViewAtBeginning();
@@ -392,7 +483,7 @@ Item {
         });
     }
     function maybeLoadMore() {
-        if (!active || loading || !nextOffset)
+        if (!active || loading || !nextOffset || (hideNsfw && (contentBusy || contentQueue.length)))
             return;
         const nearEnd = gridMode ? grid.contentY + grid.height >= grid.contentHeight - grid.cellHeight * 2 : rail.contentX + rail.width >= rail.contentWidth - rail.width / 2;
         if (nearEnd)
@@ -445,6 +536,7 @@ Item {
             return;
         const gameId = selected.id;
         actionBusy = true;
+        detailError = "";
         service.request("action", {
             gameId: gameId,
             actionId: action.id
@@ -454,9 +546,50 @@ Item {
                 detailError = failure;
                 return;
             }
+            if (result.job) {
+                ++installGeneration;
+                installJobs = [result.job].concat(installJobs.filter(job => job.id !== result.job.id));
+                pollInstalls();
+            }
             notice = result.message || "";
             if (action.type === "play" || result.handoff)
                 host?.hide();
+        });
+    }
+    function installLabel(job) {
+        const percent = job.progress !== null && job.progress !== undefined ? " · " + Math.floor(job.progress * 100) + "%" : "";
+        return (job.detail || "Installing") + percent + (job.speed !== undefined ? " · " + job.speed.toFixed(1) + " MiB/s" : "") + (job.eta ? " · ETA " + job.eta : "");
+    }
+    function pollInstalls() {
+        if (installsLoading)
+            return;
+        const generation = installGeneration;
+        installsLoading = true;
+        service.request("install_jobs", {}, (result, failure) => {
+            installsLoading = false;
+            if (generation !== installGeneration) {
+                pollInstalls();
+                return;
+            }
+            installsError = failure || "";
+            if (failure)
+                return;
+            const finished = (result || []).some(job => job.state !== "running" && installJobs.some(previous => previous.id === job.id && previous.state === "running"));
+            installJobs = result || [];
+            if (finished) {
+                service.request("refresh_libraries", {}, (state, refreshFailure) => {
+                    if (refreshFailure) {
+                        installsError = refreshFailure;
+                        return;
+                    }
+                    catalogState = state.catalog;
+                    if (active) {
+                        browse(false);
+                        hydrateSelection(false);
+                    } else
+                        installsChanged = true;
+                });
+            }
         });
     }
     function editMatch(store, value) {
@@ -484,8 +617,10 @@ Item {
             matching.close();
             if (store === "hltb")
                 loadBeatTimes(true);
-            else
-                hydrateSelection(true);
+            else {
+                clearSelection();
+                browse(false);
+            }
         });
     }
     function loadFilters() {
@@ -502,6 +637,8 @@ Item {
     }
     Component.onCompleted: {
         gridMode = preferences.value("catalogue/grid", false);
+        hideNsfw = preferences.value("catalogue/hideNsfw", true);
+        pollInstalls();
         service.request("init", {}, (result, failure) => {
             initializing = false;
             if (failure) {
@@ -513,6 +650,12 @@ Item {
         });
     }
     Timer {
+        interval: 1500
+        repeat: true
+        running: (root.active || root.installing) && !service.stopped
+        onTriggered: root.pollInstalls()
+    }
+    Timer {
         id: detailDelay
         interval: 90
         onTriggered: root.hydrateSelection(false)
@@ -522,6 +665,11 @@ Item {
         interval: 350
         onTriggered: if (root.active)
             root.browse(false)
+    }
+    Timer {
+        id: contentDelay
+        interval: 20
+        onTriggered: root.hydrateContent()
     }
     Timer {
         id: metadataDelay
@@ -596,8 +744,8 @@ Item {
             Layout.preferredHeight: 28
             active: root.active && !gallery.visible
             spinnerName: "gamesLoading"
-            jobs: downloads.jobs
-            tasks: [task(root.initializing, "init", "Opening Games…"), task(root.loading, "browse", "Loading games…"), task(root.detailLoading, "details", "Loading game details…"), task(root.metadataBusy, "metadata", "Updating game metadata…"), task(root.actionBusy, "action", "Updating game library…"), task(service.pendingCount > 0 && !root.initializing && !root.loading && !root.detailLoading && !root.actionBusy && !root.metadataBusy, "information", "Loading game information…"), task(backdrop.loading || logo.loading, "artwork", "Loading artwork…"), task(root.tab === "torrent" && (downloads.searching || downloads.connectionLoading || downloads.inspectLoading || downloads.reviewLoading), "find", "Loading downloads…")]
+            jobs: root.installJobs.concat(downloads.jobs)
+            tasks: [task(root.initializing, "init", "Opening Games…"), task(root.loading, "browse", "Loading games…"), task(root.detailLoading, "details", "Loading game details…"), task(root.metadataBusy, "metadata", "Updating library metadata · " + (root.metadataQueue.length + 1) + " remaining…"), task(root.actionBusy, "action", "Updating game library…"), task(service.pendingCount > (root.installsLoading ? 1 : 0) && !root.initializing && !root.loading && !root.detailLoading && !root.actionBusy && !root.metadataBusy, "information", "Loading game information…"), task(backdrop.loading || logo.loading, "artwork", "Loading artwork…"), task(root.tab === "torrent" && (downloads.searching || downloads.connectionLoading || downloads.inspectLoading || downloads.reviewLoading), "find", "Loading downloads…")]
         }
         MovieIconButton {
             iconName: "search"
@@ -612,13 +760,14 @@ Item {
             }
         }
         MovieIconButton {
+            objectName: "gameFiltersButton"
             iconName: "sliders-horizontal"
             text: "Filters"
-            enabled: root.mode === "discover" && root.catalogState.configured
+            enabled: root.mode !== "local"
             highlighted: root.filtersOpen
             onClicked: {
                 root.filtersOpen = !root.filtersOpen;
-                if (root.filtersOpen)
+                if (root.filtersOpen && root.mode === "discover" && root.catalogState.configured)
                     root.loadFilters();
             }
         }
@@ -629,6 +778,7 @@ Item {
             onClicked: root.refreshLibraries()
         }
         MovieIconButton {
+            objectName: "gameDownloads"
             iconName: "download"
             text: "Downloads"
             onClicked: downloads.showJobPanel()
@@ -654,70 +804,100 @@ Item {
             contentHeight: height
             RowLayout {
                 spacing: 8
-                MovieChoice {
-                    id: genre
-                    objectName: "genrePicker"
-                    Layout.preferredWidth: 180
-                    model: [
-                        {
-                            id: "",
-                            name: "All genres"
-                        }
-                    ].concat(root.genreOptions)
-                    textRole: "name"
-                    Accessible.name: "Genre"
-                }
-                MovieChoice {
-                    id: platform
-                    Layout.preferredWidth: 180
-                    model: [
-                        {
-                            id: "",
-                            name: "All platforms"
-                        }
-                    ].concat(root.platformOptions)
-                    textRole: "name"
-                    Accessible.name: "Platform"
-                }
-                MovieChoice {
-                    id: sort
-                    model: ["Popular", "Highest rating", "Newest release", "Recently updated", "Title"]
-                    Accessible.name: "Sort"
-                }
-                MovieInput {
-                    id: fromYear
-                    Layout.preferredWidth: 100
-                    placeholderText: "From year"
-                    Accessible.name: "From year"
-                    validator: IntValidator {
-                        bottom: 1970
-                        top: 2200
+                CheckBox {
+                    id: nsfwFilter
+                    objectName: "gameContentFilter"
+                    text: "NSFW"
+                    checked: !root.hideNsfw
+                    font.family: MovieStyle.fontFamily
+                    font.pixelSize: MovieStyle.fontSize
+                    palette.text: MovieStyle.text
+                    palette.buttonText: MovieStyle.text
+                    palette.highlight: MovieStyle.accent
+                    Accessible.name: "NSFW"
+                    Accessible.description: "Include NSFW games"
+                    onToggled: root.setNsfwIncluded(checked)
+                    PassiveToolTip {
+                        target: nsfwFilter
+                        text: "Include NSFW games. Uses GOG and Steam content labels; unclassified Steam/GOG games stay hidden when unchecked."
                     }
                 }
-                MovieInput {
-                    id: toYear
-                    Layout.preferredWidth: 100
-                    placeholderText: "To year"
-                    Accessible.name: "To year"
-                    validator: IntValidator {
-                        bottom: 1970
-                        top: 2200
+                RowLayout {
+                    visible: root.mode === "discover" && root.catalogState.configured
+                    spacing: 8
+                    MovieChoice {
+                        id: genre
+                        objectName: "genrePicker"
+                        Layout.preferredWidth: 180
+                        model: [
+                            {
+                                id: "",
+                                name: "All genres"
+                            }
+                        ].concat(root.genreOptions)
+                        textRole: "name"
+                        Accessible.name: "Genre"
                     }
-                }
-                MovieButton {
-                    text: "Apply"
-                    onClicked: {
-                        root.filters = {
-                            genre: genre.model[genre.currentIndex].id,
-                            platform: platform.model[platform.currentIndex].id,
-                            sort: ["-added", "-rating", "-released", "-updated", "name"][sort.currentIndex],
-                            fromYear: fromYear.text,
-                            toYear: toYear.text
-                        };
-                        root.browse(false);
+                    MovieChoice {
+                        id: platform
+                        Layout.preferredWidth: 180
+                        model: [
+                            {
+                                id: "",
+                                name: "All platforms"
+                            }
+                        ].concat(root.platformOptions)
+                        textRole: "name"
+                        Accessible.name: "Platform"
+                    }
+                    MovieChoice {
+                        id: sort
+                        model: ["Popular", "Highest rating", "Newest release", "Recently updated", "Title"]
+                        Accessible.name: "Sort"
+                    }
+                    MovieInput {
+                        id: fromYear
+                        Layout.preferredWidth: 100
+                        placeholderText: "From year"
+                        Accessible.name: "From year"
+                        validator: IntValidator {
+                            bottom: 1970
+                            top: 2200
+                        }
+                    }
+                    MovieInput {
+                        id: toYear
+                        Layout.preferredWidth: 100
+                        placeholderText: "To year"
+                        Accessible.name: "To year"
+                        validator: IntValidator {
+                            bottom: 1970
+                            top: 2200
+                        }
+                    }
+                    MovieButton {
+                        text: "Apply"
+                        onClicked: {
+                            root.filters = {
+                                genre: genre.model[genre.currentIndex].id,
+                                platform: platform.model[platform.currentIndex].id,
+                                sort: ["-added", "-rating", "-released", "-updated", "name"][sort.currentIndex],
+                                fromYear: fromYear.text,
+                                toYear: toYear.text
+                            };
+                            root.browse(false);
+                        }
                     }
                 }
             }
+        }
+        MovieText {
+            objectName: "gameContentStatus"
+            Layout.fillWidth: true
+            visible: root.filtersOpen && root.hideNsfw && (root.contentHidden > 0 || root.contentUnclassified > 0)
+            text: [root.contentHidden ? root.contentHidden + " NSFW hidden" : "", root.contentUnclassified ? root.contentUnclassified + (root.contentBusy || root.contentQueue.length ? " awaiting content labels" : " without content labels; hidden") : ""].filter(Boolean).join(" · ")
+            color: MovieStyle.muted
+            wrapMode: Text.Wrap
         }
         MovieText {
             Layout.fillWidth: true
@@ -916,6 +1096,7 @@ Item {
                             height: MovieStyle.controlHeight
                             store: modelData
                             busy: root.actionBusy
+                            installJob: modelData.store === "epic" ? root.installJobs.find(job => job.externalId === modelData.externalId) || ({}) : ({})
                             onActionRequested: action => root.execute(action)
                             onMatchRequested: (store, externalId) => root.editMatch(store, externalId)
                             onUrlRequested: url => root.openUrl(url)
@@ -949,6 +1130,15 @@ Item {
                             root.host?.hide();
                         }
                     }
+                }
+                MovieText {
+                    objectName: "gameInstallStatus"
+                    Layout.fillWidth: true
+                    readonly property var job: root.installJobs.find(job => job.gameId === root.selected.id) || ({})
+                    visible: !!job.id || !!root.installsError
+                    text: root.installsError || (job.id ? "Epic · " + root.installLabel(job) : "")
+                    color: root.installsError || job.state === "failed" ? MovieStyle.danger : MovieStyle.muted
+                    wrapMode: Text.Wrap
                 }
                 RowLayout {
                     Layout.fillWidth: true
@@ -1051,6 +1241,9 @@ Item {
                     Layout.fillHeight: true
                     visible: root.active && root.tab === "torrent"
                     service: torrents
+                    extraJobs: root.installJobs.map(job => Object.assign({}, job, {
+                            detail: root.installLabel(job)
+                        }))
                     host: root.host
                     showLoading: false
                     title: Object.assign({}, root.selected, {
@@ -1074,7 +1267,7 @@ Item {
                 MovieText {
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
-                    text: root.setupRequired ? "Set up game discovery" : "No games found"
+                    text: root.setupRequired ? "Set up game discovery" : root.hideNsfw && root.allTitles.length ? "No games visible" : "No games found"
                     font.pixelSize: 28
                     font.bold: true
                 }
@@ -1085,7 +1278,7 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.Wrap
                     color: MovieStyle.muted
-                    text: root.setupRequired ? "Add igdb_client_id and igdb_client_secret to " + (root.catalogState.configPath || "games.json") + ". My library works without catalogue credentials." : root.mode === "library" ? "Install a Steam game, sign in with legendary auth for Epic, or sign into GOG in Heroic, then refresh your libraries." : root.mode === "favorites" ? "Save games with the Favorite button." : root.mode === "local" ? "Find a local copy from a game in Browse. Imported files open in your file manager." : "Try another search or change the filters."
+                    text: root.setupRequired ? "Add igdb_client_id and igdb_client_secret to " + (root.catalogState.configPath || "games.json") + ". My library works without catalogue credentials." : root.hideNsfw && root.allTitles.length ? "Games with NSFW or unavailable content labels are hidden. Enable NSFW in Filters to show all games." : root.mode === "library" ? "Install a Steam game, sign in with legendary auth for Epic, or sign into GOG in Heroic, then refresh your libraries." : root.mode === "favorites" ? "Save games with the Favorite button." : root.mode === "local" ? "Find a local copy from a game in Browse. Imported files open in your file manager." : "Try another search or change the filters."
                 }
                 MovieButton {
                     Layout.alignment: Qt.AlignHCenter

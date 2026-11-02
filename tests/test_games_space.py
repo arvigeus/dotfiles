@@ -75,9 +75,208 @@ QtObject {
     )
 
 
+def setup_install(root):
+    setup(root)
+    launcher = root / 'legendary-fixture'
+    launcher.write_text(
+        f'#!{sys.executable}\nimport time\n'
+        'time.sleep(0.5)\n'
+        'print("= Progress: 25.00% (1/4), Running for 00:00:01, ETA: 00:00:03", flush=True)\n'
+        'print("+ Download\\t- 8.50 MiB/s (raw)", flush=True)\n'
+        'time.sleep(3)\n'
+    )
+    launcher.chmod(0o700)
+    path = root / 'spaces/games/backend.py'
+    path.write_text(
+        path.read_text().replace(
+            '    backend = GamesBackend()\n',
+            f"""
+    def fixture_availability(self, request):
+        completed = any(job['state'] == 'completed' for job in self.install_jobs({{}}))
+        kind = 'play' if completed else 'install'
+        return dict(stores=[dict(store='epic', label='Epic', externalId='Fixture',
+            primaryAction=dict(id='epic:' + kind + ':Fixture', type=kind, store='epic',
+                               label=kind.title(), enabled=True), actions=[])])
+    GamesBackend.availability = fixture_availability
+    GamesBackend._which = lambda self, name: None
+    GamesBackend.action = lambda self, request: self._install_epic(self._catalog_id(request['gameId'])[1], {str(launcher)!r}, 'Fixture')
+    backend = GamesBackend()
+""",
+        )
+    )
+
+
+def setup_content(root):
+    setup(root)
+    worker = GamesBackend(
+        root / 'config/quickshell/desktop/spaces/games/games.json',
+        root / 'data/quickshell/desktop/spaces/games',
+    )
+    for identifier, title in [
+        ('456', 'Explicit game'),
+        ('457', 'Ordinary game'),
+        ('458', 'Unchecked game'),
+    ]:
+        game = worker._save_game(
+            'content-' + identifier,
+            dict(
+                catalogProvider='fixture',
+                catalogProviderId='content-' + identifier,
+                title=title,
+                storeReferences=[dict(store='gog', externalId=identifier)],
+                cover=dict(url=(root / 'game-art.svg').as_uri()),
+            ),
+        )
+        worker.set_favorite(dict(gameId=game['id'], favorite=True))
+    worker._cache_put('native-content:v1:gog:456', True)
+    worker._cache_put('native-content:v1:gog:457', False)
+    path = root / 'spaces/games/backend.py'
+    path.write_text(
+        path.read_text().replace(
+            '    backend = GamesBackend()\n',
+            """
+    def fixture_content_request(self, url, *args):
+        time.sleep(0.5)
+        identifier = url.split('/games/')[1].split('?')[0]
+        return dict(_embedded=dict(product=dict(id=int(identifier)), properties=[dict(slug='nsfw')]))
+    GamesBackend._http_json = fixture_content_request
+    backend = GamesBackend()
+""",
+        )
+    )
+
+
 @unittest.skipUnless(support.QS, 'Quickshell is required')
 class GamesSpaceTests(unittest.TestCase):
     run_qml = support.run_qml
+
+    def test_native_content_filter_hides_pending_artwork_clears_selection_and_persists(
+        self,
+    ):
+        self.run_qml(
+            """import QtQuick
+import QtQuick.Controls
+import QtTest
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState {id:interactions}
+ SpaceHost {id:host;interactionState:interactions}
+ TestCase {id:input;when:false;parent:host.contentItem}
+ property int step:0
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ Timer {id:driver;interval:30;running:true;repeat:false;onTriggered:{try{
+  if(root.step===0){SpaceState.open("games",Quickshell.screens[0]);root.step++;return;}
+  const page=host.currentPage;if(!page||page.allTitles.length!==4)return;
+  const toggle=find(page,"gameContentFilter");
+  const filters=find(page.toolbarTarget,"gameFiltersButton");
+  if(root.step===1){
+   check(page.hideNsfw&&!toggle.checked,"NSFW must default unchecked");
+   check(!page.filtersOpen&&!toggle.visible,"NSFW control shown outside collapsed filters");
+   check(!find(page,"gameContentStatus").visible,"NSFW status shown outside collapsed filters");
+   check(page.titles.length===2,"unclassified or explicit artwork reached catalogue");
+   check(page.titles.every(game=>!['Explicit game','Unchecked game'].includes(game.title)),"hidden game became visible");
+   check(find(page.backdropTarget,"gamesBackdrop").retainPreviousFor===0,"backdrop retains explicit artwork");
+   if(page.contentBusy||page.contentQueue.length)return;
+   check(page.contentHidden===2&&page.contentUnclassified===0,"native result not applied");
+   check(filters.enabled,"library content filter requires catalogue credentials");
+   input.mouseClick(filters);
+   input.wait(40);
+   check(toggle.visible&&toggle.text==='NSFW',"NSFW checkbox missing from Filters");
+   check(!find(page,"genrePicker").visible,"catalogue controls shown in library filters");
+   input.mouseClick(toggle);
+   check(toggle.checked&&!page.hideNsfw&&page.titles.length===4,"checking NSFW lost hidden games");
+   page.selectGame(page.titles.find(game=>game.title==='Explicit game'));
+   check(page.selected.title==='Explicit game',"explicit selection unavailable with filter off");
+   input.mouseClick(toggle);
+   check(!toggle.checked&&page.hideNsfw&&page.titles.length===2&&page.selected.title!=='Explicit game',"unchecking NSFW retained explicit details");
+   page.showMode("favorites");root.step++;return;
+  }
+  if(root.step===2){
+   if(page.loading)return;
+   check(page.titles.length===2,"Favorites bypassed content filter");
+   check(!toggle.visible&&!page.filtersOpen,"view change left Filters open");
+   input.mouseClick(filters);
+   input.wait(40);
+   input.mouseClick(toggle);
+   SpaceState.close("games");SpaceState.open("games",Quickshell.screens[0]);root.step++;return;
+  }
+  if(root.step===3){
+   if(page.loading)return;
+   check(toggle.checked&&!page.hideNsfw&&page.titles.length===4,"NSFW preference lost on reopening");
+   check(!toggle.visible&&!page.filtersOpen,"reopening exposed NSFW control");
+   input.mouseClick(filters);
+   input.wait(40);
+   input.mouseClick(toggle);
+   SpaceState.close("games");SpaceState.open("games",Quickshell.screens[0]);root.step++;return;
+  }
+  if(root.step===4){
+   if(page.loading)return;
+   check(!toggle.checked&&page.hideNsfw&&page.titles.length===2,"unchecked preference lost on reopening");
+   SpaceState.close("games");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(error){console.error("DISPLAY_FAIL",error);Qt.quit();}finally{driver.restart();}}}
+ Timer {interval:10000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at step",root.step);Qt.quit();}}
+}""",
+            setup=setup_content,
+        )
+
+    def test_epic_install_progress_download_panel_and_reopen(self):
+        self.run_qml(
+            """import QtQuick
+import QtQuick.Controls
+import QtTest
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState {id:interactions}
+ SpaceHost {id:host;interactionState:interactions}
+ TestCase {id:input;when:false;parent:host.contentItem}
+ property int step:0
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ Timer {id:driver;interval:60;running:true;repeat:false;onTriggered:{try{
+  if(root.step===0){SpaceState.open("games",Quickshell.screens[0]);root.step++;return;}
+  const page=host.currentPage;if(!page)return;
+  const button=find(page,"gameStoreAction:epic");
+  if(root.step===1){
+   if(!button||button.text!=="Install"||page.busy)return;
+   page.metadataBusy=true;page.metadataQueue=["one","two"];
+   input.mouseClick(button);root.step++;return;
+  }
+  if(root.step===2){
+   if(!page.installing)return;
+   check(!button.enabled,"Install remained enabled during download");
+   check(button.text==="Preparing…"||button.text.includes("Installing"),"no immediate install feedback");
+   const job=page.installJobs[0];if(job.progress!==0.25||job.speed!==8.5)return;
+   check(button.text==="Installing · 25%","percentage missing from Epic button");
+   const status=find(page,"gameInstallStatus");
+   check(status.visible&&status.text.includes("8.5 MiB/s")&&status.text.includes("ETA 00:00:03"),"speed/ETA missing");
+   const activity=find(page.toolbarTarget,"spaceActivityIndicator");
+   check(activity.tooltipText.includes("25%")&&activity.tooltipText.includes("3 remaining"),"install hidden by metadata activity");
+   input.mouseClick(find(page.toolbarTarget,"gameDownloads"));input.wait(40);
+   const downloads=find(page,"gameFindContent");
+   const panel=Array.from(downloads.data).find(item=>item.objectName==="downloadJobsPanel");
+   check(panel.visible&&downloads.extraJobs.length===1,"Downloads omits Epic install");
+   host.escapeHandler();check(host.opened&&!panel.visible,"download panel Escape hid Games");
+   SpaceState.close("games");SpaceState.open("games",Quickshell.screens[0]);root.step++;return;
+  }
+  if(root.step===3){
+   if(!button||!page.installJobs.length)return;
+   check(page.installJobs[0].progress>=0.25,"reopen lost download telemetry");
+   if(page.installJobs[0].state!=="completed"||button.text!=="Play")return;
+   check(button.enabled,"completed installation did not enable Play");
+   check(find(page,"gameInstallStatus").text.includes("Installed"),"completion missing");
+   SpaceState.close("games");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(error){console.error("DISPLAY_FAIL",error);Qt.quit();}finally{driver.restart();}}}
+ Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at step",root.step);Qt.quit();}}
+}""",
+            setup=setup_install,
+        )
 
     def test_badges_store_actions_tooltip_and_image_strip(self):
         self.run_qml(

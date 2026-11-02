@@ -1,7 +1,9 @@
 import json
+import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import Mock
@@ -1188,10 +1190,74 @@ class GamesBackendTests(unittest.TestCase):
             {'gameId': game['id'], 'actionId': 'epic:install:Catnip'}
         )
         self.assertTrue(result['started'])
+        command = self.backend._popen.call_args.args[0]
         self.assertEqual(
-            self.backend._popen.call_args.args[0],
-            ['/fake/legendary', '--yes', 'install', 'Catnip'],
+            command[:3], [sys.executable, games.__file__, '--epic-install']
         )
+        self.assertEqual(command[4:6], ['/fake/legendary', 'Catnip'])
+        self.assertEqual(result['job']['state'], 'running')
+        self.assertEqual(
+            self.backend.install_jobs({})[0]['detail'], 'Preparing download'
+        )
+        self.backend.action({'gameId': game['id'], 'actionId': 'epic:install:Catnip'})
+        self.assertEqual(self.backend._popen.call_count, 1)
+
+    def test_epic_download_progress_survives_backend_and_reports_completion(self):
+        self.backend._popen = subprocess.Popen
+        self.backend.env = {**os.environ, 'PATH': ''}
+        launcher = self.root / 'legendary'
+        launcher.write_text(
+            f'#!{sys.executable}\nimport time\n'
+            'print("[DLManager] INFO: = Progress: 37.50% (3/8), Running for 00:00:01, ETA: 00:00:05", flush=True)\n'
+            'print("[DLManager] INFO: + Download\\t- 12.34 MiB/s (raw)", flush=True)\n'
+            'time.sleep(1.5)\n'
+        )
+        launcher.chmod(0o700)
+        game = self.save_game()
+        self.backend._install_epic(game, str(launcher), 'Sample')
+        restored = games.GamesBackend(config=self.config, data=self.root / 'data')
+        deadline = time.monotonic() + 5
+        seen_progress = False
+        while time.monotonic() < deadline:
+            job = restored.install_jobs({})[0]
+            if job.get('speed') == 12.34:
+                self.assertEqual(job['progress'], 0.375)
+                self.assertEqual(job['eta'], '00:00:05')
+                seen_progress = True
+                restored._install_epic(game, str(launcher), 'Sample')
+            if job['state'] == 'completed':
+                break
+            time.sleep(0.04)
+        self.assertTrue(seen_progress)
+        self.assertEqual(job['state'], 'completed')
+        self.assertEqual(job['progress'], 1)
+        self.assertNotIn('eta', job)
+
+    def test_epic_install_failure_and_interruption_remain_visible(self):
+        self.backend._popen = subprocess.Popen
+        self.backend.env = {**os.environ, 'PATH': ''}
+        launcher = self.root / 'legendary'
+        launcher.write_text(
+            f'#!{sys.executable}\nprint("secret-token")\nraise SystemExit(7)\n'
+        )
+        launcher.chmod(0o700)
+        game = self.save_game()
+        self.backend._install_epic(game, str(launcher), 'Sample')
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            job = self.backend.install_jobs({})[0]
+            if job['state'] == 'failed':
+                break
+            time.sleep(0.04)
+        self.assertEqual(job['state'], 'failed')
+        self.assertIn('exit code 7', job['detail'])
+        self.assertNotIn('secret-token', json.dumps(job))
+        self.backend._popen = Mock()
+        self.backend._install_epic(game, str(launcher), 'Sample')
+        self.backend._clock = lambda: time.time() + 60
+        job = self.backend.install_jobs({})[0]
+        self.assertEqual(job['state'], 'failed')
+        self.assertIn('interrupted', job['detail'])
 
     def set_library_state(self, steam, epic, steam_known=True, epic_known=True):
         self.backend._library_snapshot = {

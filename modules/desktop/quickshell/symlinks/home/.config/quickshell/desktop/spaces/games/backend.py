@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Games catalogue and local-library worker. QML communicates with JSON lines."""
 
+import fcntl
 import hashlib
 import json
 import os
@@ -25,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from spaces.games import store_metadata
 from spaces.games.igdb import Client as IGDBClient
 from spaces.games.igdb import normalize as normalize_igdb_game
-from spaces.games import gog, hltb, presentation
+from spaces.games import content, gog, hltb, presentation
 from spaces.movies.worker import serve, own_process_group
 from spaces.movies.local import LocalLibrary
 
@@ -652,6 +653,76 @@ def _safe_store_url(value, store, external_id):
     return ''
 
 
+def _save_install(path, job):
+    temporary = path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(job))
+    temporary.chmod(0o600)
+    temporary.replace(path)
+
+
+def _install_progress(job, line):
+    """Keep only structured download telemetry, never Legendary's raw output."""
+    if match := re.search(r'Progress: (\d+(?:\.\d+)?)%.*ETA: (\d+:\d+:\d+)', line):
+        job['progress'] = min(1, float(match[1]) / 100)
+        job['eta'] = match[2]
+        job['detail'] = 'Installing' if job['progress'] >= 1 else 'Downloading'
+    elif match := re.search(r'Download\s+- (\d+(?:\.\d+)?) MiB/s', line):
+        job['speed'] = float(match[1])
+    else:
+        return False
+    return True
+
+
+def _run_epic_install(path, executable, app_name, attempt):
+    """Detached supervisor: the flock and state outlive the Space."""
+    os.umask(0o077)
+    path = Path(path)
+    lock = path.with_suffix('.running').open('a')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock.close()
+        return
+    job = json.loads(path.read_text())
+    if job.get('attempt') != attempt:
+        lock.close()
+        return
+    job['launched'] = True
+    _save_install(path, job)
+    try:
+        with subprocess.Popen(
+            [executable, '--yes', 'install', app_name],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+        ) as process:
+            while line := process.stdout.readline(4096):
+                if _install_progress(job, line):
+                    _save_install(path, job)
+            code = process.wait()
+        job['state'] = 'completed' if code == 0 else 'failed'
+        job['detail'] = (
+            'Installed'
+            if code == 0
+            else f'Install failed (exit code {code}). Check disk space and Legendary sign-in, then retry.'
+        )
+        if code == 0:
+            job['progress'] = 1
+    except OSError:
+        job['state'] = 'failed'
+        job['detail'] = (
+            'Legendary could not complete the install. Check disk space and retry.'
+        )
+    finally:
+        job.pop('speed', None)
+        job.pop('eta', None)
+        _save_install(path, job)
+        lock.close()
+
+
 class GamesBackend:
     def __init__(
         self,
@@ -972,8 +1043,93 @@ class GamesBackend:
                 row['store'] for row in rows if row['ownership'] == 'owned'
             ]
             displayed['favorite'] = str(game.get('id', '')) in favorite_ids
+            displayed['content'] = self._content_labels(rows)
             output.append(displayed)
         return output
+
+    def _content_labels(self, rows, fetch=False, refresh=False):
+        labels = []
+        pending = False
+        for row in rows:
+            store = row['store']
+            identifier = (
+                (_steam_id if store == 'steam' else gog.product_id)(
+                    row.get('externalId')
+                )
+                if store in {'steam', 'gog'}
+                else ''
+            )
+            if not identifier:
+                continue
+            key = f'native-content:v1:{store}:{identifier}'
+            with self._metadata_lock:
+                lock = self._metadata_locks.setdefault(key, threading.Lock())
+            with lock:
+                label, fresh = self._cache_get(key, 7 * 86400, allow_stale=True)
+                label = label if type(label) is bool else None
+                cooling, _ = self._cache_get(key + ':retry', 300)
+                needed = not fresh or label is None
+                if fetch and (refresh or (needed and not cooling)):
+                    try:
+                        if store == 'steam':
+                            raw = self._request(
+                                'https://store.steampowered.com/api/appdetails?'
+                                + urllib.parse.urlencode(
+                                    {'appids': identifier, 'l': 'english'}
+                                ),
+                                'GET',
+                                {'Accept': 'application/json'},
+                                None,
+                                8,
+                                4 * 1024 * 1024,
+                            )
+                            value = content.steam(raw, identifier)
+                            metadata = store_metadata.steam_details(raw, identifier)
+                            if metadata:
+                                self._cache_put(
+                                    f'steam-metadata:v1:{identifier}', metadata
+                                )
+                        else:
+                            raw = self._request(
+                                f'https://api.gog.com/v2/games/{identifier}?locale=en-US',
+                                'GET',
+                                {'Accept': 'application/json'},
+                                None,
+                                8,
+                                4 * 1024 * 1024,
+                            )
+                            value = content.gog(raw, identifier)
+                        if value is None:
+                            raise GamesError('Content labels are unavailable.')
+                        label = value
+                        self._cache_put(key, label)
+                    except GamesError:
+                        self._cache_put(key + ':retry', True)
+                elif needed and not cooling:
+                    pending = True
+                labels.append(label)
+        return {
+            'supported': bool(labels),
+            'nsfw': True
+            if True in labels
+            else None
+            if None in labels or not labels
+            else False,
+            'pending': pending,
+        }
+
+    def content_rating(self, request):
+        _, game = self._catalog_id(request.get('gameId', ''))
+        state = (
+            self._library_snapshot or self._cache_get('libraries:v1', 86400)[0] or {}
+        )
+        rows = derive_store_state(game, state, self._store_overrides(game['id']))
+        return {
+            'id': game['id'],
+            'content': self._content_labels(
+                rows, fetch=True, refresh=bool(request.get('refresh'))
+            ),
+        }
 
     def library_games(self, request):
         """List installed/owned store games without requiring the catalogue."""
@@ -1172,6 +1328,9 @@ class GamesBackend:
                         4 * 1024 * 1024,
                     )
                     metadata = store_metadata.steam_details(raw, app_id)
+                    label = content.steam(raw, app_id)
+                    if label is not None:
+                        self._cache_put(f'native-content:v1:steam:{app_id}', label)
                     if metadata:
                         cached = metadata
                         self._cache_put(key, cached)
@@ -2034,6 +2193,89 @@ class GamesBackend:
                     break
         return process
 
+    def install_jobs(self, request):
+        jobs = []
+        for path in (self.data_root / 'epic-installs').glob('*.json'):
+            try:
+                if path.stat().st_size > 16384:
+                    continue
+                job = json.loads(path.read_text())
+                if job['state'] == 'running':
+                    with path.with_suffix('.running').open('a') as lock:
+                        try:
+                            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        except BlockingIOError:
+                            pass
+                        else:
+                            # Completion may have replaced the snapshot before
+                            # the supervisor released its lock.
+                            job = json.loads(path.read_text())
+                            if job['state'] == 'running' and (
+                                job.get('launched')
+                                or self._clock() - job['started'] > 30
+                            ):
+                                job['state'] = 'failed'
+                                job['detail'] = (
+                                    'Install interrupted. Click Install to resume.'
+                                )
+                jobs.append(job)
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+        return sorted(jobs, key=lambda job: job['started'], reverse=True)
+
+    def _install_epic(self, game, executable, app_name):
+        directory = self.data_root / 'epic-installs'
+        directory.mkdir(mode=0o700, exist_ok=True)
+        key = hashlib.sha256(app_name.encode()).hexdigest()
+        path = directory / (key + '.json')
+        lock_fd = os.open(path.with_suffix('.lock'), os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            current = next(
+                (job for job in self.install_jobs({}) if job['id'] == key), None
+            )
+            if current and current['state'] == 'running':
+                return {'started': True, 'job': current}
+            job = dict(
+                id=key,
+                gameId=game['id'],
+                externalId=app_name,
+                title=game['title'],
+                state='running',
+                progress=None,
+                detail='Preparing download',
+                started=self._clock(),
+                attempt=str(uuid.uuid4()),
+                launched=False,
+            )
+            _save_install(path, job)
+            try:
+                process = self._spawn_detached(
+                    [
+                        sys.executable,
+                        str(Path(__file__).resolve()),
+                        '--epic-install',
+                        str(path),
+                        executable,
+                        app_name,
+                        job['attempt'],
+                    ],
+                    'Legendary could not start the install.',
+                    env=self.env,
+                )
+                if isinstance(process, subprocess.Popen):
+                    threading.Thread(target=process.wait, daemon=True).start()
+            except GamesError:
+                job.update(
+                    state='failed',
+                    detail='Legendary could not start the install. Retry.',
+                )
+                _save_install(path, job)
+                raise GamesError(job['detail']) from None
+            return {'started': True, 'job': job}
+        finally:
+            os.close(lock_fd)
+
     def action(self, request):
         game_id = str(request.get('gameId', ''))
         action_id = str(request.get('actionId', ''))
@@ -2150,6 +2392,8 @@ class GamesBackend:
         executable = self._which('legendary')
         if not executable:
             raise GamesError('Legendary is not installed.')
+        if kind == 'install':
+            return self._install_epic(game, executable, external_id)
         self._spawn_detached(
             [executable, '--yes', kind, external_id],
             f'Legendary could not start the {kind}.',
@@ -2158,6 +2402,10 @@ class GamesBackend:
 
     def handle(self, request):
         op = request.get('op')
+        if op == 'install_jobs':
+            return self.install_jobs(request)
+        if op == 'content_rating':
+            return self.content_rating(request)
         if op == 'local_list':
             return self.local.list('game')
         if op == 'local_files':
@@ -2232,4 +2480,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    if len(sys.argv) == 6 and sys.argv[1] == '--epic-install':
+        _run_epic_install(*sys.argv[2:])
+    else:
+        main()

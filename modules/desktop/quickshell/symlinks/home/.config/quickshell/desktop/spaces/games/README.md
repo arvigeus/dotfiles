@@ -4,12 +4,20 @@ Open **Spaces → Games** for Steam/Epic/GOG libraries, IGDB discovery, favorite
 ProtonDB ratings, title artwork, playtime and HowLongToBeat estimates.
 Installed Steam games and public store descriptions work without API keys.
 
+**Filters → NSFW** includes adult games when checked; it starts unchecked and
+remembers your choice. It uses GOG's NSFW tag and Steam's adult-only/frequent
+sexual-content labels. Steam/GOG games without labels stay hidden until classified;
+saved labels work offline. Epic games and local files are not classified.
+
 Configure `~/.config/quickshell/desktop/spaces/games/games.json` using
 [games.example.json](games.example.json). A Twitch application's
 `igdb_client_id` and `igdb_client_secret` enable Browse. Optional `steam_api_key`
 and 17-digit `steam_id` enable ownership checks for a public Steam profile.
 Sign into Epic with `legendary auth`; the Legendary module supplies its launcher
 and UMU. Steam and Legendary accounts require sign-in after a fresh installation.
+Epic installations show progress on the store button and speed/ETA below it;
+**Downloads** lists tracked installs. Downloads continue when Games closes, and
+reopening restores their progress. Click Install again to retry a failed download.
 
 For GOG, enable the `gaming/launchers/heroic` module, sign into GOG in Heroic and
 refresh its library, then refresh Games. Native and Flatpak Heroic are supported;

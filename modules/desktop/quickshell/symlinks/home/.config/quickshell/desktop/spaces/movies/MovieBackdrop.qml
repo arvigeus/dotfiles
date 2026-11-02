@@ -10,6 +10,7 @@ Rectangle {
     readonly property bool usingPoster: artwork.usingPreview
     readonly property bool loading: artwork.loading
     property bool gridMode: false
+    property int retainPreviousFor: 1000
     property real readingEdge: 0.7
 
     color: MovieStyle.background
@@ -22,7 +23,7 @@ Rectangle {
         source: root.source
         previewSource: root.poster
         ownerKey: root.ownerKey
-        retainPreviousFor: 1000
+        retainPreviousFor: root.retainPreviousFor
         imageWidth: Math.max(1920, Math.ceil(root.width * 1.5))
         fullImageObjectName: "movieBackdropImage"
         previewImageObjectName: "moviePosterBackdrop"

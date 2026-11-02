@@ -9,6 +9,8 @@ Item {
     id: root
     required property var store
     property bool busy: false
+    property var installJob: ({})
+    readonly property bool installing: installJob.state === "running"
     readonly property var mainAction: store.primaryAction || ({
             type: "disabled",
             label: "Unavailable",
@@ -38,8 +40,8 @@ Item {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         anchors.right: more.left
-        text: root.mainAction.label || "Unavailable"
-        enabled: !!root.mainAction.enabled && !root.busy
+        text: root.installing ? root.installJob.progress !== null && root.installJob.progress !== undefined ? "Installing · " + Math.floor(root.installJob.progress * 100) + "%" : "Preparing…" : root.mainAction.label || "Unavailable"
+        enabled: !!root.mainAction.enabled && !root.busy && !root.installing
         Accessible.name: root.store.label + " · " + text
         Accessible.description: root.statusText
         contentItem: RowLayout {
@@ -96,7 +98,7 @@ Item {
         iconName: "chevron-down"
         iconColor: "#ffffff"
         text: "More " + root.store.label + " options"
-        enabled: !root.busy
+        enabled: !root.busy && !root.installing
         background: Rectangle {
             radius: MovieStyle.controlRadius
             topLeftRadius: 0

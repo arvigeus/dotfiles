@@ -37,6 +37,7 @@ ColumnLayout {
     property int resultTotal: 0
     property bool moreLoading: false
     property var jobs: []
+    property var extraJobs: []
     property string reviewJobId: ""
     property var reviewFiles: []
     property bool reviewLoading: false
@@ -900,6 +901,7 @@ ColumnLayout {
 
     Popup {
         id: jobPanel
+        objectName: "downloadJobsPanel"
 
         parent: root
         width: Math.min(600, root.width - 24)
@@ -924,7 +926,7 @@ ColumnLayout {
                 Layout.fillWidth: true
 
                 MovieText {
-                    text: "Downloads for " + (root.title.title || "this item")
+                    text: root.extraJobs.length ? "Downloads" : "Downloads for " + (root.title.title || "this item")
                     Layout.fillWidth: true
                     elide: Text.ElideRight
                 }
@@ -966,8 +968,30 @@ ColumnLayout {
                 }
             }
 
+            Repeater {
+                model: root.extraJobs
+
+                ColumnLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+
+                    MovieText {
+                        Layout.fillWidth: true
+                        text: modelData.title + " · " + modelData.detail
+                        color: modelData.state === "failed" ? MovieStyle.danger : MovieStyle.text
+                        wrapMode: Text.Wrap
+                    }
+                    ProgressBar {
+                        Layout.fillWidth: true
+                        visible: modelData.state === "running"
+                        indeterminate: modelData.progress === null || modelData.progress === undefined
+                        value: modelData.progress || 0
+                    }
+                }
+            }
+
             MovieText {
-                visible: !root.jobs.length
+                visible: !root.jobs.length && !root.extraJobs.length
                 text: "No tracked downloads for this item"
                 color: MovieStyle.muted
             }
