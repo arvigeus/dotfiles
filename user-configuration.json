@@ -3849,6 +3849,7 @@
         "kio-extras",
         "rdfind",
         "dosbox",
+        "ntsync-autoload",
         "gamescope",
         "switcheroo-control",
         "umu-launcher",
