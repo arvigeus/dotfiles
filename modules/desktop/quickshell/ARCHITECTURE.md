@@ -545,6 +545,32 @@ bounded diagnostics. Cleanup uses npm/pip/mise's own commands and one Podman
 inventory query. Package cleanup may authenticate. It does not remove personal
 files, active tools or containers through guesses about directory names.
 
+Configuration & maintenance adds public apply recovery backups and ignored
+checkout development caches. Backup cleanup keeps 30 days and the newest batch;
+the root-owned `dotfiles-backup-cleanup` helper accepts no path/UID arguments,
+derives the caller from PKEXEC_UID and holds the same lock as apply. It only
+removes UUID-named backup batches in that caller's state directory. Cache cleanup
+uses Git's ignored/untracked directory list, restricted to Python/lint cache
+names; tracked files, installation logs and other ignored
+files stay untouched.
+
+The same helper recognizes optional private apply backups and system-agent state
+through their existing XDG namespaces and locks. It does not execute private
+project code. Private backup cleanup holds operation.lock and keeps the same thirty-day
+and newest-copy recovery window. Public/private development caches are found in
+their source checkouts; private module payload trees remain excluded.
+
+Agent history keeps the newest successful run, failed run and update log,
+unfinished/unknown runs, pending update logs, and evidence referenced by learned
+knowledge, findings, proposals or the latest report. Cache cleanup removes only
+known HTTP downloads and abandoned retrieval scratch directories. Control state,
+knowledge, proposals and lock inodes are retained. Both hold agent.lock; cache
+cleanup also holds http.lock. Busy operations fail promptly with a retry message.
+No cleanup category accepts request-supplied paths, executables or retention flags.
+
+`tests/test_system_cleanup.py` covers retention/caller boundaries, symlink safety,
+pending/reference pinning, owner locks, cache targeting and offscreen hold/notification flows.
+
 ## Battery and performance
 
 Battery packs/peripherals and aggregate state come from native UPower. Profiles,

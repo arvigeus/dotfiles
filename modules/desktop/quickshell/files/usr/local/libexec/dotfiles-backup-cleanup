@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Prune old public apply backups for the authenticated caller only."""
+
+import fcntl
+import os
+from pathlib import Path
+import pwd
+import re
+import shutil
+import stat
+import sys
+import time
+
+
+def open_directory(path):
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    fd = os.open('/', flags)
+    try:
+        for part in Path(path).absolute().parts[1:]:
+            child = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def prune(backups, *, now=None, dry_run=False):
+    cutoff = (time.time() if now is None else now) - 30 * 86400
+    try:
+        fd = open_directory(backups)
+    except FileNotFoundError:
+        return 0
+    try:
+        rows = []
+        for name in os.listdir(fd):
+            info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            if re.fullmatch('[a-f0-9]{32}', name) and stat.S_ISDIR(info.st_mode):
+                # mv preserves mtime; ctime prevents a newly saved old file from expiring.
+                rows.append(
+                    (max(info.st_ctime_ns, info.st_mtime_ns), name, info.st_ino)
+                )
+        newest = max(rows, default=None)
+        removed = 0
+        for age, name, inode in rows:
+            if (age, name, inode) == newest or age / 1e9 >= cutoff:
+                continue
+            current = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            if (
+                current.st_ino != inode
+                or max(current.st_ctime_ns, current.st_mtime_ns) != age
+            ):
+                raise RuntimeError('Backup changed during cleanup.')
+            if not dry_run:
+                if not shutil.rmtree.avoids_symlink_attacks:
+                    raise RuntimeError('Safe directory removal is unavailable.')
+                shutil.rmtree(name, dir_fd=fd)
+            removed += 1
+        return removed
+    finally:
+        os.close(fd)
+
+
+def main():
+    if os.geteuid() != 0 or sys.argv[1:] not in ([], ['--dry-run']):
+        raise ValueError('Use pkexec dotfiles-backup-cleanup [--dry-run].')
+    caller = os.environ.get('PKEXEC_UID', '')
+    if (
+        not caller.isdecimal()
+        or int(caller) < 1000
+        or pwd.getpwuid(int(caller)).pw_uid != int(caller)
+    ):
+        raise ValueError('An authenticated regular-user identity is required.')
+    flags = os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW
+    fd = os.open('/run/lock/dotfiles-apply.lock', flags, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        count = prune(
+            Path('/var/lib/dotfiles') / str(int(caller)) / 'backups',
+            dry_run=bool(sys.argv[1:]),
+        )
+        print(
+            f'{count} old backup batches eligible'
+            if sys.argv[1:]
+            else f'Removed {count} old backup batches'
+        )
+    finally:
+        os.close(fd)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, RuntimeError, ValueError, KeyError) as error:
+        sys.exit(str(error))

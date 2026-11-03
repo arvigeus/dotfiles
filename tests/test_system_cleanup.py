@@ -1,10 +1,12 @@
 """Cleanup targeting and hold interactions. All mutations use temporary files or mocks."""
 
 import importlib.util
+from importlib.machinery import SourceFileLoader
 import json
 import os
 from pathlib import Path
 import tempfile
+import time
 import unittest
 import subprocess
 from unittest.mock import patch
@@ -16,9 +18,90 @@ SPEC = importlib.util.spec_from_file_location(
 )
 cleanup = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(cleanup)
+# Extensionless installed helpers need an explicit source loader.
+BACKUP_SPEC = importlib.util.spec_from_loader(
+    'dotfiles_backup_cleanup',
+    SourceFileLoader(
+        'dotfiles_backup_cleanup',
+        str(
+            support.REPO
+            / 'modules/desktop/quickshell/files/usr/local/libexec/dotfiles-backup-cleanup'
+        ),
+    ),
+)
+backups = importlib.util.module_from_spec(BACKUP_SPEC)
+BACKUP_SPEC.loader.exec_module(backups)
 
 
 class CleanupTests(unittest.TestCase):
+    def test_public_backup_cleanup_keeps_recent_newest_unknown_names_and_link_targets(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old = root / ('a' * 32)
+            old.mkdir()
+            (old / 'saved-config').write_text('recovery')
+            os.utime(old, (1, 1))
+            outside = root / 'personal'
+            outside.mkdir()
+            (outside / 'keep').write_text('important')
+            (root / ('b' * 32)).symlink_to(outside, target_is_directory=True)
+            newest = root / ('c' * 32)
+            newest.mkdir()
+            self.assertEqual(backups.prune(root), 0)
+            self.assertEqual(
+                backups.prune(root, now=time.time() + 31 * 86400, dry_run=True), 1
+            )
+            self.assertTrue(old.exists())
+            self.assertEqual(backups.prune(root, now=time.time() + 31 * 86400), 1)
+            self.assertFalse(old.exists())
+            self.assertTrue(newest.exists())
+            self.assertTrue((outside / 'keep').exists())
+            self.assertTrue((root / ('b' * 32)).is_symlink())
+            with self.assertRaises(OSError):
+                backups.prune(root / ('b' * 32))
+
+    def test_public_backup_helper_rejects_untrusted_identity_and_path_arguments(self):
+        for argv, caller in (
+            (['helper'], '0'),
+            (['helper'], '1000/../1001'),
+            (['helper', '/var/lib'], '1000'),
+        ):
+            with (
+                self.subTest(argv=argv, caller=caller),
+                patch.object(backups.os, 'geteuid', return_value=0),
+                patch.object(backups.sys, 'argv', argv),
+                patch.dict(os.environ, PKEXEC_UID=caller),
+                patch.object(backups, 'prune') as prune,
+            ):
+                with self.assertRaises(ValueError):
+                    backups.main()
+                prune.assert_not_called()
+
+    def test_development_cleanup_targets_only_ignored_cache_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / '__pycache__'
+            cache.mkdir()
+            (cache / 'code.pyc').write_text('rebuildable')
+            asset_cache = root / 'modules/app/files/__pycache__'
+            asset_cache.mkdir(parents=True)
+            (asset_cache / 'helper.pyc').write_text('rebuildable')
+            (root / 'install.log').write_text('keep')
+            with (
+                patch.object(cleanup, 'repository', return_value=root),
+                patch.object(
+                    cleanup,
+                    'run',
+                    return_value='__pycache__/\0modules/app/files/__pycache__/\0install.log\0',
+                ),
+            ):
+                cleanup.development_cache()
+            self.assertEqual(list(cache.iterdir()), [])
+            self.assertEqual(list(asset_cache.iterdir()), [])
+            self.assertTrue((root / 'install.log').exists())
+
     def test_paths_follow_dotfiles_environment_and_never_cover_whole_cache(self):
         with patch.dict(
             os.environ,
@@ -232,6 +315,155 @@ class CleanupTests(unittest.TestCase):
         ):
             with self.assertRaises(RuntimeError):
                 cleanup.run('podman', 'rmi', unused, accept=(0, 1, 2))
+
+
+class MaintenanceCleanupTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.state = self.root / 'state'
+        self.data = self.root / 'data'
+        self.cache = self.root / 'cache'
+        for path in (
+            self.state,
+            self.data / 'knowledge',
+            self.data / 'proposals',
+            self.cache,
+        ):
+            path.mkdir(parents=True)
+
+    def folder(self, kind, index, status='complete'):
+        path = self.state / kind / f'202610{index:02}T010000.000000Z'
+        path.mkdir(parents=True)
+        if kind == 'runs':
+            (path / 'run.json').write_text(json.dumps(dict(status=status)))
+        (path / 'evidence.log').write_text('fixture')
+        return path
+
+    def test_agent_history_keeps_newest_failures_pending_and_all_referenced_evidence(
+        self,
+    ):
+        old = self.folder('runs', 1)
+        referenced = self.folder('runs', 2)
+        failed = self.folder('runs', 3, 'failed')
+        latest = self.folder('runs', 4)
+        running = self.folder('runs', 5, 'running')
+        unknown = self.folder('runs', 6, 'unknown')
+        pending = self.folder('updates', 1)
+        unused = self.folder('updates', 2)
+        update = self.folder('updates', 3)
+        (self.state / 'updates.json').write_text(
+            json.dumps([dict(log=str(pending / 'evidence.log'))])
+        )
+        (self.data / 'proposals/decision.md').write_text(
+            f'Validated in {referenced}/evidence.log'
+        )
+        self.assertEqual(cleanup.agent_history(self.state, self.data, dry_run=True), 2)
+        self.assertTrue(old.exists())
+        self.assertEqual(cleanup.agent_history(self.state, self.data), 2)
+        self.assertFalse(old.exists())
+        self.assertFalse(unused.exists())
+        self.assertTrue(
+            all(
+                path.exists()
+                for path in (
+                    referenced,
+                    failed,
+                    latest,
+                    running,
+                    unknown,
+                    pending,
+                    update,
+                )
+            )
+        )
+        self.assertTrue((self.data / 'proposals/decision.md').exists())
+
+    def test_agent_download_cleanup_keeps_control_state_locks_and_unknown_files(self):
+        for name in ('notes-http.json', 'feeds-http.json', 'http.lock', 'unknown'):
+            (self.cache / name).write_text('fixture')
+        (self.cache / 'tool-abcd').mkdir()
+        (self.data / 'knowledge/current.md').write_text('keep')
+        (self.state / 'observations.json').write_text('{}')
+        self.assertEqual(cleanup.agent_cache(self.state, self.cache), 3)
+        self.assertEqual(
+            sorted(path.name for path in self.cache.iterdir()), ['http.lock', 'unknown']
+        )
+        self.assertTrue((self.state / 'observations.json').exists())
+        self.assertTrue((self.data / 'knowledge/current.md').exists())
+
+    def test_agent_and_retrieval_locks_block_cleanup_and_redirected_roots_are_rejected(
+        self,
+    ):
+        cached = self.cache / 'notes-http.json'
+        cached.write_text('{}')
+        for folder, name in ((self.state, 'agent.lock'), (self.cache, 'http.lock')):
+            with cleanup.operation(folder, name):
+                with self.assertRaises(BlockingIOError):
+                    cleanup.agent_cache(self.state, self.cache)
+        self.assertTrue(cached.exists())
+        (self.state / 'runs').symlink_to(self.cache, target_is_directory=True)
+        with self.assertRaises(OSError):
+            cleanup.agent_history(self.state, self.data)
+        self.assertTrue(cached.exists())
+
+    def test_private_backups_keep_recent_newest_manifest_and_symlink_targets(self):
+        folder = self.state / 'backups'
+        folder.mkdir()
+        old = folder / ('a' * 32)
+        old.mkdir()
+        os.utime(old, (1, 1))
+        (folder / ('b' * 32)).symlink_to(self.data, target_is_directory=True)
+        newest = folder / ('c' * 32)
+        newest.write_text('latest recovery copy')
+        (self.state / 'managed.json').write_text('{}')
+        self.assertEqual(cleanup.private_backups(self.state), 0)
+        self.assertEqual(
+            cleanup.private_backups(
+                self.state, now=time.time() + 31 * 86400, dry_run=True
+            ),
+            2,
+        )
+        self.assertTrue(old.exists())
+        self.assertEqual(
+            cleanup.private_backups(self.state, now=time.time() + 31 * 86400), 2
+        )
+        self.assertTrue(newest.exists())
+        self.assertTrue(self.data.exists())
+        self.assertTrue((self.state / 'managed.json').exists())
+
+    def test_private_apply_lock_prevents_backup_cleanup(self):
+        (self.state / 'backups').mkdir()
+        with cleanup.operation(self.state, 'operation.lock'):
+            with self.assertRaises(BlockingIOError):
+                cleanup.private_backups(self.state)
+
+    def test_private_development_cache_preserves_saved_payloads_and_tracked_files(self):
+        subprocess.run(['git', 'init', '-q', str(self.root)], check=True)
+        (self.root / '.gitignore').write_text('__pycache__/\n.ruff_cache/\n.env\n')
+        for name in (
+            '__pycache__/file.pyc',
+            '.ruff_cache/data',
+            'modules/app/files/home/__pycache__/asset',
+            'tracked/__pycache__/keep',
+            '.env',
+        ):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('keep or cache')
+        subprocess.run(
+            ['git', '-C', str(self.root), 'add', '-f', 'tracked/__pycache__/keep'],
+            check=True,
+        )
+        cleanup.development_cache(self.root, private=True)
+        self.assertEqual(list((self.root / '__pycache__').iterdir()), [])
+        self.assertEqual(list((self.root / '.ruff_cache').iterdir()), [])
+        self.assertTrue((self.root / 'tracked/__pycache__/keep').exists())
+        self.assertTrue(
+            (self.root / 'modules/app/files/home/__pycache__/asset').exists()
+        )
+        self.assertTrue((self.root / '.env').exists())
 
 
 class CleanupQmlTests(unittest.TestCase):

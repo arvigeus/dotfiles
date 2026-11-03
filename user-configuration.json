@@ -902,6 +902,11 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/desktop/quickshell/files/usr/local/libexec/dotfiles-backup-cleanup",
+                "target": "/usr/local/libexec/dotfiles-backup-cleanup",
+                "mode": "0755"
+            },
+            {
                 "source": "modules/desktop/quickshell/files/usr/local/share/applications/account-tools.desktop",
                 "target": "/usr/local/share/applications/account-tools.desktop",
                 "mode": "0644"

@@ -104,6 +104,12 @@ and checkpoints after each successful operation. Failed/interrupted runs can be
 retried: matching content is adopted even if its state checkpoint was interrupted.
 There is no whole-system rollback for pacman, boot rebuilding or arbitrary hooks.
 
+Disks offers explicit cleanup of backup batches older than thirty days while
+retaining the newest batch. The installed helper shares the apply lock and uses
+the authenticated caller's fixed state directory. Eligibility uses the later of
+mtime/ctime because moving an old original into backup preserves its mtime.
+Ownership manifests and current configuration are never cleanup targets.
+
 `reconcile_packages.py` reads libalpm through PyALPM, resolving virtual providers
 and the transitive dependencies of declared native/AUR packages. The running
 kernel is protected too. Base, storage/boot tools and the AUR helper are explicit

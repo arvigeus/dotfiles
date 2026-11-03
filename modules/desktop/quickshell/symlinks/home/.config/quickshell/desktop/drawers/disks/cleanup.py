@@ -1,6 +1,8 @@
 """Allowlisted, recoverable storage cleanup. Never accepts paths or shell commands."""
 
+from contextlib import contextmanager
 import errno
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -9,6 +11,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 
 
 def run(*args, accept=(0,)):
@@ -33,13 +36,29 @@ def location(name, fallback):
     return Path(os.path.abspath(Path(os.environ.get(name) or fallback).expanduser()))
 
 
+def repository():
+    return next(
+        (
+            parent
+            for parent in Path(__file__).resolve().parents
+            if (parent / 'generate-config.py').is_file() and (parent / '.git').exists()
+        ),
+        None,
+    )
+
+
 def catalog():
     home = Path.home()
     cache = location('XDG_CACHE_HOME', home / '.local/cache')
     data = location('XDG_DATA_HOME', home / '.local/share')
     cargo = location('CARGO_HOME', data / 'cargo')
+    state = location('XDG_STATE_HOME', home / '.local/state')
+    private_state = location('DOTFILES_PRIVATE_STATE_DIR', state / 'dotfiles-private')
+    agent_state = location('SYSTEM_AGENT_STATE', state / 'system-agent')
+    agent_cache = location('SYSTEM_AGENT_CACHE', cache / 'system-agent')
+    agent_data = location('SYSTEM_AGENT_DATA', data / 'system-agent')
     # Each path has one owner. No blanket XDG cache or app-profile deletion.
-    return [
+    entries = [
         dict(
             id='pacman',
             admin=True,
@@ -163,6 +182,111 @@ def catalog():
             group='Installed tools',
         ),
     ]
+    maintenance = [
+        dict(
+            id='dotfiles-backups',
+            title='Old configuration backups',
+            detail='Keeps the last 30 days and the newest backup.',
+            admin=True,
+            group='Configuration & maintenance',
+            command=['pkexec', '/usr/local/libexec/dotfiles-backup-cleanup'],
+            requires=['pkexec', '/usr/local/libexec/dotfiles-backup-cleanup'],
+        )
+    ]
+    if repository():
+        maintenance.append(
+            dict(
+                id='dotfiles-development',
+                title='Dotfiles development caches',
+                detail='Python and lint caches; keeps source and settings.',
+                group='Configuration & maintenance',
+                special='development',
+                requires=['git'],
+                repo=repository(),
+            )
+        )
+    maintenance.extend(
+        [
+            dict(
+                id='private-backups',
+                title='Old private configuration backups',
+                detail='Keeps the last 30 days and the newest backup.',
+                group='Configuration & maintenance',
+                paths=[private_state / 'backups'],
+                state=private_state,
+                special='private-backups',
+            ),
+            dict(
+                id='agent-history',
+                title='Maintenance agent history',
+                detail='Keeps newest results, referenced evidence and pending reviews.',
+                group='Configuration & maintenance',
+                paths=[agent_state / 'runs', agent_state / 'updates'],
+                state=agent_state,
+                data=agent_data,
+                special='agent-history',
+            ),
+            dict(
+                id='agent-cache',
+                title='Maintenance agent downloads',
+                detail='Upstream documents rebuild as needed; keeps knowledge and proposals.',
+                group='Configuration & maintenance',
+                paths=[agent_cache],
+                state=agent_state,
+                cache=agent_cache,
+                special='agent-cache',
+            ),
+        ]
+    )
+    private_repo = home / 'Projects/dotfiles-private'
+    if (private_repo / '.git').exists():
+        maintenance.append(
+            dict(
+                id='private-development',
+                title='Private dotfiles development caches',
+                detail='Python and lint caches; keeps saved configuration.',
+                group='Configuration & maintenance',
+                special='development',
+                requires=['git'],
+                repo=private_repo,
+                private=True,
+            )
+        )
+    index = next(
+        index
+        for index, row in enumerate(entries)
+        if row.get('group') == 'Installed tools'
+    )
+    return entries[:index] + maintenance + entries[index:]
+
+
+def development_cache(root=None, private=False):
+    root = root or repository()
+    if root is None:
+        raise ValueError('The source checkout is unavailable.')
+    paths = run(
+        'git',
+        '-C',
+        str(root),
+        'ls-files',
+        '--others',
+        '--ignored',
+        '--exclude-standard',
+        '--directory',
+        '-z',
+    )
+    for name in paths.split('\0'):
+        path = Path(name.rstrip('/'))
+        # Only ignored cache directories; never tracked assets or all ignored files.
+        if (
+            name.endswith('/')
+            and path.name in ('__pycache__', '.ruff_cache', '.pytest_cache')
+            and not path.is_absolute()
+            and '..' not in path.parts
+            and '.git' not in path.parts
+            and (not private or not set(path.parts) & {'files', 'symlinks'})
+        ):
+            clear_path(root / path)
 
 
 def inventory():
@@ -183,6 +307,177 @@ def inventory():
             )
         )
     return rows
+
+
+def open_directory(path):
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    fd = os.open('/', flags)
+    try:
+        for part in Path(path).absolute().parts[1:]:
+            child = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+@contextmanager
+def operation(folder, name):
+    protected = [
+        Path.home(),
+        *(
+            location(key, Path.home() / fallback)
+            for key, fallback in (
+                ('XDG_CONFIG_HOME', '.config'),
+                ('XDG_DATA_HOME', '.local/share'),
+                ('XDG_STATE_HOME', '.local/state'),
+                ('XDG_CACHE_HOME', '.local/cache'),
+            )
+        ),
+    ]
+    if any(folder == path or folder in path.parents for path in protected):
+        raise ValueError('Refusing to remove a home, configuration or data directory.')
+    fd = open_directory(folder)
+    try:
+        lock = os.open(name, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600, dir_fd=fd)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            yield
+        finally:
+            os.close(lock)
+    finally:
+        os.close(fd)
+
+
+def private_backups(state, *, now=None, dry_run=False):
+    with operation(state, 'operation.lock'):
+        fd = open_directory(state / 'backups')
+        try:
+            rows = []
+            for name in os.listdir(fd):
+                info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                if re.fullmatch('[a-f0-9]{32}', name) and (
+                    stat.S_ISREG(info.st_mode)
+                    or stat.S_ISDIR(info.st_mode)
+                    or stat.S_ISLNK(info.st_mode)
+                ):
+                    rows.append(
+                        (max(info.st_mtime_ns, info.st_ctime_ns), name, info.st_ino)
+                    )
+            newest = max(rows, default=None)
+            selected = []
+            cutoff = (time.time() if now is None else now) - 30 * 86400
+            for age, name, inode in rows:
+                if (age, name, inode) == newest or age / 1e9 >= cutoff:
+                    continue
+                current = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                if (
+                    current.st_ino != inode
+                    or max(current.st_mtime_ns, current.st_ctime_ns) != age
+                ):
+                    raise RuntimeError('Backup changed during cleanup.')
+                selected.append(name)
+            if not dry_run:
+                clear_directory(fd, only=selected)
+            return len(selected)
+        finally:
+            os.close(fd)
+
+
+def read_json(path, default):
+    if path.is_symlink() or (path.exists() and path.stat().st_size > 2 * 1024 * 1024):
+        raise ValueError('Invalid maintenance metadata; preserve evidence for review.')
+    return json.loads(path.read_text()) if path.exists() else default
+
+
+def agent_references(state, data):
+    chunks = [json.dumps(read_json(state / 'updates.json', []))]
+    for folder in (data / 'knowledge', data / 'proposals'):
+        for path in folder.rglob('*'):
+            if (
+                path.is_file()
+                and not path.is_symlink()
+                and path.suffix in ('.md', '.json', '.py', '.patch', '.diff')
+            ):
+                if path.stat().st_size > 512 * 1024:
+                    raise ValueError(
+                        'Oversized maintenance metadata; preserve evidence for review.'
+                    )
+                chunks.append(path.read_text())
+    for name in ('findings.json', 'last-report.json', 'last-report.md'):
+        path = data / name
+        if path.is_file():
+            if path.is_symlink() or path.stat().st_size > 2 * 1024 * 1024:
+                raise ValueError(
+                    'Invalid maintenance metadata; preserve evidence for review.'
+                )
+            chunks.append(path.read_text())
+    if sum(map(len, chunks)) > 8 * 1024 * 1024:
+        raise ValueError(
+            'Oversized maintenance metadata; preserve evidence for review.'
+        )
+    return '\n'.join(chunks)
+
+
+def agent_history(state, data, dry_run=False):
+    with operation(state, 'agent.lock'):
+        refs = agent_references(state, data)
+        count = 0
+        for kind in ('runs', 'updates'):
+            root = state / kind
+            try:
+                fd = open_directory(root)
+            except FileNotFoundError:
+                continue
+            try:
+                candidates, newest, statuses = [], set(), set()
+                for name in sorted(os.listdir(fd), reverse=True):
+                    if not re.fullmatch(
+                        r'[0-9]{8}T[0-9]{6}\.[0-9]{6}Z', name
+                    ) or not stat.S_ISDIR(
+                        os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode
+                    ):
+                        continue
+                    if kind == 'runs':
+                        status = read_json(root / name / 'run.json', {}).get('status')
+                        if status not in ('complete', 'failed'):
+                            continue
+                        if status not in statuses:
+                            newest.add(name)
+                            statuses.add(status)
+                    elif not newest:
+                        newest.add(name)
+                    candidates.append(name)
+                selected = [
+                    name
+                    for name in candidates
+                    if name not in newest and str(root / name) not in refs
+                ]
+                if not dry_run:
+                    clear_directory(fd, only=selected)
+                count += len(selected)
+            finally:
+                os.close(fd)
+        return count
+
+
+def agent_cache(state, cache, dry_run=False):
+    with operation(state, 'agent.lock'), operation(cache, 'http.lock'):
+        fd = open_directory(cache)
+        try:
+            names = [
+                name
+                for name in os.listdir(fd)
+                if name in ('notes-http.json', 'feeds-http.json')
+                or re.fullmatch(r'tool-[A-Za-z0-9_-]+', name)
+            ]
+            if not dry_run:
+                clear_directory(fd, only=names)
+            return len(names)
+        finally:
+            os.close(fd)
 
 
 def clear_path(path, archives=False):
@@ -212,8 +507,8 @@ def clear_path(path, archives=False):
         os.close(fd)
 
 
-def clear_directory(fd, archives=False):
-    for name in os.listdir(fd):
+def clear_directory(fd, archives=False, only=None):
+    for name in os.listdir(fd) if only is None else only:
         try:
             if archives:
                 try:
@@ -268,6 +563,12 @@ def failure_message(error):
     text = str(error).lower()
     if isinstance(error, subprocess.TimeoutExpired):
         return 'Cleanup took too long. Try again.'
+    if (
+        'operation is already running' in text
+        or 'configuration operation' in text
+        or 'resource temporarily unavailable' in text
+    ):
+        return 'Maintenance is running. Try cleanup again later.'
     if any(
         word in text
         for word in (
@@ -313,6 +614,14 @@ def clean(selected, emit):
         try:
             if entry.get('special') == 'podman':
                 podman_images()
+            elif entry.get('special') == 'development':
+                development_cache(entry.get('repo'), entry.get('private', False))
+            elif entry.get('special') == 'private-backups':
+                private_backups(entry['state'])
+            elif entry.get('special') == 'agent-history':
+                agent_history(entry['state'], entry['data'])
+            elif entry.get('special') == 'agent-cache':
+                agent_cache(entry['state'], entry['cache'])
             elif 'command' in entry:
                 run(*entry['command'])
             else:

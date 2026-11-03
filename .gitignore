@@ -1,4 +1,6 @@
 __pycache__/
+.ruff_cache/
+.pytest_cache/
 .env
 cmd_history.txt
 install.log
