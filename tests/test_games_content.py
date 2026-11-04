@@ -1,9 +1,11 @@
 """Native content labels, identity isolation, caching and unsupported stores."""
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import Mock
 
@@ -111,6 +113,7 @@ class ContentBackendTests(unittest.TestCase):
             str(len(references)) + json.dumps(references),
             dict(
                 catalogProvider='fixture',
+                catalogProviderId=json.dumps(references),
                 title='Same title',
                 storeReferences=[
                     dict(store=store, externalId=identifier)
@@ -155,6 +158,92 @@ class ContentBackendTests(unittest.TestCase):
             self.worker._cache_get('steam-metadata:v1:123')[0]['summary'],
             'Store summary',
         )
+
+    def test_listing_does_not_wait_for_an_inflight_content_request(self):
+        game = self.game([('gog', '456')])
+        entered, release = threading.Event(), threading.Event()
+
+        def request(*args):
+            entered.set()
+            release.wait(3)
+            return gog_response()
+
+        self.request.side_effect = request
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            fetching = pool.submit(self.rating, game)
+            try:
+                self.assertTrue(entered.wait(1))
+                listing = pool.submit(self.worker._with_library_indicators, [game])
+                self.assertIsNone(listing.result(timeout=0.3)[0]['content']['nsfw'])
+            finally:
+                release.set()
+            self.assertIs(fetching.result(timeout=1)['nsfw'], False)
+
+    def test_simultaneous_steam_metadata_and_labels_share_one_request(self):
+        game = self.game([('steam', '123')])
+        entered, release, duplicate = (
+            threading.Event(),
+            threading.Event(),
+            threading.Event(),
+        )
+
+        def request(*args):
+            if entered.is_set():
+                duplicate.set()
+            entered.set()
+            release.wait(3)
+            raw = steam_response()
+            raw['123']['data']['short_description'] = 'Shared metadata'
+            return raw
+
+        self.request.side_effect = request
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            labels = pool.submit(self.rating, game)
+            try:
+                self.assertTrue(entered.wait(1))
+                metadata = pool.submit(
+                    self.worker.library_metadata, dict(gameId=game['id'])
+                )
+                duplicate.wait(0.3)
+            finally:
+                release.set()
+            self.assertIs(labels.result(timeout=1)['nsfw'], False)
+            self.assertEqual(
+                metadata.result(timeout=1)['game']['summary'], 'Shared metadata'
+            )
+        self.assertEqual(self.request.call_count, 1)
+
+    def test_steam_outage_pauses_other_products_and_metadata_too(self):
+        first = self.game([('steam', '123')])
+        second = self.game([('steam', '124')])
+        self.assertIsNone(self.rating(first)['nsfw'])
+        self.assertIsNone(self.rating(second, refresh=True)['nsfw'])
+        self.worker.library_metadata(dict(gameId=second['id']))
+        self.assertEqual(self.request.call_count, 1)
+        self.assertFalse(
+            self.worker._with_library_indicators([second])[0]['content']['pending']
+        )
+        self.now += 301
+        self.rating(second)
+        self.assertEqual(self.request.call_count, 2)
+
+    def test_library_refresh_allows_one_new_probe_after_steam_outage(self):
+        game = self.game([('steam', '123')])
+        self.rating(game)
+        self.worker.libraries = Mock(return_value={})
+        self.worker.handle(dict(op='refresh_libraries'))
+        self.request.side_effect = None
+        self.request.return_value = steam_response()
+        self.assertIs(self.rating(game, refresh=True)['nsfw'], False)
+        self.assertEqual(self.request.call_count, 2)
+
+    def test_unavailable_steam_product_does_not_pause_other_games(self):
+        first = self.game([('steam', '123')])
+        second = self.game([('steam', '124')])
+        self.request.side_effect = [dict(), steam_response('124')]
+        self.assertIsNone(self.rating(first)['nsfw'])
+        self.assertIs(self.rating(second)['nsfw'], False)
+        self.assertEqual(self.request.call_count, 2)
 
     def test_any_explicit_store_label_wins_and_unknown_is_never_safe(self):
         game = self.game([('steam', '123'), ('gog', '456'), ('epic', 'EpicGame')])

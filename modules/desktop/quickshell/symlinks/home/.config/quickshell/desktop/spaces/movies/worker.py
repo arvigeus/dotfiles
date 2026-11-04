@@ -54,6 +54,7 @@ def serve(
     latest=(),
     controls=(),
     background=(),
+    enrichment=(),
     workers=3,
     stream=None,
     output=None,
@@ -116,6 +117,7 @@ def serve(
         ) as reads,
         ThreadPoolExecutor(max_workers=1, thread_name_prefix='control') as writes,
         ThreadPoolExecutor(max_workers=2, thread_name_prefix='artwork') as images,
+        ThreadPoolExecutor(max_workers=2, thread_name_prefix='enrichment') as hydration,
     ):
         for line in stream:
             request = None
@@ -163,6 +165,8 @@ def serve(
                 if is_control
                 else images
                 if request['op'] in background
+                else hydration
+                if request['op'] in enrichment
                 else reads
             )
             executor.submit(execute, request, key, token, is_control)

@@ -8,6 +8,8 @@ Installed Steam games and public store descriptions work without API keys.
 remembers your choice. It uses GOG's NSFW tag and Steam's adult-only/frequent
 sexual-content labels. Steam/GOG games without labels stay hidden until classified;
 saved labels work offline. Epic games and local files are not classified.
+If Steam is unreachable, unclassified Steam games remain hidden; check NSFW to
+include them. Refresh retries the connection while preserving saved metadata.
 
 Configure `~/.config/quickshell/desktop/spaces/games/games.json` using
 [games.example.json](games.example.json). A Twitch application's

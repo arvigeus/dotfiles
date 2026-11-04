@@ -84,6 +84,12 @@ the independent supervisor; reopening recovers progress from disk.
 Background library hydration is independent of installations. Its activity text
 counts queued games remaining; install jobs also appear in the shared header
 activity indicator. Snapshot-only polls do not create a loading indicator.
+Content classification and library hydration use a separate two-thread enrichment
+lane, leaving foreground details, launcher reads and ordered actions available.
+With the content filter enabled, classification drains before background metadata
+starts, and only visible titles are enriched. Appending a page preserves the
+browse generation so earlier metadata responses can still update their games;
+replacing the query/view invalidates them.
 
 ### GOG through Heroic
 
@@ -149,10 +155,16 @@ unlabelled/unsupported content is safe.
 
 `native-content:v1:STORE:ID` entries in the existing SQLite cache last seven days.
 Failed reads retain stale labels with a five-minute retry cooldown. Explicit
-Refresh bypasses that cooldown; successful Steam reads also populate the normal
-description cache. Listing is network-free for content labels. Two bounded
+Refresh bypasses per-product cooldowns. Steam labels and descriptions share one
+appdetails fetch and source lock per app. A Steam transport/provider failure pauses
+appdetails requests across products for five minutes, including forced per-game
+reads; the library Refresh action allows a new probe. Missing data for a single
+product does not pause other products. Successful reads populate both caches.
+Listing reads cached labels without taking network locks. Two bounded
 `content_rating` requests run at a time while visible with filtering enabled;
-each source has a lock to coalesce simultaneous reads. Browse generations reject
+fetches coalesce through source locks. Changing the NSFW toggle only refilters
+the current pages and schedules missing labels; it does not refresh launcher
+libraries or invalidate saved metadata. Browse generations reject
 late callbacks after search or view changes. Hiding stops queued reads; closing
 terminates the owned worker as usual.
 
@@ -167,8 +179,9 @@ expanded filters distinguish known NSFW from unavailable/pending labels.
 Pagination retains the provider's raw offset, waits for the current
 classification queue and advances through wholly hidden pages. Unchecking NSFW
 immediately removes hidden selection and closes its gallery/dialogs.
-Games opts out of backdrop image retention to clear
-the previous game's pixels when its source changes.
+Games backdrops use the shared one-second retention period: the previous image
+stays visible while the new backdrop loads, then yields to the selected game's
+poster if loading is still in progress.
 
 `hltb.py` uses bounded HTTPS reads, browser-compatible auth headers, one auth/search
 lock and an in-memory auth token. It discovers a changed search route from
@@ -258,7 +271,11 @@ mocked; UI fixtures check the GOG logo, menu, labels and retained launcher hando
 `test_games_content.py` covers native tag/descriptor parsing, unknown/malformed
 data, exact identity/override handling, combined stores, cache reuse/restart and
 offline cooldown/refresh. The Games UI fixture checks hiding pending artwork,
-asynchronous native results, selection clearing, Favorites and persisted toggles.
+asynchronous native results, selection clearing, Favorites, persisted toggles,
+classification priority, skipping hidden-game metadata and metadata completion
+across pagination. Threaded backend regressions check nonblocking listing, shared
+Steam fetches and outage backoff; `test_movies_worker.py` checks that blocked
+enrichment leaves foreground, launcher and control lanes available.
 
 Live public HLTB search and direct-page reads both resolved Portal 2 (Steam 620)
 to HLTB 7231. Actual store launch/install/uninstall, download completion and

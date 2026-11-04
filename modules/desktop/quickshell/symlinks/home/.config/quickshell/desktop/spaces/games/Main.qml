@@ -134,7 +134,6 @@ Item {
         poster: root.poster
         ownerKey: root.selected.id || ""
         gridMode: root.gridMode
-        retainPreviousFor: 0
     }
     ImageGallery {
         id: gallery
@@ -235,11 +234,13 @@ Item {
         hideNsfw = !included;
         preferences.setValue("catalogue/hideNsfw", hideNsfw);
         applyContentFilter();
+        metadataQueue = allTitles.filter(game => game.metadataPending).map(game => game.id);
         contentQueue = allTitles.filter(game => game.content?.pending).map(game => ({
                     id: game.id,
                     refresh: false
                 }));
         contentDelay.restart();
+        metadataDelay.restart();
         pagination.restart();
     }
     function hydrateContent() {
@@ -272,6 +273,7 @@ Item {
                     }
                 }
                 contentDelay.restart();
+                metadataDelay.restart();
                 pagination.restart();
             });
         }
@@ -294,7 +296,7 @@ Item {
     function browse(append, refresh) {
         if (append && (loading || !nextOffset))
             return;
-        const generation = ++browseGeneration;
+        const generation = append ? browseGeneration : ++browseGeneration;
         const offset = append ? nextOffset : 0;
         loading = true;
         error = "";
@@ -464,9 +466,10 @@ Item {
         });
     }
     function hydrateLibrary() {
-        if (!active || metadataBusy || mode !== "library" || loading)
+        if (!active || metadataBusy || mode !== "library" || loading || (hideNsfw && (contentBusy || contentQueue.length)))
             return;
-        const queue = metadataQueue.filter(gameId => gameId !== selected.id);
+        const visible = new Set(titles.filter(game => game.metadataPending).map(game => game.id));
+        const queue = metadataQueue.filter(gameId => gameId !== selected.id && visible.has(gameId));
         const gameId = queue.shift();
         metadataQueue = queue;
         if (!gameId)

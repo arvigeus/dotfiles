@@ -150,6 +150,71 @@ def setup_content(root):
 class GamesSpaceTests(unittest.TestCase):
     run_qml = support.run_qml
 
+    def test_hydration_skips_hidden_games_and_survives_pagination(self):
+        def setup_hydration(root):
+            setup(root)
+            path = root / 'spaces/games/backend.py'
+            path.write_text(
+                path.read_text().replace(
+                    '    backend = GamesBackend()\n',
+                    """
+    def fixture_metadata(self, request):
+        time.sleep(0.4)
+        game = dict(self._catalog_id(request['gameId'])[1], summary='Hydrated', metadataPending=False)
+        return dict(game=game)
+    GamesBackend.library_metadata = fixture_metadata
+    backend = GamesBackend()
+""",
+                )
+            )
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState {id:interactions}
+ SpaceHost {id:host;interactionState:interactions}
+ property int step:0
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ Timer {interval:30;running:true;repeat:true;onTriggered:{try{
+  if(root.step===0){SpaceState.open("games",Quickshell.screens[0]);root.step++;return;}
+  const page=host.currentPage;if(!page||page.loading||page.detailLoading||!page.titles.length)return;
+  const service=find(page,"gamesService");
+  if(root.step===1){
+   if(service.pendingCount)return;
+   const serial=service.serial;
+   page.metadataQueue=["hidden","unknown"];
+   page.hydrateLibrary();
+   check(service.serial===serial&&!page.metadataBusy,"hidden games started metadata requests");
+   const game=Object.assign({},page.titles[0],{metadataPending:true});
+   page.allTitles=[game,{id:"hidden",title:"Hidden",metadataPending:true,content:{supported:true,nsfw:true,pending:false}}];
+   page.setNsfwIncluded(true);
+   check(page.metadataQueue.includes("hidden"),"including NSFW did not queue newly visible metadata");
+   page.setNsfwIncluded(false);
+   page.selected={};page.titles=[game];page.allTitles=[game];
+   page.metadataQueue=[game.id];page.contentBusy=1;
+   page.hydrateLibrary();
+   check(service.serial===serial&&!page.metadataBusy,"metadata competed with content classification");
+   page.contentBusy=0;page.hydrateLibrary();
+   check(page.metadataBusy,"visible metadata did not start");
+   const generation=page.browseGeneration;page.nextOffset=1;page.browse(true);
+   check(page.browseGeneration===generation,"appending invalidated in-flight metadata");
+   root.step++;return;
+  }
+  if(root.step===2){
+   if(page.metadataBusy)return;
+   check(page.allTitles[0].summary==="Hydrated","pagination discarded metadata response");
+   SpaceState.close("games");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(error){console.error("DISPLAY_FAIL",error);Qt.quit();}}}
+ Timer {interval:10000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",root.step);Qt.quit();}}
+}""",
+            setup=setup_hydration,
+        )
+
     def test_native_content_filter_hides_pending_artwork_clears_selection_and_persists(
         self,
     ):
@@ -178,7 +243,7 @@ ShellRoot {
    check(!find(page,"gameContentStatus").visible,"NSFW status shown outside collapsed filters");
    check(page.titles.length===2,"unclassified or explicit artwork reached catalogue");
    check(page.titles.every(game=>!['Explicit game','Unchecked game'].includes(game.title)),"hidden game became visible");
-   check(find(page.backdropTarget,"gamesBackdrop").retainPreviousFor===0,"backdrop retains explicit artwork");
+   check(find(page.backdropTarget,"gamesBackdrop").retainPreviousFor===1000,"backdrop does not retain the previous image during selection");
    if(page.contentBusy||page.contentQueue.length)return;
    check(page.contentHidden===2&&page.contentUnclassified===0,"native result not applied");
    check(filters.enabled,"library content filter requires catalogue credentials");

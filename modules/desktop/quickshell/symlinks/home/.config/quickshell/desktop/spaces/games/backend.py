@@ -1062,33 +1062,31 @@ class GamesBackend:
             if not identifier:
                 continue
             key = f'native-content:v1:{store}:{identifier}'
-            with self._metadata_lock:
-                lock = self._metadata_locks.setdefault(key, threading.Lock())
+            # Snapshot reads must never wait behind a storefront network request.
+            # Steam shares its source lock with description hydration below.
+            lock = nullcontext()
+            if fetch and store == 'gog':
+                with self._metadata_lock:
+                    lock = self._metadata_locks.setdefault(key, threading.Lock())
             with lock:
                 label, fresh = self._cache_get(key, 7 * 86400, allow_stale=True)
                 label = label if type(label) is bool else None
                 cooling, _ = self._cache_get(key + ':retry', 300)
+                if store == 'steam':
+                    cooling = (
+                        cooling or self._cache_get('steam-appdetails:retry', 300)[0]
+                    )
                 needed = not fresh or label is None
                 if fetch and (refresh or (needed and not cooling)):
                     try:
                         if store == 'steam':
-                            raw = self._request(
-                                'https://store.steampowered.com/api/appdetails?'
-                                + urllib.parse.urlencode(
-                                    {'appids': identifier, 'l': 'english'}
-                                ),
-                                'GET',
-                                {'Accept': 'application/json'},
-                                None,
-                                8,
-                                4 * 1024 * 1024,
+                            self._steam_metadata(
+                                identifier, refresh=refresh, labels=True
                             )
-                            value = content.steam(raw, identifier)
-                            metadata = store_metadata.steam_details(raw, identifier)
-                            if metadata:
-                                self._cache_put(
-                                    f'steam-metadata:v1:{identifier}', metadata
-                                )
+                            label, _ = self._cache_get(key, allow_stale=True)
+                            label = label if type(label) is bool else None
+                            labels.append(label)
+                            continue
                         else:
                             raw = self._request(
                                 f'https://api.gog.com/v2/games/{identifier}?locale=en-US',
@@ -1117,6 +1115,58 @@ class GamesBackend:
             else False,
             'pending': pending,
         }
+
+    def _steam_metadata(self, app_id, *, refresh=False, labels=False):
+        """One appdetails read supplies both caches; an outage pauses the sweep."""
+        key = f'steam-metadata:v1:{app_id}'
+        label_key = f'native-content:v1:steam:{app_id}'
+        with self._metadata_lock:
+            lock = self._metadata_locks.setdefault(key, threading.Lock())
+        with lock:
+            cached, fresh = self._cache_get(key, 7 * 86400, allow_stale=True)
+            if self._cache_get('steam-appdetails:retry', 300)[0]:
+                return (
+                    cached,
+                    'Steam metadata is unavailable. Showing saved and launcher data.',
+                )
+            if labels:
+                label, fresh = self._cache_get(label_key, 7 * 86400, allow_stale=True)
+                fresh = fresh and type(label) is bool
+            cooling, _ = self._cache_get((label_key if labels else key) + ':retry', 300)
+            if not refresh and (fresh or cooling):
+                return cached, ''
+            try:
+                raw = self._request(
+                    'https://store.steampowered.com/api/appdetails?'
+                    + urllib.parse.urlencode({'appids': app_id, 'l': 'english'}),
+                    'GET',
+                    {'Accept': 'application/json'},
+                    None,
+                    8,
+                    4 * 1024 * 1024,
+                )
+            except GamesError:
+                # A transport/provider outage is shared by all products. A valid
+                # response without this app's data is only a per-product failure.
+                self._cache_put('steam-appdetails:retry', True)
+                self._cache_put(key + ':retry', True)
+                self._cache_put(label_key + ':retry', True)
+                return (
+                    cached,
+                    'Steam metadata is unavailable. Showing saved and launcher data.',
+                )
+            metadata = store_metadata.steam_details(raw, app_id)
+            label = content.steam(raw, app_id)
+            if metadata:
+                cached = metadata
+                self._cache_put(key, cached)
+            else:
+                self._cache_put(key + ':retry', True)
+            if label is not None:
+                self._cache_put(label_key, label)
+            else:
+                self._cache_put(label_key + ':retry', True)
+            return cached, ''
 
     def content_rating(self, request):
         _, game = self._catalog_id(request.get('gameId', ''))
@@ -1314,31 +1364,11 @@ class GamesBackend:
             key = f'steam-metadata:v1:{app_id}'
             cached, fresh = self._cache_get(key, 7 * 86400, allow_stale=True)
             cooling, _ = self._cache_get(key + ':retry', 300)
+            cooling = cooling or self._cache_get('steam-appdetails:retry', 300)[0]
             needs_store = not fresh and not cooling
-            pending = needs_store or refresh
+            pending = needs_store
             if fetch and (refresh or needs_store):
-                try:
-                    raw = self._request(
-                        'https://store.steampowered.com/api/appdetails?'
-                        + urllib.parse.urlencode({'appids': app_id, 'l': 'english'}),
-                        'GET',
-                        {'Accept': 'application/json'},
-                        None,
-                        8,
-                        4 * 1024 * 1024,
-                    )
-                    metadata = store_metadata.steam_details(raw, app_id)
-                    label = content.steam(raw, app_id)
-                    if label is not None:
-                        self._cache_put(f'native-content:v1:steam:{app_id}', label)
-                    if metadata:
-                        cached = metadata
-                        self._cache_put(key, cached)
-                    else:
-                        self._cache_put(key + ':retry', True)
-                except GamesError:
-                    self._cache_put(key + ':retry', True)
-                    warning = 'Steam metadata is unavailable. Showing saved and launcher data.'
+                cached, warning = self._steam_metadata(app_id, refresh=refresh)
             fallback = store_metadata.fill_missing(fallback, cached or {})
             fallback = store_metadata.fill_missing(
                 fallback, store_metadata.steam_artwork(app_id)
@@ -2437,6 +2467,8 @@ class GamesBackend:
         if op == 'protondb':
             return self.protondb(request)
         if op == 'refresh_libraries':
+            with self._db() as db:
+                db.execute('DELETE FROM cache WHERE key=?', ('steam-appdetails:retry',))
             self.libraries(force=True)
             return {'catalog': self.config_state()}
         if op == 'availability':
@@ -2466,6 +2498,7 @@ def main():
         backend.handle,
         errors=(GamesError, ValueError, OSError),
         background=('refresh_libraries', 'library_games', 'availability', 'protondb'),
+        enrichment=('content_rating', 'library_metadata'),
         latest=(
             'browse',
             'library_games',
