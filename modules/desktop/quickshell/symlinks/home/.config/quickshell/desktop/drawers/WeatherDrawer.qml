@@ -21,8 +21,12 @@ DrawerPage {
         id: localService
         active: root.active && root.service === localService
     }
-    onActiveChanged: if (!active)
-        locations.popup.close()
+    onActiveChanged: if (!active) {
+        locations.popup.close();
+        // Report a failed pin on this visit only.
+        if (!root.locationSettings.busy)
+            root.locationSettings.error = "";
+    }
 
     Connections {
         target: root.locationSettings

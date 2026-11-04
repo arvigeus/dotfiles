@@ -1,10 +1,30 @@
 """Transient alarm/pomodoro scheduling and production popup; no real notifications."""
 
+import json
 import os
+import shutil
+import subprocess
+import tempfile
+import time
 import unittest
+from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 import support
+
+# Runs a command with a private /etc whose localtime symlink the command may
+# replace, as timedated does; the host's /etc is never touched.
+PRIVATE_LOCALTIME = r"""#!/bin/sh
+exec unshare --map-root-user --mount sh -c '
+etc=$1; shift
+mount --rbind /etc "$etc" && mount -t tmpfs tmpfs /etc || exit 97
+for entry in "$etc"/* "$etc"/.[!.]*; do
+    if [ -e "$entry" ] || [ -L "$entry" ]; then ln -s "$entry" /etc/; fi
+done
+ln -sfn /usr/share/zoneinfo/Asia/Ho_Chi_Minh /etc/localtime
+exec "$@"' sh "$PRIVATE_ETC" "$@"
+"""
 
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
@@ -12,6 +32,36 @@ class ReminderTests(unittest.TestCase):
     def run_qml(self, body, setup=None, timezone='UTC'):
         with patch.dict(os.environ, TZ=timezone):
             return support.run_qml(self, body, setup)
+
+    def run_with_system_timezone(self, body):
+        """Run body with no TZ and a private, replaceable /etc/localtime."""
+        if not all(
+            Path('/usr/share/zoneinfo', zone).is_file()
+            for zone in ('Asia/Ho_Chi_Minh', 'Europe/Sofia')
+        ):
+            self.skipTest('tzdata is required')
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, directory)
+        wrapper = directory / 'private-localtime'
+        wrapper.write_text(PRIVATE_LOCALTIME)
+        wrapper.chmod(0o755)
+        (directory / 'etc').mkdir()
+        with patch.dict(os.environ, PRIVATE_ETC=str(directory / 'etc')):
+            os.environ.pop('TZ', None)
+            os.environ.pop('DBUS_SESSION_BUS_ADDRESS', None)
+            probe = subprocess.run(
+                [wrapper, 'readlink', '/etc/localtime'],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if probe.stdout.strip() != '/usr/share/zoneinfo/Asia/Ho_Chi_Minh':
+                self.skipTest('Unprivileged user and mount namespaces are required')
+            qs = directory / 'qs'
+            qs.write_text(f'#!/bin/sh\nexec "{wrapper}" "{support.QS}" "$@"\n')
+            qs.chmod(0o755)
+            with patch.object(support, 'QS', str(qs)):
+                return support.run_qml(self, body)
 
     def test_alarm_delivery_cancellation_and_pomodoro_transitions_after_sleep(self):
         self.run_qml("""import QtQuick
@@ -24,7 +74,7 @@ ShellRoot {
  function check(value,message){if(!value)throw new Error(message);}
  Timer{interval:50;running:true;onTriggered:{try{
   ReminderService.clock=()=>root.fakeNow;
-  ReminderService.deliver=(title,body)=>root.sent.push({title,body});
+  ReminderService.deliver=(title,body,urgency)=>root.sent.push({title,body,urgency});
   check(!ReminderService.addAlarm("24:00","")&&!ReminderService.addAlarm("09:7",""),"invalid alarm accepted");
   check(ReminderService.addAlarm("10:01"," Tea "),"alarm rejected");
   const due=ReminderService.entries[0].deadline;
@@ -32,6 +82,7 @@ ShellRoot {
   ReminderService.tick(due-1);check(sent.length===0,"alarm delivered early");
   ReminderService.tick(due);ReminderService.tick(due+1000);
   check(sent.length===1&&sent[0].title==="Reminder"&&sent[0].body==="Tea"&&ReminderService.entries.length===0,"alarm was lost or duplicated");
+  check(sent[0].urgency==="critical","alarm would be hidden by Do Not Disturb");
   check(ReminderService.nextAlarm("09:00",fakeNow)===Date.UTC(2026,9,18,9),"past time did not become tomorrow");
   check(!ReminderService.addAlarm("09:00","Too early",fakeNow),"past reminder on chosen day accepted");
   const midnight=Date.UTC(2026,9,17,23,59,30);
@@ -44,6 +95,7 @@ ShellRoot {
   ReminderService.tick(fakeNow+1000);check(ReminderService.remaining(entry)==="24:59","countdown incorrect");
   fakeNow=entry.deadline;ReminderService.tick();entry=ReminderService.entries[0];
   check(sent.length===2&&entry.phase==="break"&&entry.deadline===fakeNow+300000,"focus did not start break");
+  check(sent[1].urgency==="normal","focus prompt bypasses Do Not Disturb");
   fakeNow+=7200000;ReminderService.tick();entry=ReminderService.entries[0];
   check(sent.length===3&&entry.phase==="focus"&&entry.deadline===fakeNow+1500000,"sleep replayed missed phases");
   ReminderService.stop(entry.id);fakeNow+=7200000;ReminderService.tick();
@@ -62,11 +114,67 @@ ShellRoot {
  Timer{interval:50;running:true;onTriggered:{try{
   check(ReminderService.nextAlarm("01:30",Date.UTC(2026,10,1,5,45))===Date.UTC(2026,10,1,6,30),"repeated hour skipped next occurrence");
   check(ReminderService.nextAlarm("02:30",Date.UTC(2026,2,8,6))===Date.UTC(2026,2,9,6,30),"nonexistent hour silently changed time");
+  ReminderService.clock=()=>Date.UTC(2026,10,1,4,30);ReminderService.deliver=()=>{throw new Error("unexpected notification");};
+  check(ReminderService.addAlarm("09:00","After the change"),"alarm rejected");
+  const due=ReminderService.entries[0].deadline;
+  check(due===Date.UTC(2026,10,1,14),"alarm is not at 09:00 EST");
+  ReminderService.tick(Date.UTC(2026,10,1,4,31));ReminderService.tick(Date.UTC(2026,10,1,7));
+  check(ReminderService.entries[0].deadline===due,"DST transition moved the alarm");
+  ReminderService.stop(ReminderService.entries[0].id);
   console.log("DISPLAY_PASS");Qt.quit();
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
 }""",
             timezone='America/New_York',
         )
+
+    def test_alarms_keep_local_time_when_system_timezone_changes(self):
+        self.run_with_system_timezone("""import QtQuick
+import Quickshell
+import Quickshell.Io
+import "drawers/weather"
+ShellRoot {
+ id:root
+ // 08:00 in Ho Chi Minh City, 03:00 in Sofia.
+ property double fakeNow:Date.UTC(2026,10,5,1)
+ property var sent:[]
+ property int stage:0
+ property int tea:0
+ Process{id:relink}
+ function zone(name){relink.command=["ln","-sfn","/usr/share/zoneinfo/"+name,"/etc/localtime"];relink.running=true;}
+ function alarm(id){return ReminderService.entries.find(entry=>entry.id===id);}
+ function check(value,message){if(!value)throw new Error(message);}
+ Timer{interval:150;repeat:true;running:true;onTriggered:{try{
+  if(relink.running)return;
+  if(stage===0){
+   check(new Date(fakeNow).getHours()===8,"private zone is not Ho Chi Minh City");
+   ReminderService.clock=()=>root.fakeNow;ReminderService.deliver=(title,body)=>root.sent.push(body);
+   check(ReminderService.addAlarm("09:00","Tea")&&ReminderService.addPomodoro(25,5),"reminders rejected");
+   tea=ReminderService.entries[0].id;
+   check(alarm(tea).deadline===Date.UTC(2026,10,5,2),"alarm is not at 09:00 local");
+   zone("Europe/Sofia");
+  }else if(stage===1){
+   check(new Date(fakeNow).getHours()===3,"timezone change is not visible");
+   const focus=ReminderService.entries.find(entry=>entry.kind==="pomodoro");
+   ReminderService.tick();
+   check(alarm(tea).deadline===Date.UTC(2026,10,5,7)&&ReminderService.dueLabel(alarm(tea).deadline)==="09:00","alarm kept the previous zone's time");
+   check(ReminderService.entries.find(entry=>entry.kind==="pomodoro").deadline===focus.deadline,"focus timer moved with the timezone");
+   ReminderService.stop(focus.id);
+   ReminderService.tick(Date.UTC(2026,10,5,2));check(!sent.length,"alarm fired at the previous zone's time");
+   check(ReminderService.addAlarm("05:00","Early"),"Sofia alarm rejected");
+   zone("Asia/Ho_Chi_Minh");
+  }else if(stage===2){
+   // 05:00 has already passed in Ho Chi Minh City: deliver it now rather than lose it.
+   ReminderService.tick();
+   check(JSON.stringify(sent)==='["Early"]',"passed alarm was not delivered once: "+JSON.stringify(sent));
+   check(alarm(tea).deadline===Date.UTC(2026,10,5,2),"alarm did not return to 09:00 local");
+   ReminderService.tick(Date.UTC(2026,10,5,2));
+   check(JSON.stringify(sent)==='["Early","Tea"]'&&!ReminderService.entries.length,"alarm did not fire at 09:00 local");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+ Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",stage);Qt.quit();}}
+}""")
 
     def test_scheduler_delivers_without_an_open_drawer(self):
         self.run_qml("""import QtQuick
@@ -253,12 +361,104 @@ ShellRoot {
  FileView{id:result;path:Quickshell.env("REMINDER_DELIVERY_FILE");preload:true;watchChanges:true;onFileChanged:reload()
   onLoaded:{try{
    const args=JSON.parse(text());if(!args.length)return;
-   if(args[0]!=="--app-name=Time and weather"||args[3]!=="--"||args[4]!=="Reminder"||args[5]!=="-Milk &lt;tea&gt; &amp; honey")throw new Error(JSON.stringify(args));
+   if(args[0]!=="--app-name=Time and weather"||args[2]!=="--urgency=critical"||args[3]!=="--"||args[4]!=="Reminder"||args[5]!=="-Milk &lt;tea&gt; &amp; honey")throw new Error(JSON.stringify(args));
    console.log("DISPLAY_PASS");Qt.quit();
   }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}
  }
- Component.onCompleted:ReminderService.deliver("Reminder","-Milk <tea> & honey")
+ Component.onCompleted:ReminderService.deliver("Reminder","-Milk <tea> & honey","critical")
  Timer{interval:3000;running:true;onTriggered:{console.error("DISPLAY_FAIL delivery timeout");Qt.quit();}}
+}""",
+            setup,
+        )
+
+    def test_saved_reminders_resume_after_reload_without_opening_the_drawer(self):
+        def setup(root):
+            now = int(time.time() * 1000)
+
+            def alarm(id, deadline, message):
+                stamp = datetime.fromtimestamp(deadline / 1000, timezone.utc)
+                return dict(
+                    id=id,
+                    kind='alarm',
+                    deadline=deadline,
+                    date=stamp.strftime('%Y-%m-%d'),
+                    time=stamp.strftime('%H:%M'),
+                    zone=0,
+                    message=message,
+                )
+
+            focus = dict(
+                id=5,
+                kind='pomodoro',
+                phase='focus',
+                focus=25,
+                rest=5,
+                deadline=now + 6e5,
+            )
+            store = root / 'runtime/desktop-shell/reminders.json'
+            store.parent.mkdir()
+            store.write_text(
+                json.dumps(
+                    dict(
+                        entries=[
+                            alarm(3, now - 60000, 'Overdue tea'),
+                            alarm(7, now + 3600000, 'Later'),
+                            focus,
+                            dict(alarm(8, now + 60000, 'Bad time'), time='25:00'),
+                            alarm(7, now + 60000, 'Duplicate id'),
+                            dict(focus, id=9),
+                            'garbage',
+                        ]
+                    )
+                )
+            )
+            bindir = root / 'bin'
+            bindir.mkdir()
+            sent = root / 'sent.jsonl'
+            (bindir / 'notify-send').write_text(
+                '#!/usr/bin/python3\nimport json,sys\nwith open('
+                + repr(str(sent))
+                + ',"a") as stream:stream.write(json.dumps(sys.argv[1:])+"\\n")\n'
+            )
+            (bindir / 'notify-send').chmod(0o755)
+            environment = patch.dict(
+                os.environ,
+                PATH=str(bindir) + os.pathsep + os.environ['PATH'],
+                REMINDER_SENT_FILE=str(sent),
+                REMINDER_STORE=str(store),
+            )
+            environment.start()
+            self.addCleanup(environment.stop)
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import Quickshell.Io
+import "drawers/weather"
+ShellRoot {
+ // Only the bar's status is loaded, as after a reload with the drawer closed.
+ readonly property var bar: WeatherStatus
+ property int stage:0
+ FileView{id:sent;path:Quickshell.env("REMINDER_SENT_FILE");watchChanges:true;printErrors:false;onFileChanged:reload()}
+ FileView{id:store;path:Quickshell.env("REMINDER_STORE");watchChanges:true;onFileChanged:reload()}
+ function check(value,message){if(!value)throw new Error(message);}
+ Timer{interval:100;repeat:true;running:true;onTriggered:{try{
+  const service=bar.reminders;
+  if(stage===0){
+   const calls=sent.text().split("\\n").filter(Boolean).map(line=>JSON.parse(line));
+   if(!calls.length)return;
+   check(calls.length===1&&calls[0][2]==="--urgency=critical"&&calls[0][5]==="Overdue tea","overdue alarm not delivered once: "+JSON.stringify(calls));
+   check(JSON.stringify(service.entries.map(entry=>entry.id))==="[7,5]"&&service.nextId===8,"invalid or delivered entries restored");
+   check(service.entries[1].phase==="focus"&&service.scheduler.running,"focus cycle not resumed");
+   check(service.addAlarm("23:59","Saved"),"alarm rejected");stage++;
+  }else if(stage===1){
+   const saved=JSON.parse(store.text()).entries;
+   if(saved.length!==3)return;
+   check(JSON.stringify(saved.map(entry=>entry.id))==="[7,5,8]"&&saved[2].message==="Saved"&&saved[2].time,"new alarm not saved");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+ Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",stage,sent.text());Qt.quit();}}
 }""",
             setup,
         )

@@ -23,6 +23,10 @@ class LocationError(RuntimeError):
     pass
 
 
+class ConfigError(ValueError):
+    """weather.json is unreadable or describes places incorrectly."""
+
+
 def config_dir():
     return (
         Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config')
@@ -61,10 +65,14 @@ def number(value, lower=-math.inf, upper=math.inf):
     )
 
 
-def locations():
-    data = read_json(config_dir() / 'weather.json', {})
+def load_config():
+    """Read weather.json once and return it with its validated places."""
+    try:
+        data = read_json(config_dir() / 'weather.json', {})
+    except ValueError as error:
+        raise ConfigError(str(error)) from error
     if not isinstance(data, dict) or not isinstance(data.get('locations', []), list):
-        raise ValueError('Invalid weather.json: expected a locations list.')
+        raise ConfigError('expected an object with a locations list.')
     rows = data.get('locations', [])
     ids = set()
     for row in rows:
@@ -72,23 +80,32 @@ def locations():
             not isinstance(row.get(key), str) or not row[key].strip()
             for key in ('id', 'name', 'timezone')
         ):
-            raise ValueError('Each location needs an id, name and timezone.')
+            raise ConfigError('Each location needs an id, name and timezone.')
         if (
             row['id'] in ids
             or not number(row.get('latitude'), -90, 90)
             or not number(row.get('longitude'), -180, 180)
         ):
-            raise ValueError('Locations need unique ids and valid coordinates.')
+            raise ConfigError('Locations need unique ids and valid coordinates.')
         if not isinstance(row.get('detail', ''), str):
-            raise ValueError('Location detail must be text.')
-        ZoneInfo(row['timezone'])
+            raise ConfigError('Location detail must be text.')
+        try:
+            ZoneInfo(row['timezone'])
+        except (ValueError, KeyError, OSError) as error:
+            raise ConfigError(f'Unknown timezone {row["timezone"]!r}.') from error
         ids.add(row['id'])
-    return rows
+    return data, rows
 
 
-def current_location(rows):
-    config = read_json(config_dir() / 'weather.json', {})
-    selected = config.get('islandLocation', '')
+def configured(rows, selected):
+    location = next((row for row in rows if row['id'] == selected), None)
+    if location is None:
+        raise ConfigError('Location is no longer configured.')
+    return location
+
+
+def current_location(config, rows):
+    selected = config.get('islandLocation')
     return next(
         (row['id'] for row in rows if row['id'] == selected),
         rows[0]['id'] if rows else '',
@@ -126,12 +143,9 @@ def change_timezone(zone):
 
 
 def set_current(selected):
-    rows = locations()
-    location = next((row for row in rows if row['id'] == selected), None)
-    if location is None:
-        raise ValueError('Location is no longer configured.')
+    config, rows = load_config()
+    location = configured(rows, selected)
     path = config_dir() / 'weather.json'
-    config = read_json(path)
     previous = system_timezone()
     changed = previous != location['timezone']
     if changed:
@@ -390,12 +404,13 @@ def status(selected='', now=None, remember=True):
         zone='',
         weather=None,
         due=False,
+        expires=0,
         stale=False,
         updated='',
         error='',
     )
-    rows = locations()
-    result['currentLocation'] = current_location(rows)
+    config, rows = load_config()
+    result['currentLocation'] = current_location(config, rows)
     result['locations'] = [
         dict(
             id=row['id'],
@@ -439,6 +454,8 @@ def status(selected='', now=None, remember=True):
     cache = cached(location)
     result['due'] = cache is None or not 0 <= now - cache['fetchedAt'] < TTL
     if cache:
+        # Until then only the clocks change, so the bar need not ask again.
+        result['expires'] = cache['fetchedAt'] + TTL
         result['weather'] = forecast(cache['data'], location, now)
         result['stale'] = not 0 <= now - cache['fetchedAt'] < 3600
         updated = datetime.fromtimestamp(
@@ -453,24 +470,20 @@ def status(selected='', now=None, remember=True):
 
 
 def island_status(now=None, refresh=False):
-    # Background refreshes never follow or save the drawer selection.
-    config = read_json(config_dir() / 'weather.json', {})
-    selected = config.get('islandLocation', '') if isinstance(config, dict) else ''
-    selected = selected if isinstance(selected, str) else ''
-    result = status(selected, now, remember=False)
+    # The current place; background refreshes never follow or save the drawer
+    # selection.
+    result = status(now=now, remember=False)
     if refresh and result['due'] and result['location']:
         try:
             fetch(result['location']['id'], force=False)
-            result = status(selected, now, remember=False)
+            result = status(now=now, remember=False)
         except Exception:
             result['error'] = 'Weather refresh failed.'
     return result
 
 
 def fetch(selected, force=True):
-    location = next((row for row in locations() if row['id'] == selected), None)
-    if location is None:
-        raise ValueError('Location is no longer configured.')
+    location = configured(load_config()[1], selected)
     # The bar and the drawer share the per-place cache; skip a fetch the other
     # one already made.
     cache = cached(location)
@@ -520,18 +533,17 @@ def main():
             result = status(selected)
         elif request.get('op') == 'current':
             set_current(selected)
-            result = status(selected)
+            result = dict(currentLocation=selected, error='')
         else:
             raise ValueError('Unknown weather request.')
     except LocationError as error:
         result = dict(error=str(error))
-    except Exception as error:
-        # Do not expose coordinates or request URLs in UI errors or shell logs.
-        result = dict(
-            error=('Check weather.json: ' + str(error))
-            if isinstance(error, (ValueError, KeyError))
-            else 'Weather unavailable. Try again shortly.'
-        )
+    except ConfigError as error:
+        result = dict(error='Check weather.json: ' + str(error))
+    except Exception:
+        # Network, payload and cache failures. Do not expose coordinates or
+        # request URLs in UI errors or shell logs.
+        result = dict(error='Weather unavailable. Try again shortly.')
     print(json.dumps(result, ensure_ascii=False, allow_nan=False), flush=True)
 
 

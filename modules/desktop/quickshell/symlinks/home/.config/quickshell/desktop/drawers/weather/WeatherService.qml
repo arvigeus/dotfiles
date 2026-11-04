@@ -102,13 +102,23 @@ Scope {
                 else if (fetched || statusFailed)
                     error = "";
                 statusFailed = false;
-                // A local read started before this successful fetch must not
-                // replace it with an older cached snapshot.
-                if (fetched)
+                if (fetched) {
+                    // A local read started before this successful fetch must
+                    // not replace it with an older cached snapshot.
                     revision++;
+                    // The bar shares the current place's cache.
+                    if (result.location?.id === result.currentLocation)
+                        WeatherStatus.refresh();
+                }
             } else {
                 error = result.error || qsTr("Could not read weather.");
                 statusFailed = !fetched;
+                // Hide an expired forecast only while its refresh is pending;
+                // once that fails, show it with its age.
+                if (fetched && freshSelection) {
+                    freshSelection = false;
+                    refresh();
+                }
             }
             if (!fetched && result.due)
                 Qt.callLater(() => fetchWeather());

@@ -623,10 +623,17 @@ mpv's live profile updates; see [power architecture](../../hardware/power/ARCHIT
 
 ## Time and weather
 
-`WeatherService` reads user-owned `weather.json`, caches forecasts by place and
-refreshes the current place every 30 minutes. Other places fetch only while
-selected and stale. Failed/offline reads retain saved data and timestamps.
-Public weather requests contain coordinates and use bounded timeouts.
+`weather/backend.py` reads user-owned `weather.json` and caches forecasts by
+place for 30 minutes. `WeatherStatus` (the bar) refreshes the current place and
+runs the helper only when its forecast expires, five minutes after a failed
+refresh, when `weather.json` changes or after the drawer fetches that place; its
+per-minute wall-clock check catches up after suspend and never restarts a run in
+progress. The drawer's `WeatherService` reads every minute while open and fetches
+other places only while selected and stale. It hides an expired forecast while
+the first refresh for a place is pending and shows it with its age once that
+refresh fails. Failed/offline reads retain saved data and timestamps. Public
+weather requests contain coordinates and use bounded timeouts. Only
+`weather.json` problems are reported as configuration errors.
 
 `weather.json` contains `locations` and optional `islandLocation` (the selected ID):
 
@@ -639,10 +646,21 @@ place controls the bar; browsing does not change system time. Pinning sets the
 current place and uses the desktop timezone polkit rule. `weather/backend.py`
 validates the format and IANA timezone names.
 
-Alarms and focus/break reminders belong to the shell lifetime, continue with the
-drawer closed and clear on exit/reload. Alarms use local system time; a timezone
-change follows that wall clock. Timers send desktop notifications and cannot wake
-a sleeping machine. Reminder popovers own their focus and dismiss before drawers.
+Alarms and focus/break reminders belong to the login session. `ReminderService`
+saves them atomically to `$XDG_RUNTIME_DIR/desktop-shell/reminders.json`, so
+shell reloads, restarts and crashes keep them and logout clears them.
+`WeatherStatus` instantiates the service at shell start, so restored reminders
+run without opening the drawer. Restored entries are validated field by field;
+an overdue alarm fires once and an overdue focus cycle sends one prompt and
+starts its next phase. Alarms are sent as critical, so Do Not Disturb still
+shows them until dismissed; focus/break prompts are normal. Alarms keep their
+local date and time when the system timezone changes, whether pinned or
+external: each records the UTC offset at its deadline and is re-resolved when
+that offset changes, so DST transitions before it do not move it. One already
+passed in the new zone fires at once. Timers send desktop notifications and
+cannot wake a sleeping machine. Reminder popovers own their focus and dismiss
+before drawers. The timezone test relinks `/etc/localtime` inside a private user
+and mount namespace and skips where unprivileged namespaces are unavailable.
 
 ## Events, tasks and notification history
 

@@ -8,9 +8,17 @@ import "Conditions.js" as Conditions
 Singleton {
     id: root
     readonly property alias worker: worker
+    readonly property alias updates: updates
+    readonly property int retryInterval: 300000
     property var snapshot: ({})
     property double lastFailure: 0
+    // Wall-clock time of the next helper run. Between forecast expiries the
+    // snapshot changes only through weather.json or a drawer fetch, which
+    // refresh directly.
+    property double nextPoll: 0
     property bool pending: false
+    // Saved reminders must run after a reload without opening the drawer.
+    readonly property var reminders: ReminderService
     readonly property string temperature: {
         const value = snapshot.weather?.current?.temperature;
         return typeof value === "number" && isFinite(value) ? Conditions.temperature(value) : "";
@@ -57,7 +65,10 @@ Singleton {
         interval: 60000
         repeat: true
         running: true
-        onTriggered: root.refresh()
+        // Wall-clock comparison also catches up promptly after suspend. A run
+        // in progress already answers this check; only explicit refreshes queue.
+        onTriggered: if (!worker.running && Date.now() >= root.nextPoll)
+            root.refresh()
     }
     Process {
         id: worker
@@ -65,7 +76,7 @@ Singleton {
         onStarted: {
             write(JSON.stringify({
                 op: "island",
-                refresh: Date.now() - root.lastFailure >= 300000
+                refresh: Date.now() - root.lastFailure >= root.retryInterval
             }) + "\n");
             stdinEnabled = false;
         }
@@ -73,15 +84,18 @@ Singleton {
             onStreamFinished: {
                 if (root.pending)
                     return;
+                const now = Date.now();
                 try {
                     root.snapshot = JSON.parse(text);
                     if (root.snapshot.error && root.snapshot.due)
-                        root.lastFailure = Date.now();
+                        root.lastFailure = now;
                     else if (!root.snapshot.due)
                         root.lastFailure = 0;
                 } catch (_) {
                     root.snapshot = {};
                 }
+                // Missing places, errors and failed refreshes retry after the backoff.
+                root.nextPoll = !root.snapshot.due && root.snapshot.expires > 0 ? root.snapshot.expires * 1000 : now + root.retryInterval;
             }
         }
         stderr: StdioCollector {}

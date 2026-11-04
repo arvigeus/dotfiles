@@ -1,7 +1,8 @@
 """Timezone clocks, private weather caches and the production drawer."""
 
+import contextlib
 import copy
-import importlib.util
+import io
 import json
 import os
 import shutil
@@ -14,10 +15,9 @@ from unittest.mock import patch
 
 import support
 
-SOURCE = support.DESKTOP / 'drawers/weather/backend.py'
-SPEC = importlib.util.spec_from_file_location('desktop_weather', SOURCE)
-backend = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(backend)
+backend = support.load(
+    'desktop_weather', support.DESKTOP / 'drawers/weather/backend.py'
+)
 
 
 def place(id='east', timezone='Asia/Tokyo', latitude=35, longitude=139):
@@ -100,6 +100,16 @@ class WeatherBackendTests(unittest.TestCase):
             dict(fetchedAt=self.now - age, data=data or payload(self.now)),
         )
 
+    def request(self, **values):
+        """Run one helper request as the shell sends it and return the reply."""
+        output = io.StringIO()
+        with (
+            patch('sys.stdin', io.StringIO(json.dumps(values) + '\n')),
+            contextlib.redirect_stdout(output),
+        ):
+            backend.main()
+        return json.loads(output.getvalue())
+
     def test_clock_date_and_dst_are_independent_of_network_and_system_timezone(self):
         with patch.object(backend, 'urlopen') as network:
             east = backend.status('east', self.now)
@@ -138,9 +148,11 @@ class WeatherBackendTests(unittest.TestCase):
             east = backend.status('east', self.now)
             west = backend.status('west', self.now)
             self.assertFalse(east['due'])
+            self.assertEqual(east['expires'], self.now + backend.TTL)
             self.assertIsNotNone(east['weather'])
             self.assertIsNone(west['weather'])
             self.assertTrue(west['due'])
+            self.assertEqual(west['expires'], 0)
             self.cache(self.rows[0], age=4000)
             self.assertTrue(backend.status('east', self.now)['stale'])
             self.rows[0]['latitude'] += 1
@@ -164,6 +176,11 @@ class WeatherBackendTests(unittest.TestCase):
                 dict(locations=self.rows, islandLocation='west'),
             )
             self.assertEqual(backend.island_status(self.now)['location']['id'], 'west')
+            backend.atomic_json(
+                backend.config_dir() / 'weather.json',
+                dict(locations=self.rows, islandLocation=5),
+            )
+            self.assertEqual(backend.island_status(self.now)['location']['id'], 'east')
             network.assert_not_called()
 
     def test_setting_current_location_preserves_private_config_and_controls_default(
@@ -189,6 +206,64 @@ class WeatherBackendTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             backend.set_current('west')
         self.assertEqual(path.read_text(), '{broken')
+
+    def test_pin_reply_does_not_depend_on_saving_the_drawer_selection(self):
+        selection = backend.config_dir() / 'weather-selection.json'
+        selection.mkdir(parents=True)
+        self.assertEqual(
+            self.request(op='current', id='west'),
+            dict(currentLocation='west', error=''),
+        )
+        self.assertEqual(self.zone, 'America/New_York')
+        self.assertEqual(
+            backend.read_json(backend.config_dir() / 'weather.json')['islandLocation'],
+            'west',
+        )
+        # Browsing still reports its own failure to remember the place.
+        self.assertEqual(
+            self.request(op='status', id='east')['error'],
+            'Could not save the selected location.',
+        )
+
+    def test_only_configuration_errors_point_at_weather_json(self):
+        def respond(body):
+            response = unittest.mock.MagicMock()
+            response.__enter__.return_value.read.return_value = body
+            return response
+
+        unavailable = dict(error='Weather unavailable. Try again shortly.')
+        for body in (
+            b'<html>Sign in to the network</html>',
+            b'{"current":{}}',
+            json.dumps(
+                dict(current=dict(time=1, temperature_2m=1, weather_code=1))
+            ).encode(),
+        ):
+            with (
+                self.subTest(body=body[:24]),
+                patch.object(backend, 'urlopen', return_value=respond(body)),
+            ):
+                self.assertEqual(
+                    self.request(op='fetch', id='east', force=True), unavailable
+                )
+        with patch.object(backend, 'urlopen', side_effect=OSError('offline')):
+            self.assertEqual(self.request(op='fetch', id='east'), unavailable)
+        self.assertFalse(backend.cache_path(self.rows[0]).exists())
+        self.assertEqual(
+            self.request(op='fetch', id='gone'),
+            dict(error='Check weather.json: Location is no longer configured.'),
+        )
+        rows = copy.deepcopy(self.rows)
+        rows[1]['timezone'] = 'Mars/Olympus'
+        self.config(rows)
+        self.assertEqual(
+            self.request(op='status'),
+            dict(error="Check weather.json: Unknown timezone 'Mars/Olympus'."),
+        )
+        (backend.config_dir() / 'weather.json').write_text('{broken')
+        self.assertTrue(
+            self.request(op='island')['error'].startswith('Check weather.json: ')
+        )
 
     def test_pin_authorization_failure_preserves_config_and_timezone(self):
         path = backend.config_dir() / 'weather.json'
@@ -538,14 +613,16 @@ ShellRoot {
   }else if(stage===5){
    mock.state=Object.assign({},mock.state,{weather:null});capture("no-weather");
    check(find(drawer,"locationTime").text==="14:30","offline clock lost");
+   mock.error="";drawer.locationSettings.error="Denied";check(find(drawer,"weatherError").text==="Denied","pin error hidden");
    picker.popup.open();drawer.active=false;check(!picker.popup.visible,"dismissal kept popup");
+   check(drawer.locationSettings.error==="","pin error outlived the visit");
   }else if(stage===6){console.log("DISPLAY_PASS");Qt.quit();}
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }""")
 
-    def test_service_cancels_old_place_and_hides_expired_cache_when_switching_offline(
+    def test_service_cancels_old_place_and_shows_expired_cache_only_after_refresh_fails(
         self,
     ):
         def setup(root):
@@ -556,7 +633,7 @@ events=Path(__file__).with_name('events')
 with events.open('a') as stream:stream.write(r['op']+':'+id+'\\n')
 if r['op']=='fetch':
  if id=='east':time.sleep(2)
- else:time.sleep(.15)
+ else:time.sleep(.6)
  print(json.dumps({'error':'Offline test'}),flush=True)
 else:
  print(json.dumps(dict(locations=[dict(id='east',name='East'),dict(id='west',name='West'),dict(id='fresh',name='Fresh')],location=dict(id=id),clock='03:30' if id=='east' else '14:30',date='2026-10-18',zone='TEST',weather=None if id=='east' else dict(current=dict(temperature=8)),due=id!='fresh',stale=id=='west',updated='01:00',error='')),flush=True)
@@ -578,14 +655,17 @@ ShellRoot {
    check(service.state.weather===null&&service.state.clock==="","old place visible after selection");
    service.receive(JSON.stringify({locations:[],location:{id:"east"},clock:"wrong"}),oldRevision,true);
    check(service.state.clock==="","delayed old response won");stage++;
-  }else if(stage===1&&service.state.location?.id==="west"&&service.error==="Offline test"){
-   check(service.state.clock==="14:30"&&service.state.weather===null,"switching showed expired weather or lost clock");
-   check(service.state.updated==="","hidden expired weather retained update label");
+  }else if(stage===1&&service.state.location?.id==="west"&&service.loading){
+   check(service.state.clock==="14:30"&&service.state.weather===null,"expired weather shown before its refresh finished, or clock lost");
+   check(service.state.updated==="","hidden expired weather retained update label");stage++;
+  }else if(stage===2&&service.error==="Offline test"&&service.state.weather){
+   check(service.state.location.id==="west"&&service.state.weather.current.temperature===8,"failed refresh did not show the saved forecast");
+   check(service.state.stale&&service.state.updated==="01:00"&&service.state.clock==="14:30","saved forecast lost its age or clock");
    service.select("fresh");stage++;
-  }else if(stage===2&&service.state.location?.id==="fresh"){
+  }else if(stage===3&&service.state.location?.id==="fresh"){
    check(service.state.weather.current.temperature===8&&!service.loading&&service.lastAttempt===0,"recent cache did not avoid fetch");
    service.active=false;check(!service.reader.running&&!service.fetcher.running&&!service.clockTimer.running,"dismissal left worker/timer active");stage++;
-  }else if(stage===3){console.log("DISPLAY_PASS");Qt.quit();}
+  }else if(stage===4){console.log("DISPLAY_PASS");Qt.quit();}
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:4000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",stage,service.error);Qt.quit();}}
 }""",
@@ -634,6 +714,65 @@ ShellRoot {
   }
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:4000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
+}""",
+            setup,
+        )
+
+    def test_bar_polls_at_expiry_backs_off_and_follows_drawer_fetches_of_current_place(
+        self,
+    ):
+        def setup(root):
+            (root / 'drawers/weather/backend.py').write_text("""import json,sys,time
+from pathlib import Path
+r=json.loads(sys.stdin.readline());log=Path(__file__).with_name('requests')
+with log.open('a') as stream:stream.write(r['op']+'\\n')
+n=log.read_text().split().count('island');now=time.time()
+places=[dict(id='east',name='East'),dict(id='west',name='West')]
+if r['op']=='island':
+ # Outlast several timer checks so an in-flight poll is exercised.
+ time.sleep(.25)
+ reply=dict(location=places[0],due=n==2,error='Offline' if n==2 else '',expires=now+(0.4 if n==1 else -1 if n==2 else 3600),call=n)
+else:
+ reply=dict(locations=places,location=dict(id=r.get('id') or 'east'),currentLocation='east',due=r['op']!='fetch',expires=0)
+print(json.dumps(reply),flush=True)
+""")
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "drawers/weather"
+ShellRoot {
+ readonly property var status: WeatherStatus
+ WeatherService{id:drawer}
+ function check(value,message){if(!value)throw new Error(message);}
+ property int stage:0
+ property double expiry:0
+ property double quietSince:0
+ Component.onCompleted:status.updates.interval=40
+ Timer{interval:60;repeat:true;running:true;onTriggered:{try{
+  if(status.worker.running||drawer.loading||drawer.reader.running)return;
+  const call=status.snapshot.call;
+  if(stage===0&&call===1){expiry=status.snapshot.expires*1000;stage++;
+  }else if(stage===1){
+   if(call===1)return;
+   check(call===2,"in-flight poll was discarded and repeated: call "+call);
+   check(Date.now()>=expiry,"bar polled before the forecast expired");
+   check(status.lastFailure>0&&status.nextPoll>=Date.now()+250000,"failed refresh did not back off");
+   quietSince=Date.now();stage++;
+  }else if(stage===2&&Date.now()-quietSince>500){
+   check(call===2,"bar polled during the retry backoff");
+   drawer.active=true;stage++;
+  }else if(stage===3&&drawer.state.location?.id==="east"&&call===3){
+   check(status.nextPoll>Date.now()+3000000,"fresh forecast did not schedule its expiry");
+   drawer.select("west");stage++;
+  }else if(stage===4&&drawer.state.location?.id==="west"&&drawer.lastAttempt>0){
+   quietSince=Date.now();stage++;
+  }else if(stage===5&&Date.now()-quietSince>400){
+   check(call===3,"browsing another place refreshed the bar");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+ Timer{interval:6000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",stage,status.snapshot.call);Qt.quit();}}
 }""",
             setup,
         )

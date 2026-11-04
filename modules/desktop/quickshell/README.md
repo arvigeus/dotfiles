@@ -139,8 +139,10 @@ and current Hyprland shortcuts. See [Logitech backlighting](../../hardware/perip
 Weather places live in `~/.config/quickshell/desktop/weather.json`; see the
 [format](ARCHITECTURE.md#time-and-weather). Pinning changes the system timezone;
 browsing another place leaves it unchanged. Forecasts refresh every 30 minutes
-and remain visible offline. Alarms/reminders continue with the drawer closed,
-clear on shell exit/reload and cannot wake a sleeping computer.
+and remain visible offline. Alarms/reminders continue with the drawer closed
+and across shell reloads until you log out, keep their clock time when the
+timezone changes and cannot wake a sleeping computer. Alarms show during Do Not
+Disturb and stay until dismissed; focus/break prompts follow it.
 
 Events/tasks use Nextcloud and keep cached data available offline. Writes need a
 connection; recurring event edits and individual task exceptions are read-only.
