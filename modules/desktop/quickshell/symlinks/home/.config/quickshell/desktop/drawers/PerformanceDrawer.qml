@@ -14,7 +14,7 @@ DrawerPage {
     property var session: PowerSession
     property var profiles: PowerProfiles
     readonly property var metrics: service.state.metrics
-    readonly property var choices: [
+    readonly property var modes: [
         {
             key: "power-saver",
             value: PowerProfile.PowerSaver
@@ -22,15 +22,17 @@ DrawerPage {
         {
             key: "balanced",
             value: PowerProfile.Balanced
-        }
-    ].concat(profiles.hasPerformanceProfile ? [
+        },
         {
             key: "performance",
             value: PowerProfile.Performance
         }
-    ] : [])
+    ]
+    readonly property var choices: modes.filter(mode => mode.value !== PowerProfile.Performance || profiles.hasPerformanceProfile)
+    // Without a PowerProfiles service Quickshell still reports Balanced.
+    readonly property bool modesAvailable: session.state.modesAvailable !== false
     function profileKey(value): string {
-        return choices.find(choice => choice.value === value)?.key ?? "";
+        return modes.find(mode => mode.value === value)?.key ?? "";
     }
     Component.onCompleted: service.observe(root, active, true)
     Component.onDestruction: service.observe(root, false, true)
@@ -94,7 +96,13 @@ DrawerPage {
                 objectName: "performanceModes"
                 Layout.fillWidth: true
                 spacing: 10
+                Note {
+                    objectName: "performanceModesUnavailable"
+                    visible: !root.modesAvailable
+                    text: qsTr("Power modes are unavailable on this system.")
+                }
                 RowLayout {
+                    visible: root.modesAvailable
                     Layout.fillWidth: true
                     spacing: 6
                     Repeater {
@@ -115,12 +123,17 @@ DrawerPage {
                             implicitHeight: root.width < 340 ? 38 : 60
                             padding: 6
                             hoverEnabled: true
-                            enabled: root.active
+                            // PowerProfiles follows PPD's confirmed property; the session helper
+                            // reports a rejected switch instead of showing it as selected.
+                            enabled: root.active && root.session.ready && !root.session.busy
                             Accessible.name: Format.profile(profileName)
                             Accessible.role: Accessible.RadioButton
                             Accessible.checked: current
                             onClicked: if (!current)
-                                root.profiles.profile = modelData.value
+                                root.session.send({
+                                    op: "profile",
+                                    value: profileName
+                                })
                             background: ButtonBackground {
                                 idleColor: profile.current ? Theme.accentSurface : Theme.surface
                                 idleBorderColor: Theme.border
@@ -168,6 +181,7 @@ DrawerPage {
                     model: root.profiles.holds
                     delegate: Note {
                         required property var modelData
+                        objectName: "performanceHold"
                         text: qsTr("%1 requests %2: %3").arg(modelData.applicationId || qsTr("An application")).arg(Format.profile(root.profileKey(modelData.profile))).arg(modelData.reason)
                     }
                 }

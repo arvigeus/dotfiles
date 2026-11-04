@@ -4,7 +4,8 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.UPower
 
-// session.py owns charge-once and recording lifetimes; started once from shell.qml.
+// session.py owns confirmed mode changes, charge-once and recording lifetimes;
+// started once from shell.qml.
 Singleton {
     id: root
     property bool started: false
@@ -15,6 +16,7 @@ Singleton {
             once: null,
             recording: null,
             recordAvailable: false,
+            modesAvailable: null,
             error: ""
         })
     property string transportError: ""

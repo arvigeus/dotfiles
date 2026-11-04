@@ -2,8 +2,10 @@
 
 import importlib.util
 import json
+import os
 import shutil
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -144,6 +146,115 @@ class PolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.controller.handle(dict(op='charge-limit', key='missing'))
         self.controller.bus.set.assert_not_called()
+
+    def applied_policy(
+        self, root, profile, platform, preference, boost, ceiling, apu, budget
+    ):
+        """Simulate firmware/CPU state after TuneD fully applied one shipped profile."""
+        tuned = root / 'tuned'
+        if not (tuned / 'profiles').exists():
+            shutil.copytree(
+                Path(__file__).resolve().parents[1]
+                / 'modules/hardware/power/files/etc/tuned/profiles',
+                tuned / 'profiles',
+            )
+        (tuned / 'active_profile').write_text(profile)
+        sysfs = root / 'sys'
+        for name, value in [
+            ('firmware/acpi/platform_profile', platform),
+            ('devices/system/cpu/cpufreq/boost', boost),
+            (
+                'devices/system/cpu/cpufreq/policy0/energy_performance_preference',
+                preference,
+            ),
+            ('devices/system/cpu/cpufreq/policy0/scaling_governor', 'powersave'),
+            ('devices/system/cpu/cpufreq/policy0/scaling_max_freq', ceiling),
+            ('devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq', '4936631'),
+            ('class/hwmon/hwmon0/name', 'asus_custom_fan_curve'),
+            ('class/hwmon/hwmon0/pwm1_enable', '1'),
+            ('class/hwmon/hwmon0/pwm2_enable', '1'),
+        ] + [
+            (f'class/firmware-attributes/asus-armoury/attributes/{name}', value)
+            for attribute, current in (
+                ('ppt_apu_sppt', apu),
+                ('ppt_platform_sppt', budget),
+            )
+            for name, value in (
+                (f'{attribute}/min_value', '15'),
+                (f'{attribute}/max_value', '80'),
+                (f'{attribute}/current_value', current),
+            )
+        ]:
+            path = sysfs / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(value)
+        return tuned, sysfs
+
+    def test_included_profiles_are_verified_as_tuned_merges_them(self):
+        # platform, EPP, boost, CPU ceiling, APU W, platform W
+        quiet = 'quiet power 0 4936631 25 40'.split()
+        performance = 'performance performance 1 4000000 45 60'.split()
+        expected = {
+            'zephyrus-balanced': 'balanced balance_power 0 4936631 30 45'.split(),
+            # Balanced on battery has no options of its own; it includes Powersave.
+            'zephyrus-battery': quiet,
+            'zephyrus-powersave': quiet,
+            'zephyrus-powersave-battery': quiet,
+            'zephyrus-performance': performance,
+            'zephyrus-performance-battery': performance,
+        }
+        for profile, values in expected.items():
+            with (
+                self.subTest(profile=profile),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                root = Path(directory)
+                tuned, sysfs = self.applied_policy(root, profile, *values)
+                with (
+                    patch.object(backend, 'SYS', sysfs),
+                    patch.object(backend, 'TUNED', tuned),
+                ):
+                    self.assertEqual(backend.policy_warning(), '')
+                    self.assertEqual(backend.thermal_warning(), '')
+                    (sysfs / 'devices/system/cpu/cpufreq/boost').write_text(
+                        '0' if values[2] == '1' else '1'
+                    )
+                    self.assertIn('CPU boost', backend.policy_warning())
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tuned, sysfs = self.applied_policy(root, 'zephyrus-battery', *quiet)
+            (tuned / 'profiles/zephyrus-battery/tuned.conf').write_text(
+                '[main]\ninclude=zephyrus-missing\n'
+            )
+            with (
+                patch.object(backend, 'SYS', sysfs),
+                patch.object(backend, 'TUNED', tuned),
+            ):
+                self.assertIn('incomplete', backend.policy_warning())
+
+    def test_readback_waits_while_tuned_applies_a_switched_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tuned = Path(directory)
+            active = tuned / 'active_profile'
+            active.write_text('zephyrus-balanced')
+            with (
+                patch.object(backend, 'TUNED', tuned),
+                patch.object(self.controller, 'hardware', return_value=([], [])),
+                patch.object(self.controller.sampler, 'snapshot', return_value={}),
+                patch.object(
+                    backend,
+                    'policy_warning',
+                    return_value='Policy not fully applied: platform',
+                ) as policy,
+                patch.object(backend, 'thermal_warning', return_value='') as thermal,
+            ):
+                # TuneD writes active_profile, then applies in its own thread.
+                self.assertEqual(self.controller.snapshot(True)['policy'], '')
+                policy.assert_not_called()
+                thermal.assert_not_called()
+                old = time.time() - backend.SETTLE_SECONDS - 1
+                os.utime(active, (old, old))
+                self.assertIn('platform', self.controller.snapshot(True)['policy'])
 
     def test_detailed_thermal_readback_uses_dc_limits_and_actual_fan_mode(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -346,6 +457,78 @@ class TelemetryTests(unittest.TestCase):
         self.write(device / 'power/runtime_status', 'active')
         self.assertEqual(backend.Sampler().snapshot()['gpus'][0]['usage'], 65)
 
+    def test_any_display_driver_hwmon_is_left_to_the_paced_gpu_sampler(self):
+        # An awake discrete GPU on another driver: its sensor reads would reset
+        # the autosuspend countdown every two seconds.
+        device = self.sys / 'devices/pci0000:00/0000:01:00.0'
+        self.write(device / 'class', '0x030000')
+        self.write(device / 'power/runtime_status', 'active')
+        gpu = self.sys / 'class/hwmon/hwmon0'
+        self.write(gpu / 'name', 'nouveau')
+        self.write(gpu / 'fan1_input', '1800')
+        self.write(gpu / 'temp1_input', '60000')
+        (gpu / 'device').symlink_to(device)
+        cpu = self.sys / 'class/hwmon/hwmon1'
+        self.write(cpu / 'name', 'k10temp')
+        self.write(cpu / 'temp1_input', '48000')
+        self.write(self.sys / 'class/hwmon/hwmon2/name', 'asus')
+        self.write(self.sys / 'class/hwmon/hwmon2/fan1_input', '2100')
+        self.write(self.sys / 'class/hwmon/hwmon2/fan1_label', 'cpu_fan')
+        original = backend.read
+
+        def guarded(path):
+            if path.parent == gpu and path.name != 'name':
+                self.fail('Read a display device sensor outside the GPU sampler')
+            return original(path)
+
+        with patch.object(backend, 'read', side_effect=guarded):
+            state = backend.Sampler().snapshot()
+        self.assertEqual(state['cpu']['temperature'], 48)
+        self.assertEqual([fan['label'] for fan in state['fans']], ['CPU fan'])
+
+    def test_constant_cpu_and_gpu_names_are_read_once_from_local_files(self):
+        database = self.root / 'pci.ids'
+        database.write_text(
+            '# comment\n'
+            '10de  NVIDIA Corporation\n'
+            '\t73ef  Other vendor, same device ID\n'
+            '1002  Advanced Micro Devices, Inc. [AMD/ATI]\n'
+            '\t1681  Rembrandt [Radeon 680M]\n'
+            '\t\t1043 1e12  Subsystem\n'
+            '\t73ef  Navi 23 [Radeon RX 6650 XT / 6700S / 6800S]\n'
+            '1022  Advanced Micro Devices, Inc. [AMD]\n'
+            '\t1681  Not a graphics device\n'
+        )
+        for card, identifier in (('card0', '0x73ef'), ('card1', '0x1681')):
+            device = self.sys / 'class/drm' / card / 'device'
+            self.write(device / 'vendor', '0x1002')
+            self.write(device / 'device', identifier)
+            self.write(device / 'power/runtime_status', 'suspended')
+        self.write(self.proc / 'cpuinfo', 'model name\t: Test CPU 6900HS\n')
+        reads = []
+        original = backend.read
+
+        def counted(path):
+            reads.append(path.name)
+            return original(path)
+
+        sampler = backend.Sampler()
+        with (
+            patch.object(backend, 'PCI_IDS', database),
+            patch.object(backend, 'read', side_effect=counted),
+        ):
+            backend.pci_name.cache_clear()
+            first = sampler.snapshot()
+            second = sampler.snapshot()
+        backend.pci_name.cache_clear()
+        self.assertEqual(
+            [gpu['label'] for gpu in first['gpus']],
+            ['Navi 23 [Radeon RX 6650 XT / 6700S / 6800S]', 'Rembrandt [Radeon 680M]'],
+        )
+        self.assertEqual(second['gpus'][1]['label'], 'Rembrandt [Radeon 680M]')
+        self.assertEqual(second['cpu']['label'], 'Test CPU 6900HS')
+        self.assertEqual(reads.count('cpuinfo'), 1)
+
 
 # Native UPower stand-ins: plain objects (UPowerDevice percentages are 0-1).
 UPOWER = """
@@ -391,7 +574,7 @@ ShellRoot {
   function refresh(){}
   function chargeLimit(row,value){limit=value;}
  }
- QtObject {id:utilities;property bool ready:true;property bool busy:false;property string error:"";property var state:({once:null,recording:null,recordAvailable:false})}
+ QtObject {id:utilities;property bool ready:true;property bool busy:false;property string error:"";property var state:({once:null,recording:null,recordAvailable:false,modesAvailable:true});property var sent:[];function send(request){sent=sent.concat([request]);}}
  QtObject {id:profiles;property int profile:PowerProfile.Balanced;property bool hasPerformanceProfile:true;property int degradationReason:PerformanceDegradationReason.None;property var holds:[]}
 UPOWER
  BatteryStatus {id:barBattery; device:({isPresent:true,type:UPowerDeviceType.Battery,percentage:.76,state:UPowerDeviceState.Discharging})}
@@ -439,14 +622,24 @@ UPOWER
    check(find(performance,"cpuUsage").value==="23%","CPU missing");
    const profileButton=find(performance,"powerProfile:power-saver");
    profileButton.forceActiveFocus();input.keyClick(Qt.Key_Space);
-   check(profiles.profile===PowerProfile.PowerSaver&&profileButton.current,"profile action");
+   check(utilities.sent.length===1&&utilities.sent[0].op==="profile"&&utilities.sent[0].value==="power-saver","mode request");
+   // PowerProfiles follows PPD's confirmed property; the drawer never pre-selects.
+   check(profiles.profile===PowerProfile.Balanced&&!profileButton.current,"unconfirmed mode shown as active");
+   utilities.busy=true;check(!profileButton.enabled,"mode selectable while a change is pending");utilities.busy=false;
+   profiles.profile=PowerProfile.PowerSaver;check(profileButton.current,"confirmed mode not shown");
+   check(!find(performance,"performanceModesUnavailable").visible,"available modes reported unavailable");
    check(!find(performance,"performanceDegraded").visible&&!find(performance,"performancePolicy").visible,"spurious warnings");
    capture("performance",performance);
   }else if(stage===3){
    profiles.hasPerformanceProfile=false;profiles.degradationReason=PerformanceDegradationReason.HighTemperature;
+   profiles.holds=[{applicationId:"Game",profile:PowerProfile.Performance,reason:"Playing"}];
    update(s=>{s.policy="Policy not fully applied: CPU boost";s.metrics.cpu.usage=null;});
    check(!find(performance,"powerProfile:performance"),"unavailable performance profile offered");
+   check(find(performance,"performanceHold").text==="Game requests Performance: Playing","hold profile label");
    check(find(performance,"performanceDegraded").visible&&find(performance,"performancePolicy").visible,"warnings hidden");
+   utilities.state=Object.assign({},utilities.state,{modesAvailable:false});
+   check(!find(performance,"powerProfile:balanced").visible&&find(performance,"performanceModesUnavailable").visible,"modes offered without a power mode service");
+   utilities.state=Object.assign({},utilities.state,{modesAvailable:true});
    battery.width=268;performance.width=268;
   }else if(stage===4){capture("performance-narrow",performance);Theme.setMode("light");
   }else if(stage===5){performance.active=false;performance.visible=false;battery.visible=true;battery.active=true;

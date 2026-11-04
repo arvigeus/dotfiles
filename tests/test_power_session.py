@@ -1,6 +1,7 @@
 """Recoverable charge-once/recording actions and production drawer layouts."""
 
 import copy
+import fcntl
 import json
 import importlib.util
 import os
@@ -161,7 +162,73 @@ class UtilitiesTests(unittest.TestCase):
         self.controller.hardware.assert_not_called()
         self.assertFalse(self.utility.path.exists())
         with self.assertRaisesRegex(ValueError, 'Unknown'):
-            self.utility.handle(dict(op='profile', value='performance'))
+            self.utility.handle(dict(op='temporary-profile', value='performance'))
+
+    def test_mode_selection_is_confirmed_through_the_public_ppd_property(self):
+        bus = self.controller.bus
+        bus.reset_mock()
+        active = dict(value='balanced')
+
+        def get(service, path, interface, method, signature=None, args=(), **_):
+            self.assertEqual(
+                (service, method, args[1]), (session.PROFILES, 'Get', 'ActiveProfile')
+            )
+            return active['value']
+
+        bus.call.side_effect = get
+        bus.set.side_effect = lambda *args, **_: active.update(value=args[-1])
+        self.utility.handle(dict(op='profile', value='performance'))
+        # TuneD-PPD replies after TuneD accepted the switch, slower than a read.
+        bus.set.assert_called_once_with(
+            session.PROFILES,
+            session.PROFILES_PATH,
+            session.PROFILES,
+            'ActiveProfile',
+            's',
+            'performance',
+            timeout=session.SWITCH_TIMEOUT,
+        )
+        bus.set.side_effect = None
+        with self.assertRaisesRegex(ValueError, 'did not confirm Powersave'):
+            self.utility.handle(dict(op='profile', value='power-saver'))
+        bus.set.side_effect = RuntimeError('Not authorized')
+        with self.assertRaisesRegex(
+            ValueError, 'Could not select Balanced: Not authorized'
+        ):
+            self.utility.handle(dict(op='profile', value='balanced'))
+        bus.set.reset_mock()
+        for value in ('turbo', None, 2):
+            with (
+                self.subTest(value=value),
+                self.assertRaisesRegex(ValueError, 'Unknown power mode'),
+            ):
+                self.utility.handle(dict(op='profile', value=value))
+        bus.set.assert_not_called()
+        self.controller.handle.assert_not_called()
+        self.assertFalse(self.utility.path.exists())
+
+    def test_modes_are_offered_only_with_a_power_mode_service(self):
+        def available(owner, activatable):
+            controller = Mock()
+
+            def call(service, path, interface, method, signature=None, args=(), **_):
+                if isinstance(owner, Exception):
+                    raise owner
+                self.assertEqual(
+                    args,
+                    () if method == 'ListActivatableNames' else (session.PROFILES,),
+                )
+                return owner if method == 'NameHasOwner' else activatable
+
+            controller.bus.call.side_effect = call
+            return session.Session(self.root, controller).state()['modesAvailable']
+
+        self.assertIs(available(True, []), True)
+        # Quickshell activates an installed but stopped service at startup.
+        self.assertIs(available(False, [session.PROFILES]), True)
+        self.assertIs(available(False, ['org.freedesktop.UPower']), False)
+        # A failed check is unknown, not a reason to hide working modes.
+        self.assertIsNone(available(RuntimeError('timeout'), []))
 
     def test_removed_settings_are_pruned_without_changing_hardware(self):
         self.utility.path.write_text(
@@ -218,6 +285,63 @@ class UtilitiesTests(unittest.TestCase):
 
 @unittest.skipUnless(importlib.util.find_spec('gi'), 'PyGObject is required')
 class ProcessLifecycleTests(unittest.TestCase):
+    def test_closed_shell_output_still_ends_helper_and_releases_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner = root / 'runner.py'
+            # A reload destroys the shell's pipes while an action is in flight.
+            runner.write_text(
+                """import sys,time
+from unittest.mock import Mock
+sys.path.insert(0, SOURCE)
+import session,backend
+from gi.repository import Gio
+controller=Mock()
+controller.handle.side_effect=lambda request: time.sleep(.5)
+original=session.Session
+session.Session=lambda: original(controller=controller)
+Gio.bus_get_sync=lambda *a: Mock()
+raise SystemExit(session.supervise())
+""".replace('SOURCE', repr(str(support.DESKTOP / 'drawers/power')))
+            )
+            child = subprocess.Popen(
+                [sys.executable, '-B', '-u', str(runner)],
+                env=dict(os.environ, XDG_STATE_HOME=str(root / 'state')),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                self.assertTrue(
+                    select.select([child.stdout], [], [], 5)[0],
+                    'helper startup timed out',
+                )
+                child.stdout.readline()
+                child.stdin.write(
+                    '{"op":"charge-limit","key":"asus","identity":":1.3","previous":80,"value":70}\n'
+                )
+                child.stdin.flush()
+                child.stdout.close()
+                time.sleep(0.1)
+                child.stdin.close()
+                try:
+                    child.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.fail('helper kept running after the shell closed its pipes')
+                errors = child.stderr.read()
+                self.assertNotIn('Traceback', errors)
+                lock = (root / 'state/quickshell/power/session.lock').open('w')
+                with lock:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            finally:
+                if child.poll() is None:
+                    # The setsid'd session child is not this process's child.
+                    subprocess.run(['pkill', '-f', str(runner)], check=False)
+                    child.kill()
+                    child.wait(timeout=5)
+                child.stderr.close()
+
     def test_qprocess_kill_still_stops_recording_and_saves_summary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -451,9 +575,13 @@ UPOWER
   }else if(stage===5){
    check(find(performance,"performanceRecord").iconName==="square","recording has no stop icon");
    click(find(performance,"performanceRecord"));check(utilities.sent.op==="stop-recording","stop action");
-   utilityUpdate(s=>s.recording={running:false,path:"/tmp/test-recording",error:"",summary:{samples:60,measured_seconds:118,cpu_usage:24,peak_memory_used:1073741824,observed_peak_temperatures_c:{cpu:60},batteries:{BAT0:{mean_w:8}}}});
+   // Stop is the normal end of an until-stopped run; power-study marks it interrupted.
+   utilityUpdate(s=>s.recording={running:false,path:"/tmp/test-recording",error:"",summary:{samples:60,measured_seconds:118,cpu_usage:24,peak_memory_used:1073741824,observed_peak_temperatures_c:{cpu:60},batteries:{BAT0:{mean_w:8}},abort_reason:"",interrupted:true}});
    update(s=>s.metrics.cpu.usage=32);performance.width=268;battery.width=268;Theme.setMode("light");
   }else if(stage===6){
+   check(!find(performance,"performanceRecordWarning").visible,"a normal stop reported as a problem");
+   utilityUpdate(s=>s.recording.summary.abort_reason="Power policy, AC state or brightness changed; run is not comparable");
+   check(find(performance,"performanceRecordWarning").visible,"recording abort reason hidden");
    const button=find(performance,"performanceRecord"),label=find(button,"performanceRecordLabel");
    checkAction(button);
    check(find(performance,"performanceRecordRow").height===48,"narrow recording row stretched vertically");

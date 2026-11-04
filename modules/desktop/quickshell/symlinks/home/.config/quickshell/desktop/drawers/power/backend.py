@@ -22,7 +22,11 @@ PROVIDERS = (
 PROC = Path('/proc')
 SYS = Path('/sys')
 TUNED = Path('/etc/tuned')
+PCI_IDS = Path('/usr/share/hwdata/pci.ids')
 PROPERTIES = 'org.freedesktop.DBus.Properties'
+# TuneD writes active_profile, then applies the profile in its own thread
+# (0.3-0.5 s on GA402RK, twice per AC/DC edge). Readback before then is noise.
+SETTLE_SECONDS = 5
 
 
 def number(value, minimum=0, maximum=None):
@@ -53,7 +57,9 @@ class Bus:
     def __init__(self):
         self.connection = None
 
-    def call(self, service, path, interface, method, signature=None, args=()):
+    def call(
+        self, service, path, interface, method, signature=None, args=(), timeout=2000
+    ):
         from gi.repository import Gio, GLib
 
         if self.connection is None:
@@ -66,12 +72,12 @@ class Bus:
             GLib.Variant(signature, args) if signature else None,
             None,
             Gio.DBusCallFlags.NO_AUTO_START,
-            2000,
+            timeout,
             None,
         )
         return result.unpack()[0] if result.n_children() else None
 
-    def set(self, service, path, interface, name, kind, value):
+    def set(self, service, path, interface, name, kind, value, timeout=2000):
         from gi.repository import GLib
 
         self.call(
@@ -81,6 +87,7 @@ class Bus:
             'Set',
             '(ssv)',
             (interface, name, GLib.Variant(kind, value)),
+            timeout,
         )
 
     def owner(self, service):
@@ -94,26 +101,40 @@ class Bus:
         )
 
 
+def profile_files(name, seen=()):
+    """Files in TuneD's merge order: includes first, then the profile itself."""
+    path = TUNED / 'profiles' / name / 'tuned.conf'
+    if name in seen or not path.is_file():
+        return []
+    profile = configparser.ConfigParser(interpolation=None)
+    try:
+        profile.read(path)
+    except configparser.Error:
+        return []
+    files = []
+    for parent in re.split(r'[\s,;]+', profile.get('main', 'include', fallback='')):
+        if parent:
+            files += profile_files(parent, (*seen, name))
+    return files + [path]
+
+
 def policy_config():
     name = read(TUNED / 'active_profile')
     config = configparser.ConfigParser(interpolation=None)
-    if name not in (
-        'zephyrus-balanced',
-        'zephyrus-battery',
-        'zephyrus-powersave',
-        'zephyrus-powersave-battery',
-        'zephyrus-performance',
-        'zephyrus-performance-battery',
-    ):
-        return name, config
-    directory = TUNED / 'profiles'
-    parent = {
-        'zephyrus-performance-battery': 'zephyrus-performance',
-        'zephyrus-powersave-battery': 'zephyrus-powersave',
-    }.get(name)
-    parents = ['zephyrus-common'] + ([parent] if parent else [])
-    config.read([directory / p / 'tuned.conf' for p in parents + [name]])
+    if name.startswith('zephyrus-'):
+        try:
+            config.read(profile_files(name))
+        except configparser.Error:
+            config = configparser.ConfigParser(interpolation=None)
     return name, config
+
+
+def policy_settling():
+    try:
+        age = time.time() - (TUNED / 'active_profile').stat().st_mtime
+    except OSError:
+        return False
+    return 0 <= age < SETTLE_SECONDS
 
 
 def policy_warning():
@@ -210,16 +231,22 @@ def sleeping(path):
     return read(path / 'power/runtime_status') in ('suspended', 'suspending')
 
 
-@lru_cache(maxsize=1)
-def pci_names():
-    """Use the local PCI database without probing or opening a graphics device."""
-    names, vendor = {}, ''
-    for line in read(Path('/usr/share/hwdata/pci.ids')).splitlines():
-        if re.match(r'^[0-9a-f]{4}  ', line):
-            vendor = line[:4]
-        elif re.match(r'^\t[0-9a-f]{4}  ', line):
-            names[(vendor, line[1:5])] = line[7:].strip()
-    return names
+@lru_cache(maxsize=16)
+def pci_name(vendor, device):
+    """Look up the local PCI database without probing or opening a graphics device."""
+    found = False
+    try:
+        with PCI_IDS.open(encoding='utf-8', errors='replace') as stream:
+            for line in stream:
+                if line.startswith(vendor + '  '):
+                    found = True
+                elif found and line.startswith('\t' + device + '  '):
+                    return line[7:].strip()
+                elif found and line[:1] not in ('\t', '#', '\n'):
+                    break
+    except OSError:
+        pass
+    return ''
 
 
 class Sampler:
@@ -227,6 +254,7 @@ class Sampler:
         self.previous = None
         self.sampled_at = None
         self.gpu_cache = {}
+        self.label = None
 
     def snapshot(self):
         now = time.monotonic()
@@ -250,8 +278,11 @@ class Sampler:
             self.previous, self.sampled_at = (total, idle), now
         except (ValueError, IndexError):
             self.previous = None
-        info = read(PROC / 'cpuinfo')
-        name = re.search(r'^(?:model name|Hardware)\s*:\s*(.+)$', info, re.M)
+        if self.label is None:
+            name = re.search(
+                r'^(?:model name|Hardware)\s*:\s*(.+)$', read(PROC / 'cpuinfo'), re.M
+            )
+            self.label = name.group(1) if name else 'CPU'
         frequencies = [
             value
             for path in (SYS / 'devices/system/cpu/cpufreq').glob(
@@ -268,11 +299,12 @@ class Sampler:
                 if parent != SYS
             ):
                 continue
-            chip = read(hwmon / 'name')
-            # DRM sensor reads can reset a discrete GPU's autosuspend timer.
-            # Collect them only through the separately paced GPU sampler.
-            if chip == 'amdgpu':
+            # Display-device (PCI class 0x03) sensor reads can reset a discrete
+            # GPU's autosuspend timer, whatever its driver. Collect them only
+            # through the separately paced GPU sampler.
+            if read(hwmon / 'device/class').startswith('0x03'):
                 continue
+            chip = read(hwmon / 'name')
             if chip in ('coretemp', 'k10temp', 'zenpower', 'cpu_thermal'):
                 temperatures += [
                     value
@@ -308,7 +340,7 @@ class Sampler:
         pressure = re.search(r'^some avg10=([\d.]+)', read(PROC / 'pressure/memory'))
         return dict(
             cpu=dict(
-                label=name.group(1) if name else 'CPU',
+                label=self.label,
                 usage=usage,
                 frequency=sum(frequencies) / len(frequencies) if frequencies else None,
                 temperature=max(temperatures) if temperatures else None,
@@ -347,8 +379,8 @@ class Sampler:
             )
             suspended = sleeping(device)
             identifier = read(device / 'device')
-            label = read(device / 'product_name') or pci_names().get(
-                (vendor.removeprefix('0x'), identifier.removeprefix('0x'))
+            label = read(device / 'product_name') or pci_name(
+                vendor.removeprefix('0x'), identifier.removeprefix('0x')
             )
             row = dict(
                 key=str(device.resolve()),
@@ -448,7 +480,9 @@ class Controller:
             hardware=rows,
             hardwareErrors=errors,
             metrics=self.sampler.snapshot(),
-            policy='; '.join(filter(None, (policy_warning(), thermal_warning()))),
+            policy=''
+            if policy_settling()
+            else '; '.join(filter(None, (policy_warning(), thermal_warning()))),
         )
 
     def handle(self, request):

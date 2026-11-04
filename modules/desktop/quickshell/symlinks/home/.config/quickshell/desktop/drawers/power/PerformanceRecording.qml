@@ -53,9 +53,12 @@ ColumnLayout {
         Layout.fillWidth: true
         wrapMode: Text.Wrap
     }
+    // Stop is the normal end of an until-stopped run, which power-study marks as
+    // interrupted; only an abort reason or a missing summary is a problem.
     ShellText {
+        objectName: "performanceRecordWarning"
         visible: !!root.recording && !root.running && (text !== "")
-        text: root.recording?.error || root.summary?.abort_reason || (root.summary?.interrupted ? qsTr("Recording stopped early.") : "")
+        text: root.recording?.error || root.summary?.abort_reason || ""
         color: Theme.warning
         font.pixelSize: Theme.smallFontSize
         Layout.fillWidth: true

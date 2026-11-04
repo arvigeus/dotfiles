@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Recoverable charge-once actions and bounded performance recordings.
+"""Confirmed power-mode changes, recoverable charge-once actions and recordings.
 
 Quickshell reports UPower's OnBattery as {"op": "power", "onBattery": bool|null}.
 """
@@ -20,6 +20,17 @@ STATE = (
     Path(os.environ.get('XDG_STATE_HOME', Path.home() / '.local/state'))
     / 'quickshell/power'
 )
+DBUS = 'org.freedesktop.DBus'
+DBUS_PATH = '/org/freedesktop/DBus'
+PROFILES = 'org.freedesktop.UPower.PowerProfiles'
+PROFILES_PATH = '/org/freedesktop/UPower/PowerProfiles'
+MODES = {
+    'power-saver': 'Powersave',
+    'balanced': 'Balanced',
+    'performance': 'Performance',
+}
+# TuneD-PPD replies once TuneD accepted the switch; `power-mode` allows the same.
+SWITCH_TIMEOUT = 15000
 
 
 class Session:
@@ -58,6 +69,7 @@ class Session:
         self.log = None
         self.boot = backend.read(Path('/proc/sys/kernel/random/boot_id'))
         self.record_available = bool(shutil.which('power-study'))
+        self.modes_available = self.mode_service()
         recording = self.data['recording']
         if recording:
             recording['running'] = False
@@ -78,7 +90,60 @@ class Session:
         self.dirty = False
 
     def state(self):
-        return dict(self.data, error=self.error, recordAvailable=self.record_available)
+        return dict(
+            self.data,
+            error=self.error,
+            recordAvailable=self.record_available,
+            modesAvailable=self.modes_available,
+        )
+
+    def mode_service(self):
+        """Mirror Quickshell, which reads (or activates) PPD once at startup.
+
+        Without the service its PowerProfiles reports a fabricated Balanced.
+        """
+
+        def ask(method, *args):
+            signature = '(s)' if args else None
+            return self.controller.bus.call(
+                DBUS, DBUS_PATH, DBUS, method, signature, args
+            )
+
+        try:
+            return bool(ask('NameHasOwner', PROFILES)) or PROFILES in ask(
+                'ListActivatableNames'
+            )
+        except Exception:
+            return None
+
+    def select_mode(self, value):
+        """Confirm the switch: Quickshell's own setter keeps even a rejected value."""
+        if not isinstance(value, str) or value not in MODES:
+            raise ValueError('Unknown power mode.')
+        bus = self.controller.bus
+        try:
+            bus.set(
+                PROFILES,
+                PROFILES_PATH,
+                PROFILES,
+                'ActiveProfile',
+                's',
+                value,
+                timeout=SWITCH_TIMEOUT,
+            )
+        except Exception as error:
+            message = getattr(error, 'message', '') or str(error)
+            raise ValueError(f'Could not select {MODES[value]}: {message}') from error
+        active = bus.call(
+            PROFILES,
+            PROFILES_PATH,
+            backend.PROPERTIES,
+            'Get',
+            '(ss)',
+            (PROFILES, 'ActiveProfile'),
+        )
+        if active != value:
+            raise ValueError(f'The power service did not confirm {MODES[value]}.')
 
     def restore_charge(self):
         once = self.data['once']
@@ -117,6 +182,8 @@ class Session:
         if op == 'power':
             value = request.get('onBattery')
             self.on_battery = value if isinstance(value, bool) else None
+        elif op == 'profile':
+            self.select_mode(request.get('value'))
         elif op == 'charge-limit':
             self.controller.handle(request)
             self.data['once'] = None
@@ -267,10 +334,18 @@ def main():
     pending = {'recording': 0}
 
     def emit(reply=False):
-        print(
-            json.dumps(dict(state=session.state(), reply=reply), allow_nan=False),
-            flush=True,
-        )
+        try:
+            print(
+                json.dumps(dict(state=session.state(), reply=reply), allow_nan=False),
+                flush=True,
+            )
+        except BrokenPipeError:
+            # The shell is gone (reload while a request ran). Escaping here would
+            # drop the stdin watch, hide EOF and keep the lock forever.
+            null = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(null, sys.stdout.fileno())
+            os.close(null)
+            loop.quit()
         if session.child and not pending['recording']:
             pending['recording'] = GLib.timeout_add_seconds(2, recording)
 
@@ -298,7 +373,10 @@ def main():
 
     def command(_fd, condition):
         if condition & GLib.IOCondition.IN:
-            chunk = os.read(sys.stdin.fileno(), 65536)
+            try:
+                chunk = os.read(sys.stdin.fileno(), 65536)
+            except BlockingIOError:
+                return True
             if not chunk:
                 loop.quit()
                 return False
