@@ -35,7 +35,10 @@ No status message is inserted above the calendar or tabs.
 `CalendarService` is an engine singleton started by the shell root. It warms the
 current month's private disk snapshot and refreshes it quietly when due, even
 before the drawer opens. Local status is checked once a minute while open and
-once per 15 minutes while closed. Network snapshots have a 15-minute lifetime and
+once per 15 minutes while closed. Each check also advances the service's current
+day; a month showing the old current month moves to the new one, while a month
+the user navigated to stays. The drawer takes Today, overdue and day highlights
+from that day. Network snapshots have a 15-minute lifetime and
 failed reads back off for five minutes; manual refresh bypasses backoff. Refresh
 status does not replace the section's ordinary text while cached data is visible.
 
@@ -44,6 +47,10 @@ synchronously; uncached months retain shared tasks/collections and any known eve
 overlap while their disk read completes. The backend reuses the cached upcoming
 window when it fully covers a requested month. Tasks and collection metadata are
 shared across month caches, so navigating the calendar cannot revert task edits.
+
+Events sort by instant: `start` keeps the source's UTC offset, so string order is
+not chronological. Python and QML share the task order (due date, then lowercase
+title), so optimistic updates do not reorder unrelated rows.
 
 Agenda and task delegates use keyed ListModels. Reconciliation inserts, removes,
 moves and updates only changed records. An unchanged row retains its object,
@@ -63,10 +70,16 @@ there is no whole-collection refresh after ordinary successful writes. Recurring
 completion uses the returned master and exception, avoiding local RRULE guessing.
 
 Failure removes only that request's overlay, retains the last confirmed cache,
-shows an error and queues quiet reconciliation. Errors lead with the failed action
+shows an error and queues quiet reconciliation. A failed read keeps visible cached
+rows but marks them stale. Quickshell 0.3.2 emits no `exited` for a worker that
+fails to start; a `running` guard finishes such requests through the same failure
+paths, so the queue never wedges. Errors lead with the failed action
 and reason, followed by the item title so long titles cannot hide the cause. Failed save drafts remain in the
 service and reopen in the editor, including after drawer dismissal. They are not
-persisted or retried automatically. If a PUT succeeds but resource readback fails,
+persisted or retried automatically. A new item's draft keeps one random resource
+name (`create_id`) across retries: if an earlier create committed without a reply,
+its `If-None-Match` PUT gets 412, and a resource carrying the draft's UID is updated
+under its ETag instead of duplicated. If a PUT succeeds but resource readback fails,
 the optimistic row stays visible but cannot be edited until a full sync supplies
 its ETag; the committed PUT is not repeated. Read generations prevent earlier
 responses from undoing pending/newer changes. Queued writes carry their frozen
@@ -95,7 +108,10 @@ states. Missing account, missing credential, loading, unavailable and empty resu
 remain distinct. There is no persistent offline mutation queue.
 
 `caldav.py` discovers collections and privileges through PROPFIND and reads
-VEVENT/VTODO resources through REPORT. Event ranges include the selected month
+VEVENT/VTODO resources through REPORT. Server hrefs are compared as decoded paths
+and rewritten in sabre/http's spelling (`@`, `:` and parentheses literal, lowercase
+escapes), which the calendar home also uses; e-mail usernames therefore stay
+within the transport scope, and cached hrefs match fresh ones. Event ranges include the selected month
 and current upcoming window. Resources are parsed and serialized with `icalendar`;
 events expand with `recurring_ical_events` (RRULE, RDATE including periods,
 EXDATE, overridden instances, Windows/Outlook TZID names). Expansion runs in
@@ -103,12 +119,18 @@ doubling windows so sub-daily rules stay bounded (2,000 occurrences per resource
 300 displayed events). Unparseable resources are skipped.
 Recurring events are read-only; single events support creation, editing and
 deletion, with inclusive all-day end dates in the form and exclusive DTEND on DAV.
+New timed items are stored in UTC. Edits keep an existing TZID or floating time
+when the submitted wall time is unchanged or moved, for events and tasks alike.
 
 Tasks support start/due dates and times, descriptions, location, URL, priority
 0–9, progress 0–100, standard status, categories, parent relationships, recurrence,
 completion/reopening and deletion. Parents must be from the same task list and
-must not create an ancestry cycle. Editors keep existing items in their collection.
-Ordinary property edits preserve unknown fields and nested VALARMs. All master
+must not create an ancestry cycle. The parent is the `RELATED-TO` whose RELTYPE is
+PARENT or omitted; the editor replaces only that link, keeping child and sibling
+links from other clients. Editors keep existing items in their collection.
+Ordinary property edits preserve unknown fields and nested VALARMs. Editing a
+completed task keeps its COMPLETED time; clearing a task's start drops DURATION,
+which RFC 5545 allows only with DTSTART. All master
 rewrites replace its LAST-MODIFIED property rather than appending a duplicate;
 completion, reopening and recurrence snapshots share this serialization path.
 Existing recurrence exceptions retain their own timestamps. Existing
@@ -118,12 +140,17 @@ creation, sharing, task moves and drag ordering remain in the web client.
 Task recurrence rules accept daily, weekly, monthly and yearly frequencies with
 intervals, BYDAY/BYMONTHDAY and other dateutil-supported selectors, COUNT or UNTIL.
 Advancing a task uses dateutil on the parsed master component.
-Subdaily selectors are refused. Completing a repeating master writes one completed
-RECURRENCE-ID exception and advances the master's start/due dates in the same
-ETag-guarded PUT, preserving local time across DST. COUNT decrements as the master
+Subdaily selectors are refused. As in RFC 5545, DTSTART anchors the series and
+each RECURRENCE-ID; DUE does only for tasks without a start, and keeps its offset
+from the start. Completing a repeating master writes one completed RECURRENCE-ID
+exception (or completes an existing override of that occurrence) and advances the
+master's start/due dates in the same ETag-guarded PUT. TZID and floating times
+keep their local time across DST; UTC times, including timed tasks created here,
+keep their UTC time. COUNT decrements as the master
 anchor advances; the final occurrence completes the master. Exceptions keep their
 UID and properties. This avoids a partially committed two-resource operation.
-The editor changes the master series; its checkbox completes an occurrence.
+The editor changes the master series; its checkbox completes an occurrence. A
+finished series (its master completed) remains editable.
 Tasks with RDATE/EXDATE can be viewed/edited but completion belongs in Nextcloud.
 Individual recurrence exceptions are read-only here. Completing a parent does
 not automatically complete or advance its subtasks.
@@ -145,7 +172,8 @@ python3 -m unittest discover -s tests -p test_generation.py -v
 
 Tests use isolated account/cache roots and fake DAV responses. QML fixtures load
 production drawers, filters, editor and keyboard dismissal; service fixtures cover
-late month replies, writes surviving dismissal and errors. Live verification uses
+late month replies, writes surviving dismissal, errors, workers that
+fail to start and a running shell crossing midnight. Live verification uses
 only discovery and read requests; fixture tests own all remote mutation coverage.
 Protocol references: [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545),
 [CalDAV client operations](https://sabre.io/dav/building-a-caldav-client/).

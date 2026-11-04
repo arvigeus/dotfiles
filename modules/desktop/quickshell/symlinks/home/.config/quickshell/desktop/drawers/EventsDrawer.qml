@@ -13,7 +13,9 @@ DrawerPage {
     property bool tasksLoaded: false
     onTabChanged: if (tab === "tasks")
         tasksLoaded = true
-    property string selectedDate: service.month === Qt.formatDate(new Date(), "yyyy-MM") ? Qt.formatDate(new Date(), "yyyy-MM-dd") : service.month + "-01"
+    // The service follows the day while the shell runs; static fallback for fixtures.
+    readonly property string currentDate: service.today || Qt.formatDate(new Date(), "yyyy-MM-dd")
+    property string selectedDate: service.month === currentDate.slice(0, 7) ? currentDate : service.month + "-01"
     property string taskFilter: "Open"
     property string listFilter: ""
     property var editing: null
@@ -29,17 +31,17 @@ DrawerPage {
         if (task.completed || task.status === "CANCELLED")
             return taskFilter === "All";
         if (taskFilter === "Today")
-            return !!task.due && task.due <= Qt.formatDate(new Date(), "yyyy-MM-dd");
+            return !!task.due && task.due <= currentDate;
         if (taskFilter === "Upcoming")
-            return !!task.due && task.due > Qt.formatDate(new Date(), "yyyy-MM-dd");
+            return !!task.due && task.due > currentDate;
         if (taskFilter === "Important")
             return task.priority > 0 && task.priority <= 4;
         return true;
     })
     readonly property string agendaEnd: {
         const month = new Date(service.month + "-01T12:00:00");
-        const now = new Date();
-        return Qt.formatDate(service.month === Qt.formatDate(now, "yyyy-MM") ? new Date(now.getFullYear(), now.getMonth(), now.getDate() + 60) : new Date(month.getFullYear(), month.getMonth() + 1, 1), "yyyy-MM-dd");
+        const now = new Date(currentDate + "T12:00:00");
+        return Qt.formatDate(service.month === currentDate.slice(0, 7) ? new Date(now.getFullYear(), now.getMonth(), now.getDate() + 60) : new Date(month.getFullYear(), month.getMonth() + 1, 1), "yyyy-MM-dd");
     }
     readonly property var visibleEvents: snapshot.events.filter(event => event.last_date >= selectedDate && event.date < agendaEnd)
     readonly property bool sectionReady: (tab === "tasks" ? snapshot.tasksReady : snapshot.eventsReady) ?? snapshot.state === "ready"
@@ -131,6 +133,9 @@ DrawerPage {
                 }
             }
         }
+        // Rows left over from duplicate keys.
+        if (model.count > rows.length)
+            model.remove(rows.length, model.count - rows.length);
     }
     onVisibleEventsChanged: reconcileRows(eventRows, visibleEvents, false)
     onVisibleTasksChanged: reconcileRows(taskRows, visibleTasks, true)
@@ -152,7 +157,7 @@ DrawerPage {
         return event ? (event.date < selectedDate ? selectedDate : event.date) : "";
     }
     function today(): void {
-        selectedDate = Qt.formatDate(new Date(), "yyyy-MM-dd");
+        selectedDate = currentDate;
         service.month = selectedDate.slice(0, 7);
     }
     function dayAt(index: int): string {
@@ -364,7 +369,7 @@ DrawerPage {
                         background: Rectangle {
                             radius: Theme.controlRadius
                             color: day.date === root.selectedDate ? Theme.accentSurface : day.hovered || day.visualFocus ? Theme.raised : "transparent"
-                            border.width: day.date === Qt.formatDate(new Date(), "yyyy-MM-dd") ? 1 : 0
+                            border.width: day.date === root.currentDate ? 1 : 0
                             border.color: Theme.accent
                         }
                         contentItem: Column {
@@ -564,7 +569,7 @@ DrawerPage {
                                 }
                                 Note {
                                     text: [taskRow.modelData.due ? qsTr("Due %1").arg(taskRow.modelData.due + (taskRow.modelData.due_time ? " " + taskRow.modelData.due_time : "")) : qsTr("No due date"), taskRow.modelData.list, taskRow.modelData.recurring ? qsTr("Repeats") : "", taskRow.modelData.percent ? taskRow.modelData.percent + "%" : "", taskRow.modelData.priority ? qsTr("Priority %1").arg(taskRow.modelData.priority) : "", taskRow.modelData.categories].filter(Boolean).join(" · ")
-                                    color: !taskRow.modelData.completed && taskRow.modelData.due && taskRow.modelData.due < Qt.formatDate(new Date(), "yyyy-MM-dd") ? Theme.warning : Theme.muted
+                                    color: !taskRow.modelData.completed && taskRow.modelData.due && taskRow.modelData.due < root.currentDate ? Theme.warning : Theme.muted
                                 }
                                 Note {
                                     visible: !!taskRow.modelData.parent

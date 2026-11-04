@@ -45,6 +45,7 @@ ColumnLayout {
         status.currentIndex = Math.max(0, status.model.findIndex(row => row.value === (entry.status || "NEEDS-ACTION")));
         tags.text = entry.categories || "";
         rule.text = entry.recurrence_rule || "";
+        presets.currentIndex = 0;
         location.text = entry.location || "";
         link.text = entry.url || "";
         parentTask.currentIndex = Math.max(0, parentTask.model.findIndex(row => row.uid === entry.parent));

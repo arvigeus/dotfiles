@@ -18,6 +18,10 @@ class CredentialMissing(NextcloudError):
     pass
 
 
+class PreconditionFailed(NextcloudError):
+    """HTTP 412: an If-Match/If-None-Match guard refused the request."""
+
+
 def config_root():
     base = os.environ.get('XDG_CONFIG_HOME') or ''
     root = Path(base) if os.path.isabs(base) else Path.home() / '.config'
@@ -187,7 +191,7 @@ class DAVClient:
                     'Nextcloud rejected the app password or account access.'
                 ) from error
             if error.code == 412:
-                raise NextcloudError(
+                raise PreconditionFailed(
                     'The item changed on Nextcloud. Refresh and try again.'
                 ) from error
             if error.code in (400, 415, 422):

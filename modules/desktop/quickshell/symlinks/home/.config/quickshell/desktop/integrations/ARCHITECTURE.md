@@ -32,7 +32,8 @@ credentials in public module assets.
 must remain within that path on the configured HTTPS origin, without traversal,
 URL credentials, queries or fragments. CalDAV scopes to the current user's calendar
 home. Responses are bounded to 16 MiB. Error messages exclude response bodies and
-secrets. Each request has an 18-second network timeout. The password stays in
+secrets; HTTP 412 raises `PreconditionFailed`, so callers can tell a refused
+`If-Match`/`If-None-Match` guard from other failures. Each request has an 18-second network timeout. The password stays in
 Python, never in QML, process arguments, snapshots or logs.
 
 The calendar backend reads its collection selections from `calendar.json`

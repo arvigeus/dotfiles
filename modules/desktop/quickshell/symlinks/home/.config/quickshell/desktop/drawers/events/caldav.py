@@ -1,9 +1,10 @@
 """Nextcloud CalDAV: discover collections, read events and tasks, edit events and rich tasks."""
 
 import copy
+import re
 import xml.etree.ElementTree as ET
 from datetime import UTC, date, datetime, timedelta
-from urllib.parse import quote, unquote, urljoin
+from urllib.parse import quote, unquote, urljoin, urlsplit
 from uuid import uuid4
 
 import recurring_ical_events
@@ -11,21 +12,50 @@ from dateutil import tz
 from dateutil.rrule import rrulestr
 from icalendar import Calendar, Event, Todo, vDDDTypes, vRecur
 
-from integrations.nextcloud import DAVClient, NextcloudError
+from integrations.nextcloud import DAVClient, NextcloudError, PreconditionFailed
 
 DAV = 'DAV:'
 CAL = 'urn:ietf:params:xml:ns:caldav'
 NS = {'d': DAV, 'c': CAL}
+CHANGED = 'This item changed on Nextcloud. Refresh and try again.'
+
+
+def encoded(path, safe='/'):
+    """Percent-encode a decoded path as Nextcloud's sabre/http spells hrefs:
+    ':', '@' and parentheses stay literal, other escapes use lowercase hex."""
+    return re.sub(
+        '%[0-9A-F]{2}',
+        lambda match: match[0].lower(),
+        quote(path, safe=safe + ':@()'),
+    )
 
 
 class Client(DAVClient):
     def __init__(self, config, *, opener=None):
         scope = (
             'remote.php/dav/calendars/'
-            + quote(config.get('username', ''), safe='')
+            + encoded(config.get('username', ''), safe='')
             + '/'
         )
         super().__init__(config, scope=scope, opener=opener)
+
+    def resolve(self, href):
+        """A server href in this client's spelling, or '' outside the calendar home.
+
+        Decoded paths are compared, so any escaping is accepted (e.g. '@' versus
+        '%40' in an e-mail username); one spelling keeps scope checks, collection
+        prefixes and cached resource keys comparable.
+        """
+        url, home = urlsplit(urljoin(self.base, href)), urlsplit(self.home)
+        path, root = unquote(url.path), unquote(home.path)
+        if (
+            (url.scheme, url.netloc) != (home.scheme, home.netloc)
+            or url.query
+            or url.fragment
+            or not path.startswith(root)
+        ):
+            return ''
+        return self.home + encoded(path[len(root) :])
 
     def propfind(self):
         body = b"""<?xml version="1.0" encoding="utf-8"?>
@@ -46,11 +76,8 @@ class Client(DAVClient):
             ) from error
         collections = []
         for response in document.findall('d:response', NS):
-            href = response.findtext('d:href', default='', namespaces=NS)
-            url = urljoin(self.base, href)
-            if url.rstrip('/') == self.home.rstrip('/') or not url.startswith(
-                self.home
-            ):
+            url = self.resolve(response.findtext('d:href', default='', namespaces=NS))
+            if not url or url == self.home:
                 continue
             for propstat in response.findall('d:propstat', NS):
                 if ' 200 ' not in propstat.findtext(
@@ -114,7 +141,9 @@ class Client(DAVClient):
             raise NextcloudError('Nextcloud returned invalid calendar data.') from error
         entries = []
         for response in document.findall('d:response', NS):
-            href = response.findtext('d:href', default='', namespaces=NS)
+            href = self.resolve(response.findtext('d:href', default='', namespaces=NS))
+            if not href:
+                continue
             for propstat in response.findall('d:propstat', NS):
                 if ' 200 ' not in propstat.findtext(
                     'd:status', default='', namespaces=NS
@@ -127,7 +156,7 @@ class Client(DAVClient):
                 if data:
                     entries.append(
                         (
-                            urljoin(self.base, href),
+                            href,
                             prop.findtext('d:getetag', default='', namespaces=NS),
                             data,
                         )
@@ -160,9 +189,7 @@ class Client(DAVClient):
             raise NextcloudError('Choose a writable collection and refresh this item.')
         raw, headers = self.request('GET', href)
         if headers.get('ETag') != etag:
-            raise NextcloudError(
-                'This item changed on Nextcloud. Refresh and try again.'
-            )
+            raise NextcloudError(CHANGED)
         self.item_collection = collection
         return parse(raw)
 
@@ -176,6 +203,9 @@ class Client(DAVClient):
         )
 
     def set_completed(self, config, entry, completed):
+        if entry.get('recurrence_id'):
+            # Its href is the series resource; never complete the master instead.
+            raise NextcloudError('Change individual occurrences in Nextcloud.')
         calendar = self.checked_item(config, 'VTODO', entry)
         master = master_of(calendar, 'VTODO')
         if completed and 'RRULE' in master:
@@ -207,7 +237,7 @@ class Client(DAVClient):
                 continue
             for todo in todos:
                 if 'RECURRENCE-ID' not in todo:
-                    parents[text(todo, 'UID')] = text(todo, 'RELATED-TO')
+                    parents[text(todo, 'UID')] = parent_of(todo)
         parent = entry['parent']
         if parent not in parents:
             raise NextcloudError('Choose a parent from this task list.')
@@ -240,33 +270,51 @@ class Client(DAVClient):
             self.check_parent(collection, entry)
         fields = entry_fields(kind, entry)
         href, etag = str(entry.get('href', '')), str(entry.get('etag', ''))
+        created = ''
         if not href:
-            identity = uuid4().hex
-            fields.add('UID', identity + '@desktop')
+            # A draft keeps its identity across retries, so a retry after an
+            # unanswered but committed create updates that item, never a copy.
+            identity = str(entry.get('create_id', ''))
+            if not re.fullmatch('[0-9a-f]{32}', identity):
+                identity = uuid4().hex
+            created = identity + '@desktop'
+            fields.add('UID', created)
             fields.add('DTSTAMP', now())
             calendar = Calendar()
             calendar.add('VERSION', '2.0')
             calendar.add('PRODID', '-//Desktop//Calendar//EN')
             calendar.add_component(fields)
             href = collection['url'] + identity + '.ics'
-            self.put(href, calendar)
-            return {'saved': True, 'href': href, 'collection': collection}
-        if not href.startswith(collection['url']) or not etag:
+            try:
+                self.put(href, calendar)
+                return {'saved': True, 'href': href, 'collection': collection}
+            except PreconditionFailed:
+                pass
+        if not href.startswith(collection['url']) or not (etag or created):
             raise NextcloudError('This item cannot be updated. Refresh and try again.')
         raw, headers = self.request('GET', href)
-        if headers.get('ETag') != etag:
-            raise NextcloudError(
-                'This item changed on Nextcloud. Refresh and try again.'
-            )
+        etag = etag or headers.get('ETag', '')
+        if not etag or headers.get('ETag') != etag:
+            raise NextcloudError(CHANGED)
         calendar = parse(raw)
         master = master_of(calendar, kind)
+        if created and text(master, 'UID') != created:
+            raise NextcloudError(CHANGED)
+        preserve_dates(master, fields)
         if kind == 'VTODO':
-            if str(fields.get('STATUS')) == 'COMPLETED' and 'RRULE' in master:
+            if is_completed(fields) and is_completed(master):
+                # A completed task keeps when it was completed.
+                if 'COMPLETED' in master:
+                    fields['COMPLETED'] = copy.deepcopy(one(master, 'COMPLETED'))
+            elif is_completed(fields) and 'RRULE' in master:
                 raise NextcloudError(
                     'Use the task checkbox to complete a recurring occurrence.'
                 )
-            preserve_task_dates(master, fields)
-            owned = TASK_FIELDS | ({'DURATION'} if 'DUE' in fields else set())
+            keep_relations(master, fields)
+            # RFC 5545 allows DURATION only with DTSTART and never with DUE.
+            owned = TASK_FIELDS | (
+                {'DURATION'} if 'DUE' in fields or 'DTSTART' not in fields else set()
+            )
         else:
             owned = EVENT_FIELDS
         update(master, fields, owned)
@@ -338,9 +386,48 @@ def one(component, name):
     return value[0] if isinstance(value, list) else value
 
 
+def listed(component, name):
+    value = component.get(name, [])
+    return value if isinstance(value, list) else [value]
+
+
 def text(component, name):
     value = one(component, name)
     return '' if value is None else str(value)
+
+
+def is_completed(todo):
+    try:
+        percent = int(todo.get('PERCENT-COMPLETE', 0))
+    except (TypeError, ValueError):
+        percent = 0
+    return text(todo, 'STATUS').upper() == 'COMPLETED' or percent == 100
+
+
+def is_parent(relation):
+    """RELTYPE defaults to PARENT (RFC 5545); CHILD/SIBLING links are not parents."""
+    return str(relation.params.get('RELTYPE', 'PARENT')).upper() == 'PARENT'
+
+
+def parent_of(todo):
+    return next(
+        (str(item) for item in listed(todo, 'RELATED-TO') if is_parent(item)), ''
+    )
+
+
+def keep_relations(master, fields):
+    """The editor owns the parent link; other clients' child/sibling links stay."""
+    relations = listed(fields, 'RELATED-TO') + [
+        item for item in listed(master, 'RELATED-TO') if not is_parent(item)
+    ]
+    fields.pop('RELATED-TO', None)
+    if relations:
+        fields['RELATED-TO'] = relations if len(relations) > 1 else relations[0]
+
+
+def by_start(event):
+    """Chronological order; start strings keep their source's UTC offset."""
+    return datetime.fromisoformat(event['start'])
 
 
 def aware(value, zone):
@@ -472,7 +559,7 @@ def entry_fields(kind, entry):
                 )
             rule = str(entry.get('recurrence_rule', '')).strip().upper()
             if rule:
-                anchor = due if due is not None else start
+                anchor = start if start is not None else due
                 if anchor is None or '\n' in rule or '\r' in rule or len(rule) > 1000:
                     raise ValueError()
                 parsed = vRecur.from_ical(rule)
@@ -508,10 +595,10 @@ def entry_fields(kind, entry):
         ) from error
 
 
-def preserve_task_dates(master, fields):
-    """Keep the task's TZID/floating semantics when the editor submits local wall time."""
+def preserve_dates(master, fields):
+    """Keep an item's TZID/floating semantics when the editor submits local wall time."""
     local = tz.gettz()
-    for key in ('DTSTART', 'DUE'):
+    for key in ('DTSTART', 'DUE', 'DTEND'):
         previous, current = one(master, key), fields.get(key)
         if previous is None or current is None:
             continue
@@ -559,15 +646,18 @@ def recurrence(rule, anchor):
 def advance_task(calendar, master):
     """Complete this occurrence and advance the master, for one ETag-guarded PUT.
 
-    The completed exception joins the same resource with the master's UID, unknown
-    properties and alarms. COUNT decrements because the master's anchor advances.
+    As in RFC 5545, DTSTART anchors the recurrence set and RECURRENCE-ID; DUE
+    does so only for a task without a start. An existing override of the
+    occurrence is completed in place. Otherwise a completed copy of the master
+    (UID, unknown properties and alarms) joins the same resource. COUNT
+    decrements because the master's anchor advances.
     """
     if 'RDATE' in master or 'EXDATE' in master:
         raise NextcloudError(
             'Complete tasks with additional recurrence dates in Nextcloud.'
         )
     local = tz.gettz()
-    anchor_key = 'DUE' if 'DUE' in master else 'DTSTART'
+    anchor_key = 'DTSTART' if 'DTSTART' in master else 'DUE'
     anchor, _ = moment(master, anchor_key, local)
     if not anchor:
         raise NextcloudError('Recurring tasks need a start or due date.')
@@ -576,8 +666,19 @@ def advance_task(calendar, master):
     if following is None:
         update(master, completion_fields(True), COMPLETION)
         return
-    exception = copy.deepcopy(master)
-    exception['RECURRENCE-ID'] = copy.deepcopy(one(master, anchor_key))
+    exception = next(
+        (
+            item
+            for item in calendar.walk('VTODO')
+            if 'RECURRENCE-ID' in item
+            and moment(item, 'RECURRENCE-ID', local)[0] == anchor
+        ),
+        None,
+    )
+    if exception is None:
+        exception = copy.deepcopy(master)
+        exception['RECURRENCE-ID'] = copy.deepcopy(one(master, anchor_key))
+        calendar.add_component(exception)
     update(exception, completion_fields(True), {'RRULE', *COMPLETION})
     # Same-zone arithmetic keeps the local time across DST changes.
     delta = following - anchor
@@ -590,7 +691,6 @@ def advance_task(calendar, master):
         rule['COUNT'] = [max(1, int(rule['COUNT'][0]) - 1)]
     fields['RRULE'] = rule
     update(master, fields, {'DUE', 'DTSTART', 'RRULE', *COMPLETION})
-    calendar.add_component(exception)
 
 
 def resources(entries):
@@ -680,7 +780,6 @@ def tasks_from(entries, collection, local_zone):
             status = text(todo, 'STATUS') or 'NEEDS-ACTION'
             rule = one(todo, 'RRULE')
             occurrence = one(todo, 'RECURRENCE-ID')
-            categories = todo.get('CATEGORIES', [])
             # Grouped exceptions remain visible as history; edits target only the master.
             editable = bool(collection.get('writable', False)) and occurrence is None
             results.append(
@@ -702,12 +801,10 @@ def tasks_from(entries, collection, local_zone):
                     'href': href,
                     'etag': etag,
                     'uid': text(todo, 'UID'),
-                    'parent': text(todo, 'RELATED-TO'),
+                    'parent': parent_of(todo),
                     'categories': ', '.join(
                         str(tag)
-                        for prop in (
-                            categories if isinstance(categories, list) else [categories]
-                        )
+                        for prop in listed(todo, 'CATEGORIES')
                         for tag in prop.cats
                     ),
                     'location': text(todo, 'LOCATION'),
@@ -792,9 +889,9 @@ def snapshot(config, *, start=None, end=None, opener=None):
             entries = client.report(collection, 'VTODO')
             tasks.extend(tasks_from(entries, collection, local_zone))
     events = list({(event['href'], event['start']): event for event in events}.values())
-    events.sort(key=lambda event: event['start'])
+    events.sort(key=by_start)
     tasks.sort(
-        key=lambda task: (task['due'] == '', task['due'], task['summary'].casefold())
+        key=lambda task: (task['due'] == '', task['due'], task['summary'].lower())
     )
     return {
         'calendars': [

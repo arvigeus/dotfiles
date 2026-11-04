@@ -241,12 +241,12 @@ def cached_status(request, path, empty):
 
 
 def sort_data(data):
-    data['events'].sort(key=lambda item: item['start'])
+    data['events'].sort(key=caldav.by_start)
     data['tasks'].sort(
         key=lambda item: (
             item.get('due', '') == '',
             item.get('due', ''),
-            item['summary'].casefold(),
+            item['summary'].lower(),
         )
     )
     data['task_count'] = sum(not item.get('completed') for item in data['tasks'])

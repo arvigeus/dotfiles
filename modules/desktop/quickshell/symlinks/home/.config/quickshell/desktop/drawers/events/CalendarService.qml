@@ -9,6 +9,9 @@ Singleton {
     readonly property alias timer: timer
     property bool active: false
     property bool started: false
+    property var clock: () => new Date()
+    // Initial values only: tick() moves them, so assigning clock cannot.
+    property string today: Qt.formatDate(new Date(), "yyyy-MM-dd")
     property string month: Qt.formatDate(new Date(), "yyyy-MM")
     property var base: ({
             state: "loading",
@@ -53,12 +56,14 @@ Singleton {
             end: Qt.formatDate(new Date(date.getFullYear(), date.getMonth() + 1, 1), "yyyy-MM-dd")
         };
     }
-    function taskKey(row: var): string {
-        return (row.href || row._localId || row.uid || row.summary) + "#" + (row.recurrence_id || (row.exception ? row.due || row.start_date : ""));
+    function order(a: string, b: string): int {
+        return a < b ? -1 : a > b ? 1 : 0;
     }
+    // Same order as backend.sort_data, so optimistic changes never move other rows.
+    // Event starts keep their source's UTC offset; compare instants.
     function sortRows(data: var): var {
-        data.tasks.sort((a, b) => (a.due === "") - (b.due === "") || (a.due || "").localeCompare(b.due || "") || a.summary.localeCompare(b.summary));
-        data.events.sort((a, b) => a.start.localeCompare(b.start));
+        data.tasks.sort((a, b) => (a.due === "") - (b.due === "") || order(a.due || "", b.due || "") || order(a.summary.toLowerCase(), b.summary.toLowerCase()));
+        data.events.sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
         data.task_count = data.tasks.filter(row => !row.completed).length;
         return data;
     }
@@ -134,7 +139,24 @@ Singleton {
         started = true;
         refresh();
     }
+    // A long-running shell follows the current day; a month the user chose stays.
+    function tick(): void {
+        const now = Qt.formatDate(clock(), "yyyy-MM-dd");
+        if (now === today)
+            return;
+        const following = month === today.slice(0, 7);
+        today = now;
+        if (following)
+            month = now.slice(0, 7);
+    }
+    function randomId(): string {
+        let value = "";
+        while (value.length < 32)
+            value += Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0");
+        return value;
+    }
     function refresh(force = false): void {
+        tick();
         if (!active && !started)
             return;
         if (force) {
@@ -154,6 +176,10 @@ Singleton {
         const value = clone(entry);
         value._accountId = base.account_id || "";
         value._localId = value._localId || "local-" + (++nextId);
+        // Retrying a failed draft reuses its resource name, so an unanswered
+        // but committed create is updated rather than duplicated.
+        if (op === "save" && !value.href)
+            value.create_id = value.create_id || randomId();
         const request = Object.assign({
             op,
             kind,
@@ -210,8 +236,7 @@ Singleton {
                 return;
             }
             if (!result.ok) {
-                if (process.month === month && !base.tasksReady && !base.eventsReady)
-                    error = result.error;
+                failRead(process, result.error);
                 return;
             }
             if (result.data.superseded) {
@@ -233,10 +258,10 @@ Singleton {
                 error = qsTr("Could not read calendar data.");
         }
     }
-    function readExited(process: var): void {
-        if (process.received || process.month !== month || process.generation !== generation)
+    // Visible cached rows stay, but no longer claim to be current.
+    function failRead(process: var, message: string): void {
+        if (process.month !== month || process.generation !== generation)
             return;
-        const message = qsTr("Calendar worker stopped unexpectedly.");
         if (!base.tasksReady && !base.eventsReady)
             error = message;
         else {
@@ -246,6 +271,27 @@ Singleton {
             });
             render();
         }
+    }
+    // Quickshell emits no exited signal when a worker fails to start; the
+    // running guards below finish those requests through the same path.
+    function readFinished(process: var): void {
+        if (!process.received)
+            failRead(process, qsTr("Calendar worker stopped unexpectedly."));
+        if (process === fetcher) {
+            fetching = false;
+            if (process.month !== month)
+                statusPending = true;
+        } else
+            reading = false;
+        Qt.callLater(pump);
+    }
+    function writeFinished(): void {
+        if (!writer.received)
+            finishWrite({
+                ok: false
+            });
+        writing = false;
+        Qt.callLater(pump);
     }
     function finishWrite(result: var): void {
         const request = writer.request;
@@ -371,11 +417,9 @@ Singleton {
             onStreamFinished: root.receiveRead(text, reader)
         }
         stderr: StdioCollector {}
-        onExited: {
-            root.readExited(reader);
-            root.reading = false;
-            Qt.callLater(root.pump);
-        }
+        onExited: root.readFinished(reader)
+        onRunningChanged: if (!running && root.reading)
+            root.readFinished(reader)
     }
     Process {
         id: fetcher
@@ -392,13 +436,9 @@ Singleton {
             onStreamFinished: root.receiveRead(text, fetcher)
         }
         stderr: StdioCollector {}
-        onExited: {
-            root.readExited(fetcher);
-            root.fetching = false;
-            if (month !== root.month)
-                root.statusPending = true;
-            Qt.callLater(root.pump);
-        }
+        onExited: root.readFinished(fetcher)
+        onRunningChanged: if (!running && root.fetching)
+            root.readFinished(fetcher)
     }
     Process {
         id: writer
@@ -425,13 +465,8 @@ Singleton {
             }
         }
         stderr: StdioCollector {}
-        onExited: {
-            if (!received)
-                root.finishWrite({
-                    ok: false
-                });
-            root.writing = false;
-            Qt.callLater(root.pump);
-        }
+        onExited: root.writeFinished()
+        onRunningChanged: if (!running && root.writing)
+            root.writeFinished()
     }
 }

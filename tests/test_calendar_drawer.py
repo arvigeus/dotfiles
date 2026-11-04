@@ -1,7 +1,7 @@
 """Private shared accounts, DAV conflicts/recurrence, caching and production drawers."""
 
 import copy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import io
 import json
 import os
@@ -12,7 +12,7 @@ import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, MagicMock, Mock, patch
 from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
 
@@ -20,6 +20,7 @@ import support
 
 DESKTOP = support.DESKTOP
 sys.path.insert(0, str(DESKTOP))
+import recurring_ical_events
 from icalendar import Calendar
 from integrations import nextcloud as accounts
 from drawers.events import backend, caldav
@@ -113,6 +114,79 @@ class AccountTests(unittest.TestCase):
                 client.request('PUT', client.home + 'task.ics', b'calendar')
             self.assertNotIn('private', str(raised.exception))
             client.opener.open.side_effect.close()
+        client.opener.open.side_effect = HTTPError(
+            client.home, 412, 'Precondition Failed', {}, io.BytesIO(b'')
+        )
+        with self.assertRaises(accounts.PreconditionFailed):
+            client.request('PUT', client.home + 'task.ics', b'calendar')
+        client.opener.open.side_effect.close()
+
+    def test_discovery_accepts_sabre_href_spelling_for_email_usernames(self):
+        # sabre/http writes '@' literally and other escapes in lowercase hex.
+        home = '/nextcloud/remote.php/dav/calendars/alice@example.com/'
+
+        def found(href, name):
+            return (
+                f'<d:response><d:href>{href}</d:href><d:propstat><d:prop>'
+                f'<d:displayname>{name}</d:displayname><d:resourcetype>'
+                '<d:collection/><c:calendar/></d:resourcetype>'
+                '<d:current-user-privilege-set><d:privilege><d:all/></d:privilege>'
+                '</d:current-user-privilege-set>'
+                '<d:getetag>"1"</d:getetag><c:calendar-data>'
+                + todo()
+                + '</c:calendar-data></d:prop>'
+                '<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>'
+            )
+
+        def multistatus(*responses):
+            return (
+                '<d:multistatus xmlns:d="DAV:" '
+                'xmlns:c="urn:ietf:params:xml:ns:caldav">'
+                + ''.join(responses)
+                + '</d:multistatus>'
+            ).encode()
+
+        replies = {
+            'PROPFIND': multistatus(
+                found(home, 'Home'),
+                found(home + 'personal/', 'Personal'),
+                found(home + 'caf%c3%a9/', 'Café'),
+                found(home.replace('@', '%40') + 'work/', 'Work'),
+                found('/nextcloud/remote.php/dav/calendars/bob/shared/', 'Bob'),
+            ),
+            'REPORT': multistatus(found(home + 'personal/a.ics', '')),
+            'GET': todo().encode(),
+        }
+
+        def reply(request, timeout):
+            response = MagicMock()
+            response.__enter__.return_value = response
+            response.read.return_value = replies[request.get_method()]
+            response.headers = {'ETag': '"1"'}
+            return response
+
+        with patch.object(accounts, 'app_password', return_value='example-secret'):
+            client = caldav.Client(
+                dict(account(), username='alice@example.com'),
+                opener=Mock(open=Mock(side_effect=reply)),
+            )
+            plain = caldav.Client(account(), opener=Mock())
+        self.assertTrue(plain.home.endswith('/calendars/alice/'))
+        collections = client.propfind()
+        self.assertEqual(
+            [row['slug'] for row in collections], ['personal', 'café', 'work']
+        )
+        self.assertEqual(
+            collections[0]['url'], 'https://cloud.example' + home + 'personal/'
+        )
+        self.assertEqual(
+            [row['url'] for row in collections[1:]],
+            [client.home + 'caf%c3%a9/', client.home + 'work/'],
+        )
+        ((href, _, _),) = client.report(collections[0], 'VTODO')
+        self.assertEqual(href, collections[0]['url'] + 'a.ics')
+        # The resource href passes the transport's account scope.
+        self.assertEqual(client.request('GET', href)[0], todo().encode())
 
     def test_account_and_selections_are_validated(self):
         for url in [
@@ -306,12 +380,13 @@ class CalendarTests(unittest.TestCase):
         self.assertEqual(master['DUE'].to_ical(), b'20261022')
         self.assertEqual(master['DTSTART'].to_ical(), b'20261021')
         self.assertEqual(master['RRULE'].to_ical(), b'FREQ=DAILY;COUNT=2')
+        # DTSTART, not DUE, identifies the occurrence (RFC 5545).
         self.assertEqual(
             (
                 done['RECURRENCE-ID'].to_ical(),
                 done['RECURRENCE-ID'].params.get('VALUE'),
             ),
-            (b'20261021', 'DATE'),
+            (b'20261020', 'DATE'),
         )
         self.assertEqual((str(done['STATUS']), 'RRULE' in done), ('COMPLETED', False))
         self.assertEqual(
@@ -345,6 +420,163 @@ class CalendarTests(unittest.TestCase):
         )
         caldav.advance_task(calendar, caldav.master_of(calendar, 'VTODO'))
         self.assertIn(b'DUE;TZID=America/New_York:20261101T090000', calendar.to_ical())
+
+    def test_occurrences_follow_start_and_reuse_an_existing_override(self):
+        # A Monday start with a Wednesday due date repeats on Mondays.
+        calendar = Calendar.from_ical(
+            todo(
+                'DTSTART;VALUE=DATE:20261019',
+                'DUE;VALUE=DATE:20261021',
+                'RRULE:FREQ=WEEKLY;BYDAY=MO',
+            )
+        )
+        caldav.advance_task(calendar, caldav.master_of(calendar, 'VTODO'))
+        master, done = calendar.walk('VTODO')
+        self.assertEqual(
+            (master['DTSTART'].to_ical(), master['DUE'].to_ical()),
+            (b'20261026', b'20261028'),
+        )
+        self.assertEqual(done['RECURRENCE-ID'].to_ical(), b'20261019')
+        # Other clients see one completed occurrence, then the open ones.
+        self.assertEqual(
+            sorted(
+                (item['DTSTART'].to_ical(), str(item['STATUS']))
+                for item in recurring_ical_events.of(
+                    calendar, components=['VTODO']
+                ).between((2026, 10, 19), (2026, 11, 3))
+            ),
+            [
+                (b'20261019', 'COMPLETED'),
+                (b'20261026', 'NEEDS-ACTION'),
+                (b'20261102', 'NEEDS-ACTION'),
+            ],
+        )
+        # A client's override of the occurrence is completed in place.
+        calendar = Calendar.from_ical(
+            todo('DTSTART;VALUE=DATE:20261020', 'RRULE:FREQ=DAILY;COUNT=3').replace(
+                'END:VCALENDAR',
+                'BEGIN:VTODO\r\nUID:task-1\r\nRECURRENCE-ID;VALUE=DATE:20261020\r\n'
+                'DTSTART;VALUE=DATE:20261020\r\nSUMMARY:Moved\r\nEND:VTODO\r\n'
+                'END:VCALENDAR',
+            )
+        )
+        caldav.advance_task(calendar, caldav.master_of(calendar, 'VTODO'))
+        master, override = calendar.walk('VTODO')
+        self.assertEqual(
+            (str(override['SUMMARY']), str(override['STATUS'])), ('Moved', 'COMPLETED')
+        )
+        self.assertEqual(
+            (master['DTSTART'].to_ical(), master['RRULE'].to_ical()),
+            (b'20261021', b'FREQ=DAILY;COUNT=2'),
+        )
+
+    def test_task_edits_keep_other_links_completion_time_and_finished_series(self):
+        rows = caldav.tasks_from(
+            [('h', '"1"', todo('RELATED-TO;RELTYPE=SIBLING:sibling', 'RELATED-TO:up'))],
+            collection(),
+            ZoneInfo('UTC'),
+        )
+        self.assertEqual(rows[0]['parent'], 'up')
+        entry = dict(
+            summary='Renamed',
+            collection='tasks',
+            href='https://cloud.example/tasks/a.ics',
+            etag='"1"',
+        )
+        # The editor owns only the parent link.
+        client = self.client(
+            todo(
+                'RELATED-TO;RELTYPE=CHILD:child',
+                'RELATED-TO;RELTYPE=SIBLING:sibling',
+                'RELATED-TO:old',
+            )
+        )
+        client.report = Mock(
+            return_value=[('b', '"1"', todo().replace('UID:task-1', 'UID:new'))]
+        )
+        client.save_item({}, 'VTODO', dict(entry, parent='new'))
+        self.assertEqual(
+            [
+                line
+                for line in self.written(client).splitlines()
+                if line.startswith('RELATED-TO')
+            ],
+            [
+                'RELATED-TO;RELTYPE=PARENT:new',
+                'RELATED-TO;RELTYPE=CHILD:child',
+                'RELATED-TO;RELTYPE=SIBLING:sibling',
+            ],
+        )
+        # Editing a completed task keeps when it was completed.
+        client = self.client(
+            todo(
+                'STATUS:COMPLETED', 'PERCENT-COMPLETE:100', 'COMPLETED:20260101T000000Z'
+            )
+        )
+        client.save_item({}, 'VTODO', dict(entry, status='COMPLETED', percent=100))
+        self.assertIn('COMPLETED:20260101T000000Z', self.written(client))
+        # A finished series stays editable; an open one completes via its checkbox.
+        finished = dict(entry, due='2026-10-21', status='COMPLETED', percent=100)
+        client = self.client(
+            todo(
+                'DUE;VALUE=DATE:20261021',
+                'RRULE:FREQ=DAILY;COUNT=1',
+                'STATUS:COMPLETED',
+                'PERCENT-COMPLETE:100',
+            )
+        )
+        client.save_item(
+            {}, 'VTODO', dict(finished, recurrence_rule='FREQ=DAILY;COUNT=1')
+        )
+        self.assertIn('SUMMARY:Renamed', self.written(client))
+        client = self.client(todo('DUE;VALUE=DATE:20261021', 'RRULE:FREQ=DAILY'))
+        with self.assertRaisesRegex(accounts.NextcloudError, 'checkbox'):
+            client.save_item({}, 'VTODO', dict(finished, recurrence_rule='FREQ=DAILY'))
+        # DURATION needs DTSTART: clearing the start removes it.
+        for start, kept in (('2026-10-20', True), ('', False)):
+            client = self.client(todo('DTSTART;VALUE=DATE:20261020', 'DURATION:P2D'))
+            client.save_item({}, 'VTODO', dict(entry, start_date=start))
+            self.assertEqual('DURATION:P2D' in self.written(client), kept)
+        # An occurrence row never completes or advances its master.
+        client = self.client(todo('DUE;VALUE=DATE:20261021', 'RRULE:FREQ=DAILY'))
+        with self.assertRaisesRegex(accounts.NextcloudError, 'occurrences'):
+            client.set_completed({}, dict(entry, recurrence_id='20261020'), True)
+        client.request.assert_not_called()
+
+    def test_retried_create_updates_its_committed_item_instead_of_duplicating(self):
+        identity = 'a' * 32
+        href = 'https://cloud.example/tasks/' + identity + '.ics'
+        stored = todo('X-KEEP:1').replace('UID:task-1', f'UID:{identity}@desktop')
+
+        def reply(method, url, body=None, headers=None):
+            if method == 'PUT' and 'If-None-Match' in headers:
+                raise accounts.PreconditionFailed('exists')
+            return stored.encode(), {'ETag': '"7"'}
+
+        client = self.client('')
+        client.request = Mock(side_effect=reply)
+        draft = dict(summary='Retried', collection='tasks', create_id=identity)
+        self.assertEqual(client.save_item({}, 'VTODO', draft)['href'], href)
+        puts = [call for call in client.request.call_args_list if call.args[0] == 'PUT']
+        self.assertEqual([call.args[1] for call in puts], [href, href])
+        self.assertEqual(puts[1].args[3], {'Content-Type': ANY, 'If-Match': '"7"'})
+        written = puts[1].args[2].decode()
+        self.assertEqual(written.count('BEGIN:VTODO'), 1)
+        self.assertIn('SUMMARY:Retried', written)
+        self.assertIn('X-KEEP:1', written)
+        # Another item under that name is never overwritten.
+        stored = todo()
+        client.request.reset_mock()
+        with self.assertRaisesRegex(accounts.NextcloudError, 'changed'):
+            client.save_item({}, 'VTODO', draft)
+        self.assertEqual(
+            [call.args[0] for call in client.request.call_args_list], ['PUT', 'GET']
+        )
+        # Only a 32-digit hex identity names a resource.
+        client.request = Mock(return_value=(b'', {}))
+        created = client.save_item({}, 'VTODO', dict(draft, create_id='../x'))
+        self.assertRegex(created['href'], r'/tasks/[0-9a-f]{32}\.ics$')
+        self.assertNotIn(identity, created['href'])
 
     def test_conflict_read_only_and_reopen(self):
         entry = dict(
@@ -400,7 +632,7 @@ class CalendarTests(unittest.TestCase):
                 due_time=local.strftime('%H:%M'),
             ),
         )
-        caldav.preserve_task_dates(master, fields)
+        caldav.preserve_dates(master, fields)
         self.assertEqual(fields['DUE'].to_ical(), b'20261031T090030')
         self.assertEqual(fields['DUE'].params['TZID'], 'America/New_York')
         later = (
@@ -409,7 +641,7 @@ class CalendarTests(unittest.TestCase):
         fields = caldav.entry_fields(
             'VTODO', dict(summary='Test', due=local.date().isoformat(), due_time=later)
         )
-        caldav.preserve_task_dates(master, fields)
+        caldav.preserve_dates(master, fields)
         self.assertEqual(
             (fields['DUE'].to_ical(), fields['DUE'].params['TZID']),
             (b'20261031T100000', 'America/New_York'),
@@ -558,6 +790,63 @@ class CalendarTests(unittest.TestCase):
             ),
         )
         self.assertTrue(fields['DTSTART'].to_ical().endswith(b'Z'))
+
+    def test_agenda_orders_instants_and_event_edits_keep_timezone(self):
+        def event(*lines):
+            return '\r\n'.join(
+                ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:e', 'SUMMARY:Meeting']
+                + list(lines)
+                + ['END:VEVENT', 'END:VCALENDAR', '']
+            )
+
+        # 09:00 New York is 13:00 UTC, after a 10:00 UTC event that day.
+        zoned = event(
+            'DTSTART;TZID=America/New_York:20261021T090000',
+            'DTEND;TZID=America/New_York:20261021T100000',
+        )
+        entries = [
+            ('https://cloud.example/tasks/zoned.ics', '"1"', zoned),
+            (
+                'https://cloud.example/tasks/utc.ics',
+                '"1"',
+                event('DTSTART:20261021T100000Z', 'DTEND:20261021T110000Z'),
+            ),
+        ]
+        calendars = dict(collection(), components={'VEVENT'})
+        dav = Mock(propfind=Mock(return_value=[calendars]))
+        dav.report.return_value = entries
+        with patch.object(caldav, 'Client', return_value=dav):
+            data = caldav.snapshot({}, start='2026-10-01', end='2026-11-01')
+        names = [row['href'].rsplit('/', 1)[-1] for row in data['events']]
+        self.assertEqual(names, ['utc.ics', 'zoned.ics'])
+        data['events'].reverse()
+        self.assertEqual(backend.sort_data(data)['events'][0]['href'], entries[1][0])
+        # Editing the title keeps the event's own timezone.
+        local = datetime(2026, 10, 21, 13, tzinfo=timezone.utc).astimezone()
+        for shift, times in ((0, (b'090000', b'100000')), (1, (b'100000', b'110000'))):
+            begins = local + timedelta(hours=shift)
+            ends = begins + timedelta(hours=1)
+            client = self.client(zoned)
+            client.propfind = lambda: [calendars]
+            client.save_item(
+                {},
+                'VEVENT',
+                dict(
+                    summary='Renamed',
+                    collection='tasks',
+                    href=entries[0][0],
+                    etag='"1"',
+                    start_date=begins.date().isoformat(),
+                    start_time=begins.strftime('%H:%M'),
+                    end_date=ends.date().isoformat(),
+                    end_time=ends.strftime('%H:%M'),
+                ),
+            )
+            written = self.written(client)
+            for name, time in zip(('DTSTART', 'DTEND'), times):
+                self.assertIn(
+                    f'{name};TZID=America/New_York:20261021T{time.decode()}', written
+                )
 
 
 class CacheTests(unittest.TestCase):
@@ -1319,6 +1608,111 @@ ShellRoot {
    service.mutate("delete","VEVENT",Object.assign({},event,{collection:"personal"}));check(service.state.events.length===0,"delete waited for server");stage++;
   }else if(stage===3&&saves===3&&!service.busy){
    check(fullReads===0,"successful write forced whole-list refresh");console.log("DISPLAY_PASS");Qt.quit();
+  }
+  if(ticks>60)throw Error("timeout "+stage+" "+service.error);
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+}""",
+            setup,
+        )
+
+    def test_workers_that_cannot_start_release_the_queue(self):
+        # Quickshell reports a failed start without an exited signal.
+        empty = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, empty)
+        with patch.dict(os.environ, PATH=empty):
+            self.run_qml("""import QtQuick
+import Quickshell
+import "drawers/events"
+ShellRoot {
+ property var service:CalendarService
+ property int stage:0
+ property int ticks:0
+ property int failures:0
+ Component.onCompleted:service.start()
+ Connections{target:CalendarService;function onWriteFailed(){failures++;}}
+ function check(v,m){if(!v)throw Error(m);}
+ Timer{interval:60;repeat:true;running:true;onTriggered:{try{
+  ticks++;
+  if(stage===0&&!service.busy){
+   check(service.error!=="","failed read start was silent");
+   service.mutate("save","VTODO",{summary:"Kept"});stage++;
+  }else if(stage===1&&!service.busy){
+   check(failures===1&&!service.transactions.length&&service.failedDraft?.entry.summary==="Kept","failed write start wedged the queue");
+   service.refresh(true);check(service.fetching,"manual refresh did not start");stage++;
+  }else if(stage===2&&!service.busy){console.log("DISPLAY_PASS");Qt.quit();}
+  if(ticks>60)throw Error("timeout "+stage);
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+}""")
+
+    def test_current_day_follows_a_running_shell(self):
+        self.run_qml("""import QtQuick
+import Quickshell
+import "drawers"
+import "drawers/events"
+ShellRoot {
+ QtObject {
+  id:mock
+  property bool active:false
+  property string month:"2026-10"
+  property string today:"2026-10-31"
+  property string error:""
+  property var state:({state:"ready",eventsReady:true,tasksReady:true,calendars:[],events:[],tasks:[{uid:"t",summary:"Pay rent",due:"2026-11-01",list:"Tasks",list_slug:"tasks",completed:false,actionable:true,editable:true}]})
+  function refresh(force){}
+ }
+ FloatingWindow{implicitWidth:480;implicitHeight:820;EventsDrawer{id:drawer;anchors.fill:parent;service:mock;active:true;tab:"tasks";taskFilter:"Today"}}
+ function check(v,m){if(!v)throw Error(m);}
+ function at(day){return ()=>new Date(day+"T00:01:00");}
+ Timer{interval:200;running:true;onTriggered:{try{
+  const service=CalendarService;
+  service.clock=at("2026-10-31");service.tick();
+  check(service.today==="2026-10-31"&&service.month==="2026-10","service did not adopt the current day");
+  service.clock=at("2026-11-01");service.tick();
+  check(service.today==="2026-11-01"&&service.month==="2026-11","current month did not follow midnight");
+  service.month="2027-01";service.clock=at("2026-12-01");service.tick();
+  check(service.today==="2026-12-01"&&service.month==="2027-01","a chosen month moved");
+  check(drawer.selectedDate==="2026-10-31"&&drawer.visibleTasks.length===0,"drawer ignored the service day");
+  mock.today="2026-11-01";mock.month="2026-11";
+  check(drawer.selectedDate==="2026-11-01"&&drawer.visibleTasks.length===1,"drawer did not follow the day");
+  console.log("DISPLAY_PASS");
+ }catch(e){console.error("DISPLAY_FAIL",e);}Qt.quit();}}
+}""")
+
+    def test_optimistic_order_failed_reads_and_retried_draft_identity(self):
+        def setup(root):
+            (root / 'drawers/events/backend.py').write_text("""import json,sys
+r=json.loads(sys.stdin.readline())
+def event(name,start,end):return dict(summary=name,href='https://cloud.example/p/'+name+'.ics',etag='"1"',start=start,end=end,date=start[:10],last_date=end[:10],all_day=False,calendar='P',calendar_slug='p',editable=True)
+if r['op']=='status':
+ print(json.dumps(dict(ok=True,data=dict(state='ready',account_id='fixture',eventsReady=True,tasksReady=True,updated=1,stale=False,due=False,calendars=[dict(name='P',slug='p',components=['VEVENT'],writable=True,events_enabled=True,tasks_enabled=False)],tasks=[],events=[event('utc','2026-10-21T10:00:00+00:00','2026-10-21T11:00:00+00:00'),event('zoned','2026-10-21T09:00:00-04:00','2026-10-21T10:00:00-04:00')]))))
+elif r['op']=='fetch':print(json.dumps(dict(ok=False,error='Offline')))
+else:print(json.dumps(dict(ok=False,error='Timed out '+r['entry'].get('create_id',''))))
+""")
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "drawers/events"
+ShellRoot {
+ property var service:CalendarService
+ property int stage:0
+ property int ticks:0
+ property string identity:""
+ Component.onCompleted:{service.month="2026-10";service.start();}
+ function check(v,m){if(!v)throw Error(m);}
+ function names(){return service.state.events.map(row=>row.summary).join(",");}
+ Timer{interval:60;repeat:true;running:true;onTriggered:{try{
+  ticks++;
+  if(stage===0&&service.state.eventsReady&&!service.busy){
+   service.mutate("save","VEVENT",{summary:"Later",collection:"p",start_date:"2026-10-22",start_time:"09:00",end_date:"2026-10-22",end_time:"10:00"});
+   check(names()==="utc,zoned,Later","optimistic sort compared offset strings: "+names());stage++;
+  }else if(stage===1&&service.failedDraft&&!service.busy){
+   identity=service.failedDraft.entry.create_id;
+   check(/^[0-9a-f]{32}$/.test(identity)&&service.error.includes(identity),"create had no draft identity");
+   check(service.state.stale&&names()==="utc,zoned","failed refresh left cached rows marked current");
+   service.mutate("save","VEVENT",service.failedDraft.entry);stage++;
+  }else if(stage===2&&service.failedDraft&&!service.busy){
+   check(service.error.includes("Timed out "+identity),"retry used a new identity");
+   console.log("DISPLAY_PASS");Qt.quit();
   }
   if(ticks>60)throw Error("timeout "+stage+" "+service.error);
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
