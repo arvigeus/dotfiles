@@ -535,15 +535,40 @@ shortcuts are managed separately.
 ## Disks and system cleanup
 
 `DisksService` reads UDisks2, groups physical drives and exposes mount, unmount,
-unlock and health operations. System mounts cannot be unmounted. Passwords use
-stdin/D-Bus. Actions survive dismissal; health reads do not wake sleeping ATA
-hardware. Filelight, Dolphin and the partition editor launch in independent units.
+unlock and health operations. It never powers off or ejects a drive. System mounts
+cannot be unmounted. Passwords use stdin/D-Bus. Each action revalidates an identity
+token for the device and its media. Unmounting an unlocked LUKS container also locks it,
+as Dolphin and GNOME do. Containers listed in crypttab stay unlocked because they
+may be boot-managed or keyfile-only. A failed lock reports that the volume is
+unmounted but still unlocked. Health reads do not wake sleeping ATA hardware.
+Filelight, Dolphin and the partition editor launch in independent units.
+
+The helper answers one JSON line per request, in order. Status reads run every
+five seconds while a page observes the service. They are not "busy": an action
+requested during one waits behind it rather than being disabled or dropped. Actions survive
+dismissal. A shell reload or restart kills the helper, but the UDisks call in
+flight still completes in udisksd. A D-Bus timeout, such as a slow authentication
+answer, reads "refresh to check" because UDisks may still finish. A helper that
+fails to start emits no `exited`; both services also finish on `running` turning
+false and never retry a lost action. `tests/test_disks_drawer.py` covers
+targeting, identity, locking, secrets and the request queue with mocked UDisks objects.
 
 `CleanupService` scans recoverable caches and selected tool/container resources.
-The preview freezes a plan before confirmation; a held action applies it with
-bounded diagnostics. Cleanup uses npm/pip/mise's own commands and one Podman
+The scan reports only category availability, checked with the same no-follow walk
+that removal uses. The held action sends category IDs. The helper re-resolves each
+category's targets when it runs, under that owner's lock, and never takes paths from
+the request. Categories run in catalog order and fail independently, keeping the other
+results. There is no cancel or dry run. A reload or shell restart kills the helper
+mid-run, and that run's notification is lost. Removal is per entry, so an
+interrupted category leaves a partial cache, and spawned tools such as pkexec
+finish on their own. Cleanup uses npm/pip/mise's own commands and one Podman
 inventory query. Package cleanup may authenticate. It does not remove personal
 files, active tools or containers through guesses about directory names.
+
+Path categories open every component without following symlinks. They refuse `$HOME`,
+the XDG config/data/state/cache roots and their ancestors. AUR cleanup removes only
+built archives directly inside paru's `clone/<pkgbase>/`. Sources, edits and the
+makepkg `src/` and `pkg/` trees stay; makepkg leaves `pkg/` at mode 0111.
 
 Configuration & maintenance adds public apply recovery backups and ignored
 checkout development caches. Backup cleanup keeps 30 days and the newest batch;
@@ -562,7 +587,9 @@ their source checkouts; private module payload trees remain excluded.
 
 Agent history keeps the newest successful run, failed run and update log,
 unfinished/unknown runs, pending update logs, and evidence referenced by learned
-knowledge, findings, proposals or the latest report. Cache cleanup removes only
+knowledge, findings, proposals or the latest report. A reference is any mention of
+`runs/<timestamp>` or `updates/<timestamp>`, absolute, relative or `~`-based.
+Cache cleanup removes only
 known HTTP downloads and abandoned retrieval scratch directories. Control state,
 knowledge, proposals and lock inodes are retained. Both hold agent.lock; cache
 cleanup also holds http.lock. Busy operations fail promptly with a retry message.
@@ -570,6 +597,9 @@ No cleanup category accepts request-supplied paths, executables or retention fla
 
 `tests/test_system_cleanup.py` covers retention/caller boundaries, symlink safety,
 pending/reference pinning, owner locks, cache targeting and offscreen hold/notification flows.
+Every deleting test runs under a temporary HOME/XDG tree. Check root refusal through
+`refuse_personal_root`. Never call a deleting function on real paths, even to
+prove that a test fails.
 
 ## Battery and performance
 

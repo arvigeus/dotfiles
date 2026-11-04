@@ -18,7 +18,7 @@ Card {
     readonly property bool checkingHealth: service.pendingKey === record.key && service.pendingOp === "health"
     readonly property var health: service.healthFor(record)
     readonly property bool hasError: service.actionError !== "" && (service.errorKey === record.key || record.volumes.some(v => v.key === service.errorKey))
-    readonly property string info: [record.label, record.size ? formatBytes(record.size) : qsTr("No media"), record.connection.toUpperCase(), record.removable ? qsTr("Removable") : qsTr("Internal"), record.ejectReason].filter(Boolean).join("\n")
+    readonly property string info: [record.label, record.size ? formatBytes(record.size) : qsTr("No media"), record.connection.toUpperCase(), record.removable ? qsTr("Removable") : qsTr("Internal")].filter(Boolean).join("\n")
     signal volumeActionRequested(var volume, string action)
     signal locationRequested(string location)
     signal optionsOpened(var menu)

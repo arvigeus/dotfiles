@@ -165,7 +165,9 @@ Update system obtains newer keyring packages.
 
 Disks provides mount/unmount/unlock, on-demand drive health, Filelight and the
 partition editor. System mounts stay mounted and sleeping ATA drives stay asleep.
-Clean system offers selected caches, unused container/runtime resources and mise
+Unmounting an encrypted volume locks it again, so the next mount asks for the
+passphrase; volumes in `/etc/crypttab` stay unlocked. Drives are never powered off,
+so use your file manager to remove one safely. Clean system offers selected caches, unused container/runtime resources and mise
 tools. Package cleanup may request administrator authentication.
 
 ## Service

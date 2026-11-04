@@ -289,6 +289,15 @@ def development_cache(root=None, private=False):
             clear_path(root / path)
 
 
+def present(path):
+    # Use the same no-follow walk as removal, so a redirected location is never offered.
+    try:
+        os.close(open_directory(path))
+    except OSError:
+        return False
+    return True
+
+
 def inventory():
     rows = []
     for entry in catalog():
@@ -296,7 +305,7 @@ def inventory():
         available = (
             all(shutil.which(tool) for tool in needed)
             if needed
-            else any(p.exists() and not p.is_symlink() for p in entry['paths'])
+            else any(present(p) for p in entry['paths'])
         )
         rows.append(
             {key: entry[key] for key in ('id', 'title', 'detail')}
@@ -309,12 +318,16 @@ def inventory():
     return rows
 
 
+DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+
 def open_directory(path):
-    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-    fd = os.open('/', flags)
+    # Open every component without following symlinks; callers then work by fd.
+    # A redirected cache must never turn into a traversal of personal files.
+    fd = os.open('/', DIRECTORY)
     try:
         for part in Path(path).absolute().parts[1:]:
-            child = os.open(part, flags, dir_fd=fd)
+            child = os.open(part, DIRECTORY, dir_fd=fd)
             os.close(fd)
             fd = child
         return fd
@@ -323,23 +336,25 @@ def open_directory(path):
         raise
 
 
+def refuse_personal_root(path):
+    path = Path(os.path.abspath(path))
+    roots = [Path.home()] + [
+        location(key, Path.home() / fallback)
+        for key, fallback in (
+            ('XDG_CONFIG_HOME', '.config'),
+            ('XDG_DATA_HOME', '.local/share'),
+            ('XDG_STATE_HOME', '.local/state'),
+            ('XDG_CACHE_HOME', '.local/cache'),
+        )
+    ]
+    if path == Path('/') or any(path == root or path in root.parents for root in roots):
+        raise ValueError('Refusing to remove a home, configuration or data directory.')
+    return path
+
+
 @contextmanager
 def operation(folder, name):
-    protected = [
-        Path.home(),
-        *(
-            location(key, Path.home() / fallback)
-            for key, fallback in (
-                ('XDG_CONFIG_HOME', '.config'),
-                ('XDG_DATA_HOME', '.local/share'),
-                ('XDG_STATE_HOME', '.local/state'),
-                ('XDG_CACHE_HOME', '.local/cache'),
-            )
-        ),
-    ]
-    if any(folder == path or folder in path.parents for path in protected):
-        raise ValueError('Refusing to remove a home, configuration or data directory.')
-    fd = open_directory(folder)
+    fd = open_directory(refuse_personal_root(folder))
     try:
         lock = os.open(name, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600, dir_fd=fd)
         try:
@@ -351,7 +366,7 @@ def operation(folder, name):
         os.close(fd)
 
 
-def private_backups(state, *, now=None, dry_run=False):
+def private_backups(state, *, now=None):
     with operation(state, 'operation.lock'):
         fd = open_directory(state / 'backups')
         try:
@@ -379,8 +394,7 @@ def private_backups(state, *, now=None, dry_run=False):
                 ):
                     raise RuntimeError('Backup changed during cleanup.')
                 selected.append(name)
-            if not dry_run:
-                clear_directory(fd, only=selected)
+            clear_directory(fd, only=selected)
             return len(selected)
         finally:
             os.close(fd)
@@ -421,7 +435,7 @@ def agent_references(state, data):
     return '\n'.join(chunks)
 
 
-def agent_history(state, data, dry_run=False):
+def agent_history(state, data):
     with operation(state, 'agent.lock'):
         refs = agent_references(state, data)
         count = 0
@@ -450,20 +464,21 @@ def agent_history(state, data, dry_run=False):
                     elif not newest:
                         newest.add(name)
                     candidates.append(name)
+                # Any mention of kind/timestamp pins the evidence, whether it is
+                # written as an absolute, relative or ~ path.
                 selected = [
                     name
                     for name in candidates
-                    if name not in newest and str(root / name) not in refs
+                    if name not in newest and f'{kind}/{name}' not in refs
                 ]
-                if not dry_run:
-                    clear_directory(fd, only=selected)
+                clear_directory(fd, only=selected)
                 count += len(selected)
             finally:
                 os.close(fd)
         return count
 
 
-def agent_cache(state, cache, dry_run=False):
+def agent_cache(state, cache):
     with operation(state, 'agent.lock'), operation(cache, 'http.lock'):
         fd = open_directory(cache)
         try:
@@ -473,76 +488,75 @@ def agent_cache(state, cache, dry_run=False):
                 if name in ('notes-http.json', 'feeds-http.json')
                 or re.fullmatch(r'tool-[A-Za-z0-9_-]+', name)
             ]
-            if not dry_run:
-                clear_directory(fd, only=names)
+            clear_directory(fd, only=names)
             return len(names)
         finally:
             os.close(fd)
 
 
 def clear_path(path, archives=False):
-    # Open every ancestor without following symlinks, then operate by directory fd.
-    # A redirected cache must never turn into a traversal of personal files.
-    path = Path(os.path.abspath(path))
-    protected = [
-        Path.home(),
-        location('XDG_CONFIG_HOME', Path.home() / '.config'),
-        location('XDG_DATA_HOME', Path.home() / '.local/share'),
-    ]
-    if path == Path('/') or any(
-        path == item or path in item.parents for item in protected
-    ):
-        raise ValueError('Refusing to remove a home, configuration or data directory.')
-    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-    fd = os.open('/', flags)
     try:
-        for part in path.absolute().parts[1:]:
-            next_fd = os.open(part, flags, dir_fd=fd)
-            os.close(fd)
-            fd = next_fd
-        clear_directory(fd, archives)
+        fd = open_directory(refuse_personal_root(path))
     except FileNotFoundError:
-        pass
+        return
+    try:
+        if archives:
+            clear_archives(fd)
+        else:
+            clear_directory(fd)
     finally:
         os.close(fd)
 
 
-def clear_directory(fd, archives=False, only=None):
+ARCHIVE = re.compile(r'.+\.pkg\.tar\.(?:zst|xz|gz|bz2)(?:\.sig)?')
+
+
+def clear_archives(fd):
+    # makepkg writes packages beside the PKGBUILD in paru's clone/<pkgbase>/.
+    # Sources, edits and the src/ and pkg/ build trees (pkg/ is mode 0111) stay.
+    try:
+        clone = os.open('clone', DIRECTORY, dir_fd=fd)
+    except FileNotFoundError:
+        return
+    try:
+        for base in os.listdir(clone):
+            try:
+                build = os.open(base, DIRECTORY, dir_fd=clone)
+            except OSError as error:
+                if error.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP):
+                    continue
+                raise
+            try:
+                for name in os.listdir(build):
+                    if ARCHIVE.fullmatch(name):
+                        try:
+                            os.unlink(name, dir_fd=build)
+                        except (FileNotFoundError, IsADirectoryError):
+                            pass
+            finally:
+                os.close(build)
+    finally:
+        os.close(clone)
+
+
+def clear_directory(fd, only=None):
+    # shutil's fd-based implementation prevents symlink substitution.
+    if not shutil.rmtree.avoids_symlink_attacks:
+        raise RuntimeError('Safe cache removal is unavailable on this platform.')
     for name in os.listdir(fd) if only is None else only:
         try:
-            if archives:
-                try:
-                    child = os.open(
-                        name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd
-                    )
-                except OSError as error:
-                    if error.errno not in (errno.ENOTDIR, errno.ELOOP):
-                        raise
-                    if re.fullmatch(r'.+\.pkg\.tar\.(?:zst|xz|gz|bz2)(?:\.sig)?', name):
-                        os.unlink(name, dir_fd=fd)
-                else:
-                    try:
-                        clear_directory(child, True)
-                    finally:
-                        os.close(child)
-            else:
-                # shutil's fd-based implementation prevents symlink substitution.
-                if not shutil.rmtree.avoids_symlink_attacks:
-                    raise RuntimeError(
-                        'Safe cache removal is unavailable on this platform.'
-                    )
-                try:
-                    shutil.rmtree(name, dir_fd=fd)
-                except NotADirectoryError:
+            try:
+                shutil.rmtree(name, dir_fd=fd)
+            except NotADirectoryError:
+                os.unlink(name, dir_fd=fd)
+            except OSError:
+                # rmtree rejects symlinks; unlink only the link itself.
+                if stat.S_ISLNK(
+                    os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode
+                ):
                     os.unlink(name, dir_fd=fd)
-                except OSError:
-                    # rmtree rejects symlinks; unlink only the link itself.
-                    if stat.S_ISLNK(
-                        os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode
-                    ):
-                        os.unlink(name, dir_fd=fd)
-                    else:
-                        raise
+                else:
+                    raise
         except FileNotFoundError:
             pass
 
@@ -628,7 +642,7 @@ def clean(selected, emit):
                 for path in dict.fromkeys(entry['paths']):
                     clear_path(path, entry.get('archives', False))
             results.append(dict(id=key, title=entry['title'], ok=True))
-        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+        except Exception as error:
             results.append(
                 dict(
                     id=key, title=entry['title'], ok=False, error=failure_message(error)
@@ -643,6 +657,8 @@ def main():
 
     try:
         request = json.loads(sys.stdin.readline())
+        if not isinstance(request, dict):
+            raise ValueError('Unknown cleanup operation.')
         if request.get('op') == 'scan':
             emit(dict(ok=True, entries=inventory()))
         elif request.get('op') == 'clean':

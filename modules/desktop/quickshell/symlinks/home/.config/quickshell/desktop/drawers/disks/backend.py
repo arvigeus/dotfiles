@@ -17,7 +17,6 @@ FS = BUS + '.Filesystem'
 CRYPT = BUS + '.Encrypted'
 ATA = DRIVE + '.Ata'
 NVME = BUS + '.NVMe.Controller'
-SWAP = BUS + '.Swapspace'
 
 
 class StorageError(ValueError):
@@ -40,6 +39,12 @@ def protected(location):
     return location == '/' or any(
         location == p or location.startswith(p + '/')
         for p in ('/boot', '/efi', '/usr', '/var', '/home')
+    )
+
+
+def crypttab(interfaces):
+    return any(
+        kind == 'crypttab' for kind, _ in interfaces[BLOCK].get('Configuration', [])
     )
 
 
@@ -91,6 +96,11 @@ class Storage:
                 None,
             ).unpack()
         except GLib.Error as error:
+            if error.matches(Gio.io_error_quark(), Gio.IOErrorEnum.TIMED_OUT):
+                # UDisks keeps working, e.g. after a late authentication answer.
+                raise StorageError(
+                    'The storage service did not answer in time. Refresh to check the result.'
+                ) from None
             code = (Gio.DBusError.get_remote_error(error) or '').rsplit('.', 1)[-1]
             messages = {
                 'DeviceBusy': 'The device is busy. Close files and applications using it, then try again.',
@@ -170,36 +180,12 @@ class Storage:
             ]
         )
 
-    def unsafe_reason(self, objects, paths):
-        for path in paths:
-            interfaces = objects[path]
-            if any(protected(p) for p in mounts(interfaces)):
-                return 'Contains a mounted system volume.'
-            if interfaces.get(SWAP, {}).get('Active', False):
-                return 'Contains active swap.'
-        return ''
-
-    def drive_record(self, objects, path, members):
+    def drive_record(self, objects, path):
         props = objects[path][DRIVE]
         label = (
             ' '.join(str(props.get(k, '')).strip() for k in ('Vendor', 'Model')).strip()
             or 'Storage device'
         )
-        reason = self.unsafe_reason(objects, members)
-        # PowerOff may also disconnect other slots in the same physical reader.
-        siblings = props.get('SiblingId', '')
-        shared = (
-            props.get('CanPowerOff', False)
-            and siblings
-            and any(
-                p != path and v.get(DRIVE, {}).get('SiblingId') == siblings
-                for p, v in objects.items()
-            )
-        )
-        if shared:
-            reason = (
-                'Shares power with another drive. Use Disks to manage the whole device.'
-            )
         return dict(
             key=path,
             identity=self.drive_identity(objects, path),
@@ -207,10 +193,6 @@ class Storage:
             size=props.get('Size', 0),
             connection=props.get('ConnectionBus', ''),
             removable=bool(props.get('Removable') or props.get('MediaRemovable')),
-            canEject=bool(
-                (props.get('CanPowerOff') or props.get('Ejectable')) and not reason
-            ),
-            ejectReason=reason,
             healthSupported=bool(
                 NVME in objects[path]
                 or (
@@ -250,6 +232,9 @@ class Storage:
             or 'Volume'
         )
         reason = 'System volume' if any(protected(p) for p in locations) else ''
+        can_unmount = bool(locations) and not reason
+        # Like Dolphin and GNOME; boot-managed mappings may have no passphrase.
+        locks = can_unmount and effective != path and not crypttab(interfaces)
         return dict(
             key=path,
             identity=self.block_identity(objects, path),
@@ -265,7 +250,8 @@ class Storage:
             encrypted=encrypted,
             locked=locked,
             canMount=FS in target and not locations,
-            canUnmount=bool(locations) and not reason,
+            canUnmount=can_unmount,
+            locksOnUnmount=locks,
             reason=reason,
             target=effective,
         )
@@ -275,11 +261,7 @@ class Storage:
         blocks = {p: v for p, v in objects.items() if BLOCK in v}
         associations = {p: self.drive_paths(objects, p) for p in blocks}
         records = {
-            p: self.drive_record(
-                objects, p, [b for b in blocks if p in associations[b]]
-            )
-            for p, v in objects.items()
-            if DRIVE in v
+            p: self.drive_record(objects, p) for p, v in objects.items() if DRIVE in v
         }
         volumes = []
         for path, interfaces in blocks.items():
@@ -314,8 +296,6 @@ class Storage:
                 size=0,
                 connection='',
                 removable=False,
-                canEject=False,
-                ejectReason='',
                 healthSupported=False,
             )
         for key, drive in records.items():
@@ -344,7 +324,7 @@ class Storage:
         return path
 
     def health(self, objects, path):
-        record = self.drive_record(objects, path, [])
+        record = self.drive_record(objects, path)
         if not record['healthSupported']:
             raise StorageError(
                 'Health reporting is not supported or enabled for this drive.'
@@ -384,100 +364,26 @@ class Storage:
             updated=props['SmartUpdated'],
         )
 
-    def eject(self, request, objects):
-        path = self.validate(request, objects, drive=True)
-        members = [
-            p
-            for p, v in objects.items()
-            if BLOCK in v and path in self.drive_paths(objects, p)
-        ]
-        record = self.drive_record(objects, path, members)
-        if not record['canEject']:
-            raise StorageError(
-                record['ejectReason'] or 'Safe removal is not supported for this drive.'
-            )
-        # Freeze the affected inventory; never silently unmount newly attached mappings.
-        identities = {p: self.block_identity(objects, p) for p in members}
-        mounted = sorted(
-            [p for p in members if mounts(objects[p])],
-            key=lambda p: max(len(m) for m in mounts(objects[p])),
-            reverse=True,
-        )
-        for member in mounted:
-            current = self.objects()
-            self.validate(request, current, drive=True)
-            self.validate(dict(key=member, identity=identities[member]), current)
-            if self.unsafe_reason(current, [member]):
-                raise StorageError(
-                    'The device now contains a mounted system volume. Removal stopped.'
-                )
-            if mounts(current[member]):
-                self.call(member, FS, 'Unmount')  # never force a busy filesystem
+    def lock(self, request):
         current = self.objects()
-        self.validate(request, current, drive=True)
-        live_members = [
-            p
-            for p, v in current.items()
-            if BLOCK in v and path in self.drive_paths(current, p)
-        ]
-        if set(live_members) != set(members) or any(
-            self.block_identity(current, p) != identities[p] for p in live_members
-        ):
-            raise StorageError(
-                'The drive contents changed during removal. Refresh and try again.'
-            )
-        if any(mounts(current[p]) for p in live_members) or self.unsafe_reason(
-            current, live_members
-        ):
-            raise StorageError(
-                'A volume is still in use. Removal stopped; close files and try again.'
-            )
-        # UDisks PowerOff checks remaining users (including unlocked mappings) and flushes buffers.
-        # Close direct encrypted mappings first; LVM/RAID holders are refused by UDisks.
-        for member in [p for p in members if CRYPT in current[p]]:
-            current = self.objects()
-            self.validate(request, current, drive=True)
-            self.validate(dict(key=member, identity=identities[member]), current)
-            if (
-                CRYPT in current[member]
-                and current[member][CRYPT].get('CleartextDevice', '/') != '/'
-            ):
-                self.call(member, CRYPT, 'Lock')
-        current = self.objects()
-        self.validate(request, current, drive=True)
-        live_members = [
-            p
-            for p, v in current.items()
-            if BLOCK in v and path in self.drive_paths(current, p)
-        ]
-        if any(
-            p not in identities or self.block_identity(current, p) != identities[p]
-            for p in live_members
-        ):
-            raise StorageError(
-                'The drive contents changed during removal. Refresh and try again.'
-            )
-        final = self.drive_record(current, path, live_members)
-        if not final['canEject'] or any(mounts(current[p]) for p in live_members):
-            raise StorageError(
-                final['ejectReason'] or 'The drive is still in use. Removal stopped.'
-            )
-        self.call(
-            path,
-            DRIVE,
-            'PowerOff' if current[path][DRIVE].get('CanPowerOff') else 'Eject',
-        )
-        return 'Safely removed ' + record['label'] + '.'
+        path = self.validate(request, current)
+        clear = current[path].get(CRYPT, {}).get('CleartextDevice', '/')
+        if clear == '/':
+            return
+        if mounts(current.get(clear, {})):
+            raise StorageError('Unmounted, but the volume is still mounted elsewhere.')
+        try:
+            self.call(path, CRYPT, 'Lock')
+        except StorageError as error:
+            raise StorageError('Unmounted, but not locked. ' + str(error)) from None
 
     def handle(self, request):
         op = request.get('op')
         if op == 'status':
             return {}
-        if op not in ('mount', 'unmount', 'unlock', 'eject', 'health'):
+        if op not in ('mount', 'unmount', 'unlock', 'health'):
             raise StorageError('Unsupported storage action.')
         objects = self.objects()
-        if op == 'eject':
-            return dict(message=self.eject(request, objects))
         path = self.validate(request, objects, drive=op == 'health')
         if op == 'health':
             return dict(health=self.health(objects, path))
@@ -502,6 +408,8 @@ class Storage:
             if not row['canUnmount']:
                 raise StorageError(row['reason'] or 'This volume is not mounted.')
             self.call(row['target'], FS, 'Unmount')
+            if row['locksOnUnmount']:
+                self.lock(request)
         return {}
 
     def response(self, request):

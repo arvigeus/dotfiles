@@ -162,17 +162,34 @@ class CleanupTests(unittest.TestCase):
             self.assertTrue((outside / 'keep').exists())
             cleanup.clear_path(root / 'missing')
 
-    def test_rejects_home_data_and_config_ancestors(self):
-        for path in [
-            Path('/'),
-            Path.home(),
-            Path.home() / '.cache/..',
-            Path.home().parent,
-            Path.home() / '.config',
-            Path.home() / '.local/share',
-        ]:
-            with self.subTest(path=path), self.assertRaises(ValueError):
-                cleanup.clear_path(path)
+    def test_refuses_home_xdg_roots_and_ancestors_without_touching_them(self):
+        # Runs only against a disposable HOME, so a missed refusal empties fixtures.
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / 'home'
+            cache = Path(directory) / 'elsewhere/cache'
+            defaults = [
+                home / name
+                for name in ('.config', '.local/share', '.local/state', '.local/cache')
+            ]
+            for root in [*defaults, cache]:
+                root.mkdir(parents=True)
+                (root / 'keep').write_text('personal')
+            for env, roots in (
+                ({}, defaults),
+                ({'XDG_CACHE_HOME': str(cache)}, [cache]),
+            ):
+                with patch.dict(os.environ, {'HOME': str(home), **env}, clear=True):
+                    self.assertRaises(ValueError, cleanup.refuse_personal_root, '/')
+                    for path in [home, home / '.cache/..', home.parent, *roots]:
+                        with self.subTest(path=path):
+                            with self.assertRaises(ValueError):
+                                cleanup.clear_path(path)
+                            with self.assertRaises(ValueError):
+                                with cleanup.operation(path, 'test.lock'):
+                                    pass
+            self.assertTrue(
+                all((root / 'keep').exists() for root in [*defaults, cache])
+            )
 
     def test_aur_only_removes_package_archives_preserving_worktrees(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -191,6 +208,62 @@ class CleanupTests(unittest.TestCase):
                 sorted(p.name for p in (root / 'clone/pkg').iterdir()),
                 ['PKGBUILD', 'patch.diff', 'source.tar.gz'],
             )
+
+    def test_aur_cleanup_survives_makepkg_build_trees_and_never_follows_links(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            outside = root / 'personal'
+            outside.mkdir()
+            (outside / 'kept.pkg.tar.zst').write_text('not a cache')
+            cache = root / 'paru'
+            for base in ('aaa', 'cpr', 'zzz'):
+                build = cache / 'clone' / base
+                (build / 'src').mkdir(parents=True)
+                (build / f'{base}-1-1-any.pkg.tar.zst').write_text('built')
+                (build / 'src' / 'bundled.pkg.tar.zst').write_text('upstream source')
+                (build / 'pkg').mkdir()
+                # makepkg leaves its package staging root unreadable.
+                (build / 'pkg').chmod(0o111)
+            (cache / 'clone/linked').symlink_to(outside, target_is_directory=True)
+            (cache / 'packages.aur').write_text('index')
+            cleanup.clear_path(cache, archives=True)
+            self.assertEqual(
+                sorted(
+                    p.relative_to(cache).as_posix() for p in cache.rglob('*.pkg.tar*')
+                ),
+                [
+                    f'clone/{base}/src/bundled.pkg.tar.zst'
+                    for base in ('aaa', 'cpr', 'zzz')
+                ],
+            )
+            self.assertTrue((outside / 'kept.pkg.tar.zst').exists())
+            self.assertTrue((cache / 'packages.aur').exists())
+            for build in (cache / 'clone').glob('[!l]*'):
+                (build / 'pkg').chmod(0o755)
+
+    def test_redirected_cache_is_not_offered_and_one_failure_keeps_other_results(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / 'home'
+            elsewhere = Path(directory) / 'elsewhere'
+            (elsewhere / 'thumbnails').mkdir(parents=True)
+            (home / '.local').mkdir(parents=True)
+            (home / '.local/cache').symlink_to(elsewhere, target_is_directory=True)
+            with patch.dict(os.environ, {'HOME': str(home)}, clear=True):
+                rows = {row['id']: row for row in cleanup.inventory()}
+                self.assertFalse(rows['thumbnails']['available'])
+                with (
+                    patch.object(cleanup, 'podman_images', side_effect=AttributeError),
+                    patch.object(cleanup, 'run') as run,
+                ):
+                    result = cleanup.clean(['podman', 'uv'], lambda _: None)
+            self.assertEqual(
+                [(row['id'], row['ok']) for row in result['results']],
+                [('uv', True), ('podman', False)],
+            )
+            self.assertEqual(
+                result['results'][1]['error'], 'Cleanup could not finish. Try again.'
+            )
+            run.assert_called_once_with('uv', 'cache', 'clean')
 
     def test_validates_entire_request_before_mutating(self):
         with (
@@ -356,20 +429,26 @@ class MaintenanceCleanupTests(unittest.TestCase):
         (self.state / 'updates.json').write_text(
             json.dumps([dict(log=str(pending / 'evidence.log'))])
         )
+        relative = self.folder('runs', 7, 'failed')
+        newest_failed = self.folder('runs', 8, 'failed')
         (self.data / 'proposals/decision.md').write_text(
             f'Validated in {referenced}/evidence.log'
         )
-        self.assertEqual(cleanup.agent_history(self.state, self.data, dry_run=True), 2)
-        self.assertTrue(old.exists())
-        self.assertEqual(cleanup.agent_history(self.state, self.data), 2)
+        (self.data / 'knowledge/current.md').write_text(
+            f'See ~/.local/state/system-agent/runs/{relative.name}/evidence.log'
+        )
+        self.assertEqual(cleanup.agent_history(self.state, self.data), 3)
+        # Only the newest failure is retained once a later one exists.
         self.assertFalse(old.exists())
+        self.assertFalse(failed.exists())
         self.assertFalse(unused.exists())
         self.assertTrue(
             all(
                 path.exists()
                 for path in (
                     referenced,
-                    failed,
+                    relative,
+                    newest_failed,
                     latest,
                     running,
                     unknown,
@@ -419,16 +498,12 @@ class MaintenanceCleanupTests(unittest.TestCase):
         newest.write_text('latest recovery copy')
         (self.state / 'managed.json').write_text('{}')
         self.assertEqual(cleanup.private_backups(self.state), 0)
-        self.assertEqual(
-            cleanup.private_backups(
-                self.state, now=time.time() + 31 * 86400, dry_run=True
-            ),
-            2,
-        )
         self.assertTrue(old.exists())
         self.assertEqual(
             cleanup.private_backups(self.state, now=time.time() + 31 * 86400), 2
         )
+        self.assertFalse(old.exists())
+        self.assertFalse((folder / ('b' * 32)).exists())
         self.assertTrue(newest.exists())
         self.assertTrue(self.data.exists())
         self.assertTrue((self.state / 'managed.json').exists())
@@ -726,7 +801,7 @@ ShellRoot {
             setup=setup,
         )
 
-    def test_success_and_worker_exit_each_send_one_readable_notification(self):
+    def test_success_exit_and_failed_start_each_send_one_readable_notification(self):
         def setup(root):
             (root / 'drawers/disks/cleanup.py').write_text("""import json,sys
 request=json.loads(sys.stdin.readline())
@@ -747,8 +822,11 @@ ShellRoot {
   if(stage===0){
    if(notices.length!==1||notices[0].title!=="Cleanup complete"||notices[0].body!=="Finished cleaning the selected items.")throw new Error("success notification missing");
    stage++;CleanupService.clean(["empty"]);
-  }else{
+  }else if(stage===1){
    if(notices.length!==2||notices[1].title!=="Cleanup needs attention"||notices[1].body!=="The cleanup helper stopped. Try again.")throw new Error("helper exit notification missing");
+   stage++;CleanupService.worker.command=["/nonexistent/cleanup-helper"];CleanupService.clean(["npm"]);
+  }else{
+   if(notices.length!==3||notices[2].body!=="The cleanup helper stopped. Try again."||CleanupService.input!=="")throw new Error("failed start left cleanup pending");
    console.log("DISPLAY_PASS");Qt.quit();
   }
  }catch(e){console.error("DISPLAY_FAIL",e.stack);Qt.quit();}}}

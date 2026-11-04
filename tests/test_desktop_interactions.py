@@ -136,8 +136,8 @@ if __name__=="__main__":
             )
             # Storage uses fixture inventory; opening or dismissing must never touch host disks.
             (root / 'drawers/disks/backend.py').write_text("""import json,sys
-volume=dict(key="vault",identity="vault",label="Vault",device="/dev/test1",fs="crypto_LUKS",size=1000,capacity=None,free=None,used=None,capacityError="",mounts=[],encrypted=True,locked=True,canMount=False,canUnmount=False,reason="",target="/")
-drive=dict(key="test-drive",identity="drive",label="Test drive",size=1000,connection="usb",removable=True,canEject=True,ejectReason="",healthSupported=True,volumes=[volume])
+volume=dict(key="vault",identity="vault",label="Vault",device="/dev/test1",fs="crypto_LUKS",size=1000,capacity=None,free=None,used=None,capacityError="",mounts=[],encrypted=True,locked=True,canMount=False,canUnmount=False,locksOnUnmount=False,reason="",target="/")
+drive=dict(key="test-drive",identity="drive",label="Test drive",size=1000,connection="usb",removable=True,healthSupported=True,volumes=[volume])
 for line in sys.stdin:
  json.loads(line)
  print(json.dumps(dict(ok=True,error="",data=dict(drives=[drive],editorAvailable=False))),flush=True)

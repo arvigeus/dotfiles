@@ -5,6 +5,7 @@ import Quickshell.Io
 
 Singleton {
     id: root
+    readonly property alias worker: worker
     property var entries: []
     property var results: []
     property bool busy: false
@@ -51,6 +52,15 @@ Singleton {
         input = JSON.stringify(request) + "\n";
         worker.running = true;
     }
+    function finish(): void {
+        if (!received && !error)
+            error = qsTr("The cleanup helper stopped. Try again.");
+        input = "";
+        notifyResult();
+        busy = false;
+        cleaning = false;
+        progress = "";
+    }
     function receive(line: string): void {
         try {
             const result = JSON.parse(line);
@@ -81,13 +91,9 @@ Singleton {
             onRead: line => root.receive(line)
         }
         stderr: StdioCollector {}
-        onExited: {
-            if (!root.received && !root.error)
-                root.error = qsTr("The cleanup helper stopped. Try again.");
-            root.notifyResult();
-            root.busy = false;
-            root.cleaning = false;
-            root.progress = "";
-        }
+        onExited: root.finish()
+        // A helper that cannot start emits no `exited`.
+        onRunningChanged: if (!running && root.busy)
+            root.finish()
     }
 }

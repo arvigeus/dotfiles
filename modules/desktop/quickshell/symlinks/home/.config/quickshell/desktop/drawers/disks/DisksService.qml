@@ -14,18 +14,22 @@ Singleton {
         })
     property bool loaded: false
     property var owners: []
+    // The helper answers one line per request, in order. An action that arrives
+    // during a status read waits in `queued` instead of being refused.
     property var request: null
+    property var queued: null
     property string startupInput: ""
     property bool closing: false
     property bool refreshPending: false
     property string statusError: ""
     property string actionError: ""
     property string errorKey: ""
-    property string message: ""
     property var healthResults: ({})
-    readonly property bool busy: request !== null
-    readonly property string pendingKey: request?.key ?? ""
-    readonly property string pendingOp: request?.op ?? ""
+    readonly property var action: queued?.request ?? (request?.op === "status" ? null : request)
+    readonly property bool busy: action !== null
+    readonly property bool refreshing: request?.op === "status"
+    readonly property string pendingKey: action?.key ?? ""
+    readonly property string pendingOp: action?.op ?? ""
 
     function observe(owner, active: bool): void {
         owners = owners.filter(item => item !== owner).concat(active ? [owner] : []);
@@ -43,18 +47,26 @@ Singleton {
             return;
         actionError = "";
         errorKey = "";
-        message = "";
-        request = {
+        const next = {
             op,
             key: record.key,
             identity: record.identity,
             label: record.label
         };
-        // Retain only the serialized startup input until the pipe is ready.
-        const payload = Object.assign({}, request);
+        // Retain only the serialized input until it is written to the pipe.
+        const payload = Object.assign({}, next);
         if (op === "unlock")
             payload.password = password;
-        send(JSON.stringify(payload) + "\n");
+        const input = JSON.stringify(payload) + "\n";
+        if (request)
+            queued = {
+                request: next,
+                input
+            };
+        else {
+            request = next;
+            send(input);
+        }
     }
     function send(input: string): void {
         if (worker.running)
@@ -89,6 +101,14 @@ Singleton {
             }
         }
     }
+    function fail(lost, failure: string): void {
+        if (lost.op === "status")
+            statusError = failure;
+        else {
+            actionError = failure;
+            errorKey = failure ? lost.key : "";
+        }
+    }
     function receive(line: string): void {
         if (!request)
             return;
@@ -113,20 +133,33 @@ Singleton {
             }
             healthResults = next;
         }
-        const failure = result.ok ? "" : result.error || qsTr("The storage operation failed.");
-        if (request.op === "status")
-            statusError = failure;
-        else {
-            actionError = failure;
-            errorKey = failure ? request.key : "";
-        }
+        fail(request, result.ok ? "" : result.error || qsTr("The storage operation failed."));
         if (result.health)
             healthResults = Object.assign({}, healthResults, {
                 [result.health.key]: result.health
             });
-        message = result.message || "";
         request = null;
-        Qt.callLater(root.pump);
+        if (queued) {
+            const next = queued;
+            queued = null;
+            request = next.request;
+            send(next.input);
+        } else
+            Qt.callLater(root.pump);
+    }
+    // A failed start emits no `exited`; both paths end the same way. A lost
+    // action is reported, never retried.
+    function stopped(): void {
+        startupInput = "";
+        const failure = qsTr("The storage helper stopped. Refresh to retry.");
+        for (const lost of [request, queued?.request])
+            if (lost)
+                fail(lost, failure);
+        request = null;
+        queued = null;
+        closing = false;
+        if (refreshPending)
+            Qt.callLater(root.pump);
     }
     Process {
         id: worker
@@ -140,22 +173,9 @@ Singleton {
             onRead: line => root.receive(line)
         }
         stderr: StdioCollector {}
-        onExited: {
-            root.startupInput = "";
-            if (root.request) {
-                const failure = qsTr("The storage helper stopped. Refresh to retry.");
-                if (root.request.op === "status")
-                    root.statusError = failure;
-                else {
-                    root.actionError = failure;
-                    root.errorKey = root.request.key;
-                }
-                root.request = null;
-            }
-            root.closing = false;
-            if (root.refreshPending)
-                Qt.callLater(root.pump);
-        }
+        onExited: root.stopped()
+        onRunningChanged: if (!running && root.request)
+            root.stopped()
     }
     Timer {
         id: updates

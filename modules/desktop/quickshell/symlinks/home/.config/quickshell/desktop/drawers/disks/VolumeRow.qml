@@ -81,7 +81,7 @@ ColumnLayout {
             implicitHeight: 28
             padding: 5
             iconName: root.action === "unlock" ? "lock-keyhole" : root.action === "mount" ? "hard-drive-download" : "hard-drive-upload"
-            text: (root.action === "unlock" ? qsTr("Unlock %1") : root.action === "mount" ? qsTr("Mount %1") : qsTr("Unmount %1")).arg(root.record.label)
+            text: (root.action === "unlock" ? qsTr("Unlock %1") : root.action === "mount" ? qsTr("Mount %1") : root.record.locksOnUnmount ? qsTr("Unmount and lock %1") : qsTr("Unmount %1")).arg(root.record.label)
             enabled: root.canAct
             onClicked: root.actionRequested(root.record, root.action)
         }

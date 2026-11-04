@@ -136,7 +136,7 @@ DrawerPage {
         anchors.fill: parent
         spacing: 8
         RowLayout {
-            visible: !root.service.loaded && root.service.busy
+            visible: !root.service.loaded && root.service.refreshing
             BusySpinner {
                 implicitWidth: 16
                 implicitHeight: 16
@@ -154,11 +154,6 @@ DrawerPage {
         ActionError {
             targetKey: root.service.errorKey
             visible: root.service.actionError !== "" && !root.service.state.drives.some(d => d.key === targetKey || d.volumes.some(v => v.key === targetKey))
-        }
-        Note {
-            visible: root.service.message !== ""
-            text: root.service.message
-            color: Theme.success
         }
         DrawerColumn {
             objectName: "disksScroll"

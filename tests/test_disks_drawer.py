@@ -107,7 +107,7 @@ class StorageTests(unittest.TestCase):
     def request(self, op, key=B + 'test1'):
         identity = (
             self.storage.drive_identity(self.data, key)
-            if op in ('eject', 'health')
+            if op == 'health'
             else self.storage.block_identity(self.data, key)
         )
         return dict(op=op, key=key, identity=identity)
@@ -144,19 +144,15 @@ class StorageTests(unittest.TestCase):
         self.storage.handle(self.request('mount'))
         self.assertEqual(self.volumes()[0]['mounts'], ['/media/Backup'])
 
-    def test_hidden_mounted_system_volume_is_visible_and_cannot_be_unmounted_or_ejected(
-        self,
-    ):
+    def test_hidden_mounted_system_volume_is_visible_and_cannot_be_unmounted(self):
         self.data[B + 'test1'][backend.BLOCK]['HintIgnore'] = True
         self.data[B + 'test1'][backend.FS]['MountPoints'] = [
             encoded('/'),
             encoded('/home'),
         ]
         self.assertFalse(self.volumes()[0]['canUnmount'])
-        self.assertFalse(self.storage.snapshot()['drives'][0]['canEject'])
-        for req in (self.request('unmount'), self.request('eject', D)):
-            with self.assertRaisesRegex(backend.StorageError, '[Ss]ystem'):
-                self.storage.handle(req)
+        with self.assertRaisesRegex(backend.StorageError, '[Ss]ystem'):
+            self.storage.handle(self.request('unmount'))
         self.storage.call.assert_not_called()
 
     def test_lvm_above_encryption_resolves_to_physical_drive_without_duplicate_container(
@@ -176,7 +172,7 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(len(rows), 2)
             system = next(r for r in rows if '/' in r['mounts'])
             self.assertEqual(system['drive'], D)
-            self.assertFalse(self.storage.snapshot()['drives'][0]['canEject'])
+            self.assertFalse(system['canUnmount'])
 
     def test_directly_unlocked_filesystem_keeps_parent_identity_and_mount_target(self):
         self.data[B + 'test2'][backend.CRYPT]['CleartextDevice'] = B + 'mapped'
@@ -211,6 +207,13 @@ class StorageTests(unittest.TestCase):
         args = self.storage.bus.call_sync.call_args.args
         self.assertEqual(args[4].get_type_string(), '(sa{sv})')
         self.assertEqual(args[4].unpack(), ('private', {}))
+        self.storage.bus.call_sync.side_effect = backend.GLib.Error.new_literal(
+            backend.Gio.io_error_quark(),
+            'Timeout was reached',
+            backend.Gio.IOErrorEnum.TIMED_OUT,
+        )
+        with self.assertRaisesRegex(backend.StorageError, 'Refresh to check'):
+            backend.Storage.call(self.storage, B + 'test1', backend.FS, 'Mount')
         self.storage.bus.call_sync.side_effect = backend.GLib.Error(
             'private diagnostic'
         )
@@ -235,12 +238,13 @@ class StorageTests(unittest.TestCase):
                 self.assertNotIn('private', str(error.exception))
 
     def test_stale_hardware_media_and_filesystem_identity_never_mutate(self):
+        self.data[D][backend.ATA] = dict(SmartSupported=True, SmartEnabled=True)
         for field, new_value in (
             ('Serial', 'replacement'),
             ('TimeDetected', 999),
             ('TimeMediaDetected', 999),
         ):
-            request = self.request('eject', D)
+            request = self.request('health', D)
             old = self.data[D][backend.DRIVE][field]
             self.data[D][backend.DRIVE][field] = new_value
             with self.assertRaisesRegex(backend.StorageError, 'changed'):
@@ -273,53 +277,63 @@ class StorageTests(unittest.TestCase):
             self.assertFalse(result['ok'])
             self.assertNotIn('private', json.dumps(result))
 
-    def test_unmount_then_eject_never_forces_and_returns_device_confirmation(self):
-        result = self.storage.handle(self.request('eject', D))
-        self.assertIn('Portable drive', result['message'])
-        self.assertEqual(
-            [(c.args[0], c.args[2]) for c in self.storage.call.call_args_list],
-            [(B + 'test1', 'Unmount'), (D, 'PowerOff')],
-        )
-        self.assertTrue(all(not c.kwargs for c in self.storage.call.call_args_list))
-
-    def test_busy_volume_stops_removal_and_keeps_refreshed_inventory(self):
-        self.storage.call.side_effect = backend.StorageError('The device is busy.')
-        result = self.storage.response(self.request('eject', D))
-        self.assertFalse(result['ok'])
-        self.assertIn('busy', result['error'])
-        self.assertTrue(result['data']['drives'][0]['volumes'][0]['mounts'])
-        self.assertEqual(self.storage.call.call_count, 1)
-
-    def test_new_mapping_during_removal_is_not_unmounted_or_powered_off(self):
-        def change(*args, **kwargs):
-            self.mutate(*args, **kwargs)
-            self.data[B + 'new'] = block('new', ['/media/New'])
-
-        self.storage.call.side_effect = change
-        with self.assertRaisesRegex(backend.StorageError, 'contents changed'):
-            self.storage.handle(self.request('eject', D))
-        self.assertEqual(self.storage.call.call_count, 1)
-
-    def test_removal_unmounts_and_locks_encrypted_filesystem_before_poweroff(self):
+    def unlocked(self, **values):
         self.data[B + 'test2'][backend.CRYPT]['CleartextDevice'] = B + 'mapped'
+        self.data[B + 'test2'][backend.BLOCK].update(values)
         self.data[B + 'mapped'] = block(
             'mapped', ['/media/Vault'], Drive='/', CryptoBackingDevice=B + 'test2'
         )
-        self.storage.handle(self.request('eject', D))
-        methods = [c.args[2] for c in self.storage.call.call_args_list]
-        self.assertEqual(methods, ['Unmount', 'Unmount', 'Lock', 'PowerOff'])
+        return next(v for v in self.volumes() if v['key'] == B + 'test2')
 
-    def test_shared_power_and_active_swap_block_removal_before_any_unmount(self):
-        self.data[D][backend.DRIVE]['SiblingId'] = 'reader'
-        self.data[D + '2'] = drive(SiblingId='reader')
-        self.assertFalse(self.storage.snapshot()['drives'][0]['canEject'])
-        with self.assertRaisesRegex(backend.StorageError, 'Shares power'):
-            self.storage.handle(self.request('eject', D))
-        del self.data[D + '2']
-        self.data[B + 'swap'] = dict(block('swap'), **{backend.SWAP: dict(Active=True)})
-        with self.assertRaisesRegex(backend.StorageError, 'swap'):
-            self.storage.handle(self.request('eject', D))
-        self.storage.call.assert_not_called()
+    def methods(self):
+        return [(c.args[0], c.args[2]) for c in self.storage.call.call_args_list]
+
+    def test_unmount_locks_container_unless_boot_managed(self):
+        self.assertTrue(self.unlocked()['locksOnUnmount'])
+        result = self.storage.response(self.request('unmount', B + 'test2'))
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(
+            self.methods(), [(B + 'mapped', 'Unmount'), (B + 'test2', 'Lock')]
+        )
+        volume = next(
+            v for v in result['data']['drives'][0]['volumes'] if v['key'] == B + 'test2'
+        )
+        self.assertTrue(volume['locked'])
+        self.assertFalse(self.volumes()[0]['locksOnUnmount'])  # plain filesystem
+        self.storage.call.reset_mock()
+        row = self.unlocked(Configuration=[('crypttab', {})])
+        self.assertFalse(row['locksOnUnmount'])
+        self.storage.handle(self.request('unmount', B + 'test2'))
+        self.assertEqual(self.methods(), [(B + 'mapped', 'Unmount')])
+        self.assertTrue(
+            next(v for v in self.volumes() if v['key'] == B + 'test2')['canMount']
+        )
+
+    def test_unmount_reports_a_container_left_unlocked(self):
+        self.unlocked()
+
+        def busy(path, interface, method, **fields):
+            if method == 'Lock':
+                raise backend.StorageError('The device is busy.')
+            self.mutate(path, interface, method, **fields)
+
+        self.storage.call.side_effect = busy
+        result = self.storage.response(self.request('unmount', B + 'test2'))
+        self.assertFalse(result['ok'])
+        self.assertEqual(
+            result['error'], 'Unmounted, but not locked. The device is busy.'
+        )
+        volume = next(
+            v for v in result['data']['drives'][0]['volumes'] if v['key'] == B + 'test2'
+        )
+        self.assertEqual((volume['locked'], volume['mounts']), (False, []))
+        self.unlocked()
+        self.storage.call.reset_mock(side_effect=True)
+        # A second mount point keeps the mapping in use after one Unmount.
+        self.storage.call.side_effect = lambda *args, **fields: None
+        with self.assertRaisesRegex(backend.StorageError, 'mounted elsewhere'):
+            self.storage.handle(self.request('unmount', B + 'test2'))
+        self.assertEqual(self.methods(), [(B + 'mapped', 'Unmount')])
 
     def test_health_is_explicit_ata_avoids_wakeup_and_nvme_uses_controller(self):
         self.data[D][backend.ATA] = dict(
@@ -352,6 +366,10 @@ class StorageTests(unittest.TestCase):
     def test_unknown_and_status_requests_never_mutate(self):
         self.assertTrue(self.storage.response(dict(op='status'))['ok'])
         self.assertFalse(self.storage.response(dict(op='format'))['ok'])
+        eject = dict(
+            op='eject', key=D, identity=self.storage.drive_identity(self.data, D)
+        )
+        self.assertFalse(self.storage.response(eject)['ok'])
         self.storage.call.assert_not_called()
 
 
@@ -394,13 +412,13 @@ ShellRoot {
   property var state: STATE
   property bool loaded:true
   property bool busy:false
+  property bool refreshing:false
   property bool closing:false
   property string pendingKey:""
   property string pendingOp:""
   property string actionError:""
   property string statusError:""
   property string errorKey:""
-  property string message:""
   property var owners:[]
   property var calls:[]
   property var health:null
@@ -560,7 +578,6 @@ ShellRoot {
   property string statusError:""
   property string actionError:""
   property string errorKey:""
-  property string message:""
   function observe(owner,active){}
  }
  FloatingWindow {
@@ -631,6 +648,57 @@ ShellRoot {
    check(DisksService.startupInput==="","startup password retained");
   }
   else {check(!DisksService.worker.running,"cold-start worker leaked");console.log("DISPLAY_PASS");Qt.quit();}
+  stage++;
+ }catch(e){console.error("DISPLAY_FAIL",e.message);Qt.quit();}}}
+}""",
+            setup=setup,
+        )
+
+    def test_refresh_never_blocks_actions_and_failed_start_releases_input(self):
+        def setup(root):
+            (root / 'drawers/disks/backend.py').write_text("""import json,sys,time
+for line in sys.stdin:
+ request=json.loads(line)
+ status=request['op']=='status'
+ if status: time.sleep(.4)
+ data=dict(drives=[],editorAvailable=False,analyzerAvailable=False)
+ print(json.dumps(dict(ok=status,error='' if status else 'did '+request['op'],data=data)),flush=True)
+""")
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "drawers/disks"
+ShellRoot {
+ QtObject {id:owner}
+ Component.onCompleted: DisksService.observe(owner,true)
+ function check(v,m){if(!v)throw new Error(m);}
+ readonly property string stopped:"The storage helper stopped. Refresh to retry."
+ property int stage:0
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(stage===0){
+   if(!DisksService.refreshing)return;
+   check(!DisksService.busy,"status read counted as an action");
+   DisksService.change({key:"vol",identity:"v",label:"Vol"},"mount");
+   check(DisksService.busy&&DisksService.pendingKey==="vol"&&DisksService.request.op==="status","action not queued behind the status read");
+  }else if(stage===1){
+   if(DisksService.busy)return;
+   check(DisksService.actionError==="did mount"&&DisksService.errorKey==="vol","queued action was dropped");
+   DisksService.observe(owner,false);
+  }else if(stage===2){
+   if(DisksService.worker.running)return;
+   DisksService.worker.command=["/nonexistent/storage-helper"];
+   DisksService.observe(owner,true);
+  }else if(stage===3){
+   if(DisksService.request)return;
+   check(DisksService.statusError===stopped,"failed start left the status read pending");
+   DisksService.change({key:"vault",identity:"v",label:"Vault"},"unlock","secret");
+  }else if(stage===4){
+   if(DisksService.busy)return;
+   check(DisksService.actionError===stopped&&DisksService.errorKey==="vault","failed start left the action pending");
+   check(DisksService.startupInput==="","failed start retained the passphrase");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
   stage++;
  }catch(e){console.error("DISPLAY_FAIL",e.message);Qt.quit();}}}
 }""",
