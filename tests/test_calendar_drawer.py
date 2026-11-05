@@ -2,6 +2,7 @@
 
 import copy
 from datetime import datetime, timedelta, timezone
+import http.client
 import io
 import json
 import os
@@ -96,6 +97,65 @@ class AccountTests(unittest.TestCase):
             with self.subTest(url=url), self.assertRaises(accounts.NextcloudError):
                 client.request('GET', url)
         client.opener.open.assert_not_called()
+
+    def test_secret_reads_are_owner_only_bounded_and_never_block(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = accounts.password_path(root)
+            os.mkfifo(path, 0o600)
+            # Without O_NONBLOCK, opening a FIFO with no writer never returns.
+            with self.assertRaisesRegex(accounts.NextcloudError, 'regular file'):
+                accounts.app_password(root)
+            path.unlink()
+            write_password(root, 'x' * (64 * 1024 + 1))
+            with self.assertRaisesRegex(accounts.NextcloudError, '64 KiB'):
+                accounts.app_password(root)
+            path.write_bytes(b'\xff\xfe')
+            with self.assertRaisesRegex(accounts.NextcloudError, 'UTF-8'):
+                accounts.app_password(root)
+            path.write_text('owner-read-only\n')
+            path.chmod(0o400)
+            self.assertEqual(accounts.app_password(root), 'owner-read-only')
+
+    def test_dav_scope_covers_destinations_and_needs_a_collection_path(self):
+        with patch.object(accounts, 'app_password', return_value='example-secret'):
+            for scope in (
+                '',
+                'remote.php/dav/files/alice',
+                'remote.php/dav/files/../',
+                'remote.php/dav/files/alice/?x=/',
+            ):
+                with (
+                    self.subTest(scope=scope),
+                    self.assertRaises(accounts.NextcloudError),
+                ):
+                    accounts.DAVClient(account(), scope=scope, opener=Mock())
+            client = accounts.DAVClient(
+                account(), scope='remote.php/dav/files/alice/Music/', opener=Mock()
+            )
+        reply = MagicMock()
+        reply.__enter__.return_value = reply
+        reply.read.return_value = b''
+        client.opener.open.return_value = reply
+        source = client.home + 'a.flac'
+        for header in ('Destination', 'destination'):
+            for target in (
+                'https://cloud.example/nextcloud/remote.php/dav/files/alice/Other/a.flac',
+                'https://evil.example/nextcloud/remote.php/dav/files/alice/Music/a.flac',
+                client.home + '../a.flac',
+            ):
+                with (
+                    self.subTest(header=header, target=target),
+                    self.assertRaises(accounts.NextcloudError),
+                ):
+                    client.request('MOVE', source, headers={header: target})
+        client.opener.open.assert_not_called()
+        client.request('COPY', source, headers={'Destination': client.home + 'b.flac'})
+        client.opener.open.assert_called_once()
+        # Something other than HTTP answered, e.g. a different service on the port.
+        client.opener.open.side_effect = http.client.BadStatusLine('not http')
+        with self.assertRaisesRegex(accounts.NextcloudError, 'invalid HTTP'):
+            client.request('PROPFIND', client.home)
 
     def test_dav_errors_explain_data_rejection_without_exposing_response_body(self):
         with patch.object(accounts, 'app_password', return_value='example-secret'):

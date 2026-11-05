@@ -36,7 +36,8 @@ and descriptions stay available offline after their first successful lookup.
 **Find** uses qBittorrent search and imports completed game files into **Local**.
 Configure the shared `~/.config/quickshell/desktop/integrations/torrents.json` using the
 [connection example](../../integrations/torrents.example.json); the managed local client
-only needs `{"url":"http://127.0.0.1:8080"}`. Imported archives/installers open in
+only needs `{"url":"http://127.0.0.1:8080"}`; keep the file mode 0600 if you add a
+password or API key. Imported archives/installers open in
 the file manager; they are never automatically executed.
 
 Game files, Wine prefixes,

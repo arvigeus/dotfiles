@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from http.client import HTTPException
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -61,7 +62,13 @@ class SubsonicClient:
                 **(headers or {}),
             },
         )
-        return self.opener.open(request, timeout=15)
+        try:
+            return self.opener.open(request, timeout=15)
+        except HTTPException:
+            # A malformed status line or headers; HTTPError still reaches callers.
+            raise MusicError(
+                'Nextcloud Music returned an unreadable response.'
+            ) from None
 
     def request(self, method, **args):
         if method not in self.METHODS:
@@ -74,6 +81,9 @@ class SubsonicClient:
             result = json.loads(payload).get('subsonic-response')
             if not isinstance(result, dict):
                 raise ValueError()
+        except MusicError:
+            # Refused redirects and oversized replies keep their own guidance.
+            raise
         except HTTPError as error:
             error.close()
             raise MusicError(
@@ -83,7 +93,7 @@ class SubsonicClient:
             raise MusicError(
                 'Nextcloud Music is unreachable. Saved library data remains available.'
             ) from None
-        except (ValueError, TypeError, AttributeError):
+        except (ValueError, TypeError, AttributeError, HTTPException):
             raise MusicError(
                 'Nextcloud Music returned an unreadable response.'
             ) from None

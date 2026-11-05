@@ -4,6 +4,7 @@
 import concurrent.futures
 import fcntl
 import hashlib
+import http.client
 import ipaddress
 import json
 import os
@@ -23,6 +24,7 @@ from http.cookiejar import CookieJar
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from integrations import private
 from spaces.movies.local import (
     EXTENSIONS,
     SUBTITLE_EXTENSIONS,
@@ -46,10 +48,7 @@ from spaces.movies.scanner import (
 
 from spaces.movies.paths import DATA, SPACE
 
-CONFIG = (
-    Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config'))
-    / 'quickshell/desktop/integrations/torrents.json'
-)
+CONFIG = private.config_root() / 'torrents.json'
 
 
 class TorrentError(Exception):
@@ -58,6 +57,13 @@ class TorrentError(Exception):
 
 class QBitConnectionError(TorrentError):
     pass
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    # urllib copies Authorization to any redirect target. The Web API never
+    # redirects; a 3xx reply surfaces as an HTTPError instead.
+    def redirect_request(self, *_args, **_kwargs):
+        return None
 
 
 class QBitClient:
@@ -80,12 +86,15 @@ class QBitClient:
         self.username = str(config.get('username') or '')
         self.password = str(config.get('password') or '')
         self.api_key = str(config.get('api_key') or '').strip()
+        if not self.api_key.isprintable() or ' ' in self.api_key:
+            # http.client would echo an invalid header value in its error text.
+            raise TorrentError('The qBittorrent api_key in torrents.json is invalid.')
         if not self.api_key and bool(self.username) != bool(self.password):
             raise TorrentError(
                 'Set both qBittorrent username and password in torrents.json.'
             )
         self.opener = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(CookieJar())
+            urllib.request.HTTPCookieProcessor(CookieJar()), NoRedirect()
         )
         self.lock = threading.RLock()
         self.logged_in = not self.username or bool(self.api_key)
@@ -131,6 +140,11 @@ class QBitClient:
                 return payload.decode('utf-8')
         except urllib.error.HTTPError as error:
             error.close()
+            if 300 <= error.code < 400:
+                raise TorrentError(
+                    'qBittorrent redirected the request. Set the Web UI origin it '
+                    'redirects to as the url in torrents.json.'
+                ) from None
             if error.code in (401, 403):
                 self.logged_in = False
                 if self.api_key:
@@ -148,7 +162,7 @@ class QBitClient:
             raise TorrentError(
                 f'qBittorrent returned HTTP {error.code} for {endpoint}.'
             ) from None
-        except OSError:
+        except (OSError, http.client.HTTPException):
             raise QBitConnectionError(
                 'Cannot reach the qBittorrent Web UI. Check torrents.json and that qBittorrent is running.'
             ) from None
@@ -342,16 +356,27 @@ class TorrentBackend:
                 fcntl.flock(lock, fcntl.LOCK_UN)
 
     def config(self):
+        # torrents.json may link into a private checkout; its target is checked.
         try:
-            data = json.loads(self.config_path.read_text())
+            text, info = private.read(self.config_path, follow_symlinks=True)
         except FileNotFoundError:
             return {'url': 'http://127.0.0.1:8080'}
-        except (OSError, ValueError):
+        except private.UnreadableFile as error:
+            raise TorrentError(str(error)) from None
+        try:
+            data = json.loads(text)
+        except ValueError:
             raise TorrentError(
                 'Cannot read torrents.json. Check its JSON syntax.'
             ) from None
         if not isinstance(data, dict):
             raise TorrentError('torrents.json must contain a JSON object.')
+        if (data.get('password') or data.get('api_key')) and not private.owner_only(
+            info
+        ):
+            raise TorrentError(
+                'torrents.json holds credentials: it must be owned by you with mode 0600.'
+            )
         return data
 
     def qbit(self):

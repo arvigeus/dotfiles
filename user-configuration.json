@@ -2717,6 +2717,10 @@
                 "target": "home/.config/quickshell/desktop/integrations/nextcloud.py"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/integrations/private.py",
+                "target": "home/.config/quickshell/desktop/integrations/private.py"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/integrations/subsonic.py",
                 "target": "home/.config/quickshell/desktop/integrations/subsonic.py"
             },

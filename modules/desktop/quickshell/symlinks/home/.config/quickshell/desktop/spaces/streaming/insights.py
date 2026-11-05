@@ -3,6 +3,7 @@
 import re
 import requests
 
+from integrations import private
 from spaces.books.jobs import check_cancelled
 from spaces.streaming.storage import StreamingError
 from spaces.streaming.youtube import watch_url
@@ -10,15 +11,28 @@ from spaces.streaming.youtube import watch_url
 DEFAULT_MODEL = 'gemini-3.8-flash'
 
 
-def generate(identity, key_path, model=DEFAULT_MODEL, question=''):
+def api_key(path):
+    # The key file may link into a private checkout; its target is checked.
     try:
-        key = key_path.read_text().strip()
-    except OSError:
-        key = ''
+        text, info = private.read(path, follow_symlinks=True)
+    except FileNotFoundError:
+        text, info = '', None
+    except private.UnreadableFile:
+        raise StreamingError('The Gemini key file is unreadable.') from None
+    if info is not None and not private.owner_only(info):
+        raise StreamingError('The Gemini key file must be owned by you with mode 0600.')
+    key = text.strip()
     if not key:
         raise StreamingError(
             'Add your Gemini key to integrations/gemini-api-key to use summaries and questions.'
         )
+    if not key.isprintable() or ' ' in key:
+        raise StreamingError('The Gemini key file must hold one key on one line.')
+    return key
+
+
+def generate(identity, key_path, model=DEFAULT_MODEL, question=''):
+    key = api_key(key_path)
     if not re.fullmatch(r'gemini-[a-zA-Z0-9.-]{1,80}', model):
         raise StreamingError('The Gemini model in streaming.json is invalid.')
     prompt = (

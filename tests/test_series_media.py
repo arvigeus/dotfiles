@@ -19,6 +19,7 @@ class SeriesMediaTests(unittest.TestCase):
             shared.write_text(
                 '{"url":"https://example.invalid","password":"fixture-shared"}'
             )
+            shared.chmod(0o600)  # Credentials are accepted only from a private file.
             script = """
 import os
 from pathlib import Path

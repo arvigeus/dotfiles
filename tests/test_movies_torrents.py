@@ -1,3 +1,6 @@
+import email.message
+import http.client
+import io
 import json
 import os
 import shutil
@@ -5,6 +8,8 @@ import subprocess
 import tempfile
 import unittest
 import urllib.error
+import urllib.request
+import urllib.response
 from pathlib import Path
 import sys
 import support
@@ -21,6 +26,29 @@ from spaces.movies.torrent_backend import (
     result_row,
     search_query,
 )
+
+
+class RedirectOnce(urllib.request.BaseHandler):
+    """The first HTTP request gets a 302; later ones succeed, through real urllib."""
+
+    handler_order = 100  # Ahead of the network HTTPHandler.
+
+    def __init__(self, location):
+        self.location = location
+        self.requests = []
+
+    def http_open(self, request):
+        self.requests.append((request.full_url, request.get_header('Authorization')))
+        headers = email.message.Message()
+        code = 200
+        if len(self.requests) == 1:
+            code = 302
+            headers['Location'] = self.location
+        response = urllib.response.addinfourl(
+            io.BytesIO(b'[]'), headers, request.full_url, code
+        )
+        response.msg = 'Found' if code == 302 else 'OK'
+        return response
 
 
 class FakeQBit:
@@ -233,6 +261,60 @@ class TorrentTests(unittest.TestCase):
         ):
             with self.assertRaises(QBitConnectionError):
                 client.call('search/plugins')
+        # Something other than qBittorrent answered on the Web UI port.
+        with patch.object(
+            client.opener, 'open', side_effect=http.client.BadStatusLine('not http')
+        ):
+            with self.assertRaises(QBitConnectionError):
+                client.call('search/plugins')
+
+    def test_redirects_never_forward_the_api_key_to_another_origin(self):
+        client = QBitClient({'url': 'http://127.0.0.1:8080', 'api_key': 'fixture-key'})
+        server = RedirectOnce('http://attacker.invalid/api/v2/torrents/info')
+        client.opener.add_handler(server)
+        with self.assertRaisesRegex(TorrentError, 'redirected') as raised:
+            client.call('torrents/info')
+        self.assertEqual(
+            server.requests,
+            [('http://127.0.0.1:8080/api/v2/torrents/info', 'Bearer fixture-key')],
+        )
+        self.assertNotIn('fixture-key', str(raised.exception))
+        for key in ('fixture\nkey', 'fixture key', 'fixture\tkey'):
+            # http.client would echo an invalid header value in its error text.
+            with self.subTest(key=key), self.assertRaises(TorrentError) as raised:
+                QBitClient({'url': 'http://127.0.0.1:8080', 'api_key': key})
+            self.assertNotIn('fixture', str(raised.exception))
+
+    def test_shared_connection_credentials_need_a_private_file_that_may_be_linked(
+        self,
+    ):
+        path = self.backend.config_path
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({'url': 'http://127.0.0.1:8080'}))
+        path.chmod(0o644)
+        # A credential-free loopback connection carries nothing to protect.
+        self.assertEqual(self.backend.config(), {'url': 'http://127.0.0.1:8080'})
+        for secret in ({'api_key': 'fixture-key'}, {'username': 'u', 'password': 'p'}):
+            path.write_text(json.dumps({'url': 'http://127.0.0.1:8080', **secret}))
+            with self.subTest(secret=secret):
+                with self.assertRaisesRegex(TorrentError, '0600') as raised:
+                    self.backend.config()
+                self.assertNotIn('fixture-key', str(raised.exception))
+        # A private checkout may provide the file as a link; its target is checked.
+        target = self.root / 'private/torrents.json'
+        target.parent.mkdir()
+        path.replace(target)
+        target.chmod(0o600)
+        path.symlink_to(target)
+        self.assertEqual(self.backend.config()['password'], 'p')
+        target.chmod(0o640)
+        with self.assertRaisesRegex(TorrentError, '0600'):
+            self.backend.config()
+        path.unlink()
+        os.mkfifo(path, 0o600)
+        # Without O_NONBLOCK, opening a FIFO with no writer never returns.
+        with self.assertRaisesRegex(TorrentError, 'regular file'):
+            self.backend.config()
 
     def test_context_search_and_wrong_year(self):
         self.assertEqual(search_query(self.movie), 'The General 1926')

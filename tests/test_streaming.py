@@ -164,6 +164,7 @@ class StreamingTests(unittest.TestCase):
         self.assertFalse(self.backend.init()['gemini'])
         self.backend.key_path.parent.mkdir(parents=True)
         self.backend.key_path.write_text('fixture-secret')
+        self.backend.key_path.chmod(0o600)
         self.assertTrue(self.backend.init()['gemini'])
         response = Mock(status_code=200)
         response.json.return_value = dict(
@@ -200,6 +201,30 @@ class StreamingTests(unittest.TestCase):
             self.assertNotIn('fixture-secret', json.dumps(failed))
         with self.assertRaises(StreamingError):
             insights.generate(VIDEO['id'], self.backend.key_path, 'gemini-foo/evil')
+
+    def test_gemini_key_file_is_private_single_line_and_may_be_linked(self):
+        path = self.backend.key_path
+        path.parent.mkdir(parents=True)
+        path.write_text('fixture-secret\n')
+        path.chmod(0o644)
+        with self.assertRaisesRegex(StreamingError, '0600') as raised:
+            insights.api_key(path)
+        self.assertNotIn('fixture-secret', str(raised.exception))
+        # A private checkout may provide the key as a link; its target is checked.
+        target = self.root / 'private/gemini-api-key'
+        target.parent.mkdir()
+        path.replace(target)
+        target.chmod(0o600)
+        path.symlink_to(target)
+        self.assertEqual(insights.api_key(path), 'fixture-secret')
+        target.write_text('fixture\nsecret')
+        with self.assertRaisesRegex(StreamingError, 'one line') as raised:
+            insights.api_key(path)
+        self.assertNotIn('fixture', str(raised.exception))
+        path.unlink()
+        os.mkfifo(path, 0o600)
+        with self.assertRaisesRegex(StreamingError, 'unreadable'):
+            insights.api_key(path)
 
     def test_watch_uses_catalogue_metadata_and_survives_detail_failure(self):
         self.backend.commands.extract = Mock(return_value=dict(entries=[RAW]))

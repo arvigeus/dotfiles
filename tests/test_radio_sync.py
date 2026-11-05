@@ -2,6 +2,9 @@
 
 import copy
 from concurrent.futures import ThreadPoolExecutor
+import email.message
+import http.client
+import io
 import json
 from pathlib import Path
 import sys
@@ -9,15 +12,18 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs
+import urllib.request
+import urllib.response
 
 import support
 
 sys.path.insert(0, str(support.DESKTOP))
 from integrations import nextcloud
+from integrations.subsonic import NoRedirect
 from spaces.radio import api
 from spaces.radio.backend import RadioBackend
 from spaces.radio.favorites import FavoritesStore
-from spaces.radio.music import MusicClient, MusicError, NoRedirect
+from spaces.radio.music import MusicClient, MusicError
 from spaces.radio.storage import read_json
 from test_radio import STATION
 
@@ -260,6 +266,28 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(self.cloud.calls, [])
 
 
+class Redirecting(urllib.request.BaseHandler):
+    """Answers every HTTPS request with a 302 through urllib's real redirect path."""
+
+    handler_order = 100  # Ahead of the network HTTPSHandler.
+
+    def __init__(self, location):
+        self.location = location
+        self.urls = []
+        self.replies = []
+
+    def https_open(self, request):
+        self.urls.append(request.full_url)
+        headers = email.message.Message()
+        headers['Location'] = self.location
+        response = urllib.response.addinfourl(
+            io.BytesIO(b''), headers, request.full_url, 302
+        )
+        response.msg = 'Found'
+        self.replies.append(response)
+        return response
+
+
 class MusicClientTests(unittest.TestCase):
     def client(self, payload):
         opener = MagicMock()
@@ -309,6 +337,39 @@ class MusicClientTests(unittest.TestCase):
             NoRedirect().redirect_request(
                 None, None, 302, '', {}, 'https://evil.example/'
             )
+
+    def test_refused_redirects_and_bad_replies_keep_their_own_reason(self):
+        server = Redirecting('https://cloud.example/elsewhere/')
+        # A refused redirect is never read; release it like a dropped response.
+        self.addCleanup(lambda: [reply.close() for reply in server.replies])
+        client = MusicClient(
+            dict(url='https://cloud.example/nc/', username='alice'),
+            key='synthetic-secret',
+            opener=urllib.request.build_opener(NoRedirect(), server),
+        )
+        with self.assertRaisesRegex(MusicError, 'redirected') as raised:
+            client.stations()
+        self.assertEqual(len(server.urls), 1)
+        self.assertNotIn('synthetic-secret', str(raised.exception))
+        large = self.client({'subsonic-response': {'status': 'ok'}})
+        reply = large.opener.open.return_value.__enter__.return_value
+        reply.read.return_value = b' ' * (4 * 1024 * 1024 + 1)
+        with self.assertRaisesRegex(MusicError, 'too much data'):
+            large.stations()
+        for failure in (
+            dict(side_effect=http.client.BadStatusLine('not http')),
+            dict(return_value=MagicMock()),
+        ):
+            broken = self.client({})
+            broken.opener.open.configure_mock(**failure)
+            if 'return_value' in failure:
+                reply = failure['return_value'].__enter__.return_value
+                reply.read.side_effect = http.client.IncompleteRead(b'')
+            with (
+                self.subTest(failure=failure),
+                self.assertRaisesRegex(MusicError, 'unreadable'),
+            ):
+                broken.stations()
 
     def test_shared_music_secret_has_same_permission_and_symlink_rules_as_dav(self):
         with tempfile.TemporaryDirectory() as directory:

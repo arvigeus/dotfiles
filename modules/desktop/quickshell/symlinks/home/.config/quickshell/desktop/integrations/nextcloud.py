@@ -2,12 +2,13 @@
 
 import base64
 import json
-import os
-import stat
-from pathlib import Path
+from http.client import HTTPException
 from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+from integrations import private
+from integrations.private import config_root
 
 
 class NextcloudError(ValueError):
@@ -20,12 +21,6 @@ class CredentialMissing(NextcloudError):
 
 class PreconditionFailed(NextcloudError):
     """HTTP 412: an If-Match/If-None-Match guard refused the request."""
-
-
-def config_root():
-    base = os.environ.get('XDG_CONFIG_HOME') or ''
-    root = Path(base) if os.path.isabs(base) else Path.home() / '.config'
-    return root / 'quickshell/desktop/integrations'
 
 
 def password_path(root=None):
@@ -42,6 +37,10 @@ def read_json(path):
     if not isinstance(data, dict):
         raise NextcloudError(f'{path.name} must contain a JSON object.')
     return data
+
+
+def traverses(path):
+    return any(part in ('.', '..') for part in unquote(path).split('/'))
 
 
 def validate_account(data):
@@ -68,7 +67,7 @@ def validate_account(data):
         or not username.strip()
         or ':' in username
         or any(char.isspace() for char in url)
-        or any(part in ('.', '..') for part in unquote(parsed.path).split('/'))
+        or traverses(parsed.path)
     ):
         raise NextcloudError(
             'Set an HTTPS instance URL and username in nextcloud.json.'
@@ -95,28 +94,19 @@ def music_api_key(root=None):
 
 def _secret(path, label):
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        text, info = private.read(path, follow_symlinks=False)
     except FileNotFoundError as error:
         raise CredentialMissing(
             'Save the Nextcloud ' + label + ' with mode 0600.'
         ) from error
-    except OSError as error:
-        raise NextcloudError('Cannot open the Nextcloud ' + label + ' file.') from error
-    with os.fdopen(descriptor) as source:
-        info = os.fstat(source.fileno())
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or stat.S_IMODE(info.st_mode) != 0o600
-            or info.st_uid != os.getuid()
-        ):
-            raise NextcloudError(
-                'The Nextcloud ' + label + ' file must be owned by you with mode 0600.'
-            )
-        try:
-            secret = source.read(65537).strip()
-        except (OSError, UnicodeError) as error:
-            raise NextcloudError('Cannot read the Nextcloud ' + label + '.') from error
-    if not secret or len(secret) > 65536 or '\n' in secret or '\r' in secret:
+    except private.UnreadableFile as error:
+        raise NextcloudError(str(error)) from error
+    if not private.owner_only(info):
+        raise NextcloudError(
+            'The Nextcloud ' + label + ' file must be owned by you with mode 0600.'
+        )
+    secret = text.strip()
+    if not secret or '\n' in secret or '\r' in secret:
         raise NextcloudError('The Nextcloud ' + label + ' is empty or invalid.')
     return secret
 
@@ -139,7 +129,12 @@ class DAVClient:
         self.base = self.account['url']
         self.username = self.account['username']
         self.origin = urlsplit(self.base).netloc
-        self.home = self.base + scope.lstrip('/')
+        scope = scope.lstrip('/')
+        # allowed() is a prefix test: only a collection path ending in '/'
+        # keeps sibling collections such as 'alice2/' outside 'alice/'.
+        if not scope.endswith('/') or '?' in scope or '#' in scope or traverses(scope):
+            raise NextcloudError('The Nextcloud DAV scope must be a collection path.')
+        self.home = self.base + scope
         password = app_password()
         self.auth = (
             'Basic '
@@ -157,11 +152,16 @@ class DAVClient:
             and not parsed.query
             and not parsed.fragment
             and url.startswith(self.home)
-            and not any(part in ('.', '..') for part in unquote(parsed.path).split('/'))
+            and not traverses(parsed.path)
         )
 
     def request(self, method, url, body=None, headers=None):
-        if not self.allowed(url):
+        headers = headers or {}
+        # COPY/MOVE write to Destination, so it needs the same scope as the URL.
+        destination = [
+            value for key, value in headers.items() if key.lower() == 'destination'
+        ]
+        if not self.allowed(url) or not all(map(self.allowed, destination)):
             raise NextcloudError(
                 'The Nextcloud DAV URL is outside the configured account scope.'
             )
@@ -172,7 +172,7 @@ class DAVClient:
             headers={
                 'User-Agent': 'DesktopShell/1.0',
                 'Accept': 'application/xml, text/calendar',
-                **(headers or {}),
+                **headers,
                 'Authorization': self.auth,
             },
         )
@@ -206,4 +206,9 @@ class DAVClient:
         except (URLError, OSError) as error:
             raise NextcloudError(
                 'Nextcloud is unreachable. Check your connection.'
+            ) from error
+        except HTTPException as error:
+            # A malformed status line or headers: not HTTP from a Nextcloud server.
+            raise NextcloudError(
+                'Nextcloud returned an invalid HTTP response.'
             ) from error

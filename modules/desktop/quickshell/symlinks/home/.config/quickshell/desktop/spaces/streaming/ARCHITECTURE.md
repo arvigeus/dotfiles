@@ -169,9 +169,11 @@ refreshes Discover/Posts while preserving downloaded media.
 }
 ```
 
-The credential is a separate 0600 file at
-`~/.config/quickshell/desktop/integrations/gemini-api-key`. It is read inside
-`insights.py` and sent in the `x-goog-api-key` header to the fixed Gemini endpoint.
+The credential is a separate owner-only (0600) file at
+`~/.config/quickshell/desktop/integrations/gemini-api-key`, holding one line. It may
+be a symlink; `insights.py` checks the target through the shared
+[integration reader](../../integrations/ARCHITECTURE.md) and sends the key in the
+`x-goog-api-key` header to the fixed Gemini endpoint.
 Redirects are disabled. Gemini requests are explicit jobs and use the actual
 public YouTube video. Responses omit thought parts, handle empty/blocked answers
 and expose sanitized quota/auth/model failures. Cancelling a request suppresses
