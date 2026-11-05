@@ -10,6 +10,8 @@ import shutil
 import shlex
 import subprocess
 
+PACKAGE = re.compile(r'[A-Za-z0-9@._+][A-Za-z0-9@._+\-]*')
+
 
 def command(argv):
     try:
@@ -43,7 +45,7 @@ def boot_times(text):
         )
     ]
     total = first.rsplit(' = ', 1)[1].rstrip(' .') if ' = ' in first else ''
-    return dict(phases=phases, total=total, summary=text)
+    return dict(phases=phases, total=total)
 
 
 def slow_units(text):
@@ -171,8 +173,44 @@ def maintenance_available():
 
 
 def run_terminal(argv, **kwargs):
+    # Interactive output keeps the user's locale: under LC_ALL=C the journal
+    # pager shows non-ASCII text as byte escapes.
     print('\nRunning: ' + shlex.join(argv), flush=True)
-    return subprocess.run(argv, check=False, env=dict(os.environ, LC_ALL='C'), **kwargs)
+    return subprocess.run(argv, check=False, **kwargs)
+
+
+def confirm(question):
+    try:
+        answer = input(question + ' [y/N] ')
+    except EOFError:
+        return False
+    return answer.strip().lower() in ('y', 'yes')
+
+
+def missing_files(output, privileged=False):
+    """Split quiet `pacman -Qk` output into missing and unreadable files.
+
+    Pacman lists every path it cannot lstat. A regular user cannot look into
+    root-only directories such as /boot, so those files are unverified rather
+    than missing; root can, so a privileged check lists only missing files.
+    Lines that are not a package/path pair are returned as-is.
+    """
+    missing, unreadable, other = [], [], []
+    for line in output.splitlines():
+        package, _, path = line.partition(' ')
+        if not PACKAGE.fullmatch(package) or not path.startswith('/'):
+            other.append(line)
+            continue
+        if privileged:
+            missing.append((package, path))
+            continue
+        try:
+            os.lstat(path)
+        except PermissionError:
+            unreadable.append((package, path))
+        except OSError:
+            missing.append((package, path))
+    return missing, unreadable, other
 
 
 def repair_signing():
@@ -186,6 +224,9 @@ def repair_signing():
         'Use Update system afterwards to install newer keyring package versions.',
         flush=True,
     )
+    if not confirm('\nRun pacman-key as root now?'):
+        print('Nothing changed.', flush=True)
+        return 0
     for operation in ('--init', '--populate', '--updatedb'):
         result = run_terminal(['sudo', '--', 'pacman-key', operation])
         if result.returncode:
@@ -193,7 +234,7 @@ def repair_signing():
     return 0
 
 
-def check_package_health(offer_repair=True):
+def check_package_health(offer_repair=True, as_root=None):
     if not maintenance_available()['health']:
         raise ValueError('Package health checks require pacman.')
     print(
@@ -202,28 +243,54 @@ def check_package_health(offer_repair=True):
         flush=True,
     )
     database = run_terminal(['pacman', '-Dk'])
+    # Quiet output is one untranslated package/path line per file pacman could
+    # not lstat; other diagnostics go to stderr.
     files = run_terminal(['pacman', '-Qkq'], capture_output=True, text=True)
-    print(files.stdout, end='', flush=True)
-    print(files.stderr, end='', flush=True)
-    status = int(bool(database.returncode or files.returncode))
+    absent, unreadable, other = missing_files(files.stdout)
+    errors = files.stderr
+    # Unreadable files alone make pacman fail, but are not evidence of damage.
+    failed = files.returncode and (absent or other or errors.strip() or not unreadable)
+    if unreadable:
+        print('\nNot checked without root access (directory not readable):')
+        for package, path in unreadable:
+            print(f'  {package} {path}')
+        unchecked = sorted({package for package, _ in unreadable})
+        if as_root is None:
+            as_root = bool(shutil.which('sudo')) and confirm(
+                'Check these packages as root? This only reads files.'
+            )
+        if as_root:
+            root = run_terminal(
+                ['sudo', '--', 'pacman', '-Qkq', '--', *unchecked],
+                capture_output=True,
+                text=True,
+            )
+            found, _, extra = missing_files(root.stdout, privileged=True)
+            absent += found
+            other += extra
+            errors += root.stderr
+            failed = failed or root.returncode
+        else:
+            print(
+                'Check them with: ' + shlex.join(['sudo', 'pacman', '-Qk', *unchecked])
+            )
+    for line in other:
+        print(line)
+    if absent:
+        print('Missing package files:')
+        for package, path in absent:
+            print(f'  {package} {path}')
+    print(errors, end='')
+    status = int(bool(database.returncode or failed))
     if not status:
         print(
             '\nNo database inconsistencies or missing package files found.', flush=True
         )
         return 0
     print('\nChecks reported problems; review the output above.', flush=True)
-    # Quiet check output is one package/path pair per missing file. Only offer
-    # packages still present in enabled repositories; foreign packages need their
-    # original source. Never turn arbitrary diagnostic text into install targets.
-    missing = sorted(
-        {
-            parts[0]
-            for line in files.stdout.splitlines()
-            if len(parts := line.split(maxsplit=1)) == 2
-            and parts[1].startswith('/')
-            and re.fullmatch(r'[A-Za-z0-9@._+][A-Za-z0-9@._+\-]*', parts[0])
-        }
-    )
+    # Only offer packages still present in enabled repositories; foreign packages
+    # need their original source. Never turn diagnostic text into install targets.
+    missing = sorted({package for package, _ in absent})
     if not missing or not offer_repair:
         return status
     try:
@@ -242,14 +309,13 @@ def check_package_health(offer_repair=True):
     if not targets or not shutil.which('sudo'):
         return status
     print('\nRepository packages with missing files: ' + ', '.join(targets), flush=True)
-    answer = input('Reinstall these packages and run a full system update? [y/N] ')
-    if answer.strip().lower() not in ('y', 'yes'):
+    if not confirm('Reinstall these packages and run a full system update?'):
         return status
     result = run_terminal(['sudo', '--', 'pacman', '-Syu', '--', *targets])
     if result.returncode:
         return result.returncode
     print('\nChecking again after reinstalling…', flush=True)
-    return check_package_health(offer_repair=False)
+    return check_package_health(offer_repair=False, as_root=as_root)
 
 
 def run_action(action, scope='system', unit=''):

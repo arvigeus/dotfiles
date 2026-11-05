@@ -239,11 +239,31 @@ note.
 
 ## System
 
-`system/backend.py` reads Arch/systemd information on demand: boot phases, slow
-units, failed services and timers. It does not use Debian's reboot-required flag.
-Actions launch `package-maintenance`, `system-update` (with a Topgrade fallback),
-and logs in independent terminal
-units. Package maintenance and signing repair belong to the package modules.
+`system/backend.py` reads Arch/systemd information on demand, one section per open
+popover: OS, kernel and uptime; boot phases and slowest units; failed units and
+the next timers of both scopes. Reads are unprivileged, use the C locale and a
+three-second limit per command. A failed read is shown beside the other results,
+never as a healthy empty one. A missing `/usr/lib/modules/<running kernel>`
+signals a newer installed kernel; Arch has no reboot-required flag.
+
+Actions run `backend.py --action` through `xdg-terminal-exec` in their own UWSM
+unit, with the user's locale (under `LC_ALL=C` the journal pager escapes
+non-ASCII text). Update runs `system-update`, falling back to Topgrade; the
+[Topgrade module](../../system/package/topgrade/ARCHITECTURE.md) owns the
+post-update review. Logs open `journalctl -b` for a validated unit name or at
+warning priority. Sudo is passwordless, so the backend asks before every root
+command and prints it.
+
+Signing repair runs `pacman-key --init`, `--populate` and `--updatedb`, which keep
+custom keys and local signatures. Package health runs `pacman -Dk` and quiet
+`pacman -Qkq` as the user. Quiet output is untranslated `package path` lines for
+every file pacman cannot `lstat`, including permission errors, so the backend
+checks each path again. Files in root-only directories (`/boot`, `/var/named`) are
+unverified rather than missing and do not fail the check. An opt-in
+`sudo pacman -Qkq -- <packages>` checks them, and the recheck after a repair
+reuses that answer. Only missing files of repository packages (`pacman -Qnq`) are
+offered for reinstall, through `sudo pacman -Syu -- <packages>`, so a reinstall is
+never a partial upgrade. `tests/test_system_drawer.py` stubs pacman and sudo.
 
 ## Networking
 

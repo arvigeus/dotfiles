@@ -290,7 +290,8 @@ DrawerPage {
                             text: root.state.errors.userTimers || ""
                         }
                         Note {
-                            visible: !root.state.timers.length
+                            objectName: "systemTimersEmpty"
+                            visible: !root.state.errors.systemTimers && !root.state.errors.userTimers && !root.state.timers.length
                             text: qsTr("No scheduled timers reported.")
                         }
                         Repeater {

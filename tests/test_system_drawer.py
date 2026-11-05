@@ -1,6 +1,8 @@
 """System overview parsing and interactive actions; never updates the host."""
 
+from contextlib import redirect_stdout
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -35,7 +37,6 @@ def snapshot():
                 dict(label='Kernel', duration='2.5s'),
                 dict(label='Userspace', duration='20s'),
             ],
-            summary='',
         ),
         slow=[dict(unit='slow.service', duration='10s')],
         scopes=[
@@ -52,6 +53,9 @@ def snapshot():
 
 
 class SystemBackendTests(unittest.TestCase):
+    def setUp(self):
+        self.output = self.enterContext(redirect_stdout(io.StringIO()))
+
     def test_snapshots_only_read_the_requested_section(self):
         with (
             patch.object(backend, 'command', return_value='[]') as run,
@@ -167,6 +171,7 @@ class SystemBackendTests(unittest.TestCase):
             patch.object(
                 backend, 'run_terminal', return_value=SimpleNamespace(returncode=0)
             ) as run,
+            patch('builtins.input', return_value='y'),
         ):
             self.assertEqual(backend.run_action('repair-signing'), 0)
             self.assertEqual(
@@ -183,6 +188,29 @@ class SystemBackendTests(unittest.TestCase):
             ]
             self.assertEqual(backend.run_action('repair-signing'), 2)
             self.assertEqual(run.call_count, 2)
+
+    def test_signing_repair_needs_explicit_confirmation(self):
+        # Passwordless sudo gives no prompt of its own, so declining, an empty
+        # answer and a closed stdin must all leave the keyring untouched.
+        for answer in ('n', '', 'yes please', EOFError()):
+            with (
+                self.subTest(answer=answer),
+                patch.object(
+                    backend, 'maintenance_available', return_value=dict(signing=True)
+                ),
+                patch.object(backend, 'run_terminal') as run,
+                patch('builtins.input', side_effect=[answer]) as prompt,
+            ):
+                self.assertEqual(backend.run_action('repair-signing'), 0)
+                prompt.assert_called_once()
+                run.assert_not_called()
+        self.assertIn('Nothing changed.', self.output.getvalue())
+
+    def test_interactive_commands_keep_the_user_locale(self):
+        with patch.object(backend.subprocess, 'run') as run:
+            backend.run_terminal(['journalctl', '-b'])
+        # No env override: LC_ALL=C made the journal pager escape non-ASCII text.
+        self.assertNotIn('env', run.call_args.kwargs)
 
     def test_unavailable_maintenance_never_launches_commands(self):
         with (
@@ -284,6 +312,141 @@ class SystemBackendTests(unittest.TestCase):
             self.assertEqual(run.call_count, 4)
             prompt.assert_not_called()
 
+    def locked_tree(self):
+        """Return (absent path, path in a directory the test user cannot search)."""
+        if os.geteuid() == 0:
+            self.skipTest('root can read every directory')
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        locked = root / 'locked'
+        locked.mkdir()
+        (locked / 'present').write_text('')
+        locked.chmod(0)
+        self.addCleanup(locked.chmod, 0o700)
+        return root / 'absent', locked / 'present'
+
+    def test_unreadable_files_are_unchecked_not_missing(self):
+        # Unprivileged pacman -Qkq lists files under /boot (0700) or /var/named
+        # as missing. Repairing those would rewrite boot images and still fail.
+        absent, unreadable = self.locked_tree()
+        self.assertEqual(
+            backend.missing_files(
+                f'kept {absent}\nboot {unreadable}\n--flag /x\nnot a pair\n'
+            ),
+            (
+                [('kept', str(absent))],
+                [('boot', str(unreadable))],
+                ['--flag /x', 'not a pair'],
+            ),
+        )
+
+        def checks(files):
+            return [SimpleNamespace(returncode=0), files]
+
+        with (
+            patch.object(
+                backend, 'maintenance_available', return_value=dict(health=True)
+            ),
+            patch.object(backend, 'run_terminal') as run,
+            patch.object(backend, 'command', return_value='kept\nboot\n') as native,
+            patch.object(backend.shutil, 'which', return_value='/usr/bin/sudo'),
+            patch('builtins.input', return_value='n') as prompt,
+        ):
+            run.side_effect = checks(
+                SimpleNamespace(returncode=1, stdout=f'boot {unreadable}\n', stderr='')
+            )
+            self.assertEqual(backend.check_package_health(), 0)
+            native.assert_not_called()
+            self.assertEqual(run.call_count, 2, 'declined root check still ran')
+            prompt.assert_called_once()
+            self.assertIn('as root?', prompt.call_args.args[0])
+            self.assertIn(
+                'Check them with: sudo pacman -Qk boot', self.output.getvalue()
+            )
+            self.assertIn('No database inconsistencies', self.output.getvalue())
+            prompt.reset_mock()
+
+            # Only the genuinely missing file becomes a repair target.
+            run.side_effect = checks(
+                SimpleNamespace(
+                    returncode=1,
+                    stdout=f'boot {unreadable}\nkept {absent}\n',
+                    stderr='',
+                )
+            )
+            self.assertEqual(backend.check_package_health(), 1)
+            self.assertIn(
+                'Repository packages with missing files: kept\n', self.output.getvalue()
+            )
+            self.assertEqual(prompt.call_count, 2)
+
+            # A failure with nothing to explain it, or with diagnostics, still fails.
+            for stdout, stderr in (('', ''), (f'boot {unreadable}\n', 'error: x\n')):
+                run.side_effect = checks(
+                    SimpleNamespace(returncode=1, stdout=stdout, stderr=stderr)
+                )
+                self.assertEqual(backend.check_package_health(offer_repair=False), 1)
+            run.side_effect = [
+                SimpleNamespace(returncode=1),
+                SimpleNamespace(returncode=1, stdout=f'boot {unreadable}\n', stderr=''),
+            ]
+            self.assertEqual(backend.check_package_health(), 1)
+
+    def test_root_check_is_opt_in_read_only_and_reused_after_repair(self):
+        _, unreadable = self.locked_tree()
+        user = SimpleNamespace(returncode=1, stdout=f'boot {unreadable}\n', stderr='')
+        lost = SimpleNamespace(returncode=1, stdout='boot /boot/ucode.img\n', stderr='')
+        clean = SimpleNamespace(returncode=0, stdout='', stderr='')
+        ok = SimpleNamespace(returncode=0)
+        root = call(
+            ['sudo', '--', 'pacman', '-Qkq', '--', 'boot'],
+            capture_output=True,
+            text=True,
+        )
+        with (
+            patch.object(
+                backend, 'maintenance_available', return_value=dict(health=True)
+            ),
+            patch.object(backend, 'run_terminal') as run,
+            patch.object(backend, 'command', return_value='boot\n'),
+            patch.object(backend.shutil, 'which', return_value='/usr/bin/sudo'),
+            patch('builtins.input') as prompt,
+        ):
+            # Root sees every file: the unverified one is present.
+            run.side_effect, prompt.side_effect = [ok, user, clean], ['y']
+            self.assertEqual(backend.check_package_health(), 0)
+            self.assertEqual(run.call_args_list[2], root)
+            self.assertNotIn('Check them with', self.output.getvalue())
+
+            # Root reports it missing: it becomes a repair target.
+            run.reset_mock()
+            run.side_effect, prompt.side_effect = [ok, user, lost], ['y', 'n']
+            self.assertEqual(backend.check_package_health(), 1)
+            self.assertIn(
+                'Missing package files:\n  boot /boot/ucode.img\n',
+                self.output.getvalue(),
+            )
+            self.assertEqual(run.call_count, 3)
+
+            # Root diagnostics are a failure, never targets.
+            run.reset_mock()
+            failed = SimpleNamespace(returncode=1, stdout='', stderr='error: x\n')
+            run.side_effect, prompt.side_effect = [ok, user, failed], ['y']
+            self.assertEqual(backend.check_package_health(), 1)
+            self.assertEqual(run.call_count, 3)
+
+            # After an accepted repair the recheck reuses the root decision.
+            run.reset_mock()
+            prompt.reset_mock()
+            run.side_effect = [ok, user, lost, ok, ok, user, clean]
+            prompt.side_effect = ['y', 'y']
+            self.assertEqual(backend.check_package_health(), 0)
+            self.assertEqual(
+                run.call_args_list[3],
+                call(['sudo', '--', 'pacman', '-Syu', '--', 'boot']),
+            )
+            self.assertEqual(run.call_args_list[6], root)
+            self.assertEqual(prompt.call_count, 2)
+
     def test_health_cli_retains_exit_status_and_only_runs_stub_checks(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
@@ -296,19 +459,37 @@ with Path(os.environ['COMMAND_LOG']).open('a') as log: log.write(' '.join(sys.ar
 if os.environ['BROKEN'] == '1':
  if sys.argv[1:] == ['-Qkq']: print('broken /usr/bin/missing'); sys.exit(1)
  if sys.argv[1:] == ['-Qnq']: print('broken')
+if os.environ['BROKEN'] == 'locked' and sys.argv[1:] == ['-Qkq']:
+ print('amd-ucode', os.environ['LOCKED']); sys.exit(1)
 """
             )
             pacman.chmod(0o755)
-            # Even when sudo exists, declining must never invoke it.
+            # Sudo exists, but may only run the read-only root file check.
             sudo = folder / 'sudo'
             sudo.write_text(
-                f'#!{sys.executable}\nraise RuntimeError("Unexpected mutation")\n'
+                f'#!{sys.executable}\n'
+                + """import os,sys
+args = sys.argv[1:]
+if args[:3] != ['--', 'pacman', '-Qkq'] or args[3:4] != ['--']:
+ raise RuntimeError('Unexpected mutation')
+os.execvp(args[1], args[1:])
+"""
             )
             sudo.chmod(0o755)
-            for broken, expected, commands in [
-                ('0', 0, ['-Dk', '-Qkq']),
-                ('1', 1, ['-Dk', '-Qkq', '-Qnq']),
-            ]:
+            locked = folder / 'boot'
+            locked.mkdir()
+            (locked / 'amd-ucode.img').write_text('')
+            locked.chmod(0)  # TemporaryDirectory restores access to clean up.
+            cases = [
+                ('0', 'n', 0, ['-Dk', '-Qkq']),
+                ('1', 'n', 1, ['-Dk', '-Qkq', '-Qnq']),
+            ]
+            if os.geteuid():
+                cases += [
+                    ('locked', 'n', 0, ['-Dk', '-Qkq']),
+                    ('locked', 'y', 0, ['-Dk', '-Qkq', '-Qkq -- amd-ucode']),
+                ]
+            for broken, answer, expected, commands in cases:
                 log = folder / 'commands'
                 log.write_text('')
                 result = subprocess.run(
@@ -318,8 +499,9 @@ if os.environ['BROKEN'] == '1':
                         PATH=str(folder),
                         COMMAND_LOG=str(log),
                         BROKEN=broken,
+                        LOCKED=str(locked / 'amd-ucode.img'),
                     ),
-                    input='n\n\n',
+                    input=answer + '\n\n',
                     text=True,
                     capture_output=True,
                     timeout=10,
@@ -329,6 +511,12 @@ if os.environ['BROKEN'] == '1':
                 )
                 self.assertIn(f'Finished (exit {expected})', result.stdout)
                 self.assertEqual(log.read_text().splitlines(), commands)
+                if broken == 'locked':
+                    self.assertNotIn('Reinstall', result.stdout)
+                    self.assertEqual(
+                        'Check them with: sudo pacman -Qk amd-ucode' in result.stdout,
+                        answer == 'n',
+                    )
 
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
@@ -373,6 +561,13 @@ ShellRoot {
    check(Math.abs(page.bootPopover.width-page.width)<2,"boot popover squeezed");capture("system-boot",page.bootPopover.contentItem,()=>find(page,"systemServices").clicked());
   }else if(stage===2){
    check(page.servicesPopover.visible&&!page.bootPopover.visible,"popovers not exclusive");
+   const empty=find(page.servicesPopover.contentItem,"systemTimersEmpty"),saved=mock.state;
+   check(empty&&!empty.visible,"empty timer note shown beside timers");
+   mock.state=Object.assign({},saved,{timers:[],errors:{userTimers:"User bus unavailable"}});
+   check(!empty.visible,"failed timer read reported as no timers");
+   mock.state=Object.assign({},saved,{timers:[]});
+   check(empty.visible,"empty timer note missing");
+   mock.state=saved;
    page.logs("user","broken.service");check(root.calls[1].join("|")==="logs|user|broken.service","log scope lost");capture("system-services",page.servicesPopover.contentItem,()=>header.item.clicked());
   }else if(stage===3){
    check(!page.servicesPopover.visible&&page.informationPopup?.visible&&page.escapeHandler,"information popup not exclusive");
@@ -460,3 +655,29 @@ ShellRoot {
 """,
             setup,
         )
+
+    def test_service_releases_a_read_whose_helper_cannot_start(self):
+        # Quickshell emits no exited signal when python3 cannot be started.
+        with tempfile.TemporaryDirectory() as empty, patch.dict(os.environ, PATH=empty):
+            self.run_qml(
+                """import QtQuick
+import Quickshell
+import "drawers/system"
+ShellRoot {
+ SystemService { id: service; section: "info" }
+ function check(value,message){if(!value)throw new Error(message);}
+ property int stage:0
+ Timer{interval:200;repeat:true;running:true;onTriggered:{try{
+  if(stage===0)service.active=true;
+  else if(stage===1){
+   check(!service.busy&&!service.loaded&&service.error!=="","failed start left the read pending");
+   service.refresh();
+  }else if(stage===2){
+   check(!service.busy&&service.error!=="","retry after a failed start did not settle");
+   console.log("DISPLAY_PASS");Qt.quit();return;
+  }
+  stage++;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e.message);Qt.quit();}}}
+}
+"""
+            )

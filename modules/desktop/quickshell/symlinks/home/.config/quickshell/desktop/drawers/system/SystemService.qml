@@ -19,8 +19,7 @@ Item {
             kernelChanged: false,
             boot: {
                 phases: [],
-                total: "",
-                summary: ""
+                total: ""
             },
             slow: [],
             scopes: [],
@@ -107,6 +106,12 @@ Item {
             } catch (_) {
                 root.error = qsTr("Could not read system information. Close and reopen this popup to retry.");
             }
+        }
+        // A helper that cannot start emits no exited signal; release the read
+        // so later refreshes are not blocked behind it.
+        onRunningChanged: if (!running && root.readingSection) {
+            root.readingSection = "";
+            root.error = qsTr("Could not read system information. Close and reopen this popup to retry.");
         }
     }
 }
