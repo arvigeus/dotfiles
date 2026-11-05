@@ -43,7 +43,7 @@ ShellRoot {
         WallpaperBackground {
             required property ShellScreen modelData
             output: modelData
-            external: wallpaperRuntime.externalScreens.includes(modelData.name)
+            external: wallpaperRuntime.externalScreens.includes(modelData?.name)
         }
     }
     NotificationPopups {}

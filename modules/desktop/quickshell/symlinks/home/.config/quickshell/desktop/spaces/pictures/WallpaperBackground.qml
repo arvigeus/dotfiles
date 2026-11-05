@@ -26,7 +26,8 @@ PanelWindow {
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
         cache: false
-        sourceSize.width: Math.ceil(root.width * root.output.devicePixelRatio)
-        sourceSize.height: Math.ceil(root.height * root.output.devicePixelRatio)
+        // A removed output leaves the delegate briefly without a screen.
+        sourceSize.width: Math.ceil(root.width * (root.output?.devicePixelRatio ?? 1))
+        sourceSize.height: Math.ceil(root.height * (root.output?.devicePixelRatio ?? 1))
     }
 }

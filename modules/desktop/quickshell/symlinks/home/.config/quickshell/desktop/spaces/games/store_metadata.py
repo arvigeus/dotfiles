@@ -77,7 +77,7 @@ def steam_details(raw, app_id):
         'summary': plain_text(
             data.get('short_description') or data.get('about_the_game')
         ),
-        'cover': image(data.get('header_image')),
+        # header_image is landscape; posters use the library_600x900 asset.
         'artwork': [art]
         if (art := image(data.get('background_raw') or data.get('background')))
         else [],

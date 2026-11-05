@@ -4,12 +4,17 @@ Open **Spaces → Games** for Steam/Epic/GOG libraries, IGDB discovery, favorite
 ProtonDB ratings, title artwork, playtime and HowLongToBeat estimates.
 Installed Steam games and public store descriptions work without API keys.
 
-**Filters → NSFW** includes adult games when checked; it starts unchecked and
-remembers your choice. It uses GOG's NSFW tag and Steam's adult-only/frequent
-sexual-content labels. Steam/GOG games without labels stay hidden until classified;
-saved labels work offline. Epic games and local files are not classified.
-If Steam is unreachable, unclassified Steam games remain hidden; check NSFW to
-include them. Refresh retries the connection while preserving saved metadata.
+**Filters → NSFW** in the header shows adult games while highlighted; it starts
+off and remembers your choice. It hides games that GOG tags NSFW or that Steam
+rates for adult or frequent sexual content. Steam games known to your Steam client
+are classified offline from its cache; other Steam titles share one request per
+100 games. GOG uses one weekly listing of every NSFW-tagged product; it omits
+GOG's unlisted ("secret") products, such as Agony, so those stay visible. A new
+title stays hidden only until its first lookup. Games without a store label (Epic, local files, or a store that is
+unreachable) stay visible. Hover the toggle for counts; Refresh retries
+unreachable stores.
+
+The ProtonDB badge shows **Native** when Steam offers a Linux build.
 
 Configure `~/.config/quickshell/desktop/spaces/games/games.json` using
 [games.example.json](games.example.json). A Twitch application's
@@ -17,7 +22,10 @@ Configure `~/.config/quickshell/desktop/spaces/games/games.json` using
 and 17-digit `steam_id` enable ownership checks for a public Steam profile.
 Sign into Epic with `legendary auth`; the Legendary module supplies its launcher
 and UMU. Steam and Legendary accounts require sign-in after a fresh installation.
-Epic installations show progress on the store button and speed/ETA below it;
+Epic purchases appear after **Refresh**; Games re-reads Epic ownership every few
+hours and keeps the saved list while Epic is unreachable. After an uninstall, the
+store button updates once the launcher finishes. Epic installations show progress
+on the store button and speed/ETA below it;
 **Downloads** lists tracked installs. Downloads continue when Games closes, and
 reopening restores their progress. Click Install again to retry a failed download.
 

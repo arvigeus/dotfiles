@@ -58,12 +58,18 @@ QtObject {
     fixture = (
         '\n'.join(
             [
-                '    GamesBackend.libraries = lambda self, force=False: ' + repr(state),
+                '    GamesBackend.libraries = lambda self, *args, **kwargs: '
+                + repr(state),
                 '    GamesBackend.library_games = lambda self, request: self._favorite_games("", 0)',
                 '    GamesBackend.presentation = lambda self, request: {}',
                 '    GamesBackend.protondb = lambda self, request: dict(tier="gold",label="Gold",total=42,url="https://www.protondb.com/app/620")',
                 '    GamesBackend.howlongtobeat = lambda self, request: dict(main=10, extras=15, complete=20, override="", url="https://howlongtobeat.com/game/1")',
                 '    GamesBackend.action = lambda self, request: dict(started=True, handoff=True, message="Fixture launcher handoff")',
+                # Never read the host's Steam client or contact a storefront.
+                '    GamesBackend._steam_roots = lambda self: []',
+                '    def fixture_offline(self, *args, **kwargs):',
+                "        raise GamesError('Fixture offline')",
+                '    GamesBackend._http_json = fixture_offline',
             ]
         )
         + '\n'
@@ -116,6 +122,7 @@ def setup_content(root):
         ('456', 'Explicit game'),
         ('457', 'Ordinary game'),
         ('458', 'Unchecked game'),
+        ('459', 'Untagged game'),
     ]:
         game = worker._save_game(
             'content-' + identifier,
@@ -128,18 +135,76 @@ def setup_content(root):
             ),
         )
         worker.set_favorite(dict(gameId=game['id'], favorite=True))
-    worker._cache_put('native-content:v1:gog:456', True)
-    worker._cache_put('native-content:v1:gog:457', False)
     path = root / 'spaces/games/backend.py'
     path.write_text(
         path.read_text().replace(
             '    backend = GamesBackend()\n',
             """
     def fixture_content_request(self, url, *args):
+        # One pass over GOG's NSFW-tagged catalogue classifies every game.
+        assert url.startswith('https://catalog.gog.com/v1/catalog?')
         time.sleep(0.5)
-        identifier = url.split('/games/')[1].split('?')[0]
-        return dict(_embedded=dict(product=dict(id=int(identifier)), properties=[dict(slug='nsfw')]))
+        return dict(pages=1, products=[dict(id=identifier, tags=[dict(slug='nsfw')])
+                                       for identifier in ('456', '458')])
     GamesBackend._http_json = fixture_content_request
+    backend = GamesBackend()
+""",
+        )
+    )
+
+
+def setup_selection(root):
+    setup(root)
+    worker = GamesBackend(
+        root / 'config/quickshell/desktop/spaces/games/games.json',
+        root / 'data/quickshell/desktop/spaces/games',
+    )
+    game = worker._save_game(
+        'second',
+        dict(
+            catalogProvider='fixture', catalogProviderId='second', title='Second game'
+        ),
+    )
+    worker.set_favorite(dict(gameId=game['id'], favorite=True))
+    path = root / 'spaces/games/backend.py'
+    path.write_text(
+        path.read_text().replace(
+            '    backend = GamesBackend()\n',
+            """
+    def fixture_availability(self, request):
+        # An older, slower hydration of the same game must not win.
+        if not request.get('refresh'):
+            time.sleep(0.6)
+        label = 'Fresh' if request.get('refresh') else 'Stale'
+        return dict(stores=[dict(store='steam', label='Steam', externalId='620',
+            primaryAction=dict(type='disabled', label=label, enabled=False), actions=[])])
+    GamesBackend.availability = fixture_availability
+    backend = GamesBackend()
+""",
+        )
+    )
+
+
+def setup_uninstall(root):
+    setup(root)
+    path = root / 'spaces/games/backend.py'
+    path.write_text(
+        path.read_text().replace(
+            '    backend = GamesBackend()\n',
+            """
+    def fixture_removed(self):
+        return (self.data_root / 'uninstalled').exists()
+    def fixture_availability(self, request):
+        installed = not fixture_removed(self)
+        kind = 'play' if installed else 'install'
+        return dict(stores=[dict(store='epic', label='Epic', externalId='Fixture', installed=installed,
+            primaryAction=dict(id='epic:' + kind + ':Fixture', type=kind, store='epic',
+                               label=kind.title(), enabled=True), actions=[])])
+    def fixture_uninstall(self, request):
+        (self.data_root / 'uninstalled').write_text('')
+        return dict(started=True, message='Epic uninstall started in Legendary.')
+    GamesBackend.availability = fixture_availability
+    GamesBackend.action = fixture_uninstall
     backend = GamesBackend()
 """,
         )
@@ -150,19 +215,40 @@ def setup_content(root):
 class GamesSpaceTests(unittest.TestCase):
     run_qml = support.run_qml
 
-    def test_hydration_skips_hidden_games_and_survives_pagination(self):
-        def setup_hydration(root):
+    def test_scrolling_the_library_makes_no_per_game_requests(self):
+        def setup_large(root):
             setup(root)
+            worker = GamesBackend(
+                root / 'config/quickshell/desktop/spaces/games/games.json',
+                root / 'data/quickshell/desktop/spaces/games',
+            )
+            for index in range(119):
+                game = worker._save_game(
+                    f'bulk-{index}',
+                    dict(
+                        catalogProvider='library',
+                        catalogProviderId=f'bulk-{index}',
+                        title=f'Game {index:03}',
+                        storeReferences=[
+                            dict(store='steam', externalId=str(1000 + index))
+                        ],
+                    ),
+                )
+                worker.set_favorite(dict(gameId=game['id'], favorite=True))
             path = root / 'spaces/games/backend.py'
             path.write_text(
                 path.read_text().replace(
                     '    backend = GamesBackend()\n',
                     """
-    def fixture_metadata(self, request):
-        time.sleep(0.4)
-        game = dict(self._catalog_id(request['gameId'])[1], summary='Hydrated', metadataPending=False)
-        return dict(game=game)
-    GamesBackend.library_metadata = fixture_metadata
+    GamesBackend.library_games = lambda self, request: self._favorite_games('', int(request.get('offset') or 0))
+    original_handle = GamesBackend.handle
+    def fixture_handle(self, request):
+        counts = self.__dict__.setdefault('fixture_ops', {})
+        if request.get('op') == 'fixture_ops':
+            return dict(counts)
+        counts[request['op']] = counts.get(request['op'], 0) + 1
+        return original_handle(self, request)
+    GamesBackend.handle = fixture_handle
     backend = GamesBackend()
 """,
                 )
@@ -177,45 +263,33 @@ ShellRoot {
  InteractionState {id:interactions}
  SpaceHost {id:host;interactionState:interactions}
  property int step:0
+ property var ops:null
  function check(value,message){if(!value)throw new Error(message);}
  function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
- Timer {interval:30;running:true;repeat:true;onTriggered:{try{
+ Timer {id:driver;interval:60;running:true;repeat:false;onTriggered:{try{
   if(root.step===0){SpaceState.open("games",Quickshell.screens[0]);root.step++;return;}
-  const page=host.currentPage;if(!page||page.loading||page.detailLoading||!page.titles.length)return;
-  const service=find(page,"gamesService");
+  const page=host.currentPage;if(!page||page.initializing)return;
+  const service=find(page,"gamesService");const rail=find(page,"gamesRail");
   if(root.step===1){
-   if(service.pendingCount)return;
-   const serial=service.serial;
-   page.metadataQueue=["hidden","unknown"];
-   page.hydrateLibrary();
-   check(service.serial===serial&&!page.metadataBusy,"hidden games started metadata requests");
-   const game=Object.assign({},page.titles[0],{metadataPending:true});
-   page.allTitles=[game,{id:"hidden",title:"Hidden",metadataPending:true,content:{supported:true,nsfw:true,pending:false}}];
-   page.setNsfwIncluded(true);
-   check(page.metadataQueue.includes("hidden"),"including NSFW did not queue newly visible metadata");
-   page.setNsfwIncluded(false);
-   page.selected={};page.titles=[game];page.allTitles=[game];
-   page.metadataQueue=[game.id];page.contentBusy=1;
-   page.hydrateLibrary();
-   check(service.serial===serial&&!page.metadataBusy,"metadata competed with content classification");
-   page.contentBusy=0;page.hydrateLibrary();
-   check(page.metadataBusy,"visible metadata did not start");
-   const generation=page.browseGeneration;page.nextOffset=1;page.browse(true);
-   check(page.browseGeneration===generation,"appending invalidated in-flight metadata");
-   root.step++;return;
+   if(page.nextOffset||page.loading){rail.positionViewAtEnd();return;}
+   if(page.titles.length!==120||service.pendingCount)return;
+   service.request("fixture_ops",{},result=>{root.ops=result;});root.step++;return;
   }
   if(root.step===2){
-   if(page.metadataBusy)return;
-   check(page.allTitles[0].summary==="Hydrated","pagination discarded metadata response");
+   if(!root.ops)return;
+   check(root.ops.library_games===3,"paging did not load three pages: "+JSON.stringify(root.ops));
+   check(root.ops.details===1,"scrolling requested details for unselected games: "+JSON.stringify(root.ops));
+   check((root.ops.content_rating||0)<=6,"classification was not batched: "+JSON.stringify(root.ops));
+   check(!root.ops.library_metadata,"background metadata hydration returned");
    SpaceState.close("games");console.log("DISPLAY_PASS");Qt.quit();
   }
- }catch(error){console.error("DISPLAY_FAIL",error);Qt.quit();}}}
- Timer {interval:10000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",root.step);Qt.quit();}}
+ }catch(error){console.error("DISPLAY_FAIL",error);Qt.quit();}finally{driver.restart();}}}
+ Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",root.step,host.currentPage?.titles.length,JSON.stringify(root.ops));Qt.quit();}}
 }""",
-            setup=setup_hydration,
+            setup=setup_large,
         )
 
-    def test_native_content_filter_hides_pending_artwork_clears_selection_and_persists(
+    def test_header_nsfw_filter_hides_labelled_and_unclassified_games_and_persists(
         self,
     ):
         self.run_qml(
@@ -230,38 +304,47 @@ ShellRoot {
  SpaceHost {id:host;interactionState:interactions}
  TestCase {id:input;when:false;parent:host.contentItem}
  property int step:0
+ property bool classifying:false
  function check(value,message){if(!value)throw new Error(message);}
  function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
  Timer {id:driver;interval:30;running:true;repeat:false;onTriggered:{try{
   if(root.step===0){SpaceState.open("games",Quickshell.screens[0]);root.step++;return;}
-  const page=host.currentPage;if(!page||page.allTitles.length!==4)return;
-  const toggle=find(page,"gameContentFilter");
-  const filters=find(page.toolbarTarget,"gameFiltersButton");
+  const page=host.currentPage;if(!page||page.allTitles.length!==5)return;
+  const toolbar=find(page.toolbarTarget,"gamesToolbar");
+  const toggle=find(toolbar,"gameContentFilter");
+  const filters=find(toolbar,"gameFiltersButton");
+  const status=toggle.data.find(item=>item.objectName==="gameContentStatus");
   if(root.step===1){
-   check(page.hideNsfw&&!toggle.checked,"NSFW must default unchecked");
+   check(page.hideNsfw&&!toggle.highlighted&&toggle.Accessible.checked===false,"NSFW must default to hidden");
+   check(!find(page,"gameContentFilter")&&!find(page,"gameContentStatus"),"NSFW filter is outside the header");
    check(!page.filtersOpen&&!toggle.visible,"NSFW control shown outside collapsed filters");
-   check(!find(page,"gameContentStatus").visible,"NSFW status shown outside collapsed filters");
-   check(page.titles.length===2,"unclassified or explicit artwork reached catalogue");
-   check(page.titles.every(game=>!['Explicit game','Unchecked game'].includes(game.title)),"hidden game became visible");
    check(find(page.backdropTarget,"gamesBackdrop").retainPreviousFor===1000,"backdrop does not retain the previous image during selection");
-   if(page.contentBusy||page.contentQueue.length)return;
-   check(page.contentHidden===2&&page.contentUnclassified===0,"native result not applied");
+   if(page.contentBusy||page.contentQueue.length){
+    root.classifying=true;
+    check(page.titles.length===1&&page.titles[0].title==='Fixture game',"unclassified artwork reached catalogue");
+    return;
+   }
+   check(root.classifying,"classification was not observed");
+   check(page.contentHidden===2&&page.contentAwaiting===0&&page.contentUnlabelled===0,"native results not applied: "+[page.contentHidden,page.contentAwaiting,page.contentUnlabelled]);
+   check(page.titles.length===3&&['Fixture game','Ordinary game','Untagged game'].every(title=>page.titles.some(game=>game.title===title)),"untagged games stayed hidden");
+   check(status.text.includes("2 hidden by store labels")&&!status.text.includes("without store labels"),"NSFW tooltip lacks counts: "+status.text);
    check(filters.enabled,"library content filter requires catalogue credentials");
    input.mouseClick(filters);
    input.wait(40);
-   check(toggle.visible&&toggle.text==='NSFW',"NSFW checkbox missing from Filters");
-   check(!find(page,"genrePicker").visible,"catalogue controls shown in library filters");
+   const header=toolbar.mapToItem(host.contentItem,0,0);const placed=toggle.mapToItem(host.contentItem,0,0);
+   check(toggle.visible&&toggle.text==='NSFW'&&placed.y>=header.y&&placed.y+toggle.height<=header.y+toolbar.height+1,"NSFW toggle is not inline in the header");
+   check(!find(toolbar,"genrePicker").visible,"catalogue controls shown in library filters");
    input.mouseClick(toggle);
-   check(toggle.checked&&!page.hideNsfw&&page.titles.length===4,"checking NSFW lost hidden games");
+   check(toggle.highlighted&&!page.hideNsfw&&page.titles.length===5,"including NSFW lost hidden games");
    page.selectGame(page.titles.find(game=>game.title==='Explicit game'));
    check(page.selected.title==='Explicit game',"explicit selection unavailable with filter off");
    input.mouseClick(toggle);
-   check(!toggle.checked&&page.hideNsfw&&page.titles.length===2&&page.selected.title!=='Explicit game',"unchecking NSFW retained explicit details");
+   check(!toggle.highlighted&&page.hideNsfw&&page.titles.length===3&&page.selected.title!=='Explicit game',"hiding NSFW retained explicit details");
    page.showMode("favorites");root.step++;return;
   }
   if(root.step===2){
    if(page.loading)return;
-   check(page.titles.length===2,"Favorites bypassed content filter");
+   check(page.titles.length===3,"Favorites bypassed content filter");
    check(!toggle.visible&&!page.filtersOpen,"view change left Filters open");
    input.mouseClick(filters);
    input.wait(40);
@@ -270,7 +353,7 @@ ShellRoot {
   }
   if(root.step===3){
    if(page.loading)return;
-   check(toggle.checked&&!page.hideNsfw&&page.titles.length===4,"NSFW preference lost on reopening");
+   check(toggle.highlighted&&!page.hideNsfw&&page.titles.length===5,"NSFW preference lost on reopening");
    check(!toggle.visible&&!page.filtersOpen,"reopening exposed NSFW control");
    input.mouseClick(filters);
    input.wait(40);
@@ -279,13 +362,115 @@ ShellRoot {
   }
   if(root.step===4){
    if(page.loading)return;
-   check(!toggle.checked&&page.hideNsfw&&page.titles.length===2,"unchecked preference lost on reopening");
+   check(!toggle.highlighted&&page.hideNsfw&&page.titles.length===3,"hidden preference or saved labels lost on reopening");
    SpaceState.close("games");console.log("DISPLAY_PASS");Qt.quit();
   }
  }catch(error){console.error("DISPLAY_FAIL",error);Qt.quit();}finally{driver.restart();}}}
  Timer {interval:10000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at step",root.step);Qt.quit();}}
 }""",
             setup=setup_content,
+        )
+
+    def test_rehydration_order_match_edits_row_patches_and_idle_polling(self):
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState {id:interactions}
+ SpaceHost {id:host;interactionState:interactions}
+ property int step:0
+ property int serial:0
+ property double since:0
+ property string chosen:""
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ Timer {id:driver;interval:40;running:true;repeat:false;onTriggered:{try{
+  if(root.step===0){SpaceState.open("games",Quickshell.screens[0]);root.step++;return;}
+  const page=host.currentPage;if(!page||page.titles.length!==2)return;
+  const service=find(page,"gamesService");const rail=find(page,"gamesRail");
+  if(root.step===1){
+   if(page.busy)return;
+   page.selectGame(page.titles[1]);root.chosen=page.selected.id;root.step++;return;
+  }
+  if(root.step===2){
+   if(page.busy)return;
+   // The slower, older hydration is already running when the refresh starts.
+   page.hydrateSelection(false);root.since=Date.now();root.step++;return;
+  }
+  if(root.step===3){
+   if(Date.now()-root.since<150)return;
+   page.hydrateSelection(true);root.step++;return;
+  }
+  if(root.step===4){
+   if(service.pendingCount)return;
+   check(page.availability.stores[0].primaryAction.label==="Fresh","an older hydration replaced newer store state");
+   check(!page.detailError.includes("superseded"),"overlapping hydration reported: "+page.detailError);
+   const matching=Array.from(page.data).find(item=>item.objectName==="gameMatchDialog");
+   page.editMatch("steam","");find(matching.contentItem,"gameMatchInput").text="620";page.saveMatch();root.step++;return;
+  }
+  if(root.step===5){
+   if(service.pendingCount||page.busy)return;
+   check(page.selected.id===root.chosen,"saving a store link changed the selection");
+   const edited=page.titles.find(game=>game.id===root.chosen);
+   check(edited&&edited.content.supported&&edited.content.nsfw===null&&!edited.content.awaiting,"the new Steam link was not classified: "+JSON.stringify(edited&&edited.content));
+   const index=page.titles.findIndex(game=>game.id===root.chosen);
+   page.patchGame({id:root.chosen,title:"Renamed game"});
+   check(rail.itemAtIndex(index).text==="Renamed game"&&page.titles[index].title==="Renamed game","row patch did not reach the poster");
+   page.patchGame({id:root.chosen,content:{supported:true,nsfw:true,pending:false,awaiting:false}});
+   check(page.titles.length===1&&page.selected.id!==root.chosen,"an NSFW patch kept the game visible");
+   page.patchGame({id:root.chosen,content:{supported:true,nsfw:false,pending:false,awaiting:false}});
+   check(page.titles.length===2&&page.titles.some(game=>game.id===root.chosen),"a cleared label did not restore the game");
+   root.since=Date.now();root.step++;return;
+  }
+  if(root.step===6){
+   // Let the reselection's hydration settle before measuring idle traffic.
+   if(Date.now()-root.since<300||service.pendingCount)return;
+   root.serial=service.serial;root.since=Date.now();root.step++;return;
+  }
+  if(root.step===7){
+   if(Date.now()-root.since<1800)return;
+   check(service.serial===root.serial,"idle Games kept polling the worker");
+   SpaceState.close("games");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(error){console.error("DISPLAY_FAIL",error);Qt.quit();}finally{driver.restart();}}}
+ Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at step",root.step);Qt.quit();}}
+}""",
+            setup=setup_selection,
+        )
+
+    def test_uninstall_rechecks_the_launcher_until_the_game_is_removed(self):
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState {id:interactions}
+ SpaceHost {id:host;interactionState:interactions}
+ property int step:0
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ Timer {id:driver;interval:40;running:true;repeat:false;onTriggered:{try{
+  if(root.step===0){SpaceState.open("games",Quickshell.screens[0]);root.step++;return;}
+  const page=host.currentPage;if(!page||page.busy)return;
+  const button=find(page,"gameStoreAction:epic");
+  if(root.step===1){
+   if(!button||button.text!=="Play")return;
+   page.availabilityRecheckDelays=[150,400];
+   page.execute({id:"epic:uninstall:Fixture",type:"uninstall",store:"epic"});root.step++;return;
+  }
+  if(root.step===2){
+   if(button.text!=="Install")return;
+   check(host.opened,"uninstall hid Games");
+   check(!page.availabilityChecks.length,"rechecks continued after the launcher changed");
+   SpaceState.close("games");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(error){console.error("DISPLAY_FAIL",error);Qt.quit();}finally{driver.restart();}}}
+ Timer {interval:8000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at step",root.step);Qt.quit();}}
+}""",
+            setup=setup_uninstall,
         )
 
     def test_epic_install_progress_download_panel_and_reopen(self):
@@ -309,7 +494,6 @@ ShellRoot {
   const button=find(page,"gameStoreAction:epic");
   if(root.step===1){
    if(!button||button.text!=="Install"||page.busy)return;
-   page.metadataBusy=true;page.metadataQueue=["one","two"];
    input.mouseClick(button);root.step++;return;
   }
   if(root.step===2){
@@ -321,7 +505,7 @@ ShellRoot {
    const status=find(page,"gameInstallStatus");
    check(status.visible&&status.text.includes("8.5 MiB/s")&&status.text.includes("ETA 00:00:03"),"speed/ETA missing");
    const activity=find(page.toolbarTarget,"spaceActivityIndicator");
-   check(activity.tooltipText.includes("25%")&&activity.tooltipText.includes("3 remaining"),"install hidden by metadata activity");
+   check(activity.tooltipText.includes("25%"),"install missing from the activity indicator");
    input.mouseClick(find(page.toolbarTarget,"gameDownloads"));input.wait(40);
    const downloads=find(page,"gameFindContent");
    const panel=Array.from(downloads.data).find(item=>item.objectName==="downloadJobsPanel");
@@ -371,6 +555,9 @@ ShellRoot {
    check(Math.abs(beat.y-proton.y)<1&&Math.abs(beat.x-proton.x-proton.width-12)<1,"clock not next to ProtonDB: "+[proton.x,proton.y,proton.width,beat.x,beat.y]);
    check(find(page,"protonDbArtwork").source.toString().endsWith("protondb-gold.svg"),"wrong Proton badge");
    check(find(page,"protonDbArtwork").status===Image.Ready,"Proton badge did not load");
+   const rating=page.compatibility;page.compatibility=Object.assign({},rating,{native:true});
+   check(find(page,"protonDbArtwork").source.toString().endsWith("protondb-native.svg")&&page.protonDbTooltip.includes("Native Linux")&&page.protonDbTooltip.includes("Gold"),"native Linux badge missing");
+   page.compatibility=rating;
    check(find(page,"igdbRating").visible&&find(page,"igdbArtwork").status===Image.Ready,"IGDB badge missing");
    check(tooltip&&tooltip.text.includes("Main story: 10 h")&&tooltip.text.includes("Main + extras: 15 h")&&tooltip.text.includes("Completionist: 20 h"),"HLTB tooltip lacks times");
    input.mouseMove(host.contentItem,0,0);input.wait(20);
@@ -485,7 +672,7 @@ ShellRoot {
    input.mouseClick(find(host.contentItem,"catalogueLayoutToggle"));
    input.mouseClick(find(host.contentItem,"catalogueLayoutToggle"));
    page.searchOpen=true;host.escapeHandler();check(host.opened&&!page.searchOpen,"search Escape hid Games");
-   page.filtersOpen=true;const picker=find(page,"genrePicker");picker.popup.open();input.wait(30);
+   page.filtersOpen=true;const picker=find(page.toolbarTarget,"genrePicker");picker.popup.open();input.wait(30);
    host.escapeHandler();check(host.opened&&!picker.popup.visible&&page.filtersOpen,"picker Escape hid Games");
    host.escapeHandler();check(host.opened&&!page.filtersOpen,"filters Escape hid Games");
    input.mouseClick(find(page,"gameFindTab"));input.wait(100);host.escapeHandler();

@@ -22,8 +22,12 @@ Item {
     property bool hideNsfw: true
     property var contentQueue: []
     property int contentBusy: 0
-    readonly property int contentUnclassified: hideNsfw ? allTitles.filter(game => game.content?.supported && game.content.nsfw === null).length : 0
+    // Known NSFW labels hide a game; so does a label still awaiting its first
+    // classification attempt. Unavailable labels stay visible.
     readonly property int contentHidden: hideNsfw ? allTitles.filter(game => game.content?.nsfw === true).length : 0
+    readonly property int contentAwaiting: hideNsfw ? allTitles.filter(game => game.content?.awaiting && game.content.nsfw !== true).length : 0
+    readonly property int contentUnlabelled: hideNsfw ? allTitles.filter(game => game.content?.supported && game.content.nsfw === null && !game.content.awaiting).length : 0
+    readonly property string contentStatus: ["Show games that GOG tags NSFW or Steam rates for adult sexual content.", contentHidden ? contentHidden + " hidden by store labels" : "", contentAwaiting ? contentAwaiting + " hidden until classified" : "", contentUnlabelled ? contentUnlabelled + " without store labels, shown" : ""].filter(Boolean).join("\n")
     property var selected: ({})
     property var availability: ({
             stores: []
@@ -64,10 +68,9 @@ Item {
         })
     property var genreOptions: []
     property var platformOptions: []
-    property var metadataQueue: []
-    property bool metadataBusy: false
     property int browseGeneration: 0
     property int selectionGeneration: 0
+    property int hydrationGeneration: 0
     property int beatGeneration: 0
     property int nextOffset: 0
     property var pendingUninstall: ({})
@@ -76,8 +79,13 @@ Item {
     readonly property string backgroundImage: artwork.hero || ((selected.artwork || [])[0] || (selected.screenshots || [])[0] || {}).url || ""
     readonly property string poster: artwork.cover || (selected.cover || {}).url || ""
     readonly property var images: (selected.artwork || []).concat(selected.screenshots || [])
-    readonly property url protonDbArtwork: ["native", "platinum", "gold", "silver", "bronze", "borked"].includes(compatibility.tier) ? Qt.resolvedUrl("badges/protondb-" + compatibility.tier + ".svg") : ""
-    readonly property string protonDbTooltip: ["ProtonDB · " + (compatibility.label || "Unknown"), compatibility.total ? compatibility.total + " reports" : "", compatibility.warning || ""].filter(Boolean).join("\n")
+    // A native Linux build takes the badge; the ProtonDB tier stays in the tooltip.
+    readonly property string protonDbBadge: compatibility.native ? "native" : compatibility.tier || ""
+    readonly property url protonDbArtwork: ["native", "platinum", "gold", "silver", "bronze", "borked"].includes(protonDbBadge) ? Qt.resolvedUrl("badges/protondb-" + protonDbBadge + ".svg") : ""
+    readonly property string protonDbTooltip: [compatibility.native ? "Native Linux version on Steam" : "", "ProtonDB · " + (compatibility.label || "Unknown"), compatibility.total ? compatibility.total + " reports" : "", compatibility.warning || ""].filter(Boolean).join("\n")
+    // Launchers finish uninstalling after the handoff; recheck a few times.
+    property var availabilityRecheckDelays: [3000, 10000, 30000]
+    property var availabilityChecks: []
     readonly property string hltbTooltip: ["HowLongToBeat", "Main story: " + durationLabel(beatTimes.main), "Main + extras: " + durationLabel(beatTimes.extras), "Completionist: " + durationLabel(beatTimes.complete), beatTimes.stale ? "Saved times" : "", beatTimes.warning || "", !beatTimes.url ? "Click to enter a HowLongToBeat game link." : ""].filter(Boolean).join("\n")
 
     function durationLabel(value) {
@@ -186,7 +194,8 @@ Item {
                 picker.popup.close();
             searchDelay.stop();
             detailDelay.stop();
-            metadataDelay.stop();
+            availabilityCheck.stop();
+            availabilityChecks = [];
             contentDelay.stop();
             pagination.stop();
         } else {
@@ -197,7 +206,7 @@ Item {
             }
             if (detailLoading)
                 detailDelay.restart();
-            metadataDelay.restart();
+            pollInstalls();
             contentDelay.restart();
             pagination.restart();
             if (search.text)
@@ -218,8 +227,28 @@ Item {
         allTitles = append ? allTitles.concat(additions) : additions;
         applyContentFilter();
     }
+    function contentVisible(game) {
+        if (!hideNsfw || game.content?.nsfw !== true && !game.content?.awaiting)
+            return true;
+        // A label still being classified never hides the game being viewed.
+        return game.content?.nsfw !== true && game.id === selected.id;
+    }
+    function queueContent(items, refresh) {
+        const queued = new Set(contentQueue.map(entry => entry.id));
+        const additions = [];
+        for (const game of items || []) {
+            if (queued.has(game.id) || !(refresh ? game.content?.supported : game.content?.pending))
+                continue;
+            queued.add(game.id);
+            additions.push({
+                id: game.id,
+                refresh: !!refresh
+            });
+        }
+        contentQueue = contentQueue.concat(additions);
+    }
     function applyContentFilter() {
-        const visible = allTitles.filter(game => !hideNsfw || !game.content?.supported || game.content.nsfw === false);
+        const visible = allTitles.filter(game => contentVisible(game));
         titles = Catalogue.update(catalogue, titles, visible, false);
         if (selected.id && !titles.some(game => game.id === selected.id)) {
             gallery.close();
@@ -233,59 +262,86 @@ Item {
     function setNsfwIncluded(included) {
         hideNsfw = !included;
         preferences.setValue("catalogue/hideNsfw", hideNsfw);
+        // Hiding NSFW also removes a viewed game whose label is still unknown.
+        if (hideNsfw && allTitles.find(game => game.id === selected.id)?.content?.awaiting) {
+            gallery.close();
+            matching.close();
+            uninstall.close();
+            clearSelection();
+        }
         applyContentFilter();
-        metadataQueue = allTitles.filter(game => game.metadataPending).map(game => game.id);
-        contentQueue = allTitles.filter(game => game.content?.pending).map(game => ({
-                    id: game.id,
-                    refresh: false
-                }));
+        contentQueue = [];
+        queueContent(allTitles, false);
         contentDelay.restart();
-        metadataDelay.restart();
         pagination.restart();
     }
     function hydrateContent() {
         if (!active || !hideNsfw || loading)
             return;
         while (contentBusy < 2 && contentQueue.length) {
-            const queue = contentQueue.slice();
-            const entry = queue.shift();
-            const gameId = entry.id;
-            contentQueue = queue;
+            // One request classifies a slice of the page; its Steam games share
+            // one store read.
+            const refresh = contentQueue[0].refresh;
+            const batch = [];
+            const rest = [];
+            for (const entry of contentQueue)
+                (entry.refresh === refresh && batch.length < 25 ? batch : rest).push(entry);
+            contentQueue = rest;
+            const gameIds = batch.map(entry => entry.id);
             const generation = browseGeneration;
             ++contentBusy;
             service.request("content_rating", {
-                gameId: gameId,
-                refresh: entry.refresh
+                gameIds: gameIds,
+                refresh: refresh
             }, (result, failure) => {
                 --contentBusy;
-                if (generation === browseGeneration) {
-                    if (!failure)
-                        patchGame(result);
-                    else {
-                        const game = allTitles.find(game => game.id === gameId);
-                        if (game)
-                            patchGame({
+                if (generation === browseGeneration)
+                    patchGames(failure ? gameIds.map(gameId => ({
                                 id: gameId,
-                                content: Object.assign({}, game.content, {
-                                    pending: false
+                                content: Object.assign({}, allTitles.find(game => game.id === gameId)?.content, {
+                                    pending: false,
+                                    awaiting: false
                                 })
-                            });
-                    }
-                }
+                            })) : result.items || []);
                 contentDelay.restart();
-                metadataDelay.restart();
                 pagination.restart();
             });
         }
     }
     function patchGame(game) {
-        const index = allTitles.findIndex(item => item.id === game.id);
-        if (index < 0)
-            return;
+        patchGames([game]);
+    }
+    function patchGames(games) {
         const next = allTitles.slice();
-        next[index] = Object.assign({}, next[index], game);
+        const indexes = new Map(next.map((item, index) => [item.id, index]));
+        const patched = new Map();
+        for (const game of games) {
+            const index = indexes.get(game?.id);
+            if (index === undefined)
+                continue;
+            next[index] = Object.assign({}, next[index], game);
+            patched.set(game.id, next[index]);
+        }
+        if (!patched.size)
+            return;
         allTitles = next;
-        applyContentFilter();
+        // Hydration patches games in place; rebuild the visible catalogue only
+        // when a patched game's visibility changes.
+        const positions = new Map(titles.map((item, position) => [item.id, position]));
+        const visible = titles.slice();
+        for (const [id, game] of patched) {
+            const position = positions.get(id);
+            if ((position !== undefined) !== contentVisible(game)) {
+                applyContentFilter();
+                return;
+            }
+            if (position !== undefined)
+                visible[position] = game;
+        }
+        titles = visible;
+        for (const [id, game] of patched)
+            if (positions.has(id))
+                catalogue.setProperty(positions.get(id), "payload", JSON.stringify(game));
     }
     function showMode(value) {
         mode = value;
@@ -303,7 +359,6 @@ Item {
         notice = "";
         if (!append) {
             nextOffset = 0;
-            metadataQueue = [];
             contentQueue = [];
         }
         if (mode === "local") {
@@ -343,32 +398,32 @@ Item {
             setupRequired = !!result.setupRequired;
             notice = result.warning || "";
             updateCatalogue(result.items || [], append);
-            contentQueue = contentQueue.concat((result.items || []).filter(game => refresh ? game.content?.supported : game.content?.pending).map(game => ({
-                        id: game.id,
-                        refresh: !!refresh
-                    })));
+            queueContent(result.items, refresh);
             contentDelay.restart();
             nextOffset = Number(result.next || 0);
             if (!append) {
-                rail.positionViewAtBeginning();
-                grid.positionViewAtBeginning();
-                const retained = titles.find(item => item.id === selected.id);
-                if (retained)
-                    selected = Object.assign({}, selected, retained);
-                else if (titles.length)
-                    selectGame(titles[0]);
-                else
-                    clearSelection();
-            }
-            if (mode === "library") {
-                metadataQueue = metadataQueue.concat((result.items || []).filter(game => game.metadataPending).map(game => game.id));
-                metadataDelay.restart();
+                // A refreshed listing keeps the selected game in view.
+                const position = titles.findIndex(item => item.id === selected.id);
+                if (position >= 0) {
+                    selected = Object.assign({}, selected, titles[position]);
+                    rail.positionViewAtIndex(position, ListView.Contain);
+                    grid.positionViewAtIndex(position, GridView.Contain);
+                } else {
+                    rail.positionViewAtBeginning();
+                    grid.positionViewAtBeginning();
+                    if (titles.length)
+                        selectGame(titles[0]);
+                    else
+                        clearSelection();
+                }
             }
             pagination.restart();
         });
     }
     function clearSelection() {
         closeStoreMenus();
+        availabilityCheck.stop();
+        availabilityChecks = [];
         ++selectionGeneration;
         ++beatGeneration;
         detailDelay.stop();
@@ -403,13 +458,17 @@ Item {
             detailLoading = false;
             return;
         }
-        const generation = selectionGeneration;
+        // Refresh, install completion and match edits can re-hydrate the same
+        // game; only the newest hydration may apply its responses.
+        const selection = selectionGeneration;
+        const hydration = ++hydrationGeneration;
+        const current = () => selection === selectionGeneration && hydration === hydrationGeneration;
         const args = {
             gameId: selected.id,
             refresh: !!refresh
         };
         service.request("details", args, (result, failure) => {
-            if (generation !== selectionGeneration)
+            if (!current())
                 return;
             detailLoading = false;
             if (failure) {
@@ -422,7 +481,7 @@ Item {
         });
         for (const op of ["availability", "protondb", "presentation"]) {
             service.request(op, args, (result, failure) => {
-                if (generation !== selectionGeneration)
+                if (!current())
                     return;
                 if (failure) {
                     detailError = failure;
@@ -463,26 +522,6 @@ Item {
             beatTimes = failure ? {
                 warning: failure
             } : result;
-        });
-    }
-    function hydrateLibrary() {
-        if (!active || metadataBusy || mode !== "library" || loading || (hideNsfw && (contentBusy || contentQueue.length)))
-            return;
-        const visible = new Set(titles.filter(game => game.metadataPending).map(game => game.id));
-        const queue = metadataQueue.filter(gameId => gameId !== selected.id && visible.has(gameId));
-        const gameId = queue.shift();
-        metadataQueue = queue;
-        if (!gameId)
-            return;
-        const generation = browseGeneration;
-        metadataBusy = true;
-        service.request("library_metadata", {
-            gameId: gameId
-        }, (result, failure) => {
-            metadataBusy = false;
-            if (generation === browseGeneration && !failure && result?.game)
-                patchGame(result.game);
-            metadataDelay.restart();
         });
     }
     function maybeLoadMore() {
@@ -557,6 +596,47 @@ Item {
             notice = result.message || "";
             if (action.type === "play" || result.handoff)
                 host?.hide();
+            else if (action.type === "uninstall") {
+                availabilityChecks = availabilityRecheckDelays.slice();
+                nextAvailabilityCheck();
+            }
+        });
+    }
+    function nextAvailabilityCheck() {
+        const delays = availabilityChecks.slice();
+        const delay = delays.shift();
+        availabilityChecks = delays;
+        if (delay === undefined)
+            return;
+        availabilityCheck.interval = delay;
+        availabilityCheck.restart();
+    }
+    function recheckAvailability() {
+        if (!active || !selected.id) {
+            availabilityChecks = [];
+            return;
+        }
+        const selection = selectionGeneration;
+        const hydration = hydrationGeneration;
+        const installed = stores => JSON.stringify((stores || []).map(store => [store.store, !!store.installed]));
+        const before = installed(availability.stores);
+        service.request("availability", {
+            gameId: selected.id,
+            refresh: true
+        }, (result, failure) => {
+            if (selection !== selectionGeneration || hydration !== hydrationGeneration)
+                return;
+            if (failure) {
+                nextAvailabilityCheck();
+                return;
+            }
+            availability = result;
+            if (installed(result.stores) === before) {
+                nextAvailabilityCheck();
+                return;
+            }
+            availabilityChecks = [];
+            browse(false);
         });
     }
     function installLabel(job) {
@@ -621,8 +701,9 @@ Item {
             if (store === "hltb")
                 loadBeatTimes(true);
             else {
-                clearSelection();
+                // Keep the edited game selected; its identity survives a new match.
                 browse(false);
+                hydrateSelection(false);
             }
         });
     }
@@ -653,11 +734,17 @@ Item {
             browse(false);
         });
     }
+    // Opening, showing and starting an install read snapshots once; only a
+    // running install needs polling.
     Timer {
         interval: 1500
         repeat: true
-        running: (root.active || root.installing) && !service.stopped
+        running: root.installing && !service.stopped
         onTriggered: root.pollInstalls()
+    }
+    Timer {
+        id: availabilityCheck
+        onTriggered: root.recheckAvailability()
     }
     Timer {
         id: detailDelay
@@ -674,11 +761,6 @@ Item {
         id: contentDelay
         interval: 20
         onTriggered: root.hydrateContent()
-    }
-    Timer {
-        id: metadataDelay
-        interval: 160
-        onTriggered: root.hydrateLibrary()
     }
     Timer {
         id: pagination
@@ -733,6 +815,138 @@ Item {
         }
         Item {
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            Layout.preferredWidth: 0
+        }
+        Flickable {
+            id: inlineFilters
+            objectName: "gameInlineFilters"
+            visible: root.filtersOpen
+            Layout.fillWidth: true
+            Layout.preferredWidth: filterFields.implicitWidth
+            Layout.minimumWidth: Math.min(120, filterFields.implicitWidth)
+            Layout.maximumWidth: filterFields.implicitWidth
+            Layout.preferredHeight: 46
+            clip: true
+            contentWidth: filterFields.implicitWidth
+            contentHeight: height
+            flickableDirection: Flickable.HorizontalFlick
+            WheelScroll {
+                view: inlineFilters
+                orientation: Qt.Horizontal
+                verticalToHorizontal: true
+            }
+            ScrollBar.horizontal: MovieScrollBar {}
+            Row {
+                id: filterFields
+                spacing: 8
+                MovieButton {
+                    id: nsfwFilter
+                    objectName: "gameContentFilter"
+                    text: "NSFW"
+                    iconName: root.hideNsfw ? "eye-off" : "eye"
+                    highlighted: !root.hideNsfw
+                    Accessible.name: "Include NSFW games"
+                    Accessible.description: root.contentStatus
+                    Accessible.checkable: true
+                    Accessible.checked: !root.hideNsfw
+                    onClicked: root.setNsfwIncluded(root.hideNsfw)
+                    PassiveToolTip {
+                        objectName: "gameContentStatus"
+                        target: nsfwFilter
+                        text: root.contentStatus
+                        maximumLineCount: 6
+                    }
+                }
+                Row {
+                    visible: root.mode === "discover" && root.catalogState.configured
+                    spacing: 8
+                    MovieChoice {
+                        id: genre
+                        objectName: "genrePicker"
+                        width: 180
+                        model: [
+                            {
+                                id: "",
+                                name: "All genres"
+                            }
+                        ].concat(root.genreOptions)
+                        textRole: "name"
+                        Accessible.name: "Genre"
+                    }
+                    MovieChoice {
+                        id: platform
+                        width: 180
+                        model: [
+                            {
+                                id: "",
+                                name: "All platforms"
+                            }
+                        ].concat(root.platformOptions)
+                        textRole: "name"
+                        Accessible.name: "Platform"
+                    }
+                    MovieChoice {
+                        id: sort
+                        width: 165
+                        model: ["Popular", "Highest rating", "Newest release", "Recently updated", "Title"]
+                        Accessible.name: "Sort"
+                    }
+                    MovieInput {
+                        id: fromYear
+                        width: 90
+                        placeholderText: "From year"
+                        Accessible.name: "From year"
+                        validator: IntValidator {
+                            bottom: 1970
+                            top: 2200
+                        }
+                    }
+                    MovieInput {
+                        id: toYear
+                        width: 90
+                        placeholderText: "To year"
+                        Accessible.name: "To year"
+                        validator: IntValidator {
+                            bottom: 1970
+                            top: 2200
+                        }
+                    }
+                    MovieButton {
+                        objectName: "applyGameFilters"
+                        text: "Apply"
+                        onClicked: {
+                            root.filters = {
+                                genre: genre.model[genre.currentIndex].id,
+                                platform: platform.model[platform.currentIndex].id,
+                                sort: ["-added", "-rating", "-released", "-updated", "name"][sort.currentIndex],
+                                fromYear: fromYear.text,
+                                toYear: toYear.text
+                            };
+                            root.browse(false);
+                        }
+                    }
+                    MovieButton {
+                        objectName: "resetGameFilters"
+                        text: "Reset"
+                        onClicked: {
+                            genre.currentIndex = 0;
+                            platform.currentIndex = 0;
+                            sort.currentIndex = 0;
+                            fromYear.clear();
+                            toYear.clear();
+                            root.filters = {
+                                genre: "",
+                                platform: "",
+                                sort: "-added",
+                                fromYear: "",
+                                toYear: ""
+                            };
+                            root.browse(false);
+                        }
+                    }
+                }
+            }
         }
         MovieInput {
             id: search
@@ -749,7 +963,7 @@ Item {
             active: root.active && !gallery.visible
             spinnerName: "gamesLoading"
             jobs: root.installJobs.concat(downloads.jobs)
-            tasks: [task(root.initializing, "init", "Opening Games…"), task(root.loading, "browse", "Loading games…"), task(root.detailLoading, "details", "Loading game details…"), task(root.metadataBusy, "metadata", "Updating library metadata · " + (root.metadataQueue.length + 1) + " remaining…"), task(root.actionBusy, "action", "Updating game library…"), task(service.pendingCount > (root.installsLoading ? 1 : 0) && !root.initializing && !root.loading && !root.detailLoading && !root.actionBusy && !root.metadataBusy, "information", "Loading game information…"), task(backdrop.loading || logo.loading, "artwork", "Loading artwork…"), task(root.tab === "torrent" && (downloads.searching || downloads.connectionLoading || downloads.reviewLoading), "find", "Loading downloads…")]
+            tasks: [task(root.initializing, "init", "Opening Games…"), task(root.loading, "browse", "Loading games…"), task(root.detailLoading, "details", "Loading game details…"), task(root.actionBusy, "action", "Updating game library…"), task(service.pendingCount > (root.installsLoading ? 1 : 0) && !root.initializing && !root.loading && !root.detailLoading && !root.actionBusy, "information", "Loading game information…"), task(backdrop.loading || logo.loading, "artwork", "Loading artwork…"), task(root.tab === "torrent" && (downloads.searching || downloads.connectionLoading || downloads.reviewLoading), "find", "Loading downloads…")]
         }
         MovieIconButton {
             iconName: "search"
@@ -801,108 +1015,6 @@ Item {
         anchors.fill: parent
         anchors.topMargin: root.toolbarTarget ? 0 : root.toolbarHeight + 12
         spacing: 14
-        ScrollArea {
-            visible: root.filtersOpen
-            Layout.fillWidth: true
-            Layout.preferredHeight: 58
-            contentHeight: height
-            RowLayout {
-                spacing: 8
-                CheckBox {
-                    id: nsfwFilter
-                    objectName: "gameContentFilter"
-                    text: "NSFW"
-                    checked: !root.hideNsfw
-                    font.family: MovieStyle.fontFamily
-                    font.pixelSize: MovieStyle.fontSize
-                    palette.text: MovieStyle.text
-                    palette.buttonText: MovieStyle.text
-                    palette.highlight: MovieStyle.accent
-                    Accessible.name: "NSFW"
-                    Accessible.description: "Include NSFW games"
-                    onToggled: root.setNsfwIncluded(checked)
-                    PassiveToolTip {
-                        target: nsfwFilter
-                        text: "Include NSFW games. Uses GOG and Steam content labels; unclassified Steam/GOG games stay hidden when unchecked."
-                    }
-                }
-                RowLayout {
-                    visible: root.mode === "discover" && root.catalogState.configured
-                    spacing: 8
-                    MovieChoice {
-                        id: genre
-                        objectName: "genrePicker"
-                        Layout.preferredWidth: 180
-                        model: [
-                            {
-                                id: "",
-                                name: "All genres"
-                            }
-                        ].concat(root.genreOptions)
-                        textRole: "name"
-                        Accessible.name: "Genre"
-                    }
-                    MovieChoice {
-                        id: platform
-                        Layout.preferredWidth: 180
-                        model: [
-                            {
-                                id: "",
-                                name: "All platforms"
-                            }
-                        ].concat(root.platformOptions)
-                        textRole: "name"
-                        Accessible.name: "Platform"
-                    }
-                    MovieChoice {
-                        id: sort
-                        model: ["Popular", "Highest rating", "Newest release", "Recently updated", "Title"]
-                        Accessible.name: "Sort"
-                    }
-                    MovieInput {
-                        id: fromYear
-                        Layout.preferredWidth: 100
-                        placeholderText: "From year"
-                        Accessible.name: "From year"
-                        validator: IntValidator {
-                            bottom: 1970
-                            top: 2200
-                        }
-                    }
-                    MovieInput {
-                        id: toYear
-                        Layout.preferredWidth: 100
-                        placeholderText: "To year"
-                        Accessible.name: "To year"
-                        validator: IntValidator {
-                            bottom: 1970
-                            top: 2200
-                        }
-                    }
-                    MovieButton {
-                        text: "Apply"
-                        onClicked: {
-                            root.filters = {
-                                genre: genre.model[genre.currentIndex].id,
-                                platform: platform.model[platform.currentIndex].id,
-                                sort: ["-added", "-rating", "-released", "-updated", "name"][sort.currentIndex],
-                                fromYear: fromYear.text,
-                                toYear: toYear.text
-                            };
-                            root.browse(false);
-                        }
-                    }
-                }
-            }
-        }
-        MovieText {
-            objectName: "gameContentStatus"
-            Layout.fillWidth: true
-            visible: root.filtersOpen && root.hideNsfw && (root.contentHidden > 0 || root.contentUnclassified > 0)
-            text: [root.contentHidden ? root.contentHidden + " NSFW hidden" : "", root.contentUnclassified ? root.contentUnclassified + (root.contentBusy || root.contentQueue.length ? " awaiting content labels" : " without content labels; hidden") : ""].filter(Boolean).join(" · ")
-            color: MovieStyle.muted
-            wrapMode: Text.Wrap
-        }
         MovieText {
             Layout.fillWidth: true
             visible: !!root.error
@@ -1037,7 +1149,7 @@ Item {
                         implicitWidth: root.protonDbArtwork.toString() ? 42 : 96
                         implicitHeight: 38
                         padding: 2
-                        text: "ProtonDB · " + (root.compatibility.label || "Unknown")
+                        text: (root.compatibility.native ? "Native Linux · " : "") + "ProtonDB · " + (root.compatibility.label || "Unknown")
                         Accessible.name: text
                         Accessible.description: root.protonDbTooltip
                         contentItem: Item {
@@ -1282,7 +1394,7 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.Wrap
                     color: MovieStyle.muted
-                    text: root.setupRequired ? "Add igdb_client_id and igdb_client_secret to " + (root.catalogState.configPath || "games.json") + ". My library works without catalogue credentials." : root.hideNsfw && root.allTitles.length ? "Games with NSFW or unavailable content labels are hidden. Enable NSFW in Filters to show all games." : root.mode === "library" ? "Install a Steam game, sign in with legendary auth for Epic, or sign into GOG in Heroic, then refresh your libraries." : root.mode === "favorites" ? "Save games with the Favorite button." : root.mode === "local" ? "Find a local copy from a game in Browse. Imported files open in your file manager." : "Try another search or change the filters."
+                    text: root.setupRequired ? "Add igdb_client_id and igdb_client_secret to " + (root.catalogState.configPath || "games.json") + ". My library works without catalogue credentials." : root.hideNsfw && root.allTitles.length ? "Games labelled NSFW, or still being classified, are hidden. Enable NSFW in Filters to show them." : root.mode === "library" ? "Install a Steam game, sign in with legendary auth for Epic, or sign into GOG in Heroic, then refresh your libraries." : root.mode === "favorites" ? "Save games with the Favorite button." : root.mode === "local" ? "Find a local copy from a game in Browse. Imported files open in your file manager." : "Try another search or change the filters."
                 }
                 MovieButton {
                     Layout.alignment: Qt.AlignHCenter

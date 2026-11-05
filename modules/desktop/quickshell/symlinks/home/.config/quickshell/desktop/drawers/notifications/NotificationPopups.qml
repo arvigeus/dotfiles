@@ -14,7 +14,8 @@ Scope {
         model: Quickshell.screens
         PanelWindow {
             id: window
-            objectName: "notificationPopups:" + modelData.name
+            // Variants briefly keeps a delegate whose screen was removed.
+            objectName: "notificationPopups:" + (modelData?.name ?? "")
             required property ShellScreen modelData
             screen: modelData
             anchors {
@@ -25,8 +26,8 @@ Scope {
                 top: Theme.pillTopPadding + Theme.pillHeight + Theme.gap
                 right: Theme.barInset
             }
-            implicitWidth: Math.min(390, modelData.width - Theme.barInset * 2)
-            implicitHeight: Math.min(stack.implicitHeight, Math.max(100, modelData.height - Theme.pillTopPadding - Theme.pillHeight - Theme.gap - Theme.barInset))
+            implicitWidth: Math.min(390, (modelData?.width ?? 0) - Theme.barInset * 2)
+            implicitHeight: Math.min(stack.implicitHeight, Math.max(100, (modelData?.height ?? 0) - Theme.pillTopPadding - Theme.pillHeight - Theme.gap - Theme.barInset))
             visible: {
                 for (let index = 0; index < root.service.popups.count; index++)
                     if (accepts(root.service.popups.get(index).screenName))
@@ -34,7 +35,7 @@ Scope {
                 return false;
             }
             function accepts(name: string): bool {
-                return name === modelData.name || !Quickshell.screens.some(output => output.name === name) && modelData === Quickshell.screens[0];
+                return !!modelData && (name === modelData.name || !Quickshell.screens.some(output => output.name === name) && modelData === Quickshell.screens[0]);
             }
             color: "transparent"
             exclusionMode: ExclusionMode.Ignore

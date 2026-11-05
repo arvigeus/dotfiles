@@ -45,6 +45,28 @@ PAGE_SIZE = 50
 CACHE_RETENTION = 90 * 86400
 ALLOWED_PROTONDB_TIERS = {'platinum', 'gold', 'silver', 'bronze', 'borked', 'pending'}
 STORE_LABELS = {'steam': 'Steam', 'epic': 'Epic Games Store', 'gog': 'GOG'}
+METADATA_TTL = 7 * 86400
+# An IGDB match for a launcher title rarely changes once found.
+LIBRARY_MATCH_TTL = 30 * 86400
+# Store labels and platforms rarely change; Refresh retries unknown ones.
+LABEL_TTL = 30 * 86400
+# Failure markers store their cooldown: an outage is retried soon (backing off
+# while it persists), a product the provider reports without data next day.
+OUTAGE_COOLDOWN = 300
+MAX_OUTAGE_COOLDOWN = 3600
+MISSING_COOLDOWN = 86400
+# Labels use api.steampowered.com, descriptions store.steampowered.com; either
+# host can be unreachable on its own.
+CONTENT_PROVIDERS = {'steam': 'steam-store-items', 'gog': 'gog-content'}
+STEAM_DETAILS = 'steam-appdetails'
+STEAM_ITEMS = 'https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?'
+STEAM_ITEMS_BATCH = 100
+EPIC_OWNED_TTL = 6 * 3600
+# GOG labels come from one listing of every NSFW-tagged product (~11 pages).
+GOG_CATALOGUE = 'https://catalog.gog.com/v1/catalog?'
+GOG_NSFW_TTL = 7 * 86400
+GOG_NSFW_REFRESH_AGE = 86400
+GOG_NSFW_MAX_PAGES = 50
 _PROTONDB_LOCK = threading.Lock()
 _LAST_PROTONDB_REQUEST = 0.0
 
@@ -103,10 +125,13 @@ def _title_key(title):
 def _library_indexes(libraries):
     indexes = {}
     for store in STORE_LABELS:
-        items = (libraries or {}).get(store, {}).get('items', [])
-        titles = {}
+        provider = (libraries or {}).get(store, {})
+        items = provider.get('items', [])
+        titles, slugs = {}, {}
         for item in items:
             titles.setdefault(_title_key(item.get('title', '')), []).append(item)
+            if item.get('slug'):
+                slugs.setdefault(item['slug'], []).append(item)
         indexes[store] = {
             'ids': {
                 str(item['externalId']): item
@@ -114,6 +139,8 @@ def _library_indexes(libraries):
                 if item.get('externalId')
             },
             'titles': titles,
+            'slugs': slugs,
+            'owned': {str(value) for value in provider.get('ownedIds', [])},
         }
     return indexes
 
@@ -140,9 +167,11 @@ def match_library_item(game, store, library_items, override='', index=None):
         if external_id in by_id:
             return by_id[external_id], 'store-id'
         if store == 'gog':
-            matching = [
-                item for item in library_items if item.get('slug') == external_id
-            ]
+            matching = (
+                index['slugs'].get(external_id, [])
+                if index is not None
+                else [item for item in library_items if item.get('slug') == external_id]
+            )
             if len(matching) == 1:
                 return matching[0], 'store-id'
     # A Steam AppID is the same identity used by local manifests; falling back
@@ -175,7 +204,7 @@ def match_library_item(game, store, library_items, override='', index=None):
     return None, ''
 
 
-def steam_app_id(game, libraries, override=''):
+def steam_app_id(game, libraries, override='', index=None):
     """Resolve ProtonDB identity only from an explicit ID or a centralized library match."""
     override = _steam_id(override)
     if override:
@@ -191,7 +220,7 @@ def steam_app_id(game, libraries, override=''):
     if references:
         return ''
     provider = (libraries or {}).get('steam', {})
-    match, _ = match_library_item(game, 'steam', provider.get('items', []))
+    match, _ = match_library_item(game, 'steam', provider.get('items', []), '', index)
     return _steam_id((match or {}).get('externalId', ''))
 
 
@@ -208,11 +237,14 @@ def derive_store_state(game, libraries, overrides=None, indexes=None):
         ]
         override = str(overrides.get(store, ''))
         provider = (libraries or {}).get(store, {})
-        owned_ids = set(str(value) for value in provider.get('ownedIds', []))
-        items = provider.get('items', [])
-        match, match_source = match_library_item(
-            game, store, items, override, (indexes or {}).get(store)
+        index = (indexes or {}).get(store)
+        owned_ids = (
+            index['owned']
+            if index is not None
+            else {str(value) for value in provider.get('ownedIds', [])}
         )
+        items = provider.get('items', [])
+        match, match_source = match_library_item(game, store, items, override, index)
         matched_id = str((match or {}).get('externalId', ''))
         identity_ids = (
             {override} if override else {value for value in reference_ids if value}
@@ -758,6 +790,7 @@ class GamesBackend:
         self._library_updated = 0.0
         self._metadata_lock = threading.Lock()
         self._metadata_locks = {}
+        self._steam_appinfo = content.SteamAppInfo()
         with self._db() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS cache (
@@ -843,19 +876,51 @@ class GamesBackend:
         digest = hashlib.sha256((provider + ':' + provider_id).encode('utf-8')).digest()
         return int.from_bytes(digest[:7], 'big') or 1
 
-    def _cache_get(self, key, ttl=None, allow_stale=False):
-        with self._db() as db:
+    def _cache_row(self, key, connection=None):
+        with nullcontext(connection) if connection is not None else self._db() as db:
             row = db.execute(
                 'SELECT value, updated FROM cache WHERE key=?', (key,)
             ).fetchone()
         if not row:
-            return None, False
+            return None, None
         try:
-            value = json.loads(row['value'])
+            return json.loads(row['value']), self._clock() - row['updated']
         except (TypeError, ValueError):
+            return None, None
+
+    def _cache_get(self, key, ttl=None, allow_stale=False, connection=None):
+        value, age = self._cache_row(key, connection)
+        if age is None:
             return None, False
-        fresh = ttl is None or self._clock() - row['updated'] <= ttl
+        fresh = ttl is None or age <= ttl
         return (value if fresh or allow_stale else None), fresh
+
+    def _cooling(self, key, connection=None):
+        """Return (attempted, cooling) for a failure marker written by _mark_retry."""
+        value, age = self._cache_row(key + ':retry', connection)
+        if age is None:
+            return False, False
+        cooldown = value if type(value) is int and value > 0 else OUTAGE_COOLDOWN
+        return True, age < cooldown
+
+    def _mark_retry(self, key, cooldown):
+        self._cache_put(key + ':retry', cooldown)
+
+    def _pause_provider(self, name):
+        """Pause a provider after an outage; back off while outages continue."""
+        value, age = self._cache_row(name + ':retry')
+        previous = value if type(value) is int and value > 0 else 0
+        self._mark_retry(
+            name,
+            min(MAX_OUTAGE_COOLDOWN, previous * 2)
+            if previous and age is not None and age < previous * 3
+            else OUTAGE_COOLDOWN,
+        )
+
+    def _resume_provider(self, name):
+        if self._cache_row(name + ':retry')[1] is not None:
+            with self._db() as db:
+                db.execute('DELETE FROM cache WHERE key=?', (name + ':retry',))
 
     def _cache_put(self, key, value):
         encoded = json.dumps(value, ensure_ascii=False, separators=(',', ':'))
@@ -1006,17 +1071,24 @@ class GamesBackend:
             )
         return found
 
-    def _with_library_indicators(self, items):
-        state = (
-            self._library_snapshot or self._cache_get('libraries:v1', 86400)[0] or {}
+    def _library_state(self, connection=None):
+        return (
+            self._library_snapshot
+            or self._cache_get('libraries:v1', 86400, connection=connection)[0]
+            or {}
         )
-        indexes = _library_indexes(state)
+
+    def _with_library_indicators(self, items, labels=True):
         ids = [str(game.get('id', '')) for game in items if game.get('id')]
         favorite_ids = set()
         overrides = {}
-        if ids:
-            placeholders = ','.join('?' for _ in ids)
-            with self._db() as db:
+        output = []
+        # One connection serves every snapshot read; listings never touch the network.
+        with self._db() as db:
+            state = self._library_state(db)
+            indexes = _library_indexes(state)
+            if ids:
+                placeholders = ','.join('?' for _ in ids)
                 rows = db.execute(
                     f'SELECT game_id FROM favorites WHERE game_id IN ({placeholders})',
                     ids,
@@ -1025,87 +1097,82 @@ class GamesBackend:
                     f'SELECT game_id,store,external_id FROM store_matches WHERE game_id IN ({placeholders})',
                     ids,
                 ).fetchall()
-            favorite_ids = {row['game_id'] for row in rows}
-            for match in matches:
-                overrides.setdefault(match['game_id'], {})[match['store']] = match[
-                    'external_id'
+                favorite_ids = {row['game_id'] for row in rows}
+                for match in matches:
+                    overrides.setdefault(match['game_id'], {})[match['store']] = match[
+                        'external_id'
+                    ]
+            for game in items:
+                displayed = dict(game)
+                rows = derive_store_state(
+                    game, state, overrides.get(game.get('id', ''), {}), indexes
+                )
+                displayed['installedBy'] = [
+                    row['store'] for row in rows if row['installed']
                 ]
-        output = []
-        for game in items:
-            displayed = dict(game)
-            rows = derive_store_state(
-                game, state, overrides.get(game.get('id', ''), {}), indexes
-            )
-            displayed['installedBy'] = [
-                row['store'] for row in rows if row['installed']
-            ]
-            displayed['ownedBy'] = [
-                row['store'] for row in rows if row['ownership'] == 'owned'
-            ]
-            displayed['favorite'] = str(game.get('id', '')) in favorite_ids
-            displayed['content'] = self._content_labels(rows)
-            output.append(displayed)
+                displayed['ownedBy'] = [
+                    row['store'] for row in rows if row['ownership'] == 'owned'
+                ]
+                displayed['favorite'] = str(game.get('id', '')) in favorite_ids
+                if labels:
+                    displayed['content'] = self._content_labels(rows, connection=db)
+                output.append(displayed)
         return output
 
-    def _content_labels(self, rows, fetch=False, refresh=False):
+    def _steam_local_label(self, app_id):
+        for root in self._steam_roots():
+            label = self._steam_appinfo.label(root / 'appcache/appinfo.vdf', app_id)
+            if label is not None:
+                return label
+        return None
+
+    def _content_labels(self, rows, fetch=False, refresh=False, connection=None):
+        """Merge native labels for the matched store products.
+
+        `pending` asks QML to classify a product; `awaiting` marks a product that
+        has never been tried, so it stays hidden until its first attempt ends.
+        With `fetch`, Steam labels were already read in one batch.
+        """
         labels = []
-        pending = False
+        pending = awaiting = False
         for row in rows:
             store = row['store']
-            identifier = (
-                (_steam_id if store == 'steam' else gog.product_id)(
-                    row.get('externalId')
-                )
-                if store in {'steam', 'gog'}
-                else ''
+            if store not in CONTENT_PROVIDERS:
+                continue
+            identifier = (_steam_id if store == 'steam' else gog.product_id)(
+                row.get('externalId')
             )
             if not identifier:
                 continue
-            key = f'native-content:v1:{store}:{identifier}'
-            # Snapshot reads must never wait behind a storefront network request.
-            # Steam shares its source lock with description hydration below.
-            lock = nullcontext()
-            if fetch and store == 'gog':
-                with self._metadata_lock:
-                    lock = self._metadata_locks.setdefault(key, threading.Lock())
-            with lock:
-                label, fresh = self._cache_get(key, 7 * 86400, allow_stale=True)
-                label = label if type(label) is bool else None
-                cooling, _ = self._cache_get(key + ':retry', 300)
-                if store == 'steam':
-                    cooling = (
-                        cooling or self._cache_get('steam-appdetails:retry', 300)[0]
-                    )
-                needed = not fresh or label is None
-                if fetch and (refresh or (needed and not cooling)):
-                    try:
-                        if store == 'steam':
-                            self._steam_metadata(
-                                identifier, refresh=refresh, labels=True
-                            )
-                            label, _ = self._cache_get(key, allow_stale=True)
-                            label = label if type(label) is bool else None
-                            labels.append(label)
-                            continue
-                        else:
-                            raw = self._request(
-                                f'https://api.gog.com/v2/games/{identifier}?locale=en-US',
-                                'GET',
-                                {'Accept': 'application/json'},
-                                None,
-                                8,
-                                4 * 1024 * 1024,
-                            )
-                            value = content.gog(raw, identifier)
-                        if value is None:
-                            raise GamesError('Content labels are unavailable.')
-                        label = value
-                        self._cache_put(key, label)
-                    except GamesError:
-                        self._cache_put(key + ':retry', True)
-                elif needed and not cooling:
-                    pending = True
+            if store == 'steam':
+                # The installed client's cache works offline and without requests.
+                local = self._steam_local_label(identifier)
+                if local is not None:
+                    labels.append(local)
+                    continue
+            if store == 'gog':
+                label, due, attempted = self._gog_nsfw_label(identifier, connection)
+                if not fetch:
+                    pending = pending or due
+                    awaiting = awaiting or (due and label is None and not attempted)
                 labels.append(label)
+                continue
+            key = f'native-content:v1:steam:{identifier}'
+            # Snapshot reads must never wait behind a storefront network request.
+            label, fresh = self._cache_get(
+                key, LABEL_TTL, allow_stale=True, connection=connection
+            )
+            label = label if type(label) is bool else None
+            if not fetch:
+                attempted, cooling = self._cooling(key, connection)
+                due = (
+                    (not fresh or label is None)
+                    and not cooling
+                    and not self._cooling(CONTENT_PROVIDERS['steam'], connection)[1]
+                )
+                pending = pending or due
+                awaiting = awaiting or (due and label is None and not attempted)
+            labels.append(label)
         return {
             'supported': bool(labels),
             'nsfw': True
@@ -1114,26 +1181,165 @@ class GamesBackend:
             if None in labels or not labels
             else False,
             'pending': pending,
+            'awaiting': awaiting and True not in labels,
         }
 
-    def _steam_metadata(self, app_id, *, refresh=False, labels=False):
-        """One appdetails read supplies both caches; an outage pauses the sweep."""
-        key = f'steam-metadata:v1:{app_id}'
-        label_key = f'native-content:v1:steam:{app_id}'
+    def _steam_store_items(self, app_ids, refresh=False, limit=None, platforms=False):
+        """Read store labels and platforms for apps lacking them, 100 per request.
+
+        Each read supplies both; `platforms` selects which one must be fresh.
+        """
+        with self._metadata_lock:
+            lock = self._metadata_locks.setdefault(
+                CONTENT_PROVIDERS['steam'], threading.Lock()
+            )
+        with lock:
+            wanted = []
+            for app_id in dict.fromkeys(filter(None, map(_steam_id, app_ids))):
+                key = f'native-content:v1:steam:{app_id}'
+                if platforms:
+                    _, known = self._cache_get(
+                        f'steam-platforms:v1:{app_id}', LABEL_TTL
+                    )
+                else:
+                    label, fresh = self._cache_get(key, LABEL_TTL)
+                    known = fresh and type(label) is bool
+                if known or (not refresh and self._cooling(key)[1]):
+                    continue
+                wanted.append(app_id)
+            wanted = wanted[:limit] if limit else wanted
+            if wanted and self._cooling(CONTENT_PROVIDERS['steam'])[1]:
+                # Record the attempt so these products are shown while Steam is down.
+                for app_id in wanted:
+                    self._mark_retry(
+                        f'native-content:v1:steam:{app_id}', OUTAGE_COOLDOWN
+                    )
+                return
+            for start in range(0, len(wanted), STEAM_ITEMS_BATCH):
+                chunk = wanted[start : start + STEAM_ITEMS_BATCH]
+                query = {
+                    'ids': [{'appid': int(app_id)} for app_id in chunk],
+                    'context': {'language': 'english', 'country_code': 'US'},
+                    'data_request': {'include_platforms': True},
+                }
+                try:
+                    raw = self._request(
+                        STEAM_ITEMS
+                        + urllib.parse.urlencode(
+                            {'input_json': json.dumps(query, separators=(',', ':'))}
+                        ),
+                        'GET',
+                        {'Accept': 'application/json'},
+                        None,
+                        10,
+                        4 * 1024 * 1024,
+                    )
+                    response = raw.get('response') if isinstance(raw, dict) else None
+                    items = (
+                        response.get('store_items')
+                        if isinstance(response, dict)
+                        else None
+                    )
+                    if not isinstance(items, list):
+                        raise GamesError('Steam returned an unreadable store response.')
+                except GamesError:
+                    self._pause_provider(CONTENT_PROVIDERS['steam'])
+                    for app_id in wanted[start:]:
+                        self._mark_retry(
+                            f'native-content:v1:steam:{app_id}', OUTAGE_COOLDOWN
+                        )
+                    return
+                self._resume_provider(CONTENT_PROVIDERS['steam'])
+                found = {
+                    str(item.get('appid')): item
+                    for item in items
+                    if isinstance(item, dict)
+                }
+                for app_id in chunk:
+                    key = f'native-content:v1:steam:{app_id}'
+                    record = content.steam_item(found.get(app_id), app_id)
+                    if record and record['nsfw'] is not None:
+                        self._cache_put(key, record['nsfw'])
+                    else:
+                        self._mark_retry(key, MISSING_COOLDOWN)
+                    if record and record['linux'] is not None:
+                        self._cache_put(
+                            f'steam-platforms:v1:{app_id}', {'linux': record['linux']}
+                        )
+
+    def _gog_nsfw_label(self, product_id, connection=None):
+        """Return (label, due, attempted) from the cached NSFW product set."""
+        value, age = self._cache_row('gog-nsfw:v1', connection)
+        attempted, paused = self._cooling(CONTENT_PROVIDERS['gog'], connection)
+        if (
+            age is None
+            or not isinstance(value, dict)
+            or not isinstance(value.get('ids'), list)
+        ):
+            return None, not paused, attempted
+        return product_id in value['ids'], age > GOG_NSFW_TTL and not paused, True
+
+    def _refresh_gog_nsfw(self, refresh=False):
+        """Read every product GOG tags NSFW in one pass over its catalogue.
+
+        The listing omits secret products, so those count as not tagged. A
+        failed or unreadable pass keeps the previous set.
+        """
+        with self._metadata_lock:
+            lock = self._metadata_locks.setdefault(
+                CONTENT_PROVIDERS['gog'], threading.Lock()
+            )
+        with lock:
+            value, age = self._cache_row('gog-nsfw:v1')
+            if (
+                age is not None
+                and isinstance(value, dict)
+                and age <= (GOG_NSFW_REFRESH_AGE if refresh else GOG_NSFW_TTL)
+            ) or self._cooling(CONTENT_PROVIDERS['gog'])[1]:
+                return
+            ids, page, pages = set(), 1, 1
+            try:
+                while page <= pages:
+                    raw = self._request(
+                        GOG_CATALOGUE
+                        + urllib.parse.urlencode(
+                            {
+                                'limit': 100,
+                                'page': page,
+                                'tags': 'is:nsfw',
+                                'order': 'asc:title',
+                                'locale': 'en-US',
+                            }
+                        ),
+                        'GET',
+                        {'Accept': 'application/json'},
+                        None,
+                        10,
+                        4 * 1024 * 1024,
+                    )
+                    parsed = content.gog_nsfw_page(raw)
+                    if parsed is None or parsed[1] > GOG_NSFW_MAX_PAGES:
+                        raise GamesError('GOG returned an unreadable catalogue.')
+                    ids.update(parsed[0])
+                    pages = parsed[1]
+                    page += 1
+            except GamesError:
+                self._pause_provider(CONTENT_PROVIDERS['gog'])
+                return
+            self._resume_provider(CONTENT_PROVIDERS['gog'])
+            self._cache_put('gog-nsfw:v1', {'ids': sorted(ids)})
+
+    def _steam_metadata(self, app_id, *, refresh=False):
+        """Store descriptions; an outage pauses the sweep across products."""
+        key = f'steam-metadata:v2:{app_id}'
+        unavailable = 'Steam metadata is unavailable. Showing saved and launcher data.'
         with self._metadata_lock:
             lock = self._metadata_locks.setdefault(key, threading.Lock())
         with lock:
-            cached, fresh = self._cache_get(key, 7 * 86400, allow_stale=True)
-            if self._cache_get('steam-appdetails:retry', 300)[0]:
-                return (
-                    cached,
-                    'Steam metadata is unavailable. Showing saved and launcher data.',
-                )
-            if labels:
-                label, fresh = self._cache_get(label_key, 7 * 86400, allow_stale=True)
-                fresh = fresh and type(label) is bool
-            cooling, _ = self._cache_get((label_key if labels else key) + ':retry', 300)
-            if not refresh and (fresh or cooling):
+            cached, fresh = self._cache_get(key, METADATA_TTL, allow_stale=True)
+            if self._cooling(STEAM_DETAILS)[1]:
+                return cached, unavailable
+            if not refresh and (fresh or self._cooling(key)[1]):
                 return cached, ''
             try:
                 raw = self._request(
@@ -1148,38 +1354,75 @@ class GamesBackend:
             except GamesError:
                 # A transport/provider outage is shared by all products. A valid
                 # response without this app's data is only a per-product failure.
-                self._cache_put('steam-appdetails:retry', True)
-                self._cache_put(key + ':retry', True)
-                self._cache_put(label_key + ':retry', True)
-                return (
-                    cached,
-                    'Steam metadata is unavailable. Showing saved and launcher data.',
-                )
+                self._pause_provider(STEAM_DETAILS)
+                self._mark_retry(key, OUTAGE_COOLDOWN)
+                return cached, unavailable
+            self._resume_provider(STEAM_DETAILS)
             metadata = store_metadata.steam_details(raw, app_id)
-            label = content.steam(raw, app_id)
             if metadata:
                 cached = metadata
                 self._cache_put(key, cached)
             else:
-                self._cache_put(key + ':retry', True)
-            if label is not None:
-                self._cache_put(label_key, label)
-            else:
-                self._cache_put(label_key + ':retry', True)
+                self._mark_retry(key, MISSING_COOLDOWN)
             return cached, ''
 
     def content_rating(self, request):
-        _, game = self._catalog_id(request.get('gameId', ''))
-        state = (
-            self._library_snapshot or self._cache_get('libraries:v1', 86400)[0] or {}
+        """Classify a batch of games; their Steam products share store requests."""
+        batch = request.get('gameIds')
+        single = not isinstance(batch, list)
+        identifiers = (
+            [str(request.get('gameId', ''))]
+            if single
+            else [str(value) for value in batch[:100]]
         )
-        rows = derive_store_state(game, state, self._store_overrides(game['id']))
-        return {
-            'id': game['id'],
-            'content': self._content_labels(
-                rows, fetch=True, refresh=bool(request.get('refresh'))
-            ),
-        }
+        refresh = bool(request.get('refresh'))
+        state = self._library_state()
+        indexes = _library_indexes(state)
+        rows = []
+        for identifier in dict.fromkeys(identifiers):
+            found = self._game_by_id(identifier)
+            if not found:
+                if single:
+                    raise GamesError(
+                        'This catalogue game is no longer available. Search again.'
+                    )
+                continue
+            game = found[1]
+            rows.append(
+                (
+                    game['id'],
+                    derive_store_state(
+                        game, state, self._store_overrides(game['id']), indexes
+                    ),
+                )
+            )
+        self._steam_store_items(
+            [
+                app_id
+                for _, store_rows in rows
+                for row in store_rows
+                if row['store'] == 'steam'
+                and (app_id := _steam_id(row.get('externalId')))
+                and self._steam_local_label(app_id) is None
+            ],
+            refresh,
+        )
+        if any(
+            row['store'] == 'gog' and gog.product_id(row.get('externalId'))
+            for _, store_rows in rows
+            for row in store_rows
+        ):
+            self._refresh_gog_nsfw(refresh)
+        items = [
+            {
+                'id': game_id,
+                'content': self._content_labels(
+                    store_rows, fetch=True, refresh=refresh
+                ),
+            }
+            for game_id, store_rows in rows
+        ]
+        return items[0] if single else {'items': items}
 
     def library_games(self, request):
         """List installed/owned store games without requiring the catalogue."""
@@ -1295,13 +1538,14 @@ class GamesBackend:
                     game['libraryStores'] = (
                         stores if len(partitions) == 1 else [group[0][0]]
                     )
-                    records.append(game)
-        records = self._with_library_indicators(records)
+                    if not query or query in _title_key(game.get('title', '')):
+                        records.append(game)
+        # Store state filters the whole library; content labels are only
+        # needed for the returned page.
         records = [
             game
-            for game in records
-            if (not query or query in _title_key(game.get('title', '')))
-            and (mode != 'installed' or game['installedBy'])
+            for game in self._with_library_indicators(records, labels=False)
+            if (mode != 'installed' or game['installedBy'])
             and (mode != 'owned' or game['ownedBy'])
         ]
         records.sort(key=lambda game: (_title_key(game.get('title', '')), game['id']))
@@ -1311,10 +1555,12 @@ class GamesBackend:
             if (provider := state.get(store, {})).get('message')
         ]
         return {
-            'items': [
-                self._enrich_library_game(game, fetch=False)[0]
-                for game in records[offset : offset + PAGE_SIZE]
-            ],
+            'items': self._with_library_indicators(
+                [
+                    self._enrich_library_game(game, fetch=False, indexes=indexes)[0]
+                    for game in records[offset : offset + PAGE_SIZE]
+                ]
+            ),
             'next': offset + PAGE_SIZE if len(records) > offset + PAGE_SIZE else None,
             'setupRequired': False,
             'warning': '\n'.join(warnings),
@@ -1334,14 +1580,16 @@ class GamesBackend:
             + hashlib.sha256(json.dumps(identity).encode()).hexdigest()
         )
 
-    def _enrich_library_game(self, game, fetch=True, refresh=False):
-        """Keep store identities intact; fill descriptions/art without blocking the list."""
-        state = (
-            self._library_snapshot or self._cache_get('libraries:v1', 86400)[0] or {}
-        )
+    def _enrich_library_game(self, game, fetch=True, refresh=False, indexes=None):
+        """Keep store identities intact; fill descriptions/art without blocking the list.
+
+        Listings use only saved data (`fetch=False`); the selected game's details
+        fetch its Steam description and IGDB match.
+        """
+        state = self._library_state()
+        indexes = indexes or _library_indexes(state)
         overrides = self._store_overrides(game['id'])
         fallback = {}
-        pending = False
         warning = ''
         # Prefer Epic's supplied portrait over Steam's generic CDN fallback.
         epic, _ = match_library_item(
@@ -1349,24 +1597,27 @@ class GamesBackend:
             'epic',
             state.get('epic', {}).get('items', []),
             overrides.get('epic', ''),
+            indexes['epic'],
         )
         if epic:
             fallback = store_metadata.fill_missing(fallback, epic.get('metadata') or {})
         gog_item, _ = match_library_item(
-            game, 'gog', state.get('gog', {}).get('items', []), overrides.get('gog', '')
+            game,
+            'gog',
+            state.get('gog', {}).get('items', []),
+            overrides.get('gog', ''),
+            indexes['gog'],
         )
         if gog_item:
             fallback = store_metadata.fill_missing(
                 fallback, gog_item.get('metadata') or {}
             )
-        app_id = steam_app_id(game, state, overrides.get('steam', ''))
+        app_id = steam_app_id(game, state, overrides.get('steam', ''), indexes['steam'])
         if app_id:
-            key = f'steam-metadata:v1:{app_id}'
-            cached, fresh = self._cache_get(key, 7 * 86400, allow_stale=True)
-            cooling, _ = self._cache_get(key + ':retry', 300)
-            cooling = cooling or self._cache_get('steam-appdetails:retry', 300)[0]
+            key = f'steam-metadata:v2:{app_id}'
+            cached, fresh = self._cache_get(key, METADATA_TTL, allow_stale=True)
+            cooling = self._cooling(key)[1] or self._cooling(STEAM_DETAILS)[1]
             needs_store = not fresh and not cooling
-            pending = needs_store
             if fetch and (refresh or needs_store):
                 cached, warning = self._steam_metadata(app_id, refresh=refresh)
             fallback = store_metadata.fill_missing(fallback, cached or {})
@@ -1386,10 +1637,9 @@ class GamesBackend:
             and self.config_state()['configured']
         ):
             key = self._library_metadata_key(game, overrides)
-            cached, fresh = self._cache_get(key, 86400, allow_stale=True)
+            cached, fresh = self._cache_get(key, LIBRARY_MATCH_TTL, allow_stale=True)
             cooling, _ = self._cache_get(key + ':retry', 300)
             needs_catalogue = not fresh and not cooling
-            pending = pending or needs_catalogue or refresh
             if fetch and (refresh or needs_catalogue):
                 try:
                     raw = self.catalogue.browse(game['title'], {}, 0, 50)
@@ -1435,7 +1685,6 @@ class GamesBackend:
             for field, value in (cached or {}).items():
                 if value:
                     enriched[field] = value
-        enriched['metadataPending'] = pending if not fetch else False
         return enriched, warning
 
     def library_metadata(self, request):
@@ -1668,7 +1917,6 @@ class GamesBackend:
             }
 
     def protondb(self, request):
-        global _LAST_PROTONDB_REQUEST
         game_id = str(request.get('gameId', ''))
         _, game = self._catalog_id(game_id)
         override = self._store_overrides(game_id).get('steam', '')
@@ -1680,7 +1928,31 @@ class GamesBackend:
                 'label': 'Unavailable',
                 'url': '',
                 'total': 0,
+                'native': False,
             }
+        return {**self._protondb_summary(app_id), 'native': self._steam_native(app_id)}
+
+    def _steam_native(self, app_id):
+        """Whether Steam currently offers a Linux build."""
+        owned = [
+            item.get('externalId', '')
+            for item in self._library_state().get('steam', {}).get('items', [])
+        ]
+        # The first lookup fills platforms for the owned library in batched reads.
+        self._steam_store_items(
+            [app_id, *owned], limit=STEAM_ITEMS_BATCH * 3, platforms=True
+        )
+        record, _ = self._cache_get(f'steam-platforms:v1:{app_id}', allow_stale=True)
+        if isinstance(record, dict) and type(record.get('linux')) is bool:
+            return record['linux']
+        for root in self._steam_roots():
+            linux = self._steam_appinfo.linux(root / 'appcache/appinfo.vdf', app_id)
+            if linux is not None:
+                return linux
+        return False
+
+    def _protondb_summary(self, app_id):
+        global _LAST_PROTONDB_REQUEST
         key = f'protondb:v1:{app_id}'
         cached, fresh = self._cache_get(key, 7 * 86400)
         if cached is not None:
@@ -1979,15 +2251,52 @@ class GamesBackend:
             return None, 'error'
         if result.returncode != 0:
             combined = ((result.stderr or '') + ' ' + (result.stdout or '')).casefold()
+            # Legendary always logs "Logging in..."; a failed request for that
+            # login (offline) is an error, not a missing account.
             return None, 'unauthenticated' if any(
-                word in combined for word in ('login', 'auth', 'token', 'credential')
+                phrase in combined
+                for phrase in (
+                    'no saved credentials',
+                    'credentials are no longer valid',
+                    'please login',
+                    'not logged in',
+                )
             ) else 'error'
         try:
             return json.loads(result.stdout or '[]'), 'ok'
         except (TypeError, ValueError):
             return None, 'malformed'
 
-    def _epic_state(self):
+    def _epic_owned(self, refresh=False):
+        """Legendary's `list` logs in and refreshes Epic assets over the network.
+
+        Ownership changes rarely: reuse it for hours (minutes after a failure),
+        and keep the saved library while Epic is unreachable.
+        """
+        cached, age = self._cache_row('epic-owned:v1')
+        cached = cached if isinstance(cached, dict) else None
+        ttl = (
+            EPIC_OWNED_TTL
+            if cached and cached.get('status') == 'ok' and not cached.get('stale')
+            else OUTAGE_COOLDOWN
+        )
+        if refresh or cached is None or age > ttl:
+            raw, status = self._run_legendary_json(['list', '--json'])
+            if status == 'ok':
+                cached = {'status': 'ok', 'games': parse_legendary_owned(raw)}
+            elif (
+                status in ('error', 'malformed')
+                and cached
+                and cached.get('status') == 'ok'
+            ):
+                cached = {**cached, 'stale': True}
+            else:
+                cached = {'status': status, 'games': []}
+            self._cache_put('epic-owned:v1', cached)
+        games = [game for game in cached.get('games', []) if isinstance(game, dict)]
+        return games, cached.get('status', 'error'), bool(cached.get('stale'))
+
+    def _epic_state(self, refresh=False):
         executable = self._which('legendary')
         if not executable:
             return {
@@ -1998,11 +2307,10 @@ class GamesBackend:
                 'installationKnown': False,
                 'message': 'Legendary is not installed on PATH.',
             }
-        owned_raw, owned_status = self._run_legendary_json(['list', '--json'])
+        owned, owned_status, stale = self._epic_owned(refresh)
         installed_raw, installed_status = self._run_legendary_json(
             ['list-installed', '--json', '--show-dirs']
         )
-        owned = parse_legendary_owned(owned_raw) if owned_status == 'ok' else []
         installed = (
             parse_legendary_installed(installed_raw) if installed_status == 'ok' else []
         )
@@ -2021,6 +2329,8 @@ class GamesBackend:
             message = 'Legendary is not installed on PATH.'
         elif status in ('error', 'malformed'):
             message = 'Legendary could not read the Epic library.'
+        elif stale:
+            message = 'Epic is unreachable. Showing your saved Epic library.'
         else:
             message = ''
         return {
@@ -2032,17 +2342,18 @@ class GamesBackend:
             'message': message,
         }
 
-    def libraries(self, force=False):
+    def libraries(self, force=False, max_age=60):
+        """Launcher state; `force` also re-reads Epic ownership over the network."""
         with self._library_lock:
             if (
                 not force
                 and self._library_snapshot
-                and self._clock() - self._library_updated < 60
+                and self._clock() - self._library_updated < max_age
             ):
                 return self._library_snapshot
             snapshot = {
                 'steam': self._steam_state(),
-                'epic': self._epic_state(),
+                'epic': self._epic_state(refresh=force),
                 'gog': gog.read(self.env, self._which, self._runner),
             }
             self._library_snapshot = snapshot
@@ -2056,7 +2367,8 @@ class GamesBackend:
     def availability(self, request):
         game_id = str(request.get('gameId', ''))
         _, game = self._catalog_id(game_id)
-        state = self.libraries()
+        # Refresh game rescans launchers unless they were read moments ago.
+        state = self.libraries(max_age=5 if request.get('refresh') else 60)
         overrides = self._store_overrides(game_id)
         return {'stores': derive_store_state(game, state, overrides)}
 
@@ -2452,8 +2764,6 @@ class GamesBackend:
             return self.browse(request)
         if op == 'library_games':
             return self.library_games(request)
-        if op == 'library_metadata':
-            return self.library_metadata(request)
         if op == 'catalog_filters':
             if not self.config_state()['configured']:
                 raise GamesError(
@@ -2467,8 +2777,15 @@ class GamesBackend:
         if op == 'protondb':
             return self.protondb(request)
         if op == 'refresh_libraries':
+            # An explicit refresh may probe providers paused by an earlier outage.
             with self._db() as db:
-                db.execute('DELETE FROM cache WHERE key=?', ('steam-appdetails:retry',))
+                db.executemany(
+                    'DELETE FROM cache WHERE key=?',
+                    [
+                        (name + ':retry',)
+                        for name in (*CONTENT_PROVIDERS.values(), STEAM_DETAILS)
+                    ],
+                )
             self.libraries(force=True)
             return {'catalog': self.config_state()}
         if op == 'availability':
@@ -2482,7 +2799,13 @@ class GamesBackend:
                 )
             }
         if op == 'action':
-            return self.action(request)
+            result = self.action(request)
+            if ':play:' not in str(request.get('actionId', '')):
+                # Launchers change installations after the handoff; the next
+                # availability read (Refresh game, Play) rescans them.
+                with self._library_lock:
+                    self._library_updated = 0.0
+            return result
         raise GamesError('Unknown Games service operation.')
 
     @cached_property
@@ -2498,7 +2821,7 @@ def main():
         backend.handle,
         errors=(GamesError, ValueError, OSError),
         background=('refresh_libraries', 'library_games', 'availability', 'protondb'),
-        enrichment=('content_rating', 'library_metadata'),
+        enrichment=('content_rating',),
         latest=(
             'browse',
             'library_games',

@@ -241,3 +241,24 @@ class WallpaperTests(unittest.TestCase):
             ).read_bytes(),
             first.read_bytes(),
         )
+
+
+@unittest.skipUnless(support.QS, 'Quickshell is required')
+class WallpaperWindowTests(unittest.TestCase):
+    run_qml = support.run_qml
+
+    def test_background_tolerates_a_removed_output(self):
+        def setup(root):
+            support.floating_window(root / 'spaces/pictures/WallpaperBackground.qml')
+
+        # Variants keeps a delegate briefly after its screen disappears.
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "spaces/pictures"
+ShellRoot {
+ WallpaperBackground {output:null;external:true}
+ Timer {interval:200;running:true;onTriggered:{console.log("DISPLAY_PASS");Qt.quit();}}
+}""",
+            setup,
+        )

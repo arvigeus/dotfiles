@@ -5,10 +5,34 @@ import sys
 import tempfile
 import time
 import unittest
+import urllib.parse
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import support
+
+
+def steam_store_items(url, linux=()):
+    """Answer a batched IStoreBrowseService/GetItems read."""
+    query = json.loads(
+        urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)['input_json'][0]
+    )
+    return {
+        'response': {
+            'store_items': [
+                {
+                    'appid': row['appid'],
+                    'success': 1,
+                    'platforms': {
+                        'windows': True,
+                        **({'steamos_linux': True} if row['appid'] in linux else {}),
+                    },
+                }
+                for row in query['ids']
+            ]
+        }
+    }
+
 
 sys.path.insert(0, str(support.DESKTOP))
 from spaces.games import backend as games
@@ -598,6 +622,8 @@ class GamesBackendTests(unittest.TestCase):
             }
         if 'store.steampowered.com/api/appdetails' in url:
             return {'123': {'success': False}}
+        if 'IStoreBrowseService/GetItems' in url:
+            return steam_store_items(url)
         raise AssertionError('Unexpected network request')
 
     def save_game(self, refs=None, title='Example Game'):
@@ -639,6 +665,8 @@ class GamesBackendTests(unittest.TestCase):
                 return {'access_token': 'test-token', 'expires_in': 3600}
             if 'protondb.com' in url:
                 return {'tier': 'gold', 'total': 12}
+            if 'IStoreBrowseService/GetItems' in url:
+                return steam_store_items(url)
             return responder(url, body.decode())
 
         self.backend._request = request
@@ -801,13 +829,55 @@ class GamesBackendTests(unittest.TestCase):
             self.backend._runner.call_args.kwargs['stdin'], subprocess.DEVNULL
         )
 
+    def test_epic_ownership_is_reused_and_kept_while_epic_is_unreachable(self):
+        self.backend._which = lambda name: (
+            '/fake/legendary' if name == 'legendary' else None
+        )
+        owned = json.dumps([{'app_name': 'Catnip', 'app_title': 'Catnip'}])
+        outcomes = {'list': (0, owned, '')}
+
+        def run(args, **kwargs):
+            code, stdout, stderr = outcomes.get(args[1], (0, '[]', ''))
+            return subprocess.CompletedProcess(args, code, stdout, stderr)
+
+        self.backend._runner = Mock(side_effect=run)
+
+        def lists():
+            return [call.args[0][1] for call in self.backend._runner.call_args_list]
+
+        self.assertEqual(self.backend._epic_state()['ownedIds'], ['Catnip'])
+        # Rescans re-read local installations, not Epic's network library.
+        self.backend._epic_state()
+        self.assertEqual(lists().count('list'), 1)
+        self.assertEqual(lists().count('list-installed'), 2)
+        offline = (
+            '[cli] INFO: Logging in...\n'
+            '[Core] ERROR: HTTP request for login failed: ConnectionError(), '
+            'please try again later.\n[cli] ERROR: Login failed, cannot continue!'
+        )
+        outcomes['list'] = (1, '', offline)
+        state = self.backend._epic_state(refresh=True)
+        self.assertTrue(state['ownershipKnown'])
+        self.assertEqual(state['ownedIds'], ['Catnip'])
+        self.assertIn('unreachable', state['message'])
+        self.assertNotIn('Sign in', state['message'])
+        outcomes['list'] = (
+            1,
+            '',
+            '[Core] ERROR: Stored credentials are no longer valid! Please login again.',
+        )
+        state = self.backend._epic_state(refresh=True)
+        self.assertFalse(state['ownershipKnown'])
+        self.assertIn('Sign in with Legendary', state['message'])
+
     def test_protondb_lookup_uses_steam_ref_and_caches_rating(self):
         game = self.save_game([{'store': 'steam', 'externalId': '730'}])
         first = self.backend.protondb({'gameId': game['id']})
         self.assertEqual(first['tier'], 'gold')
         self.assertEqual(first['trendingTier'], 'platinum')
         self.assertEqual(first['url'], 'https://www.protondb.com/app/730')
-        self.assertEqual(len(self.calls), 1)
+        self.assertFalse(first['native'])
+        self.assertEqual(len([call for call in self.calls if 'protondb' in call[0]]), 1)
         self.backend._request = Mock(side_effect=games.GamesError('offline'))
         second = self.backend.protondb({'gameId': game['id']})
         self.assertEqual(second['tier'], 'gold')
@@ -838,7 +908,50 @@ class GamesBackendTests(unittest.TestCase):
         self.backend._library_updated = self.backend._clock()
         result = self.backend.protondb({'gameId': game['id']})
         self.assertEqual(result['url'], 'https://www.protondb.com/app/123')
-        self.assertIn('/summaries/123.json', self.calls[-1][0])
+        self.assertTrue(any('/summaries/123.json' in call[0] for call in self.calls))
+
+    def test_native_linux_badge_prefers_current_store_platforms(self):
+        from test_games_content import write_appinfo
+
+        (self.root / '.steam/steam/steamapps').mkdir(parents=True)
+        write_appinfo(
+            self.root / '.steam/steam/appcache/appinfo.vdf',
+            {
+                730: {'common': {'type': 'game', 'oslist': 'windows,linux'}},
+                731: {'common': {'type': 'game', 'oslist': 'windows,linux'}},
+            },
+        )
+        native = self.save_game([{'store': 'steam', 'externalId': '730'}])
+        dropped = games.normalize_igdb_game({'id': 222, 'name': 'Dropped port'}, '')
+        dropped['storeReferences'] = [{'store': 'steam', 'externalId': '731'}]
+        dropped = self.backend._save_game(222, dropped)
+        owned = [
+            {'store': 'steam', 'externalId': app, 'title': app, 'installed': False}
+            for app in ('730', '731', '732')
+        ]
+        self.backend._library_snapshot = {'steam': {'items': owned}}
+        self.backend._library_updated = self.backend._clock()
+        reads = []
+
+        def request(url, *args):
+            if 'IStoreBrowseService' in url:
+                reads.append(url)
+                return steam_store_items(url, linux={730})
+            return {'tier': 'gold', 'total': 4}
+
+        self.backend._request = request
+        self.assertTrue(self.backend.protondb({'gameId': native['id']})['native'])
+        # Steam no longer offers the port the client cache still lists.
+        self.assertFalse(self.backend.protondb({'gameId': dropped['id']})['native'])
+        # One batched read covered the selected game and the owned library.
+        self.assertEqual(len(reads), 1)
+        self.assertIn('732', urllib.parse.unquote(reads[0]))
+        self.backend._request = Mock(side_effect=games.GamesError('offline'))
+        with self.backend._db() as db:
+            db.execute("DELETE FROM cache WHERE key LIKE 'steam-platforms:%'")
+            db.execute("DELETE FROM cache WHERE key LIKE '%:retry'")
+        # Without the store, the client cache decides.
+        self.assertTrue(self.backend.protondb({'gameId': dropped['id']})['native'])
 
     def test_protondb_invalid_tier_becomes_unknown_and_keeps_numeric_page_link(self):
         game = self.save_game([{'store': 'steam', 'externalId': '123'}])
@@ -1001,6 +1114,65 @@ class GamesBackendTests(unittest.TestCase):
         self.assertEqual(
             self.backend._popen.call_args.args[0],
             ['/usr/bin/legendary', '--yes', 'uninstall', 'Catnip'],
+        )
+
+    def test_launcher_actions_except_play_rescan_libraries_on_next_read(self):
+        game = self.save_game([{'store': 'epic', 'externalId': 'Catnip'}])
+        self.backend._which = lambda name: (
+            '/usr/bin/legendary' if name == 'legendary' else None
+        )
+        installed = {
+            'available': True,
+            'ownershipKnown': True,
+            'installationKnown': True,
+            'ownedIds': ['Catnip'],
+            'items': [
+                {
+                    'store': 'epic',
+                    'externalId': 'Catnip',
+                    'title': game['title'],
+                    'installed': True,
+                    'launchable': True,
+                }
+            ],
+        }
+        snapshot = {'steam': {'items': []}, 'epic': installed, 'gog': {'items': []}}
+        self.backend._steam_state = Mock(return_value={'items': []})
+        self.backend._epic_state = Mock(return_value={**installed, 'items': []})
+        self.backend._launch_epic = Mock(return_value={'started': True})
+        for action, rescans in (('play', 0), ('uninstall', 1)):
+            with self.subTest(action=action):
+                self.backend._library_snapshot = snapshot
+                self.backend._library_updated = self.backend._clock()
+                self.backend._epic_state.reset_mock()
+                with patch.object(games.gog, 'read', return_value={'items': []}):
+                    self.backend.handle(
+                        {
+                            'op': 'action',
+                            'gameId': game['id'],
+                            'actionId': f'epic:{action}:Catnip',
+                        }
+                    )
+                    self.backend.libraries()
+                self.assertEqual(self.backend._epic_state.call_count, rescans)
+
+    def test_refreshed_availability_rescans_launchers_unless_just_read(self):
+        game = self.save_game([{'store': 'steam', 'externalId': '730'}])
+        self.backend._steam_state = Mock(return_value={'items': []})
+        self.backend._epic_state = Mock(return_value={'items': []})
+        with patch.object(games.gog, 'read', return_value={'items': []}):
+            self.backend.libraries()
+            for delay, refresh, scans in ((2, True, 1), (10, False, 1), (6, True, 2)):
+                self.backend._library_updated = self.backend._clock() - delay
+                self.backend.availability({'gameId': game['id'], 'refresh': refresh})
+                with self.subTest(delay=delay, refresh=refresh):
+                    self.assertEqual(self.backend._steam_state.call_count, scans)
+        # Rescans for Refresh game keep the saved Epic ownership.
+        self.assertTrue(
+            all(
+                not call.kwargs.get('refresh')
+                for call in self.backend._epic_state.call_args_list
+            )
         )
 
     def test_detached_launcher_reports_a_quick_nonzero_exit(self):
@@ -1357,7 +1529,7 @@ class GamesBackendTests(unittest.TestCase):
         self.assertEqual(game['summary'], 'A & B adventure.')
         self.assertEqual(game['cover']['url'], 'https://epic.example/tall.jpg')
         self.assertEqual(game['artwork'][0]['url'], 'https://epic.example/wide.jpg')
-        self.assertFalse(game['metadataPending'])
+        self.assertNotIn('metadataPending', game)
         self.assertEqual(self.calls, [])
 
     def test_library_steam_metadata_is_lazy_cached_and_keeps_personal_state(self):
@@ -1365,7 +1537,6 @@ class GamesBackendTests(unittest.TestCase):
             [{'externalId': '123', 'title': 'Example Game', 'owned': True}], []
         )
         game = self.backend.library_games({})['items'][0]
-        self.assertTrue(game['metadataPending'])
         self.assertIn('/123/library_600x900.jpg', game['cover']['url'])
         self.assertEqual(self.calls, [])
         self.backend.set_favorite({'gameId': game['id'], 'favorite': True})
@@ -1387,17 +1558,17 @@ class GamesBackendTests(unittest.TestCase):
                 }
             }
         )
-        hydrated = self.backend.handle(
-            {'op': 'library_metadata', 'gameId': game['id']}
-        )['game']
+        hydrated = self.backend.library_metadata({'gameId': game['id']})['game']
         self.assertEqual(hydrated['summary'], 'Steam description')
+        # The store header is landscape; the poster stays the portrait asset.
+        self.assertIn('/123/library_600x900.jpg', hydrated['cover']['url'])
         self.assertTrue(hydrated['favorite'])
         self.assertEqual(hydrated['id'], game['id'])
         self.assertEqual(hydrated['ownedBy'], ['steam'])
         again = self.backend.library_games({})['items'][0]
         self.assertEqual(again['summary'], hydrated['summary'])
         self.assertEqual(again['screenshots'], hydrated['screenshots'])
-        self.assertFalse(again['metadataPending'])
+        self.assertEqual(again['cover'], hydrated['cover'])
         # Listing the library rewrites launcher rows; Favorites must keep their metadata.
         favorite = self.backend.browse({'favorites': True})['items'][0]
         self.assertEqual(favorite['summary'], hydrated['summary'])
@@ -1443,7 +1614,6 @@ class GamesBackendTests(unittest.TestCase):
         self.backend.catalogue.browse = catalogue
         game = self.backend.library_games({})['items'][0]
         self.assertEqual(game['summary'], 'Store')
-        self.assertTrue(game['metadataPending'])
         catalogue.assert_not_called()
         enriched = self.backend.library_metadata({'gameId': game['id']})['game']
         self.assertEqual(enriched['summary'], 'IGDB')
@@ -1477,6 +1647,24 @@ class GamesBackendTests(unittest.TestCase):
         self.backend.library_metadata({'gameId': game['id']})
         self.assertEqual(self.backend.catalogue.browse.call_count, 1)
 
+    def test_library_igdb_match_is_reused_for_a_month(self):
+        self.configure_igdb(lambda url, body: [])
+        self.set_library_state(
+            [],
+            [{'externalId': 'Example', 'title': 'Example', 'owned': True}],
+        )
+        self.backend.catalogue.browse = Mock(return_value=[])
+        now = [1000000]
+        self.backend._clock = lambda: now[0]
+        game = self.backend.library_games({})['items'][0]
+        self.backend.library_metadata({'gameId': game['id']})
+        now[0] += 2 * 86400
+        self.backend.library_metadata({'gameId': game['id']})
+        self.assertEqual(self.backend.catalogue.browse.call_count, 1)
+        now[0] += games.LIBRARY_MATCH_TTL
+        self.backend.library_metadata({'gameId': game['id']})
+        self.assertEqual(self.backend.catalogue.browse.call_count, 2)
+
     def test_library_igdb_ambiguity_editions_and_conflicting_ids_keep_store_data(self):
         self.configure_igdb(lambda url, body: [])
         self.backend._request = Mock(return_value={'123': {'success': False}})
@@ -1484,7 +1672,7 @@ class GamesBackendTests(unittest.TestCase):
             [{'externalId': '123', 'title': 'Example', 'owned': True}], []
         )
         self.backend._cache_put(
-            'steam-metadata:v1:123', {'summary': 'Steam description'}
+            'steam-metadata:v2:123', {'summary': 'Steam description'}
         )
         game = self.backend.library_games({})['items'][0]
         for records in (
@@ -1527,7 +1715,7 @@ class GamesBackendTests(unittest.TestCase):
     def test_partial_saved_igdb_details_fill_missing_fields_from_store(self):
         game = self.save_game([{'store': 'steam', 'externalId': '123'}])
         self.backend._cache_put(
-            'steam-metadata:v1:123',
+            'steam-metadata:v2:123',
             {
                 'summary': 'Steam',
                 'cover': {'url': 'https://steam.example/header.jpg'},
@@ -1547,7 +1735,7 @@ class GamesBackendTests(unittest.TestCase):
         )
         game = self.backend.library_games({})['items'][0]
         self.backend._cache_put(
-            'steam-metadata:v1:123', {'summary': 'Saved description'}
+            'steam-metadata:v2:123', {'summary': 'Saved description'}
         )
         now = self.backend._clock()
         self.backend._clock = lambda: now + 8 * 86400

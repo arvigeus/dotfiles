@@ -10,7 +10,9 @@ preferences, artwork cache and optional torrent worker. Other Spaces retain
 their independent instances. See the [presentation contract](../movies/ARCHITECTURE.md#presentation-contract).
 
 The facts row presents the IGDB mark/score, the supplied colored ProtonDB tier
-badge and a clock with HowLongToBeat's main-story hours. The clock/time form one
+badge (the native badge when Steam's store platforms list a Linux build, falling
+back to the client cache's `oslist`, which can still list discontinued ports; the
+first lookup fills platforms for the owned library in batched reads) and a clock with HowLongToBeat's main-story hours. The clock/time form one
 link to the matched HLTB page; a passive tooltip shows all three estimates,
 stale status and lookup warnings. Without a match, the clock opens the editable
 HLTB link/ID dialog instead. The adjacent link icon opens the official website.
@@ -54,7 +56,18 @@ through the existing Movies `Worker`, with a selectable backend directory.
 The worker owns a process group; explicit close releases its request threads and
 owned subprocesses. User-launched games and launcher actions run independently
 through `uwsm app -t service` when available. Steam supplies its own install and
-uninstall prompts; Epic uninstall requires the page confirmation first.
+uninstall prompts; Epic uninstall requires the page confirmation first. Launcher
+snapshots are reused for 60 seconds, except that any action other than Play marks
+them stale and Refresh game rescans snapshots older than five seconds. After an
+uninstall, the page rechecks the selected game's store state after 3, 10 and 30
+seconds while visible, stopping when its installation changes.
+
+Legendary's `list` always logs in and refreshes Epic assets over the network
+(2–9 seconds), so Epic ownership is cached as `epic-owned:v1` for six hours, five
+minutes after a failure; rescans run only the local `list-installed`. Library
+Refresh and install completion re-read ownership. When Epic is unreachable, the
+saved ownership stays in use with a notice. Only Legendary's credential messages
+mean signed out; its "Logging in…" log line appears on every run.
 
 ### Epic installation progress
 
@@ -73,23 +86,26 @@ an absent supervisor counts as interrupted. Failed/interrupted attempts can be
 retried with Install, allowing Legendary to resume its partial download. These
 machine-local snapshots are not part of the portable library backup.
 
-Games polls snapshots every 1.5 seconds while visible or installing, and once on
-opening. The Epic button disables during installation and shows percentage;
+Games reads snapshots when it opens or is shown and after starting an install,
+then every 1.5 seconds while one is running. The Epic button disables during installation and shows percentage;
 inline status adds speed/ETA and retains failures. The Downloads panel lists Epic
 jobs across selections, alongside the current game's torrent jobs. Completion
 refreshes launcher state and the selected action to Play, deferring visible
 catalogue updates while hidden. Closing Games releases its worker but preserves
 the independent supervisor; reopening recovers progress from disk.
 
-Background library hydration is independent of installations. Its activity text
-counts queued games remaining; install jobs also appear in the shared header
-activity indicator. Snapshot-only polls do not create a loading indicator.
-Content classification and library hydration use a separate two-thread enrichment
-lane, leaving foreground details, launcher reads and ordered actions available.
-With the content filter enabled, classification drains before background metadata
-starts, and only visible titles are enriched. Appending a page preserves the
-browse generation so earlier metadata responses can still update their games;
-replacing the query/view invalidates them.
+Install jobs also appear in the shared header activity indicator. Snapshot-only
+polls do not create a loading indicator. Content classification uses a separate
+two-thread enrichment lane, leaving foreground details, launcher reads and
+ordered actions available.
+
+Library listings use only saved and launcher data; there is no background
+per-game hydration. Launchers and the Steam CDN supply a poster for every library
+row (Steam's portrait `library_600x900` asset; the landscape `appdetails` header
+is never a poster). Descriptions, screenshots and the IGDB match load through
+`details` for the selected game only. A found IGDB match is reused for 30 days and
+Steam descriptions for seven; both stay usable when stale. Selecting a game costs
+at most one IGDB search and one `appdetails` read, and nothing once cached.
 
 ### GOG through Heroic
 
@@ -133,52 +149,89 @@ new purchases require refreshing Heroic's own library first.
 
 ### Native content filtering
 
-`content.py` reads only native classifications: Steam appdetails
-`content_descriptors.ids` 3 (Adult Only Sexual Content) and 4 (Frequent Nudity or
-Sexual Content), as defined by [Valve](https://partner.steamgames.com/doc/api/ISteamUGC#EUGCContentDescriptorID),
-and the `nsfw` slug in GOG's `GET https://api.gog.com/v2/games/PRODUCT_ID?locale=en-US`
-`_embedded.properties`. GOG's separate `tags` array contains genres. The NSFW
-property matches the [store tag](https://www.gog.com/en/games?tags=nsfw).
-Both responses must identify the requested product. Missing/malformed labels
-remain unknown; titles, descriptions, maturity/age ratings, and third-party
-classifications never substitute for them. These storefront endpoints are not
-versioned contracts for third-party clients and may change independently.
+`content.py` reads only native classifications: Steam `content_descriptors` 3
+(Adult Only Sexual Content) and 4 (Frequent Nudity or Sexual Content), as defined by
+[Valve](https://partner.steamgames.com/doc/api/ISteamUGC#EUGCContentDescriptorID),
+and GOG's [NSFW store tag](https://www.gog.com/en/games?tags=nsfw).
+Missing/malformed labels and unknown descriptor IDs remain unknown; titles,
+descriptions, maturity/age ratings, and third-party classifications never
+substitute for them. These storefront endpoints are not versioned contracts for
+third-party clients and may change independently.
 
-Heroic's cache omits these tags, so GOG labels use the public endpoint without
-account credentials. Exact store IDs and centralized library matches determine
-classification, including manual overrides and GOG slugs resolved against
-Heroic's product records. Unresolved slugs, Epic-only games and local files have
-no supported classification and remain visible. A merged game is hidden when
-any supported store labels it NSFW; it is cleared only when every supported
-store has a known negative label. This is a store-label filter, not a claim that
-unlabelled/unsupported content is safe.
+Steam labels come first from the installed client's PICS cache,
+`appcache/appinfo.vdf` under each Steam root. It holds `common/content_descriptors`
+for owned and viewed apps, and omits the section when an app declares none, as the
+store does; for 300 owned games both agreed on every label. Only format v29 (magic
+`0x07564429`, string-table keys) is read, bounded to 128 MiB. The app index is
+rebuilt when the file's mtime or size changes, and each app's key/values are
+parsed on first use. Other apps, an app without `common` data, another format or a
+malformed file use `IStoreBrowseService/GetItems` on `api.steampowered.com`:
+`content_descriptorids` and `platforms` for up to 100 apps per request, without a
+key. Items must identify the requested app; other `success` values (unknown or
+region-restricted) stay unknown. Descriptions still come from `appdetails` on
+`store.steampowered.com`, so either host can be unreachable without affecting the
+other.
 
-`native-content:v1:STORE:ID` entries in the existing SQLite cache last seven days.
-Failed reads retain stale labels with a five-minute retry cooldown. Explicit
-Refresh bypasses per-product cooldowns. Steam labels and descriptions share one
-appdetails fetch and source lock per app. A Steam transport/provider failure pauses
-appdetails requests across products for five minutes, including forced per-game
-reads; the library Refresh action allows a new probe. Missing data for a single
-product does not pause other products. Successful reads populate both caches.
-Listing reads cached labels without taking network locks. Two bounded
-`content_rating` requests run at a time while visible with filtering enabled;
-fetches coalesce through source locks. Changing the NSFW toggle only refilters
-the current pages and schedules missing labels; it does not refresh launcher
-libraries or invalidate saved metadata. Browse generations reject
-late callbacks after search or view changes. Hiding stops queued reads; closing
-terminates the owned worker as usual.
+GOG labels come from one pass over `GET https://catalog.gog.com/v1/catalog` with
+`tags=is:nsfw` (about 1,000 products, 11 pages of 100), without account
+credentials; Heroic's caches carry no store tags. The pass is stored as
+`gog-nsfw:v1` and a product is NSFW when its ID is listed, so the request count
+does not grow with the library. Every listed product must carry the `nsfw` tag
+slug: a page that ignored the filter, a malformed page or more than 50 pages fails
+the pass, which keeps the previous set. The listing omits secret products (Agony,
+for example, is secret and tagged NSFW on its product page), so those count as not
+tagged; this is an accepted trade-off for not reading each product. The set renews
+after seven days, and library Refresh renews a set older than a day. Until the
+first pass completes, GOG games await classification.
 
-QML keeps the returned page separately from its visible catalogue. The NSFW
-checkbox includes adult games when checked and starts unchecked in the collapsed
-Filters panel. Filters is available in Library, Browse and Favorites without
-catalogue credentials; catalogue-specific controls appear only in configured
-Browse. The inverse checkbox value persists as `catalogue/hideNsfw` in
-`games-ui.ini`, across these views. Unknown supported entries stay out of the
-catalogue and selection until classified, including when offline. Counts in the
-expanded filters distinguish known NSFW from unavailable/pending labels.
+Exact store IDs and centralized library matches determine classification,
+including manual overrides and GOG slugs resolved against Heroic's product records.
+Unresolved slugs, Epic-only games and local files have no supported classification.
+A merged game is NSFW when any supported store labels it so, and labelled safe only
+when every supported store has a known negative label. This is a store-label filter,
+not a claim that unlabelled content is safe.
+
+Each label result carries `pending` (a lookup is due) and `awaiting` (due and never
+attempted). With NSFW hidden, QML hides known NSFW games and awaiting ones, so a
+new title cannot flash before its first lookup. A label that stays unknown after
+an attempt (provider outage, missing product, malformed data) is shown. The game
+being viewed is not hidden by an awaiting label, for example after editing its
+store link; hiding NSFW removes it as it does a known NSFW selection, and closes
+its gallery and dialogs.
+
+`native-content:v1:steam:ID` and `steam-platforms:v1:ID` entries in the existing
+SQLite cache last 30 days; stale labels and a stale GOG set still apply while a
+refresh is due. Failure markers (`KEY:retry`) store their cooldown: five minutes
+after an outage, one day when Steam answers without usable data for that app
+(item `success` other than 1). A transport/provider
+failure pauses that provider across products, including forced reads:
+`steam-store-items` (labels/platforms), `steam-appdetails` (descriptions) and
+`gog-content`. Consecutive failures double the pause up to an hour, and a success
+clears it, so a long outage costs one probe per hour instead of an 8-second timeout
+every five minutes. Products skipped during a pause are recorded as attempted. The
+library Refresh action clears the pauses and per-product cooldowns; known labels
+are not re-read before they expire.
+
+Listing reads cached and local labels without network locks, through one SQLite
+connection per listing; the library computes labels only for the returned page.
+`content_rating` takes up to 100 `gameIds` and returns `items`; QML sends up to 25
+queued games per request with two requests in flight while visible with filtering
+enabled. Each request makes at most one Steam store read per 100 apps; fetches
+coalesce through source locks. Changing the NSFW toggle only
+refilters the current pages and schedules due labels; it does not refresh launcher
+libraries or invalidate saved metadata. Browse generations reject late callbacks
+after search or view changes. Hiding stops queued reads; closing terminates the
+owned worker as usual.
+
+QML keeps the returned page separately from its visible catalogue and patches rows
+in place unless a game's visibility changes. The Filters button opens the
+inline header group used by Movies and Books. NSFW is available there in Library,
+Browse and Favorites without catalogue credentials; genre, platform, sort and year
+fields with Apply/Reset appear only in configured Browse. The inverse toggle value
+persists as `catalogue/hideNsfw` in `games-ui.ini`. The toggle's tooltip counts
+games hidden by labels, awaiting classification and shown without labels.
 Pagination retains the provider's raw offset, waits for the current
-classification queue and advances through wholly hidden pages. Unchecking NSFW
-immediately removes hidden selection and closes its gallery/dialogs.
+classification queue and advances through wholly hidden pages.
 Games backdrops use the shared one-second retention period: the previous image
 stays visible while the new backdrop loads, then yields to the selected game's
 poster if loading is still in progress.
@@ -197,7 +250,7 @@ Successful HLTB results persist for 30 days; failed reads retain stale times wit
 a warning and a five-minute cooldown. Manual HLTB overrides have their own table
 and survive metadata refresh. An independent request generation prevents a late
 automatic result from replacing a newer manual match. Browse, selection and
-background library-enrichment generations similarly reject stale results.
+hydration generations similarly reject stale results.
 
 `presentation.py` reads Steam's most-recent account (or the sole local account)
 for custom grid logos/heroes/covers and local playtime. It does not combine stats
@@ -208,8 +261,14 @@ is required for artwork already installed in Steam. Downloaded images use a
 Games-owned `ArtworkCache`, reusing the Movies bounded cache implementation;
 Movies/Series retain their existing shared cache instance.
 
-Hidden pages stop selection debounce, pagination, search and background metadata
-hydration. In-flight bounded reads may finish without activating the page.
+Refreshing a game, finishing an install or saving a store match re-hydrates the
+selected game; a hydration generation alongside the selection generation lets only
+the newest responses apply. Saving a store match keeps the selection, and a
+refreshed listing keeps a retained selection in view instead of scrolling back to
+the start.
+
+Hidden pages stop selection debounce, pagination, search and content
+classification. In-flight bounded reads may finish without activating the page.
 Backdrops/logos stop presenting; popups close. Active torrent imports keep their
 monitor intentionally; idle hidden monitoring stops. Closing releases the Games
 workers and interrupts in-flight indexing, while qBittorrent retains accepted
@@ -248,7 +307,7 @@ Proton if supplied.
 
 ## Validation
 
-`test_games_backend.py` ports the existing 70 parser/provider/store-action tests.
+`test_games_backend.py` covers parsers, providers and store actions.
 `test_games_extras.py` covers HLTB auth, route discovery, exact/ambiguous matching,
 direct links, stale/offline responses, custom local art, account selection. `test_games_space.py` drives the production worker and
 fullscreen host with isolated providers: opening, rail/grid preference,
@@ -268,21 +327,29 @@ covered by the full offscreen suite.
 malformed/missing/bounded reads, metadata, safe IDs/URLs, three-store library union,
 filters, favorites, saved matches and action-time revalidation. Launcher calls are
 mocked; UI fixtures check the GOG logo, menu, labels and retained launcher handoff.
-`test_games_content.py` covers native tag/descriptor parsing, unknown/malformed
-data, exact identity/override handling, combined stores, cache reuse/restart and
-offline cooldown/refresh. The Games UI fixture checks hiding pending artwork,
-asynchronous native results, selection clearing, Favorites, persisted toggles,
-classification priority, skipping hidden-game metadata and metadata completion
-across pagination. Threaded backend regressions check nonblocking listing, shared
-Steam fetches and outage backoff; `test_movies_worker.py` checks that blocked
-enrichment leaves foreground, launcher and control lanes available.
+`test_games_content.py` covers native tag/descriptor parsing, synthetic v29
+Steam client caches (labels, fallback, rewrites, other formats, truncation),
+batched Steam store items, the bulk GOG NSFW listing (paging, weekly/daily
+renewal, untagged pages, secret products), an unreachable description host,
+unknown/malformed data, exact identity/override handling, combined stores, cache
+reuse/restart, awaiting versus attempted labels, outage pauses and back-off,
+one-day cooldowns for missing Steam apps, refresh and single-connection listings. `test_games_backend.py`
+also covers the native badge, cached Epic ownership while offline and rescans for
+Refresh game. The Games UI fixture checks header placement, hiding labelled and
+never-classified artwork, showing unavailable labels, tooltip counts, selection
+clearing, Favorites, persisted toggles, scrolling a paged 120-game library with
+batched classification and no per-game requests, newest-hydration ordering, match edits that keep the selection, in-place row patches, the native
+badge, uninstall rechecks and no polling while idle. UI fixtures stub Steam roots
+and storefront HTTP. Threaded backend regressions check nonblocking listing;
+`test_movies_worker.py` checks that blocked enrichment leaves foreground, launcher
+and control lanes available.
 
 Live public HLTB search and direct-page reads both resolved Portal 2 (Steam 620)
 to HLTB 7231. Actual store launch/install/uninstall, download completion and
 multi-monitor scaling/focus/hotplug need interactive validation.
 Epic install fixtures exercise real detached supervisors with a fake Legendary
 executable: telemetry, duplicate requests, backend restart, completion, failure,
-interruption and sanitized errors. The UI regression clicks Install with metadata
-activity present, checks percentage/speed/ETA and Downloads, closes/reopens Games
+interruption and sanitized errors. The UI regression clicks Install, checks
+percentage/speed/ETA, the activity indicator and Downloads, closes/reopens Games
 during installation and verifies Play on completion. It never contacts an account
 or downloads a real game.
