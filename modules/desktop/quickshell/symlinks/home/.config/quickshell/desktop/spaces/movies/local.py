@@ -1,5 +1,8 @@
 """Identity-based local library shared by catalogue and torrent workers."""
 
+import ctypes
+import errno
+import functools
 import json
 import os
 import re
@@ -24,38 +27,99 @@ def cleanup_transfers():
             path.unlink(missing_ok=True)
 
 
-def move_file(source, target):
-    """Publish a complete file without overwriting; keep the source until then."""
+@contextmanager
+def transfer(directory, prefix, suffix=''):
+    """A hidden in-flight file that worker close removes (see cleanup_transfers)."""
+    descriptor, name = tempfile.mkstemp(prefix=prefix, suffix=suffix, dir=directory)
+    os.close(descriptor)
+    temporary = Path(name)
+    with _transfer_lock:
+        _transfers.add(temporary)
+    try:
+        yield temporary
+    finally:
+        temporary.unlink(missing_ok=True)
+        with _transfer_lock:
+            _transfers.discard(temporary)
+
+
+# link() publishes without replacing anything. These errors usually mean the
+# filesystem (vfat, exFAT, some FUSE mounts) has no hard links; renameat2 with
+# RENAME_NOREPLACE gives the same guarantee for a file that may be moved.
+NO_LINKS = frozenset((errno.EPERM, errno.EOPNOTSUPP, errno.ENOSYS, errno.EMLINK))
+EXISTS = 'A different file already exists at the library destination.'
+
+
+@functools.cache
+def _renameat2():
+    function = ctypes.CDLL(None, use_errno=True).renameat2
+    function.argtypes = (
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    )
+    return function
+
+
+def rename_noreplace(source, target):
+    """rename(2) that raises FileExistsError rather than replace the target."""
+    at_cwd, noreplace = -100, 1
+    if _renameat2()(
+        at_cwd, os.fsencode(source), at_cwd, os.fsencode(target), noreplace
+    ):
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), str(source), None, str(target))
+
+
+def place(temporary, target):
+    """Publish a private temporary at target without replacing anything.
+
+    Without hard links it is renamed instead, so it is gone afterwards.
+    """
+    try:
+        os.link(temporary, target)
+    except OSError as error:
+        if error.errno not in NO_LINKS:
+            raise
+        rename_noreplace(temporary, target)
+
+
+def publish(source, target, *, move=False):
+    """Make a complete source appear at target without replacing anything.
+
+    move=True removes the source once the target is complete.
+    """
     source, target = Path(source), Path(target)
     try:
-        os.link(source, target)
-    except FileExistsError:
-        raise ValueError(
-            'A different file already exists at the library destination.'
-        ) from None
-    except OSError:
-        descriptor, name = tempfile.mkstemp(
-            prefix='.' + SPACE + '-import-', dir=target.parent
-        )
-        os.close(descriptor)
-        temporary = Path(name)
-        with _transfer_lock:
-            _transfers.add(temporary)
         try:
+            os.link(source, target)
+        except OSError as error:
+            if not move or error.errno not in NO_LINKS:
+                raise
+            # Same filesystem without hard links: one rename moves it.
+            rename_noreplace(source, target)
+            return
+    except FileExistsError:
+        raise ValueError(EXISTS) from None
+    except OSError:
+        # Another filesystem: copy beside the target, then publish it.
+        with transfer(target.parent, '.' + SPACE + '-import-') as temporary:
             shutil.copy2(source, temporary)
             with temporary.open('rb') as stream:
                 os.fsync(stream.fileno())
             try:
-                os.link(temporary, target)
+                place(temporary, target)
             except FileExistsError:
-                raise ValueError(
-                    'A different file already exists at the library destination.'
-                ) from None
-        finally:
-            temporary.unlink(missing_ok=True)
-            with _transfer_lock:
-                _transfers.discard(temporary)
-    source.unlink()
+                raise ValueError(EXISTS) from None
+    if move:
+        source.unlink()
+
+
+def move_file(source, target):
+    """Publish a complete file without overwriting; keep the source until then."""
+    publish(source, target, move=True)
 
 
 VIDEO_EXTENSIONS = {'.mkv', '.mp4', '.webm', '.avi', '.mov', '.m4v'}
@@ -475,29 +539,8 @@ class LocalLibrary:
             move_file(source, target)
             created = moved = True
         else:
-            try:
-                os.link(source, target)
-                created = True
-            except FileExistsError:
-                raise ValueError(
-                    'A file already exists at the library destination.'
-                ) from None
-            except OSError:
-                with tempfile.NamedTemporaryFile(
-                    dir=target.parent, delete=False
-                ) as temporary:
-                    temporary_path = Path(temporary.name)
-                    try:
-                        with source.open('rb') as incoming:
-                            shutil.copyfileobj(incoming, temporary)
-                    except Exception:
-                        temporary_path.unlink(missing_ok=True)
-                        raise
-                try:
-                    os.link(temporary_path, target)
-                    created = True
-                finally:
-                    temporary_path.unlink(missing_ok=True)
+            publish(source, target)
+            created = True
         try:
             for subtitle, renamed in subtitle_moves:
                 if subtitle != renamed:
@@ -638,10 +681,13 @@ class LocalLibrary:
                     target = Path(path)
                     folder = target.parent
                     root = library_root(kind).resolve()
+                    # Compare resolved paths: a linked Videos directory must not
+                    # let a row in the root itself select the whole library.
+                    resolved = folder.resolve()
                     if (
-                        not folder.resolve().is_relative_to(root)
-                        or folder == root
-                        or folder.is_symlink()
+                        folder.is_symlink()
+                        or resolved == root
+                        or not resolved.is_relative_to(root)
                     ):
                         raise ValueError('The library folder is unsafe to remove.')
                     folders.add(folder)

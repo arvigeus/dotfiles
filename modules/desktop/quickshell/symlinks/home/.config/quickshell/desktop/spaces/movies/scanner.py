@@ -1,6 +1,7 @@
 """Reviewable discovery of completed qBittorrent and filesystem media."""
 
 import json
+import os
 import re
 import subprocess
 import xml.etree.ElementTree as ET
@@ -12,6 +13,36 @@ try:
     from guessit import guessit
 except ImportError:
     guessit = None
+
+EXTRA_FOLDERS = ('extras', 'samples', 'trailers')
+
+
+def extra(path, base):
+    """A sample, local trailer or bonus video rather than the feature itself."""
+    stem = path.stem.casefold()
+    relative = path.relative_to(base) if path.is_relative_to(base) else path
+    return (
+        'sample' in stem
+        or re.search(r'(?:^|[-._ ])trailer$', stem) is not None
+        or any(part.casefold() in EXTRA_FOLDERS for part in relative.parts[:-1])
+    )
+
+
+def visible_files(root, extensions):
+    """Files below root with these suffixes, skipping hidden entries and links.
+
+    Hidden folders hold application data (games, caches, other Spaces), whose
+    videos must never be organized into a library.
+    """
+    found = []
+    for directory, folders, files in os.walk(root):
+        folders[:] = [name for name in folders if not name.startswith('.')]
+        found.extend(
+            Path(directory, name)
+            for name in files
+            if not name.startswith('.') and Path(name).suffix.lower() in extensions
+        )
+    return sorted(found)
 
 
 def settled(torrent):
@@ -34,9 +65,27 @@ def sidecar_identity(path, kind):
             continue
         if isinstance(value, dict) and value.get('kind') and value.get('id'):
             return value
-    if kind not in ('movie', 'tv'):
+    if kind == 'movie':
+        # movie.nfo describes its folder's one feature; trailers, extras and
+        # other movies beside or below it are different files.
+        try:
+            videos = [
+                item.name
+                for item in path.parent.iterdir()
+                if item.suffix.lower() in EXTENSIONS['movie']
+                and not item.name.startswith('.')
+                and item.is_file()
+                and not extra(item, path.parent)
+            ]
+        except OSError:
+            return {}
+        folders = (path.parent,) if videos == [path.name] else ()
+    elif kind == 'tv':
+        # A show's NFO sits in its folder, one level above Season folders.
+        folders = (path.parent, path.parent.parent)
+    else:
         return {}
-    for folder in (path.parent, path.parent.parent):
+    for folder in folders:
         nfo = folder / ('movie.nfo' if kind == 'movie' else 'tvshow.nfo')
         try:
             root = ET.parse(nfo).getroot()
@@ -187,16 +236,7 @@ def candidates(kind, root, qbit, managed_staging=(), torrents=None, managed_hash
                 or path.suffix.lower() not in EXTENSIONS[kind]
                 or (kind == 'movie' and episodic)
                 or (kind == 'tv' and not episodic)
-                or (
-                    kind in ('movie', 'tv')
-                    and (
-                        'sample' in path.stem.casefold()
-                        or any(
-                            part.casefold() in ('extras', 'samples', 'trailers')
-                            for part in path.parts
-                        )
-                    )
-                )
+                or (kind in ('movie', 'tv') and extra(path, save))
                 or int(file.get('priority', 1)) == 0
             ):
                 continue
@@ -208,18 +248,21 @@ def candidates(kind, root, qbit, managed_staging=(), torrents=None, managed_hash
             }
     root = Path(root).expanduser().resolve()
     paths = (
-        [root] if root.is_file() else sorted(root.rglob('*')) if root.is_dir() else []
+        [root]
+        if root.is_file()
+        else visible_files(root, EXTENSIONS[kind])
+        if root.is_dir()
+        else []
     )
+    staging = [Path(folder).resolve() for folder in managed_staging]
     for path in paths:
         if (
             path.is_file()
             and not path.is_symlink()
             and path.suffix.lower() in EXTENSIONS[kind]
-            and path.resolve() not in seen
-            and path.resolve() not in excluded
-            and not any(
-                path.resolve().is_relative_to(Path(folder).resolve())
-                for folder in managed_staging
-            )
+            and path not in seen
+            and path not in excluded
+            and not (kind in ('movie', 'tv') and path != root and extra(path, root))
+            and not any(path.is_relative_to(folder) for folder in staging)
         ):
-            yield {'path': str(path.resolve()), 'torrent_hash': '', 'source': 'Folder'}
+            yield {'path': str(path), 'torrent_hash': '', 'source': 'Folder'}

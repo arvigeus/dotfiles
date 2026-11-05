@@ -128,14 +128,20 @@ so enriching a title record does not defeat the cache. Warm selections bypass th
 90 ms hydration debounce used for rapidly browsing unseen titles. Explicit refresh clears
 this memory cache and bypasses the backend metadata cache. Mutating operations,
 local-file inventory, favorites and playback resolution always reach the worker.
-The existing SQLite cache retains provider metadata across instance/shell restarts;
-its title records also support favorites and aliases and must not be cleared as
-an artwork-cache maintenance operation.
+The SQLite cache keeps provider responses across instance/shell restarts. Each
+metadata worker start drops responses older than 30 days, except title records
+used by a personal row (favorite, note, URL) or a local file: favorites and the
+Local view are built from them. Never clear title records as artwork-cache
+maintenance.
 
 ## Workers and persistence
 
 Provider logic stays here. `Worker.qml` owns one bounded JSON-lines Python process,
-request IDs, startup queuing, deadlines and callbacks. Each backend has its own
+request IDs, startup queuing, deadlines and callbacks. `worker.py` writes each
+response as one strict ASCII JSON line: undecodable file names arrive as escaped
+surrogates, and NaN or an unserializable result settles only that request as an
+error. Otherwise one bad value would stall the request or make QML fail every
+pending one. Each backend has its own
 process group so close releases ffprobe/ffmpeg children as well as the worker.
 Quickshell 0.3.2 SIGKILLs a destroyed `Process`, so by default the backend runs
 under `timeout 0 setpriv --pdeathsig TERM`: killing that supervisor on Space
@@ -146,7 +152,14 @@ The torrent worker attempts bounded cleanup of only its own remote search jobs.
 qBittorrent and user-launched players/browsers have independent lifetimes.
 Ordinary imports publish complete files without replacing an existing destination;
 cross-filesystem copies keep their source until publication and remove in-flight
-temporary files on worker close. Interrupted indexing can be recovered by Scan.
+temporary files on worker close. `local.publish()` and `place()` use a hard link,
+or `renameat2(RENAME_NOREPLACE)` where the filesystem has none (vfat, exFAT);
+subtitle writes and Music downloads use the same primitives. Each torrent job's
+`torrent-locks/` file serializes imports across workers and is removed once the
+job is imported or needs review. Interrupted indexing can be recovered by Scan.
+Scan walks visible folders only and skips samples, `-trailer` files and
+Extras/Samples/Trailers folders. `movie.nfo` identifies only its folder's single
+feature; `tvshow.nfo` may sit one level above Season folders.
 Downloaded torrents belong to qBittorrent; closing Movies stops monitoring and
 importing, and opening it resumes from saved job records. Do not stop that shared
 client to close a Space.
@@ -170,6 +183,10 @@ XDG namespace:
 
 - `~/.config/quickshell/desktop/spaces/movies/media.json`: metadata API keys, named playback
   templates, region, player argv, optional anime adapters and OpenSubtitles account.
+  It may link into a private checkout. `paths.media_config()` reads it through
+  `integrations/private.py` (regular file, at most 64 KiB, non-blocking) and,
+  like `torrents.json`, refuses it unless owner-only when it holds API keys, the
+  OpenSubtitles password or a player command.
 - `~/.config/quickshell/desktop/spaces/movies/media-ui.ini`: view preferences.
   `Settings.value()` returns INI booleans as `"true"`/`"false"` strings once read
   from disk, so restore them by comparing with `"true"`.
@@ -177,7 +194,8 @@ XDG namespace:
 
 Examples are secret-free and do not get copied over user configuration. Keys remain in Python;
 QML sees provider labels and resolved playback targets. Worker stderr is reduced
-to a generic diagnostic rather than publishing provider exceptions or URLs.
+to one generic diagnostic per two-second burst rather than publishing provider
+exceptions or URLs.
 
 All Spaces read one qBittorrent connection from
 `~/.config/quickshell/desktop/integrations/torrents.json`. See [shared integration settings](../../integrations/ARCHITECTURE.md#qbittorrent)
@@ -202,7 +220,9 @@ primary images finish, and stale-response rejection. Backdrop fixtures cover
 fast transitions, poster fallback, failed images and superseded downloads.
 Native Wayland smoke checks cover real fullscreen geometry and opening/closing
 in dark and light modes. `test_movies_worker.py` checks subprocess cleanup while
-retaining a detached application, including when the QML `Worker` is destroyed.
+retaining a detached application, including when the QML `Worker` is destroyed,
+strict per-request responses and single stderr diagnostics. `test_movies_import.py`
+simulates filesystems without hard links.
 Delayed replies check that refresh and empty views leave no request spinning.
 Multi-monitor focus/stacking, scaling, hotplug, real playback and real download
 completion still require desktop/device interaction.

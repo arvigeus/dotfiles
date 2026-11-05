@@ -2,7 +2,6 @@
 
 import base64
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -25,7 +24,7 @@ import audio_lyrics
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from integrations.subsonic import MusicError as CloudError
 from spaces.books.jobs import Jobs, check_cancelled, current_job, progress
-from spaces.movies.local import LocalLibrary, safe_name, xdg_dir
+from spaces.movies.local import LocalLibrary, place, safe_name, xdg_dir
 from spaces.music.cache import JsonCache
 from spaces.music.cloud_stream import StreamBroker
 from spaces.music.records import (
@@ -1096,7 +1095,7 @@ def save_stream_track(track, provider, directory):
             suffix = '' if number == 1 else f' ({number})'
             target = directory / (stem + suffix + '.flac')
             try:
-                os.link(temporary, target)
+                place(temporary, target)
                 library = local_library()
                 with library.db() as db:
                     db.execute(

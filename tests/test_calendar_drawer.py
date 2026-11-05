@@ -1190,12 +1190,7 @@ class CacheTests(unittest.TestCase):
 @unittest.skipUnless(support.QS, 'Quickshell is required')
 class CalendarQmlTests(unittest.TestCase):
     def run_qml(self, body, setup=None):
-        def prepare(root):
-            shutil.copytree(DESKTOP / 'integrations', root / 'integrations')
-            if setup:
-                setup(root)
-
-        return support.run_qml(self, body, prepare)
+        return support.run_qml(self, body, setup)
 
     def test_drawer_tabs_editor_and_notifications_load(self):
         self.run_qml("""import QtQuick

@@ -17,6 +17,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from contextlib import contextmanager
+from http.client import HTTPException
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -40,9 +41,7 @@ from spaces.movies.records import (
     tmdb_trailers,
 )
 
-from spaces.movies.paths import CONFIG_DIR, DATA, ROOT
-
-CONFIG = CONFIG_DIR / 'media.json'
+from spaces.movies.paths import DATA, ROOT, ConfigError, media_config
 
 TMDB = 'https://api.themoviedb.org/3'
 OMDB = 'https://www.omdbapi.com/'
@@ -105,6 +104,10 @@ ANILIST_ENTRY = (
     + """ }
 }"""
 )
+# Provider pages and credit lists stay far below this; a larger body is an error.
+MAX_RESPONSE = 16 * 1024 * 1024
+# Provider responses older than this are dropped at worker start (see prune_cache).
+CACHE_RETENTION = 30 * 86400
 SORTS = {
     'popular': 'popularity.desc',
     'rating': 'vote_average.desc',
@@ -114,25 +117,32 @@ SORTS = {
 }
 
 
+def read_json(response, name):
+    body = response.read(MAX_RESPONSE + 1)
+    if len(body) > MAX_RESPONSE:
+        raise MediaError(f'{name} returned too much data. Try again later.')
+    return json.loads(body)
+
+
 def http(url, params=None, *, timeout=15):
     if params:
         url += '?' + urllib.parse.urlencode(
             {k: v for k, v in params.items() if v is not None and v != ''}, doseq=True
         )
+    host = urllib.parse.urlparse(url).hostname
     try:
         req = urllib.request.Request(
             url, headers={'User-Agent': 'MoviesSpace/1.0', 'Accept': 'application/json'}
         )
         with urllib.request.urlopen(req, timeout=timeout) as response:
-            return json.load(response)
+            return read_json(response, host)
     except urllib.error.HTTPError as e:
         e.close()
+        raise MediaError(f'{host} returned HTTP {e.code}. Try again later.') from None
+    except (OSError, ValueError, HTTPException):
+        # HTTPException covers truncated or malformed replies (IncompleteRead).
         raise MediaError(
-            f'{urllib.parse.urlparse(url).hostname} returned HTTP {e.code}. Try again later.'
-        ) from None
-    except (OSError, ValueError):
-        raise MediaError(
-            f'Cannot reach {urllib.parse.urlparse(url).hostname}. Check your connection and configuration.'
+            f'Cannot reach {host}. Check your connection and configuration.'
         ) from None
 
 
@@ -149,14 +159,14 @@ def official_anime(url, client_id, params=None):
     )
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
-            return json.load(response)
+            return read_json(response, 'MAL')
     except urllib.error.HTTPError as error:
         status = error.code
         error.close()
         raise MediaError(
             f'MAL returned HTTP {status}. Check mal_client_id or try again later.'
         ) from None
-    except (OSError, ValueError):
+    except (OSError, ValueError, HTTPException):
         raise MediaError(
             'Cannot reach the official MAL catalogue. Try again later.'
         ) from None
@@ -184,12 +194,12 @@ def anilist(query, variables=None):
     )
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
-            result = json.load(response)
+            result = read_json(response, 'AniList')
     except urllib.error.HTTPError as error:
         status = error.code
         error.close()
         raise MediaError(f'AniList returned HTTP {status}. Try again later.') from None
-    except (OSError, ValueError):
+    except (OSError, ValueError, HTTPException):
         raise MediaError(
             'Cannot reach the anime catalogue. Check your connection.'
         ) from None
@@ -234,6 +244,8 @@ def template_url(template, title, season=None, episode=None):
 
 class Backend:
     def __init__(self, config=None, data=None, cache=None):
+        # Resolved per instance: catalogue lookups from other workers follow
+        # the caller's environment, not the one seen at import time.
         config = (
             config
             or Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config'))
@@ -253,27 +265,38 @@ class Backend:
         self.local = LocalLibrary(data)
 
     @contextmanager
-    def db(self):
-        db = sqlite3.connect(self.data / 'library.sqlite', timeout=20)
+    def db(self, timeout=20):
+        db = sqlite3.connect(self.data / 'library.sqlite', timeout=timeout)
         try:
             with db:
                 yield db
         finally:
             db.close()
 
+    def prune_cache(self):
+        """Bound provider responses kept beside personal records.
+
+        Title records stay while a personal row or a local file uses them:
+        favorites and the Local view are built from them.
+        """
+        try:
+            with self.db(timeout=1) as db:
+                db.execute(
+                    'DELETE FROM cache WHERE updated < ? AND NOT ('
+                    "key LIKE 'title:%' AND substr(key, 7) IN ("
+                    'SELECT id FROM personal UNION '
+                    'SELECT COALESCE(a.id, f.title_id) FROM local_files f '
+                    'LEFT JOIN aliases a ON a.alias = f.title_id))',
+                    (time.time() - CACHE_RETENTION,),
+                )
+        except sqlite3.OperationalError:
+            pass  # Busy with another worker's write; the next start prunes.
+
     def config(self):
         try:
-            config = (
-                json.loads(self.config_path.read_text())
-                if self.config_path.exists()
-                else {}
-            )
-        except (OSError, ValueError):
-            raise MediaError(
-                f'Cannot read {self.config_path}. Check the JSON syntax.'
-            ) from None
-        if not isinstance(config, dict):
-            raise MediaError('media.json must contain a JSON object.')
+            config = media_config(self.config_path)
+        except ConfigError as error:
+            raise MediaError(str(error)) from None
         if not isinstance(config.get('mal_client_id', ''), str):
             raise MediaError('mal_client_id must be a string.')
         providers = config.get('providers', [])
@@ -1556,9 +1579,14 @@ class Backend:
 
     def save(self, r):
         t = self.save_title(r['title'])
-        id = self.canonical(t['id'])
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            # Resolve inside the write transaction: an identity merge committed
+            # meanwhile must not leave this change under the retired alias.
+            alias = db.execute(
+                'SELECT id FROM aliases WHERE alias=?', (t['id'],)
+            ).fetchone()
+            id = alias[0] if alias else t['id']
             row = db.execute('SELECT value FROM personal WHERE id=?', (id,)).fetchone()
             p = json.loads(row[0]) if row else dict(favorite=False, note='', url='')
             p.update(
@@ -1687,6 +1715,7 @@ def main():
 
     own_process_group()
     backend = Backend()
+    backend.prune_cache()
     serve(
         backend.handle,
         errors=(MediaError,),

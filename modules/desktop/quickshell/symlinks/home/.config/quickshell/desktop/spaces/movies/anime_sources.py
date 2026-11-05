@@ -8,6 +8,10 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
+from http.client import HTTPException
+
+# Search, episode and player pages are small; a configured source cannot exhaust memory.
+MAX_PAGE = 8 * 1024 * 1024
 
 
 class SourceError(Exception):
@@ -39,11 +43,16 @@ def _get(url, referer=''):
         with urllib.request.urlopen(
             urllib.request.Request(url, headers=headers), timeout=15
         ) as response:
-            return response.read().decode('utf-8', 'replace')
-    except (OSError, urllib.error.HTTPError):
+            body = response.read(MAX_PAGE + 1)
+    except (OSError, HTTPException) as error:
+        if isinstance(error, urllib.error.HTTPError):
+            error.close()
         raise SourceError(
             'The selected anime source is unavailable. Try another source.'
         ) from None
+    if len(body) > MAX_PAGE:
+        raise SourceError('This anime source returned too much data.')
+    return body.decode('utf-8', 'replace')
 
 
 def _get_field(url, field):
@@ -137,6 +146,8 @@ def _stream_page(source, embed_url):
         raise SourceError(
             'The selected anime source returned an unreadable stream.'
         ) from None
+    if not isinstance(data, dict) or not isinstance(data.get('subtitles', []), list):
+        raise SourceError('The selected anime source returned an unreadable stream.')
     stream = data.get('src', '')
     if not isinstance(stream, str) or not stream.startswith('https://'):
         raise SourceError('This anime source has no playable stream for this episode.')

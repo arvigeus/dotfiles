@@ -1,3 +1,4 @@
+import errno
 import io
 import json
 import os
@@ -439,6 +440,92 @@ class SubtitleTests(unittest.TestCase):
             result = self.backend.extract({'path': str(self.video), 'index': 2})
         self.assertTrue(Path(result['path']).is_file())
         self.assertTrue(result['path'].endswith('.embedded.vi.srt'))
+
+    def test_subtitle_temporaries_are_tracked_and_never_listed(self):
+        from spaces.movies import local
+
+        # A Space closed mid-extract once left this behind beside the movie.
+        stray = self.video.parent / '.movies-sub-interrupted.srt'
+        stray.write_bytes(SRT)
+        track = {
+            'index': 2,
+            'language': 'vi',
+            'codec': 'subrip',
+            'title': '',
+            'forced': False,
+            'extractable': True,
+        }
+        tracked = []
+
+        def ffmpeg(args, **kwargs):
+            temporary = Path(args[-1])
+            tracked.append(
+                (
+                    temporary.name.startswith('.movies-sub-'),
+                    temporary in local._transfers,
+                )
+            )
+            temporary.write_bytes(SRT)
+            return SimpleNamespace(returncode=0)
+
+        with (
+            patch.object(self.backend, 'probe', return_value=(23.976, [track])),
+            patch('spaces.movies.subtitle_backend.subprocess.run', side_effect=ffmpeg),
+        ):
+            self.backend.extract({'path': str(self.video), 'index': 2})
+            files = self.backend.inspect({'path': str(self.video)})['files']
+        self.assertEqual(tracked, [(True, True)])
+        self.assertFalse(local._transfers)
+        self.assertEqual(
+            [item['name'] for item in files], [self.video.stem + '.embedded.vi.srt']
+        )
+
+    def test_malformed_provider_numbers_do_not_fail_search(self):
+        def request(path, params=None, **kwargs):
+            return {
+                'total_pages': 'many',
+                'data': [
+                    {
+                        'attributes': {
+                            'language': 'en',
+                            'download_count': 'lots',
+                            'feature_details': {},
+                            'files': [{'file_id': 7, 'cd_number': 'A'}],
+                        }
+                    }
+                ],
+            }
+
+        with patch.object(self.client, 'request', side_effect=request):
+            result = self.backend.search({'path': str(self.video), 'languages': ['en']})
+        self.assertEqual(
+            [(row['fileId'], row['downloads'], row['disc']) for row in result['items']],
+            [(7, 0, 1)],
+        )
+        self.assertEqual(result['nextPage'], 0)
+
+    def test_adjust_and_download_work_without_hard_links(self):
+        original = self.video.with_name(self.video.stem + '.en.srt')
+        original.write_bytes(SRT)
+        with (
+            patch.object(self.backend, 'probe', return_value=(25, [])),
+            patch('os.link', side_effect=OSError(errno.EPERM, 'unsupported')),
+        ):
+            result = self.backend.retime(
+                {
+                    'path': str(self.video),
+                    'subtitle': str(original),
+                    'sourceFps': 25,
+                    'offset': 1,
+                }
+            )
+            saved = self.backend.save(
+                self.backend.target(self.video, 'bg'), SRT.decode(), self.video
+            )
+        self.assertEqual(Path(result['backup']).read_bytes(), SRT)
+        self.assertIn('00:00:26,000', original.read_text())
+        self.assertEqual(Path(saved).read_bytes(), SRT)
+        self.assertFalse(list(self.video.parent.glob('.movies-*')))
 
     def test_moviehash_uses_first_and_last_64k(self):
         size = self.video.stat().st_size

@@ -7,11 +7,6 @@ from test_movies_space import setup as movies_setup
 
 def setup(root):
     movies_setup(root)
-    import shutil
-
-    shutil.copytree(
-        support.DESKTOP / 'integrations', root / 'integrations', dirs_exist_ok=True
-    )
     path = root / 'spaces/music/backend.py'
     fixture = """
 _fixture_song = dict(id="1",kind="song",source="apple",title="Fixture song",artist="Fixture artist",album="Fixture album",duration=120)
@@ -394,11 +389,6 @@ def playback_setup(root):
     import wave
 
     movies_setup(root)
-    import shutil
-
-    shutil.copytree(
-        support.DESKTOP / 'integrations', root / 'integrations', dirs_exist_ok=True
-    )
     for name in ('first', 'second'):
         with wave.open(str(root / (name + '.wav')), 'wb') as audio:
             audio.setnchannels(1)

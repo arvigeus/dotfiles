@@ -7,7 +7,9 @@ non-blocking (a FIFO cannot stall a worker) and checked through the opened
 descriptor. Credentials require owner-only access by the current user, for
 example mode 0600.
 Callers choose whether a symlink is accepted; when it is, the link target is
-checked. Do not put real credentials in public module assets.
+checked. Movies and TV Series read their per-Space `media.json` through the same
+reader (see [Movies](../spaces/movies/ARCHITECTURE.md#private-configuration-and-provisioning)).
+Do not put real credentials in public module assets.
 
 ## Nextcloud
 

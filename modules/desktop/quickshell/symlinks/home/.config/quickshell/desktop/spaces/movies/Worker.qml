@@ -96,7 +96,16 @@ Item {
         }
         stdinEnabled: true
         stderr: SplitParser {
-            onRead: data => console.warn(root.serviceName + " helper reported an error")
+            // A Python traceback spans many lines; warn once per two-second burst.
+            property double warnedAt: 0
+
+            onRead: data => {
+                const now = Date.now();
+                if (now - warnedAt < 2000)
+                    return;
+                warnedAt = now;
+                console.warn(root.serviceName + " helper reported an error");
+            }
         }
         stdout: SplitParser {
             onRead: data => {

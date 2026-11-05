@@ -1,9 +1,11 @@
 import base64
+import http.client
 import importlib.util
 import io
 import json
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 import sys
@@ -21,6 +23,19 @@ m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 
 
+class Reply(io.BytesIO):
+    """An urlopen response whose body read can fail like a dropped connection."""
+
+    def __init__(self, body=b'', error=None):
+        super().__init__(body)
+        self.error = error
+
+    def read(self, *args):
+        if self.error:
+            raise self.error
+        return super().read(*args)
+
+
 class MediaTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -33,6 +48,7 @@ class MediaTests(unittest.TestCase):
 
     def configure(self, value):
         self.backend.config_path.write_text(json.dumps(value))
+        self.backend.config_path.chmod(0o600)
 
     def test_person_resolves_imdb_identity_through_tmdb_and_sorts_newest_first(self):
         self.configure({'tmdb_key': 'test'})
@@ -1421,6 +1437,129 @@ class MediaTests(unittest.TestCase):
             result = self.backend.browse({'kind': 'movie'})
         self.assertEqual(result['items'][0]['id'], 'tt123')
         self.assertIn('Offline', result['warning'])
+
+    def test_truncated_provider_replies_use_the_same_fallbacks_as_outages(self):
+        self.configure({'tmdb_key': 'test'})
+        key = 'browse:' + json.dumps(['movie', '', {}, ''], sort_keys=True)
+        self.backend.put(key, dict(items=[self.movie], next=''))
+        with self.backend.db() as db:
+            db.execute('UPDATE cache SET updated=0')
+        truncated = http.client.IncompleteRead(b'{"results": [')
+        with patch.object(
+            m.urllib.request,
+            'urlopen',
+            side_effect=lambda *_a, **_k: Reply(error=truncated),
+        ):
+            result = self.backend.browse({'kind': 'movie'})
+            genres = self.backend.anime_genres()
+        self.assertIn('Offline', result['warning'])
+        self.assertEqual(genres, [])
+
+    def test_provider_reply_size_is_bounded(self):
+        with (
+            patch.object(m, 'MAX_RESPONSE', 8),
+            patch.object(m.urllib.request, 'urlopen', return_value=Reply(b'[' * 9)),
+        ):
+            with self.assertRaisesRegex(m.MediaError, 'too much data'):
+                m.http('https://api.themoviedb.org/3/movie/1')
+
+    def test_cache_retention_keeps_records_behind_favorites_and_local_files(self):
+        favorite = dict(id='tt1', imdbId='tt1', kind='movie', title='Favorite')
+        local = dict(id='tmdb:movie:2', tmdbId=2, kind='movie', title='Local')
+        self.backend.handle(dict(op='save', title=favorite, values={'favorite': True}))
+        self.backend.save_title(local)
+        self.backend.save_title(local | {'imdbId': 'tt2'})
+        self.backend.save_title(dict(id='tt3', imdbId='tt3', kind='movie', title='Old'))
+        self.backend.put('browse:old', dict(items=[], next=''))
+        with self.backend.db() as db:
+            db.execute(
+                'INSERT INTO local_files VALUES (?,?,?,?,?,?)',
+                ('movie', 'tmdb:movie:2', 0, 0, '/media/Local.mkv', json.dumps(local)),
+            )
+            db.execute(
+                'UPDATE cache SET updated=?',
+                (time.time() - m.CACHE_RETENTION - 60,),
+            )
+        self.backend.put('browse:recent', dict(items=[], next=''))
+        self.backend.prune_cache()
+        with self.backend.db() as db:
+            keys = {row[0] for row in db.execute('SELECT key FROM cache')}
+        self.assertEqual(keys, {'title:tt1', 'title:tt2', 'browse:recent'})
+        favorites = self.backend.browse({'kind': 'movie', 'favorites': True})
+        self.assertEqual([item['id'] for item in favorites['items']], ['tt1'])
+
+    def test_favorite_saved_during_identity_merge_lands_on_canonical_id(self):
+        title = dict(id='tmdb:movie:12', tmdbId=12, kind='movie', title='Film')
+        connect = m.sqlite3.connect
+        # Another lane commits the IMDb identity just before this write begins.
+        merges = [lambda: self.backend.save_title(title | {'imdbId': 'tt12'})]
+
+        class Racing(m.sqlite3.Connection):
+            def execute(self, sql, *args):
+                if sql == 'BEGIN IMMEDIATE' and merges:
+                    merges.pop()()
+                return super().execute(sql, *args)
+
+        with patch.object(
+            m.sqlite3, 'connect', lambda *a, **k: connect(*a, factory=Racing, **k)
+        ):
+            self.backend.handle(dict(op='save', title=title, values={'favorite': True}))
+        self.assertFalse(merges)
+        self.assertTrue(self.backend.personal(title['id'])['favorite'])
+        with self.backend.db() as db:
+            rows = db.execute('SELECT id FROM personal').fetchall()
+        self.assertEqual(rows, [('tt12',)])
+
+    def test_anime_source_pages_are_bounded_and_typed(self):
+        with (
+            patch.object(anime_sources, 'MAX_PAGE', 8),
+            patch.object(
+                anime_sources.urllib.request, 'urlopen', return_value=Reply(b'x' * 9)
+            ),
+        ):
+            with self.assertRaisesRegex(anime_sources.SourceError, 'too much'):
+                anime_sources._get('https://example.org/')
+        with patch.object(
+            anime_sources.urllib.request,
+            'urlopen',
+            return_value=Reply(error=http.client.IncompleteRead(b'')),
+        ):
+            with self.assertRaisesRegex(anime_sources.SourceError, 'unavailable'):
+                anime_sources._get('https://example.org/')
+        blob = base64.b64encode(bytes(value ^ ord('k') for value in b'[1]')).decode()
+        source = {'blob_pattern': r'blob="([^"]+)"', 'xor_key': 'k'}
+        with patch.object(anime_sources, '_get', return_value=f'blob="{blob}"'):
+            with self.assertRaisesRegex(anime_sources.SourceError, 'unreadable'):
+                anime_sources._stream_page(source, 'https://example.org/embed')
+
+    def test_media_config_guards_credentials_like_shared_integrations(self):
+        path = self.backend.config_path
+        path.write_text(json.dumps({'region': 'GB'}))
+        path.chmod(0o644)
+        self.assertEqual(self.backend.config()['region'], 'GB')
+        for secret in (
+            {'tmdb_key': 'k'},
+            {'player': ['mpv']},
+            {'opensubtitles': {'password': 'p'}},
+        ):
+            path.write_text(json.dumps(secret))
+            with self.assertRaisesRegex(m.MediaError, 'mode 0600'):
+                self.backend.config()
+        # A private checkout may provide the file as a link; its target is checked.
+        private = path.parent / 'private-media.json'
+        private.write_text(json.dumps({'tmdb_key': 'k'}))
+        private.chmod(0o600)
+        path.unlink()
+        path.symlink_to(private)
+        self.assertEqual(self.backend.config()['tmdb_key'], 'k')
+        path.unlink()
+        os.mkfifo(path)
+        with self.assertRaisesRegex(m.MediaError, 'regular file'):
+            self.backend.config()
+        path.unlink()
+        path.write_text('{')
+        with self.assertRaisesRegex(m.MediaError, 'JSON syntax'):
+            self.backend.config()
 
     def test_trailers_exclude_promotional_clips_and_deduplicate(self):
         videos = [

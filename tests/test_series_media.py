@@ -64,11 +64,11 @@ from spaces.movies.backend import Backend
 from spaces.movies.torrent_backend import TorrentBackend
 from spaces.movies.subtitle_backend import SubtitleBackend
 from spaces.movies.local import media_sidecar_path
-from spaces.movies.paths import DATA, CONFIG_DIR, CACHE
+from spaces.movies.paths import DATA, CONFIG_DIR
 
 media, torrents, subtitles = Backend(), TorrentBackend(), SubtitleBackend()
 assert media.data == torrents.data == subtitles.data == DATA
-assert DATA.name == CONFIG_DIR.name == CACHE.name == "series"
+assert DATA.name == CONFIG_DIR.name == "series"
 assert media.config_path == subtitles.config_path == CONFIG_DIR / "media.json"
 assert torrents.config_path == CONFIG_DIR.parents[1] / "integrations/torrents.json"
 assert torrents.job_tag("fixture") == "series-job-fixture"

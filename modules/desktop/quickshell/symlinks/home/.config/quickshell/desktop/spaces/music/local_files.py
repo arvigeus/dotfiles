@@ -19,6 +19,7 @@ from urllib.parse import urlsplit, unquote
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from integrations import nextcloud
 from spaces.books.jobs import Jobs, check_cancelled, progress
+from spaces.movies.local import place
 from spaces.music.records import MusicError
 from spaces.music.storage import DATA
 from spaces.music.remote_files import RemoteFiles
@@ -612,10 +613,10 @@ def download(song):
             )
         check_cancelled()
         try:
-            os.link(temporary, path)
+            place(temporary, path)
         except FileExistsError:
             return path
-        remember(owner, rel, path, remote, values, observed=signature(temporary))
+        remember(owner, rel, path, remote, values, observed=signature(path))
         return path
     finally:
         temporary.unlink(missing_ok=True)

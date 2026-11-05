@@ -340,11 +340,14 @@ class TorrentBackend:
         finally:
             db.close()
 
+    def lock_path(self, job_id):
+        return self.data / 'torrent-locks' / job_id
+
     @contextmanager
     def import_lock(self, job_id):
-        locks = self.data / 'torrent-locks'
-        locks.mkdir(exist_ok=True)
-        with (locks / job_id).open('a+b') as lock:
+        path = self.lock_path(job_id)
+        path.parent.mkdir(exist_ok=True)
+        with path.open('a+b') as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
@@ -1047,6 +1050,9 @@ class TorrentBackend:
                                     'UPDATE torrent_downloads SET status=?,message=? WHERE id=?',
                                     (status, message, job_id),
                                 )
+                        # Final jobs never import again. The committed status
+                        # stops any worker that reopens a fresh lock file.
+                        self.lock_path(job_id).unlink(missing_ok=True)
             if not torrent and status == 'queued' and time.time() - created_at > 120:
                 message = 'qBittorrent did not add this torrent. Check for a duplicate or invalid search result.'
             output.append(
@@ -1194,7 +1200,8 @@ class TorrentBackend:
             raise TorrentError('This download is no longer tracked.')
         payload = json.loads(row[0])
         torrent = self.torrent(row[1])
-        if not torrent or float(torrent.get('progress') or 0) < 1:
+        # Like automatic imports, wait while qBittorrent moves or rechecks the payload.
+        if not torrent or not settled(torrent):
             raise TorrentError('This download is not complete yet.')
         save = Path(torrent['save_path']).resolve()
         with self.db() as db:
@@ -1774,7 +1781,7 @@ class TorrentBackend:
         expected = self.data / 'torrents' / job_id
         if folder == expected and folder.is_dir() and not folder.is_symlink():
             shutil.rmtree(folder)
-        (self.data / 'torrent-locks' / job_id).unlink(missing_ok=True)
+        self.lock_path(job_id).unlink(missing_ok=True)
 
     def delete_job(self, request):
         job_id = str(request.get('job_id') or '')

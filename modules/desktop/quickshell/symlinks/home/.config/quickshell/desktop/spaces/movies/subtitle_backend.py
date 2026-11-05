@@ -8,7 +8,6 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-import tempfile
 import threading
 import urllib.error
 import urllib.parse
@@ -25,11 +24,12 @@ from spaces.movies.local import (
     VIDEO_EXTENSIONS,
     episode_numbers,
     library_root,
+    place,
+    publish,
+    transfer,
 )
 
-from spaces.movies.paths import CONFIG_DIR, DATA, SPACE
-
-CONFIG = CONFIG_DIR / 'media.json'
+from spaces.movies.paths import CONFIG, DATA, SPACE, ConfigError, media_config
 
 API = 'https://api.opensubtitles.com/api/v1'
 LANGUAGE_ALIASES = {
@@ -57,9 +57,24 @@ class SubtitleError(Exception):
     pass
 
 
+def write_synced(path, content):
+    with path.open('w', encoding='utf-8') as stream:
+        stream.write(content.replace('\r\n', '\n'))
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
 def language(code):
     code = str(code or '').strip().lower().replace('_', '-')
     return LANGUAGE_ALIASES.get(code, code)
+
+
+def count(value, default=0):
+    """A provider's numeric field, or default when it is missing or malformed."""
+    try:
+        return int(value or default)
+    except (TypeError, ValueError):
+        return default
 
 
 def fps(value):
@@ -319,14 +334,9 @@ class SubtitleBackend:
 
     def config(self):
         try:
-            content = json.loads(self.config_path.read_text())
-        except FileNotFoundError:
-            content = {}
-        except (OSError, ValueError):
-            raise SubtitleError('Cannot read media.json.') from None
-        if not isinstance(content, dict):
-            raise SubtitleError('media.json must contain an object.')
-        return content
+            return media_config(self.config_path)
+        except ConfigError as error:
+            raise SubtitleError(str(error)) from None
 
     def opensubtitles(self):
         if self.client_override:
@@ -422,7 +432,8 @@ class SubtitleBackend:
                 or (subtitle_number == number if subtitle_number else one_video)
             )
             if (
-                path.is_file()
+                not path.name.startswith('.')
+                and path.is_file()
                 and not path.is_symlink()
                 and path.suffix.lower() in SUBTITLE_EXTENSIONS
                 and related
@@ -530,7 +541,7 @@ class SubtitleBackend:
             if not isinstance(response.get('data'), list):
                 raise SubtitleError('OpenSubtitles returned invalid search results.')
             if not exact:
-                more |= int(response.get('total_pages') or 1) > page
+                more |= count(response.get('total_pages'), 1) > page
             for item in response.get('data', [])[:50]:
                 attrs = item.get('attributes') or {}
                 code = language(attrs.get('language'))
@@ -538,8 +549,8 @@ class SubtitleBackend:
                 if code not in languages or (
                     record['kind'] == 'tv'
                     and (
-                        int(feature.get('season_number') or 0) != record['season']
-                        or int(feature.get('episode_number') or 0) != record['episode']
+                        count(feature.get('season_number')) != record['season']
+                        or count(feature.get('episode_number')) != record['episode']
                     )
                 ):
                     continue
@@ -557,13 +568,13 @@ class SubtitleBackend:
                         'release': attrs.get('release') or file.get('file_name') or '',
                         'fileName': file.get('file_name') or '',
                         'fps': fps(attrs.get('fps')),
-                        'downloads': int(attrs.get('download_count') or 0),
+                        'downloads': count(attrs.get('download_count')),
                         'trusted': bool(attrs.get('from_trusted')),
                         'hearingImpaired': bool(attrs.get('hearing_impaired')),
                         'forced': bool(attrs.get('foreign_parts_only')),
                         'hashMatch': exact,
                         'releaseMatch': overlap,
-                        'disc': int(file.get('cd_number') or 1),
+                        'disc': count(file.get('cd_number'), 1),
                     }
                     previous = found.get(file_id)
                     if previous:
@@ -631,25 +642,14 @@ class SubtitleBackend:
     def save(self, target, content, video):
         if not CUE.search(content):
             raise SubtitleError('The subtitle file has no SRT cues.')
-        with tempfile.NamedTemporaryFile(
-            mode='w',
-            encoding='utf-8',
-            dir=target.parent,
-            prefix='.' + SPACE + '-sub-',
-            delete=False,
-        ) as stream:
-            temp = Path(stream.name)
-            stream.write(content.replace('\r\n', '\n'))
-            stream.flush()
-            os.fsync(stream.fileno())
-        try:
-            os.link(temp, target)
-        except FileExistsError:
-            raise SubtitleError(
-                'A subtitle with that name was added. Refresh and try again.'
-            ) from None
-        finally:
-            temp.unlink(missing_ok=True)
+        with transfer(target.parent, '.' + SPACE + '-sub-') as temp:
+            write_synced(temp, content)
+            try:
+                place(temp, target)
+            except FileExistsError:
+                raise SubtitleError(
+                    'A subtitle with that name was added. Refresh and try again.'
+                ) from None
         try:
             with self.db() as db:
                 db.execute(
@@ -713,43 +713,30 @@ class SubtitleBackend:
         result = retime_srt(
             content, request.get('sourceFps'), target_fps, request.get('offset') or 0
         )
-        temporary = None
         try:
-            with tempfile.NamedTemporaryFile(
-                mode='w',
-                encoding='utf-8',
-                dir=source.parent,
-                prefix='.' + SPACE + '-sub-',
-                delete=False,
-            ) as stream:
-                temporary = Path(stream.name)
-                stream.write(result.replace('\r\n', '\n'))
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.chmod(temporary, source.stat().st_mode & 0o777)
-            index = 1
-            while True:
-                suffix = '.bak' if index == 1 else f'.bak.{index}'
-                backup = source.with_name(source.name + suffix)
+            with transfer(source.parent, '.' + SPACE + '-sub-') as temporary:
+                write_synced(temporary, result)
+                os.chmod(temporary, source.stat().st_mode & 0o777)
+                index = 1
+                while True:
+                    suffix = '.bak' if index == 1 else f'.bak.{index}'
+                    backup = source.with_name(source.name + suffix)
+                    try:
+                        # Preserve the original inode, including any seeding hard link.
+                        publish(source, backup)
+                        break
+                    except ValueError:
+                        index += 1
                 try:
-                    # Preserve the original inode, including any seeding hard link.
-                    os.link(source, backup)
-                    break
-                except FileExistsError:
-                    index += 1
-            try:
-                os.replace(temporary, source)
-            except OSError:
-                backup.unlink(missing_ok=True)
-                raise
+                    os.replace(temporary, source)
+                except OSError:
+                    backup.unlink(missing_ok=True)
+                    raise
             return {'path': str(source), 'backup': str(backup), 'fps': target_fps}
         except OSError as error:
             raise SubtitleError(
                 'Could not save adjusted subtitles. The original file was kept.'
             ) from error
-        finally:
-            if temporary:
-                temporary.unlink(missing_ok=True)
 
     def extract(self, request):
         video, _ = self.registered(request.get('path'))
@@ -765,39 +752,38 @@ class SubtitleBackend:
             else 'und'
         )
         target = self.target(video, code, 'embedded')
-        with tempfile.NamedTemporaryFile(
-            dir=video.parent, suffix='.srt', prefix='.' + SPACE + '-sub-', delete=False
-        ) as stream:
-            temp = Path(stream.name)
-        try:
-            run = subprocess.run(
-                [
-                    'ffmpeg',
-                    '-nostdin',
-                    '-v',
-                    'error',
-                    '-i',
-                    str(video),
-                    '-map',
-                    f'0:{selected["index"]}',
-                    '-c:s',
-                    'srt',
-                    '-y',
-                    str(temp),
-                ],
-                capture_output=True,
-                timeout=60,
-            )
+        with transfer(video.parent, '.' + SPACE + '-sub-', '.srt') as temp:
+            try:
+                run = subprocess.run(
+                    [
+                        'ffmpeg',
+                        '-nostdin',
+                        '-v',
+                        'error',
+                        '-i',
+                        str(video),
+                        '-map',
+                        f'0:{selected["index"]}',
+                        '-c:s',
+                        'srt',
+                        '-y',
+                        str(temp),
+                    ],
+                    capture_output=True,
+                    timeout=60,
+                )
+            except subprocess.TimeoutExpired:
+                raise SubtitleError(
+                    'Extracting this subtitle track took too long.'
+                ) from None
+            except (OSError, subprocess.SubprocessError):
+                raise SubtitleError(
+                    'ffmpeg is needed to extract embedded subtitles.'
+                ) from None
             if run.returncode:
                 raise SubtitleError('Could not extract this subtitle track.')
             content = decode_subtitle(temp.read_bytes())
             return {'path': self.save(target, content, video)}
-        except (OSError, subprocess.SubprocessError):
-            raise SubtitleError(
-                'ffmpeg is needed to extract embedded subtitles.'
-            ) from None
-        finally:
-            temp.unlink(missing_ok=True)
 
     def remove(self, request):
         video, _ = self.registered(request.get('path'))

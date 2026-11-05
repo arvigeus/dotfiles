@@ -73,6 +73,48 @@ class MoviesWorkerTests(unittest.TestCase):
         self.assertFalse(worker.is_alive())
         self.assertEqual(len(output.getvalue().splitlines()), 5)
 
+    def test_unencodable_results_settle_only_their_own_request(self):
+        # Torrent payloads can carry non-UTF-8 names; providers can return NaN.
+        name = os.fsdecode(b'/media/Am\xe9lie.mkv')
+
+        class Coded(ValueError):
+            code = object()
+
+        def handle(request):
+            if request['op'] == 'coded':
+                raise Coded('Refused.')
+            return dict(path=name, nan=float('nan'), text='Amélie')[request['op']]
+
+        raw = io.BytesIO()
+        # Strict UTF-8, like the worker's real stdout.
+        output = io.TextIOWrapper(raw, encoding='utf-8', write_through=True)
+        requests = io.StringIO(
+            ''.join(
+                json.dumps(dict(id=index, op=op)) + '\n'
+                for index, op in enumerate(('path', 'nan', 'coded', 'text'))
+            )
+        )
+        with self.assertLogs('spaces.movies.worker', 'ERROR'):
+            serve(handle, stream=requests, output=output)
+
+        def reject(constant):
+            raise ValueError(constant)
+
+        # QML's JSON.parse accepts neither NaN nor a missing line.
+        responses = {
+            response['id']: response
+            for response in (
+                json.loads(line, parse_constant=reject)
+                for line in raw.getvalue().decode('ascii').splitlines()
+            )
+        }
+        self.assertEqual(sorted(responses), [0, 1, 2, 3])
+        self.assertEqual(responses[0]['result'], name)
+        self.assertNotIn('result', responses[1])
+        self.assertIn('could not be completed', responses[1]['error'])
+        self.assertEqual(responses[2], {'id': 2, 'error': 'Refused.'})
+        self.assertEqual(responses[3]['result'], 'Amélie')
+
     def test_close_stops_owned_child_and_preserves_detached_application(self):
         with tempfile.TemporaryDirectory() as directory:
             marker = Path(directory) / 'cleanup'
@@ -170,6 +212,35 @@ ShellRoot {
                         os.kill(pid, signal.SIGKILL)
                     except ProcessLookupError:
                         pass
+
+    def test_a_multiline_traceback_logs_one_helper_warning(self):
+        def setup(root):
+            (root / 'spaces/movies/probe.py').write_text(
+                """import sys
+sys.path.insert(0,%r)
+from spaces.movies.worker import serve
+sys.stderr.write('Traceback (most recent call last):\\n' + '  frame\\n' * 9)
+sys.stderr.flush()
+serve(lambda request:'ready')
+"""
+                % str(support.DESKTOP)
+            )
+
+        log = support.run_qml(
+            self,
+            """import QtQuick
+import Quickshell
+import "spaces/movies"
+ShellRoot {
+ Worker {id:worker;backend:"probe.py";serviceName:"Probe"}
+ Timer {id:settle;interval:500;onTriggered:{console.log("DISPLAY_PASS");Qt.quit();}}
+ Component.onCompleted: worker.request("ping",{},(result,error)=>{
+  if(result==="ready")settle.start();else{console.error("DISPLAY_FAIL",error);Qt.quit();}})
+ Timer {interval:8000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
+}""",
+            setup=setup,
+        )
+        self.assertEqual(log.count('Probe helper reported an error'), 1, log)
 
 
 def _alive(pid):

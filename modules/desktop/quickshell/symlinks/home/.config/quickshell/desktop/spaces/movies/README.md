@@ -4,8 +4,10 @@ Open **Spaces → Movies** for discovery, search, favorites, anime, cast, traile
 provider playback, local files, subtitles and qBittorrent search/import.
 
 Configure `~/.config/quickshell/desktop/spaces/movies/media.json` using
-[media.example.json](media.example.json). A TMDB key enables discovery; OMDb is an
-optional search/detail fallback. Playback providers and OpenSubtitles are optional.
+[media.example.json](media.example.json); keep it mode 0600 once it holds keys,
+the OpenSubtitles account or a player command, or Movies refuses it. A TMDB key
+enables discovery; OMDb is an optional search/detail fallback. Playback providers
+and OpenSubtitles are optional.
 Player/browser windows run independently.
 
 For downloads, enable qBittorrent’s Web UI and search plugins; configure its
@@ -13,7 +15,8 @@ shared connection in `~/.config/quickshell/desktop/integrations/torrents.json` u
 [torrents.example.json](../../integrations/torrents.example.json); keep it mode 0600 when it
 holds a password or API key. Downloads use `Videos/Movies`
 (or your XDG Videos directory). **Local → Scan** can organize existing files;
-review uncertain matches before importing. Held deletion permanently removes the
+review uncertain matches before importing. Scan skips hidden folders, samples and
+trailers. Held deletion permanently removes the
 movie folder, or the associated torrent and all its downloaded files.
 
 X and Escape hide Movies; the X beside its running entry in Spaces closes it.

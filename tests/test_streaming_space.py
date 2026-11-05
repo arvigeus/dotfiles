@@ -1,6 +1,5 @@
 """Real retained Space integration, asynchronous detail selection and hidden jobs."""
 
-import shutil
 import unittest
 import support
 from test_streaming import RAW
@@ -9,8 +8,6 @@ from test_movies_space import setup as movies_setup
 
 def setup(root):
     movies_setup(root)
-    # The real backend reads its Gemini key through the shared integration reader.
-    shutil.copytree(support.DESKTOP / 'integrations', root / 'integrations')
     image = root / 'frame.ppm'
     image.write_bytes(b'P6\n16 9\n255\n' + bytes((70, 35, 100)) * 144)
     path = root / 'spaces/streaming/backend.py'

@@ -668,6 +668,89 @@ class TorrentTests(unittest.TestCase):
         self.assertFalse((target.parent / 'movie.nfo').exists())
         self.assertFalse(target.parent.exists())
 
+    def test_scan_leaves_bonus_and_hidden_videos_out_of_the_movie(self):
+        folder = self.root / 'Incoming/The General (1926)'
+        (folder / 'Extras').mkdir(parents=True)
+        (folder / 'movie.nfo').write_text(
+            '<movie><title>The General</title><year>1926</year>'
+            '<uniqueid type="imdb">tt0017925</uniqueid></movie>'
+        )
+        feature = folder / 'The.General.1926.mkv'
+        bonus = [
+            folder / 'Extras/Making.Of.mkv',
+            folder / 'The.General.1926-trailer.mkv',
+            folder / 'The.General.1926.sample.mkv',
+        ]
+        hidden = [
+            self.root / 'Incoming/.cache/The.General.1926.mkv',
+            self.root / 'Incoming/.The.General.1926.mkv',
+        ]
+        for path in [feature, *bonus, *hidden]:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(path.name.encode())
+        result = self.backend.handle(
+            {'op': 'scan', 'kind': 'movie', 'path': str(self.root / 'Incoming')}
+        )
+        self.assertEqual(len(result['imported']), 1)
+        self.assertEqual(result['imported'][0]['source'], str(feature))
+        self.assertEqual(
+            Path(result['imported'][0]['path']).read_bytes(), feature.name.encode()
+        )
+        self.assertEqual(result['review'], [])
+        self.assertTrue(all(path.exists() for path in bonus + hidden))
+
+    def test_folder_nfo_names_no_movie_when_several_features_share_it(self):
+        folder = self.root / 'Incoming'
+        folder.mkdir()
+        (folder / 'movie.nfo').write_text(
+            '<movie><title>The General</title><year>1926</year>'
+            '<uniqueid type="imdb">tt0017925</uniqueid></movie>'
+        )
+        for name in ('The.General.1926.mkv', 'Battleship.Potemkin.1925.mkv'):
+            (folder / name).write_bytes(name.encode())
+        result = self.backend.handle(
+            {'op': 'scan', 'kind': 'movie', 'path': str(folder)}
+        )
+        self.assertEqual(result['imported'], [])
+        self.assertEqual(len(result['review']), 2)
+        self.assertTrue((folder / 'Battleship.Potemkin.1925.mkv').exists())
+
+    def test_finished_jobs_leave_no_import_lock_behind(self):
+        queued = self.backend.handle(
+            {'op': 'queue', 'title': self.movie, 'url': 'magnet:?xt=urn:btih:abc'}
+        )
+        source = Path(self.fake.save_path) / 'The.General.1926.mkv'
+        source.write_bytes(b'video' * 250000)
+        self.fake.files = [{'name': source.name, 'priority': 1}]
+        self.assertEqual(self.backend.handle({'op': 'jobs'})[0]['status'], 'imported')
+        self.assertFalse(self.backend.lock_path(queued['id']).exists())
+        self.backend.handle({'op': 'jobs'})
+        self.assertFalse(self.backend.lock_path(queued['id']).exists())
+
+    def test_manual_review_waits_while_qbittorrent_moves_files(self):
+        queued = self.backend.handle(
+            {'op': 'queue', 'title': self.movie, 'url': 'magnet:?xt=urn:btih:abc'}
+        )
+        for name in ('The.General.1926.mkv', 'The.General.1998.mkv'):
+            (Path(self.fake.save_path) / name).write_bytes(b'video' * 250000)
+        self.fake.files = [
+            {'name': name, 'priority': 1}
+            for name in ('The.General.1926.mkv', 'The.General.1998.mkv')
+        ]
+        self.assertEqual(self.backend.handle({'op': 'jobs'})[0]['status'], 'review')
+        info = self.fake.call
+        self.fake.call = lambda path, values=None: (
+            [torrent | {'state': 'moving'} for torrent in info(path, values)]
+            if path == 'torrents/info'
+            else info(path, values)
+        )
+        with self.assertRaisesRegex(TorrentError, 'not complete'):
+            self.backend.handle({'op': 'review', 'job_id': queued['id']})
+        self.fake.call = info
+        self.assertEqual(
+            len(self.backend.handle({'op': 'review', 'job_id': queued['id']})), 2
+        )
+
     @unittest.skipUnless(
         __import__('importlib').util.find_spec('guessit'), 'python-guessit is required'
     )

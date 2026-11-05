@@ -14,6 +14,16 @@ from concurrent.futures import ThreadPoolExecutor
 
 _LOG = logging.getLogger(__name__)
 MAX_REQUEST_BYTES = 1024 * 1024
+FAILED = 'The request could not be completed. Try again.'
+
+
+def encode(response):
+    """One strict-JSON line QML can always parse.
+
+    ASCII escapes keep undecodable file names (surrogates) writable to stdout;
+    NaN/Infinity would make QML reject the line and fail every pending request.
+    """
+    return json.dumps(response, allow_nan=False)
 
 
 def own_process_group(cleanup=None):
@@ -70,37 +80,42 @@ def serve(
     read_slots = threading.BoundedSemaphore(capacity - min(8, capacity // 4))
 
     def emit(response):
+        line = encode(response) + '\n'
         with write_lock:
-            output.write(json.dumps(response, ensure_ascii=False) + '\n')
+            output.write(line)
             output.flush()
 
     def execute(request, key, token, is_control):
+        identifier = request['id']
         try:
             with state_lock:
                 superseded = token is not None and newest.get(key) is not token
             if superseded:
-                emit({'id': request['id'], 'error': 'Request superseded.'})
+                emit({'id': identifier, 'error': 'Request superseded.'})
                 return
             try:
-                response = {'id': request['id'], 'result': handle(request)}
-                # Serialize inside the error boundary: a malformed backend result
-                # must settle its callback too, rather than vanish in a Future.
-                encoded = json.dumps(response, ensure_ascii=False)
+                result = handle(request)
             except errors as error:
-                response = {'id': request['id'], 'error': str(error)}
-                if code := getattr(error, 'code', None):
+                response = {'id': identifier, 'error': str(error)}
+                code = getattr(error, 'code', None)
+                if code and isinstance(code, (str, int)):
                     response['error_code'] = code
-                encoded = json.dumps(response)
             except Exception:
                 _LOG.exception('Worker operation %s failed', request['op'])
-                encoded = json.dumps(
-                    {
-                        'id': request['id'],
-                        'error': 'The request could not be completed. Try again.',
-                    }
+                response = {'id': identifier, 'error': FAILED}
+            else:
+                response = {'id': identifier, 'result': result}
+            try:
+                # Serialize inside the boundary: a malformed result must settle
+                # its callback too, rather than vanish in a Future.
+                line = encode(response) + '\n'
+            except Exception:
+                _LOG.exception(
+                    'Worker operation %s returned invalid JSON', request['op']
                 )
+                line = encode({'id': identifier, 'error': FAILED}) + '\n'
             with write_lock:
-                output.write(encoded + '\n')
+                output.write(line)
                 output.flush()
         finally:
             if token is not None:

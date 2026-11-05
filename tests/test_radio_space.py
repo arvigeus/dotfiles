@@ -4,12 +4,10 @@ import unittest
 import support
 from test_movies_space import setup as movies_setup
 from test_radio import STATION, fake_mpv
-import shutil
 
 
 def setup(root):
     movies_setup(root)
-    shutil.copytree(support.DESKTOP / 'integrations', root / 'integrations')
     player = fake_mpv(root)
     path = root / 'spaces/radio/backend.py'
     fixture = """    import time
