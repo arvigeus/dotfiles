@@ -372,6 +372,75 @@ ShellRoot {
             setup=backdrop_setup,
         )
 
+    def test_rail_preference_and_requests_pending_across_refresh_or_empty_views(self):
+        def pending_setup(root):
+            setup(root)
+            # QSettings returns INI booleans as strings once read from disk.
+            (root / 'config/quickshell/desktop/spaces/movies/media-ui.ini').write_text(
+                '[catalogue]\ngrid=false\n'
+            )
+            (root / 'spaces/movies/backend.py').write_text(
+                """import sys,time
+sys.path.insert(0,%r)
+from spaces.movies.backend import Backend
+from spaces.movies.worker import serve
+backend=Backend()
+def handle(request):
+ op=request['op']
+ if op=='play':time.sleep(.6);raise ValueError('Fixture player unavailable')
+ if op=='watch':time.sleep(.6);return [{'name':'Fixture service','url':'https://fixture.invalid/watch'}]
+ if op in ('details','artwork') and request.get('refresh'):
+  title=dict(request['title'],plot='Refreshed synopsis')
+  return {'title':title,'warnings':[]} if op=='artwork' else title
+ return backend.handle(request)
+serve(handle,workers=8)
+"""
+                % str(support.DESKTOP)
+            )
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState {id:interactions}
+ SpaceHost {id:host;interactionState:interactions}
+ property int step:0
+ property double started:0
+ function check(v,m){if(!v)throw new Error(m);}
+ Timer {interval:40;running:true;repeat:true;onTriggered:{try{
+  if(root.step===0){SpaceState.open("movies",Quickshell.screens[0]);root.step++;return;}
+  const page=host.currentPage;
+  if(!page||!page.selected.id&&root.step<3)return;
+  if(root.step===1){
+   if(page.busy)return;
+   check(!page.gridMode,"saved rail preference restored as grid");
+   page.play(null,true);page.extra("watch");page.refreshTitle();
+   check(page.playLoading&&page.extraLoading,"requests did not start");root.step++;return;
+  }
+  if(root.step===2){
+   if(page.busy)return;
+   check(page.selected.plot==="Refreshed synopsis","refresh did not apply");
+   check(page.detailError==="Fixture player unavailable","refresh discarded the pending player reply");
+   check(page.tab==="watch"&&page.links.length===1,"refresh discarded the pending Services reply");
+   page.play(null,true);page.favorites=true;page.browse(false);root.started=Date.now();root.step++;return;
+  }
+  if(root.step===3){
+   if(page.loading||Date.now()-root.started<900)return;
+   check(!page.titles.length&&!page.selected.id,"favorites fixture is not empty");
+   check(!page.playLoading&&!page.busy,"abandoned player request kept the page busy");
+   page.localFiles=[{path:"/nonexistent/fixture.mkv",torrent:false}];page.watchIndex=2;page.tab="subtitles";
+   page.applyLocalFiles([]);
+   check(page.tab==="overview"&&page.watchIndex===0,"vanished files kept their tab or watch option");
+   SpaceState.close("movies");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(e){console.error("DISPLAY_FAIL",root.step,e);Qt.quit();}}}
+ Timer{interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",root.step);Qt.quit();}}
+}""",
+            setup=pending_setup,
+        )
+
     def test_recent_metadata_is_reused_and_explicit_refresh_bypasses_it(self):
         def metadata_setup(root):
             setup(root)

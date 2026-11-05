@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 
 import support
@@ -110,3 +111,70 @@ time.sleep(30)
                         os.kill(pid, signal.SIGKILL)
                     except ProcessLookupError:
                         pass
+
+    @unittest.skipUnless(support.QS, 'Quickshell is required')
+    def test_destroying_the_qml_worker_still_runs_backend_cleanup(self):
+        # Quickshell SIGKILLs a destroyed Process; closing a Space must still
+        # reach the backend's SIGTERM cleanup and release its process group.
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+
+            def setup(root):
+                (root / 'spaces/movies/probe.py').write_text(
+                    """import json,os,subprocess,sys
+from pathlib import Path
+sys.path.insert(0,%r)
+from spaces.movies.worker import own_process_group,serve
+own_process_group(lambda:Path(%r).write_text('cleaned'))
+child=subprocess.Popen(['sleep','30'])
+Path(%r).write_text(json.dumps([os.getpid(),child.pid]))
+serve(lambda request:'ready')
+"""
+                    % (
+                        str(support.DESKTOP),
+                        str(state / 'cleanup'),
+                        str(state / 'pids'),
+                    )
+                )
+
+            support.run_qml(
+                self,
+                """import QtQuick
+import Quickshell
+import "spaces/movies"
+ShellRoot {
+ id:root
+ property int step:0
+ Loader {id:loader;sourceComponent:Component{Worker{backend:"probe.py";serviceName:"Probe"}}}
+ Timer {interval:50;running:true;repeat:true;onTriggered:{
+  if(root.step===0){loader.item.request("ping",{},(result,error)=>{if(result==="ready")root.step=1;else{console.error("DISPLAY_FAIL",error);Qt.quit();}});root.step=-1;return;}
+  if(root.step===1){loader.active=false;root.step=2;return;}
+  if(root.step===2){console.log("DISPLAY_PASS");Qt.quit();}
+ }}
+ Timer {interval:8000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
+}""",
+                setup=setup,
+            )
+            worker, child = json.loads((state / 'pids').read_text())
+            try:
+                for _ in range(40):
+                    if (state / 'cleanup').exists() and not _alive(child):
+                        break
+                    time.sleep(0.05)
+                self.assertEqual((state / 'cleanup').read_text(), 'cleaned')
+                self.assertFalse(_alive(worker), 'backend survived Space close')
+                self.assertFalse(_alive(child), 'backend-owned child survived close')
+            finally:
+                for pid in (worker, child):
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+
+
+def _alive(pid):
+    status = Path(f'/proc/{pid}/stat')
+    try:
+        return status.read_text().split()[2] != 'Z'
+    except FileNotFoundError:
+        return False

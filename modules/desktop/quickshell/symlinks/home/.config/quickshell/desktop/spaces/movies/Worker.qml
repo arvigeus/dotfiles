@@ -17,6 +17,9 @@ Item {
     property bool stopped: false
     property int pendingCount: 0
     property bool startOnDemand: false
+    // Quickshell SIGKILLs a destroyed Process. A forking supervisor turns that
+    // into SIGTERM for the backend, so its cleanup still runs on close/reload.
+    property bool gracefulStop: true
     property bool processReady: false
     property var startupRequests: []
     signal failed(string message)
@@ -78,7 +81,9 @@ Item {
     }
     Process {
         id: worker
-        command: ["env", "QUICKSHELL_MEDIA_SPACE=" + root.spaceId, "python3", "-u", Quickshell.shellPath(root.backendDirectory + "/" + root.backend)]
+        // timeout 0 forks, waits and forwards SIGTERM; the backend's parent-death
+        // signal fires when timeout itself is killed.
+        command: (root.gracefulStop ? ["timeout", "0", "setpriv", "--pdeathsig", "TERM", "--"] : []).concat(["env", "QUICKSHELL_MEDIA_SPACE=" + root.spaceId, "python3", "-u", Quickshell.shellPath(root.backendDirectory + "/" + root.backend)])
         running: !root.startOnDemand
         onStarted: {
             root.processReady = true;
@@ -118,5 +123,7 @@ Item {
             root.failPending(root.serviceName + " service stopped. Close this module using the X in Spaces, then reopen it.");
         }
     }
-    Component.onDestruction: worker.running = false
+    // Under the supervisor, destruction alone delivers exactly one SIGTERM.
+    Component.onDestruction: if (!gracefulStop)
+        worker.running = false
 }

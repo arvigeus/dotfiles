@@ -136,6 +136,8 @@ Item {
             spaceId: "pictures"
             objectName: "wallpaperRuntimeWorker"
             backend: "wallpaper_engine.py"
+            // The engine's renderer handoff is designed around SIGKILL on unload.
+            gracefulStop: false
             serviceName: "Wallpaper playback"
             onReady: refresh.restart()
         }

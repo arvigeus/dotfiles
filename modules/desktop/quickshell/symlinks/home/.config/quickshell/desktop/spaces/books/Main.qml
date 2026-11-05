@@ -71,7 +71,7 @@ Item {
     readonly property bool workSelected: !!selected.id && selected.source !== "provider" && /^OL\d+W$/.test(String(selected.id))
     readonly property var downloadJobs: service.jobs
     readonly property bool titleLoading: detailLoading
-    readonly property bool findLoading: tab === "torrent" && (torrentFind.connectionLoading || torrentFind.searching || torrentFind.extraSearching || torrentFind.reviewLoading || torrentFind.inspectLoading || torrentFind.moreLoading || torrentFind.startLoading || torrentFind.launchPending || torrentFind.tracksLoading)
+    readonly property bool findLoading: tab === "torrent" && (torrentFind.connectionLoading || torrentFind.searching || torrentFind.extraSearching || torrentFind.reviewLoading || torrentFind.moreLoading || torrentFind.startLoading || torrentFind.launchPending)
     readonly property bool busy: loading || detailLoading || offersLoading || providerResolving || findOffersLoading || (tab === "author" && authorLoading) || (tab === "editions" && editionsLoading) || findLoading || localService.pendingDownloads > 0 || localService.pendingChanges > 0 || service.activeJobCount > 0 || (tab === "scan" && (scanPanel.scanning || scanPanel.matching))
     readonly property string readingAction: selected.ebookAccess === "public" ? "Read on Open Library" : selected.ebookAccess === "borrowable" ? "Borrow on Open Library" : selected.ebookAccess === "printdisabled" ? "Preview on Open Library" : ""
 
@@ -706,7 +706,8 @@ Item {
             else
                 providerNames = result.providers || [];
         });
-        gridMode = preferences.value("catalogue/grid", false);
+        // INI storage returns "true"/"false" strings once read from disk.
+        gridMode = String(preferences.value("catalogue/grid", false)) === "true";
         service.request("local_list", {
             kind: "book"
         }, (result, failure) => {

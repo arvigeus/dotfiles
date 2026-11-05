@@ -72,7 +72,7 @@ Item {
     property int nextOffset: 0
     property var pendingUninstall: ({})
     property string editingStore: ""
-    readonly property bool busy: initializing || loading || detailLoading || service.pendingCount > 0 || (active && (backdrop.loading || logo.loading || (tab === "torrent" && (downloads.searching || downloads.connectionLoading || downloads.inspectLoading || downloads.reviewLoading))))
+    readonly property bool busy: initializing || loading || detailLoading || service.pendingCount > 0 || (active && (backdrop.loading || logo.loading || (tab === "torrent" && (downloads.searching || downloads.connectionLoading || downloads.reviewLoading))))
     readonly property string backgroundImage: artwork.hero || ((selected.artwork || [])[0] || (selected.screenshots || [])[0] || {}).url || ""
     readonly property string poster: artwork.cover || (selected.cover || {}).url || ""
     readonly property var images: (selected.artwork || []).concat(selected.screenshots || [])
@@ -639,8 +639,9 @@ Item {
         });
     }
     Component.onCompleted: {
-        gridMode = preferences.value("catalogue/grid", false);
-        hideNsfw = preferences.value("catalogue/hideNsfw", true);
+        // INI storage returns "true"/"false" strings once read from disk.
+        gridMode = String(preferences.value("catalogue/grid", false)) === "true";
+        hideNsfw = String(preferences.value("catalogue/hideNsfw", true)) === "true";
         pollInstalls();
         service.request("init", {}, (result, failure) => {
             initializing = false;
@@ -748,7 +749,7 @@ Item {
             active: root.active && !gallery.visible
             spinnerName: "gamesLoading"
             jobs: root.installJobs.concat(downloads.jobs)
-            tasks: [task(root.initializing, "init", "Opening Games…"), task(root.loading, "browse", "Loading games…"), task(root.detailLoading, "details", "Loading game details…"), task(root.metadataBusy, "metadata", "Updating library metadata · " + (root.metadataQueue.length + 1) + " remaining…"), task(root.actionBusy, "action", "Updating game library…"), task(service.pendingCount > (root.installsLoading ? 1 : 0) && !root.initializing && !root.loading && !root.detailLoading && !root.actionBusy && !root.metadataBusy, "information", "Loading game information…"), task(backdrop.loading || logo.loading, "artwork", "Loading artwork…"), task(root.tab === "torrent" && (downloads.searching || downloads.connectionLoading || downloads.inspectLoading || downloads.reviewLoading), "find", "Loading downloads…")]
+            tasks: [task(root.initializing, "init", "Opening Games…"), task(root.loading, "browse", "Loading games…"), task(root.detailLoading, "details", "Loading game details…"), task(root.metadataBusy, "metadata", "Updating library metadata · " + (root.metadataQueue.length + 1) + " remaining…"), task(root.actionBusy, "action", "Updating game library…"), task(service.pendingCount > (root.installsLoading ? 1 : 0) && !root.initializing && !root.loading && !root.detailLoading && !root.actionBusy && !root.metadataBusy, "information", "Loading game information…"), task(backdrop.loading || logo.loading, "artwork", "Loading artwork…"), task(root.tab === "torrent" && (downloads.searching || downloads.connectionLoading || downloads.reviewLoading), "find", "Loading downloads…")]
         }
         MovieIconButton {
             iconName: "search"

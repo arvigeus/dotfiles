@@ -75,6 +75,9 @@ The image gallery uses its own spinner while hiding the toolbar animation.
 Activity descriptions appear in the tooltip and accessible name. An extra-request generation prevents
 an earlier tab's response from clearing a later tab's loading state or replacing
 its content. Selection generations protect personal state and file inventory too.
+`resetSelection()` is the one place that abandons a selection's requests, so it
+also clears every per-title loading flag. Refresh supersedes only metadata
+hydration; pending playback and tab requests still settle.
 
 `tests/test_space_activity.py` exercises concurrent tasks/jobs, live tooltip
 updates, progress, hidden/idle disappearance and rendered spinner contrast against
@@ -97,17 +100,17 @@ grace period. Both layers decode for the physical surface size.
 ## Artwork and response caches
 
 `ImageCache.qml` coalesces duplicate artwork requests through `ArtworkCache.qml`.
-Games uses an independent instance of this
-component with its own cache namespace. Movies and Series retain their existing
-shared artwork instance. The cache lazily owns a Python
+Games, Pictures and Books use independent instances of this component with their
+own cache namespaces. Movies, Series and Streaming share the default `ImageCache`
+instance and its `movies` namespace. The cache lazily owns a Python
 worker while image consumers exist. `image_cache.py` downloads to atomic files in
 `$XDG_CACHE_HOME/quickshell/desktop/spaces/movies/artwork/` (normally
 `~/.local/cache/quickshell/desktop/spaces/movies/artwork` in this configuration). SHA-256 filenames
 contain no source URLs. Images are private (0600; directory 0700), limited to
 20 MiB each, 256 MiB total and 2,000 files. Files expire after 30 days without a
 disk-cache access; startup and downloads prune expired/oldest entries. Shell
-restart retains complete cached files. Closing Movies releases its cache worker;
-only that worker's unfinished downloads are removed. Abandoned partial files are
+restart retains complete cached files. The worker stops once its last image
+consumer closes; only that worker's unfinished downloads are removed. Abandoned partial files are
 pruned after a day. No personal library state lives in this directory.
 
 `CachedImage.qml` cancels stale listeners when a delegate changes or dies, resolves
@@ -134,6 +137,11 @@ an artwork-cache maintenance operation.
 Provider logic stays here. `Worker.qml` owns one bounded JSON-lines Python process,
 request IDs, startup queuing, deadlines and callbacks. Each backend has its own
 process group so close releases ffprobe/ffmpeg children as well as the worker.
+Quickshell 0.3.2 SIGKILLs a destroyed `Process`, so by default the backend runs
+under `timeout 0 setpriv --pdeathsig TERM`: killing that supervisor on Space
+close or shell reload delivers one SIGTERM, and the backend's `own_process_group`
+cleanup still runs for every Space using this worker. Only the Pictures wallpaper
+runtime sets `gracefulStop: false`, because its renderer handoff expects SIGKILL.
 The torrent worker attempts bounded cleanup of only its own remote search jobs.
 qBittorrent and user-launched players/browsers have independent lifetimes.
 Ordinary imports publish complete files without replacing an existing destination;
@@ -163,6 +171,8 @@ XDG namespace:
 - `~/.config/quickshell/desktop/spaces/movies/media.json`: metadata API keys, named playback
   templates, region, player argv, optional anime adapters and OpenSubtitles account.
 - `~/.config/quickshell/desktop/spaces/movies/media-ui.ini`: view preferences.
+  `Settings.value()` returns INI booleans as `"true"`/`"false"` strings once read
+  from disk, so restore them by comparing with `"true"`.
 - `~/.local/share/quickshell/desktop/spaces/movies/library.sqlite`: personal/library state.
 
 Examples are secret-free and do not get copied over user configuration. Keys remain in Python;
@@ -192,6 +202,7 @@ primary images finish, and stale-response rejection. Backdrop fixtures cover
 fast transitions, poster fallback, failed images and superseded downloads.
 Native Wayland smoke checks cover real fullscreen geometry and opening/closing
 in dark and light modes. `test_movies_worker.py` checks subprocess cleanup while
-retaining a detached application.
+retaining a detached application, including when the QML `Worker` is destroyed.
+Delayed replies check that refresh and empty views leave no request spinning.
 Multi-monitor focus/stacking, scaling, hotplug, real playback and real download
 completion still require desktop/device interaction.

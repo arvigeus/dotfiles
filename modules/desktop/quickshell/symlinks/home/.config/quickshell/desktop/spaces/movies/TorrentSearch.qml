@@ -9,10 +9,7 @@ ColumnLayout {
     property bool showLoading: true
     property bool showStatus: true
     property var host
-    property bool popupActivity: false
     required property var title
-    property bool tracksLoading: false
-    property string lookupError: ""
     property string query: ""
     property string error: ""
     property string info: ""
@@ -41,20 +38,12 @@ ColumnLayout {
     property string reviewJobId: ""
     property var reviewFiles: []
     property bool reviewLoading: false
-    property var inspectRow: ({})
-    property var inspectFiles: []
-    property var selectedFiles: []
-    property bool inspectLoading: false
-    readonly property var catalogueTracks: Array.isArray((title || {}).tracks) ? title.tracks.filter(track => {
-        return track && track.kind === "song" && track.id;
-    }) : []
     property var service: ownedService
 
     signal extraSearchRequested(string query)
     signal extraResultRequested(var result)
     signal contextReset
     signal imported
-    signal trackLookupRequested(string query)
 
     function showJobPanel() {
         jobPanel.open();
@@ -65,21 +54,12 @@ ColumnLayout {
             jobPanel.close();
             return true;
         }
-        if (activity.visible) {
-            activity.close();
-            return true;
-        }
         if (!visible)
             return false;
 
         if (reviewJobId) {
             reviewJobId = "";
             reviewFiles = [];
-            return true;
-        }
-        if (inspectRow.url) {
-            inspectRow = ({});
-            inspectFiles = [];
             return true;
         }
         return false;
@@ -92,12 +72,10 @@ ColumnLayout {
 
     function suggestedQuery() {
         const item = title || {};
-        const year = item.kind === "tv" || (item.kind === "music" && item.scope === "artist") ? "" : String(item.year || item.firstPublishYear || item.releaseDate || "").slice(0, 4);
-        const prefix = item.kind === "music" && item.scope !== "artist" && item.artist ? item.artist + " " : "";
+        const year = item.kind === "tv" ? "" : String(item.year || item.firstPublishYear || item.releaseDate || "").slice(0, 4);
         const suffix = item.kind === "book" && item.author ? " " + item.author : "";
         const episode = item.kind === "tv" ? item.season === undefined ? " complete" : " S" + String(item.season).padStart(2, "0") + (item.episode === undefined ? "" : "E" + String(item.episode).padStart(2, "0")) : "";
-        const artist = item.kind === "music" && item.scope === "artist" ? " discography" : "";
-        return prefix + (item.title || "") + (year ? " " + year : "") + suffix + episode + artist;
+        return (item.title || "") + (year ? " " + year : "") + suffix + episode;
     }
 
     function sizeLabel(bytes) {
@@ -120,15 +98,10 @@ ColumnLayout {
         pollLoading = false;
         moreLoading = false;
         error = "";
-        lookupError = "";
         info = "";
         reviewJobId = "";
         reviewFiles = [];
         reviewLoading = false;
-        inspectRow = ({});
-        inspectFiles = [];
-        selectedFiles = [];
-        inspectLoading = false;
         query = suggestedQuery();
         contextReset();
         if (service.monitorJobs)
@@ -352,63 +325,11 @@ ColumnLayout {
             error = "This result names a different season. Refine the search before downloading.";
             return;
         }
-        if (title.kind === "music") {
-            inspectRow = row;
-            inspectFiles = [];
-            selectedFiles = [];
-            fetchFiles();
-            return;
-        }
-        commitQueue(row, null);
-    }
-
-    function fetchFiles() {
-        if (!inspectRow.url || inspectLoading)
-            return;
-
-        const url = inspectRow.url;
-        inspectLoading = true;
-        service.request("inspect", {
-            "url": url
-        }, (result, failure) => {
-            if (inspectRow.url !== url)
-                return;
-
-            inspectLoading = false;
-            if (failure) {
-                error = failure;
-                inspectRow = ({});
-                return;
-            }
-            if (!result.ready)
-                return;
-
-            const audio = result.files.filter(file => {
-                return file.audio;
-            });
-            if (!audio.length) {
-                error = "This torrent has no supported audio files.";
-                inspectRow = ({});
-                return;
-            }
-            if (audio.length === 1) {
-                commitQueue(inspectRow, [audio[0].index]);
-                inspectRow = ({});
-                return;
-            }
-            inspectFiles = result.files;
-        });
-    }
-
-    function commitQueue(row, selected) {
         const args = {
             "title": title,
             "url": row.url
         };
         const context = currentContextId();
-        if (selected !== null)
-            args.selected_files = selected;
-
         service.pendingDownloads++;
         service.request("queue", args, (result, failure) => {
             if (!failure && service.monitorJobs)
@@ -432,9 +353,6 @@ ColumnLayout {
                 error = failure;
             } else {
                 info = args.title.kind === "movie" || args.title.kind === "tv" ? "Downloading to " + result.savePath + ". Completed files appear in Local automatically." : "Added to qBittorrent. Import starts when the download completes.";
-                inspectRow = ({});
-                inspectFiles = [];
-                selectedFiles = [];
                 refreshJobs();
             }
         });
@@ -445,10 +363,6 @@ ColumnLayout {
         reviewJobId = job.id;
         reviewFiles = [];
         reviewLoading = true;
-        trackPicker.currentIndex = 0;
-        artistField.text = title.artist || "";
-        albumField.text = title.album || "";
-        dateField.text = title.releaseDate || "";
         service.request("review", {
             "job_id": job.id
         }, (result, failure) => {
@@ -476,24 +390,11 @@ ColumnLayout {
             args.season = Number(seasonField.text);
             args.episode = Number(episodeField.text);
         }
-        if (title.kind === "music") {
-            if (title.scope === "album" || title.scope === "artist") {
-                const track = catalogueTracks[trackPicker.currentIndex - 1];
-                if (!track) {
-                    error = "Choose a catalogue song for this file.";
-                    return;
-                }
-                args.track = track;
-            }
-            args.artist = artistField.text;
-            args.album = albumField.text;
-            args.releaseDate = dateField.text;
-        }
         service.change("import_selected", args, (result, failure) => {
             if (failure) {
                 error = failure;
             } else {
-                info = result.remaining ? "Imported into Local. " + result.remaining + " audio files remain to match." : "Imported into Local.";
+                info = result.remaining ? "Imported into Local. " + result.remaining + " files remain to match." : "Imported into Local.";
                 reviewFiles = reviewFiles.filter(item => {
                     return item.path !== file.path;
                 });
@@ -501,7 +402,6 @@ ColumnLayout {
                     reviewJobId = "";
                     reviewFiles = [];
                 }
-                trackPicker.currentIndex = 0;
                 refreshJobs();
                 imported();
             }
@@ -526,25 +426,12 @@ ColumnLayout {
         });
     }
 
-    onErrorChanged: {
-        if (popupActivity && error)
-            activity.notify(error, true);
-    }
-    onLookupErrorChanged: {
-        if (popupActivity && lookupError)
-            activity.notify(lookupError, true);
-    }
-    onInfoChanged: {
-        if (popupActivity && info)
-            activity.notify(info, false);
-    }
     spacing: 8
     onTitleChanged: {
         if (currentContextId() !== contextId) {
             prepare();
         }
     }
-    onCatalogueTracksChanged: trackPicker.currentIndex = 0
     onVisibleChanged: {
         if (visible) {
             if (!query)
@@ -552,7 +439,6 @@ ColumnLayout {
 
             connect();
         } else {
-            activity.close();
             jobPanel.close();
         }
     }
@@ -586,13 +472,6 @@ ColumnLayout {
         repeat: true
         running: root.visible && root.searching
         onTriggered: root.pollSearch()
-    }
-
-    Timer {
-        interval: 1500
-        repeat: true
-        running: root.visible && !!root.inspectRow.url && !root.inspectFiles.length
-        onTriggered: root.fetchFiles()
     }
 
     Timer {
@@ -664,7 +543,7 @@ ColumnLayout {
     }
 
     MovieText {
-        visible: !root.popupActivity && !!root.error
+        visible: !!root.error
         Layout.fillWidth: true
         text: root.error
         color: MovieStyle.danger
@@ -690,7 +569,7 @@ ColumnLayout {
     }
 
     MovieText {
-        visible: root.showStatus && !root.popupActivity && !!root.info
+        visible: root.showStatus && !!root.info
         Layout.fillWidth: true
         text: root.info
         color: MovieStyle.muted
@@ -700,7 +579,7 @@ ColumnLayout {
     ListView {
         id: resultList
 
-        visible: !root.reviewJobId && !root.inspectRow.url
+        visible: !root.reviewJobId
         Layout.fillWidth: true
         Layout.fillHeight: visible
         clip: true
@@ -804,68 +683,8 @@ ColumnLayout {
         }
     }
 
-    MovieButton {
-        visible: !!root.inspectRow.url
-        iconName: "arrow-left"
-        text: "Back to results"
-        onClicked: {
-            root.inspectRow = ({});
-            root.inspectFiles = [];
-            root.selectedFiles = [];
-        }
-    }
-
-    MovieText {
-        visible: !!root.inspectRow.url && root.inspectFiles.length > 0
-        Layout.fillWidth: true
-        text: "Choose audio files to download."
-        color: MovieStyle.muted
-    }
-
-    MovieSpinner {
-        visible: root.showLoading && root.inspectLoading
-        running: visible
-    }
-
-    ListView {
-        id: inspectList
-
-        visible: !!root.inspectRow.url && root.inspectFiles.length > 0
-        Layout.fillWidth: true
-        Layout.fillHeight: visible
-        clip: true
-        model: root.inspectFiles
-        spacing: 6
-
-        WheelScroll {
-            view: inspectList
-        }
-
-        ScrollBar.vertical: MovieScrollBar {}
-
-        delegate: CheckBox {
-            required property var modelData
-
-            width: inspectList.width
-            enabled: modelData.audio
-            text: modelData.path + " · " + root.sizeLabel(modelData.size)
-            checked: root.selectedFiles.includes(modelData.index)
-            onToggled: root.selectedFiles = checked ? root.selectedFiles.concat([modelData.index]) : root.selectedFiles.filter(index => {
-                return index !== modelData.index;
-            })
-        }
-    }
-
-    MovieButton {
-        visible: !!root.inspectRow.url && root.inspectFiles.length > 0
-        iconName: "download"
-        text: "Download selected files"
-        enabled: root.selectedFiles.length > 0
-        onClicked: root.commitQueue(root.inspectRow, root.selectedFiles)
-    }
-
     Repeater {
-        model: root.popupActivity ? [] : root.jobs
+        model: root.jobs
 
         RowLayout {
             required property var modelData
@@ -890,13 +709,6 @@ ColumnLayout {
                 onActivated: root.deleteJob(modelData)
             }
         }
-    }
-
-    OperationCenter {
-        id: activity
-
-        parent: root
-        notificationTitle: "Find"
     }
 
     Popup {
@@ -1042,89 +854,6 @@ ColumnLayout {
             text: "Confirm numbering before import."
             color: MovieStyle.muted
         }
-    }
-
-    RowLayout {
-        visible: !!root.reviewJobId && root.title.kind === "music"
-        Layout.fillWidth: true
-
-        MovieChoice {
-            id: trackPicker
-
-            visible: root.title.scope === "album" || root.title.scope === "artist"
-            Layout.fillWidth: true
-            model: ["Choose catalogue song"].concat(root.catalogueTracks.map(track => {
-                return track.title + " — " + track.album;
-            }))
-            onActivated: {
-                const track = root.catalogueTracks[currentIndex - 1];
-                if (track) {
-                    artistField.text = track.artist || "";
-                    albumField.text = track.album || "";
-                    dateField.text = track.releaseDate || root.title.releaseDate || "";
-                }
-            }
-        }
-
-        MovieInput {
-            id: artistField
-
-            Layout.fillWidth: true
-            placeholderText: "Artist"
-            text: root.title.artist || ""
-        }
-
-        MovieInput {
-            id: albumField
-
-            Layout.fillWidth: true
-            placeholderText: "Album"
-            text: root.title.album || ""
-        }
-
-        MovieInput {
-            id: dateField
-
-            Layout.preferredWidth: 150
-            placeholderText: "YYYY-MM-DD"
-            text: root.title.releaseDate || ""
-        }
-    }
-
-    MovieText {
-        visible: !root.tracksLoading && !!root.reviewJobId && root.title.kind === "music" && (root.title.scope === "album" || root.title.scope === "artist")
-        Layout.fillWidth: true
-        text: root.catalogueTracks.length ? "Match each audio file to its catalogue song before importing." : "Search the catalogue below to find the matching song."
-        color: MovieStyle.muted
-        wrapMode: Text.Wrap
-    }
-
-    RowLayout {
-        visible: !!root.reviewJobId && root.title.kind === "music" && (root.title.scope === "album" || root.title.scope === "artist")
-        Layout.fillWidth: true
-
-        MovieInput {
-            id: songLookup
-
-            Layout.fillWidth: true
-            placeholderText: "Find catalogue song by title or artist…"
-            onAccepted: root.trackLookupRequested(text.trim())
-        }
-
-        MovieIconButton {
-            iconName: "search"
-            text: "Search catalogue songs"
-            enabled: !!songLookup.text.trim() && !root.tracksLoading
-            onClicked: root.trackLookupRequested(songLookup.text.trim())
-        }
-    }
-
-    MovieText {
-        visible: !root.popupActivity && !!root.lookupError
-        Layout.fillWidth: true
-        text: root.lookupError
-        color: MovieStyle.danger
-        wrapMode: Text.Wrap
     }
 
     ListView {

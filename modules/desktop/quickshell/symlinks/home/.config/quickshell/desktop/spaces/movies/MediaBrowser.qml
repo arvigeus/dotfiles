@@ -64,6 +64,9 @@ FocusScope {
     property bool filtersOpen: false
     property int browseGeneration: 0
     property int selectionGeneration: 0
+    // Refresh supersedes only metadata hydration, not playback or tab requests.
+    property int hydrationGeneration: 0
+    property int hydratedSelection: 0
     property int episodeGeneration: 0
     property int relatedGeneration: 0
     property bool relatedLoading: false
@@ -101,7 +104,7 @@ FocusScope {
         case "episodes":
             return episodeLoading;
         case "torrent":
-            return torrentPanel.connectionLoading || torrentPanel.searching || torrentPanel.extraSearching || torrentPanel.reviewLoading || torrentPanel.inspectLoading || torrentPanel.moreLoading || torrentPanel.startLoading || torrentPanel.launchPending || torrentPanel.tracksLoading;
+            return torrentPanel.connectionLoading || torrentPanel.searching || torrentPanel.extraSearching || torrentPanel.reviewLoading || torrentPanel.moreLoading || torrentPanel.startLoading || torrentPanel.launchPending;
         case "subtitles":
             return subtitlePanel.loading || subtitlePanel.searching || subtitlePanel.moreLoading || subtitlePanel.changing;
         default:
@@ -144,13 +147,33 @@ FocusScope {
                 if (selection !== selectionGeneration || failure)
                     return;
 
-                localFiles = result;
-                if (kind === "tv" && tab === "episodes" && localMode)
-                    showLocalEpisodes();
+                applyLocalFiles(result);
             });
         }
         if (localMode)
             browse(false);
+    }
+
+    // Imports and deletions can add or remove the selected title's files.
+    function applyLocalFiles(files) {
+        const hadFiles = localFiles.length > 0;
+        localFiles = files;
+        // The first watch option is Local only while files exist.
+        if (hadFiles !== files.length > 0)
+            watchIndex = 0;
+
+        if (!files.length && tab === "subtitles")
+            tab = "overview";
+
+        if (kind === "tv" && localMode && files.length) {
+            const local = localSeasons(files);
+            // Reassigning an unchanged list would reset the season picker.
+            if (JSON.stringify(local) !== JSON.stringify(seasons))
+                seasons = local;
+
+            if (tab === "episodes")
+                showLocalEpisodes();
+        }
     }
 
     function sameTitle(a, b) {
@@ -204,23 +227,46 @@ FocusScope {
         });
     }
 
-    function clearSelection() {
+    // Every per-title request checks selectionGeneration, so bumping it
+    // abandons them all; their loading flags must be cleared here too.
+    function resetSelection(title) {
         ++selectionGeneration;
         selectionDelay.stop();
-        selected = ({});
+        linkedTitleId = "";
+        selected = title;
+        backgroundImage = title.backdrop || "";
+        artworkReady = false;
+        trailerIndex = 0;
+        watchIndex = 0;
+        tab = "overview";
+        detailError = "";
+        personal = ({
+                "favorite": false,
+                "note": "",
+                "url": ""
+            });
         localFiles = [];
-        backgroundImage = "";
+        torrentEpisode = ({});
+        subtitlePath = "";
+        seasons = [];
+        episodes = [];
+        episodeCatalogue.clear();
+        episodeNext = "";
+        links = [];
+        spoiler = "";
+        collectionSections = [];
+        collectionsLoaded = false;
+        collectionsError = "";
         detailLoading = false;
         artworkLoading = false;
         seasonsLoading = false;
         personalLoading = false;
         filesLoading = false;
-        ++episodeGeneration;
-        seasons = [];
-        episodes = [];
-        episodeCatalogue.clear();
-        episodeNext = "";
         episodeLoading = false;
+        playLoading = false;
+        relatedLoading = false;
+        collectionsLoading = false;
+        extraLoading = false;
     }
 
     function uniquePeople(people) {
@@ -330,7 +376,7 @@ FocusScope {
                     }))
                         selectTitle(titles[0]);
                 } else if (!keepLinkedSelection()) {
-                    clearSelection();
+                    resetSelection({});
                 }
             });
             return;
@@ -388,7 +434,7 @@ FocusScope {
                     }))
                         selectTitle(titles[0]);
                 } else if (!keepLinkedSelection()) {
-                    clearSelection();
+                    resetSelection({});
                 }
             }
         });
@@ -398,45 +444,12 @@ FocusScope {
         if (sameTitle(selected, title))
             return;
 
-        linkedTitleId = "";
-        ++relatedGeneration;
-        relatedLoading = false;
-        ++collectionsGeneration;
-        collectionSections = [];
-        collectionsLoading = false;
-        collectionsLoaded = false;
-        collectionsError = "";
-        const generation = ++selectionGeneration;
-        ++episodeGeneration;
+        resetSelection(title);
         personalLoading = true;
         filesLoading = !animeMode;
-        selected = title;
-        backgroundImage = title.backdrop || "";
-        artworkReady = false;
-        trailerIndex = 0;
         detailLoading = true;
         artworkLoading = !animeMode;
         seasonsLoading = kind === "tv";
-        detailError = "";
-        localFiles = [];
-        torrentEpisode = ({});
-        subtitlePath = "";
-        watchIndex = 0;
-        personal = ({
-                "favorite": false,
-                "note": "",
-                "url": ""
-            });
-        seasons = [];
-        episodes = [];
-        episodeCatalogue.clear();
-        episodeNext = "";
-        episodeLoading = false;
-        playLoading = false;
-        tab = "overview";
-        links = [];
-        spoiler = "";
-        extraLoading = false;
         if (active && (service.hasCached("details", {
                 "title": title
             }) || service.hasCached("artwork", {
@@ -529,7 +542,6 @@ FocusScope {
     }
 
     function refreshTitle() {
-        ++selectionGeneration;
         ++collectionsGeneration;
         collectionsLoading = false;
         collectionsLoaded = false;
@@ -550,13 +562,18 @@ FocusScope {
             return;
 
         const title = selected;
-        const generation = selectionGeneration;
+        const selection = selectionGeneration;
+        const hydration = ++hydrationGeneration;
+        const current = () => {
+            return selection === selectionGeneration && hydration === hydrationGeneration;
+        };
+        hydratedSelection = selection;
         personalLoading = true;
         filesLoading = !animeMode;
         service.fetch("personal", {
             "title": title
         }, (result, failure) => {
-            if (generation !== selectionGeneration)
+            if (!current())
                 return;
 
             personalLoading = false;
@@ -567,7 +584,7 @@ FocusScope {
             service.fetch("local_files", {
                 "title": title
             }, (result, failure) => {
-                if (generation !== selectionGeneration)
+                if (!current())
                     return;
 
                 filesLoading = false;
@@ -585,7 +602,7 @@ FocusScope {
             "title": title,
             "refresh": !!refresh
         }, (result, failure) => {
-            if (generation !== selectionGeneration)
+            if (!current())
                 return;
 
             detailLoading = false;
@@ -599,7 +616,7 @@ FocusScope {
                 "title": title,
                 "refresh": !!refresh
             }, (result, failure) => {
-                if (generation !== selectionGeneration)
+                if (!current())
                     return;
 
                 artworkLoading = false;
@@ -618,7 +635,7 @@ FocusScope {
             service.fetch("episodes", {
                 "title": title
             }, (result, failure) => {
-                if (generation !== selectionGeneration)
+                if (!current())
                     return;
 
                 seasonsLoading = false;
@@ -770,30 +787,14 @@ FocusScope {
         if (!path)
             return;
 
+        const selection = selectionGeneration;
         localService.change("delete_local", {
             "path": path
         }, (result, failure) => {
-            if (failure) {
+            if (!failure)
+                refreshLocalLibrary();
+            else if (selection === selectionGeneration)
                 detailError = failure;
-                return;
-            }
-            service.fetch("local_files", {
-                "title": selected
-            }, (files, error) => {
-                if (!error) {
-                    localFiles = files;
-                    if (!files.length) {
-                        watchIndex = 0;
-                        if (tab === "subtitles")
-                            tab = "overview";
-                    }
-                }
-                if (localMode)
-                    browse(false);
-
-                if (kind === "tv")
-                    loadEpisodes(false);
-            });
         });
     }
 
@@ -860,7 +861,8 @@ FocusScope {
             pagination.stop();
             searchDelay.stop();
         } else {
-            if (detailLoading)
+            // Resume only a hydration that hiding cancelled before it started.
+            if (selected.id && hydratedSelection !== selectionGeneration)
                 selectionDelay.restart();
 
             if (search.text)
@@ -871,36 +873,13 @@ FocusScope {
     }
     onAnimeModeChanged: {
         ++browseGeneration;
-        ++selectionGeneration;
-        ++episodeGeneration;
-        ++relatedGeneration;
-        ++collectionsGeneration;
-        selectionDelay.stop();
+        resetSelection({});
         updateCatalogue([], false);
-        selected = ({});
-        backgroundImage = "";
-        seasons = [];
-        episodes = [];
-        episodeCatalogue.clear();
         nextPage = "";
-        detailLoading = false;
-        artworkLoading = false;
-        seasonsLoading = false;
-        personalLoading = false;
-        filesLoading = false;
-        episodeLoading = false;
-        playLoading = false;
-        relatedLoading = false;
-        linkedTitleId = "";
-        collectionSections = [];
-        collectionsLoading = false;
-        collectionsLoaded = false;
-        collectionsError = "";
         providers = animeMode ? animeProviders : standardProviders;
         episodeProviders = animeMode ? animeProviders.map(() => {
             return true;
         }) : standardEpisodeProviders;
-        watchIndex = 0;
         providerIndex = 0;
         if (animeMode)
             requestAnimeGenres();
@@ -924,7 +903,8 @@ FocusScope {
                 episodeProviders = animeMode ? animeProviders.map(() => {
                     return true;
                 }) : standardEpisodeProviders;
-                gridMode = preferences.value("catalogue/grid", kind === "movie" ? preferences.value("movie/grid", false) : false);
+                // INI storage returns "true"/"false" strings once read from disk.
+                gridMode = String(preferences.value("catalogue/grid", false)) === "true";
             }
         });
         service.fetch("local_titles", {
