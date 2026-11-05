@@ -1271,7 +1271,7 @@ class Backend:
         if t['kind'] != 'tv':
             raise MediaError('Movies do not have episodes.')
         key = 'episodes:' + json.dumps([t['id'], season, page])
-        cached = self.get(key, 3600)
+        cached = None if r.get('refresh') else self.get(key, 3600)
         if cached:
             return cached
         try:
@@ -1293,6 +1293,7 @@ class Backend:
                         title=e.get('name', ''),
                         plot=e.get('overview', ''),
                         image=image_url(e.get('still_path'), 'w300'),
+                        date=e.get('air_date') or '',
                         rating=e.get('vote_average'),
                     )
                     for e in d.get('episodes', [])

@@ -11,6 +11,7 @@ from test_movies_space import setup as movies_setup
 
 sys.path.insert(0, str(support.DESKTOP))
 from spaces.movies.backend import Backend
+from spaces.movies.local import LocalLibrary
 
 
 def setup(root):
@@ -56,6 +57,110 @@ def setup(root):
                 next='',
             ),
         )
+
+
+def series_backend(root):
+    return Backend(
+        root / 'config/quickshell/desktop/spaces/series/media.json',
+        root / 'data/quickshell/desktop/spaces/series',
+        root / 'cache',
+    )
+
+
+def worker(root, body):
+    """Replace the Series metadata worker with `handle` around the real Backend."""
+    (root / 'spaces/movies/backend.py').write_text(
+        f"""import sys,time
+sys.path.insert(0,{str(support.DESKTOP)!r})
+from spaces.movies.backend import Backend
+from spaces.movies.records import MediaError
+from spaces.movies.worker import serve
+backend=Backend()
+{body}
+serve(handle,errors=(MediaError,))
+"""
+    )
+
+
+def specials(root):
+    """TMDB lists Specials as season 0, before the regular seasons."""
+    backend = series_backend(root)
+    backend.put(
+        'episodes:' + json.dumps(['tt101', None, '']), dict(seasons=['0', '1', '2'])
+    )
+    backend.put(
+        'episodes:' + json.dumps(['tt101', '0', '']),
+        dict(
+            items=[dict(season='0', number=1, title='Special premiere', plot='')],
+            next='',
+        ),
+    )
+    return backend
+
+
+def specials_setup(root):
+    setup(root)
+    specials(root)
+    # Refresh announces a new season and retitles the reloaded page.
+    worker(
+        root,
+        """def handle(request):
+ if request['op']=='episodes' and request.get('refresh'):
+  if request.get('season') is None:return dict(seasons=['0','1','2','3'])
+  result=backend.handle(dict(request,refresh=False))
+  return dict(result,items=[dict(row,title=row['title']+' refreshed') for row in result['items']])
+ if request['op'] in ('details','artwork'):request=dict(request,refresh=False)
+ return backend.handle(request)""",
+    )
+
+
+def local_setup(root):
+    setup(root)
+    backend = specials(root)
+    template = 'https://example.invalid/'
+    backend.config_path.write_text(
+        json.dumps(
+            dict(
+                providers=[
+                    dict(
+                        name='Episodic',
+                        series_url=template + '{imdbId}/{season}/{episode}',
+                    ),
+                    dict(name='Page', series_url=template + 'show/{imdbId}'),
+                ]
+            )
+        )
+    )
+    show = dict(
+        id='tt101', imdbId='tt101', kind='tv', title='Fixture series', year='2024'
+    )
+    folder = root / 'Videos/Series/Fixture series (2024)/Season 02'
+    folder.mkdir(parents=True)
+    with LocalLibrary(backend.data).db() as db:
+        for episode, name in ((2, 'Local two'), (1, 'Local one')):
+            path = folder / f'Fixture series - S02E0{episode}.mkv'
+            path.write_bytes(b'fixture')
+            db.execute(
+                'INSERT INTO local_files VALUES (?,?,?,?,?,?)',
+                (
+                    'tv',
+                    'tt101',
+                    2,
+                    episode,
+                    str(path),
+                    json.dumps(show | dict(episodeTitle=name)),
+                ),
+            )
+    # Remote seasons arrive before the local inventory; playback never launches.
+    worker(
+        root,
+        """def handle(request):
+ if request['op']=='play':
+  raise MediaError(f"fixture online={bool(request.get('online'))} provider={request.get('provider')} episode={request.get('episode')}")
+ if request['op']=='episodes' and request.get('season') is None:time.sleep(0.3)
+ if request['op']=='local_files':time.sleep(1)
+ return backend.handle(request)""",
+    )
 
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
@@ -324,4 +429,114 @@ ShellRoot {
  Timer{interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",root.step);Qt.quit();}}
 }""",
             setup=related_setup,
+        )
+
+    def test_specials_last_and_chosen_season_survives_refresh(self):
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState{id:interactions}
+ SpaceHost{id:host;interactionState:interactions}
+ property int step:0
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ Timer{interval:50;running:true;repeat:true;onTriggered:{try{
+  if(step===0){SpaceState.open("series",Quickshell.screens[0]);step++;return;}
+  const page=host.currentPage;if(!page||page.busy)return;
+  const picker=find(page,"seasonPicker"),seasons=JSON.stringify(page.seasons);
+  const shown=page.episodes.map(row=>row.season+":"+row.title).join(",");
+  if(step===1){
+   check(seasons==='["1","2","0"]',"Specials are not last: "+seasons);
+   check(page.season==="1"&&picker.displayText==="Season 1","default is not the first season: "+picker.displayText);
+   check(picker.textAt(2)==="Specials","season 0 is not labelled Specials");
+   page.tab="episodes";page.loadEpisodes(false);step++;return;
+  }
+  if(step===2){
+   check(shown==="1:Season 1 premiere","first season not shown: "+shown);
+   picker.currentIndex=1;picker.activated(1);step++;return;
+  }
+  if(step===3){
+   check(page.season==="2"&&shown==="2:Season 2 premiere","chosen season not shown: "+shown);
+   page.refreshTitle();step++;return;
+  }
+  if(step===4){
+   check(seasons==='["1","2","3","0"]',"refresh did not reach the season list: "+seasons);
+   check(page.season==="2"&&picker.currentIndex===1&&picker.displayText==="Season 2","refresh moved the chosen season: "+picker.displayText);
+   check(shown==="2:Season 2 premiere refreshed","refresh did not reload the chosen season: "+shown);
+   picker.currentIndex=3;picker.activated(3);step++;return;
+  }
+  if(step===5){
+   check(page.season==="0"&&picker.displayText==="Specials"&&shown==="0:Special premiere","Specials not shown: "+shown);
+   SpaceState.close("series");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(e){console.error("DISPLAY_FAIL",step,e);Qt.quit();}}}
+ Timer{interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",root.step);Qt.quit();}}
+}""",
+            setup=specials_setup,
+        )
+
+    def test_local_seasons_replace_loading_remote_list_and_watch_choice_is_kept(self):
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState{id:interactions}
+ SpaceHost{id:host;interactionState:interactions}
+ property int step:0
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,test){if(test(item))return item;for(const child of item.children??[]){const found=find(child,test);if(found)return found;}return null;}
+ function named(name){return item=>item.objectName===name;}
+ Timer{interval:40;running:true;repeat:true;onTriggered:{try{
+  if(step===0){SpaceState.open("series",Quickshell.screens[0]);step++;return;}
+  const page=host.currentPage;if(!page)return;
+  if(step===1){
+   // Episodes is open before either season source has answered.
+   if(page.selected.id!=="tt101")return;
+   check(page.localMode&&!page.seasons.length,"fixture did not start in Local before seasons");
+   page.tab="episodes";step++;return;
+  }
+  if(page.busy)return;
+  const picker=find(page,named("seasonPicker")),watch=find(page,named("onlineButton"));
+  const row=find(page,item=>item.objectName==="episodeRow"&&item.episode.number===1);
+  const shown=page.episodes.map(row=>row.season+":"+row.title).join(",");
+  if(step===2){
+   check(page.localFiles.length===2,"local files missing");
+   check(JSON.stringify(page.seasons)==='["2"]'&&page.season==="2"&&picker.displayText==="Season 2","picker does not follow local seasons: "+picker.displayText);
+   check(shown==="2:Local one,2:Local two"&&!page.detailError,"rows disagree with the season picker: "+shown+page.detailError);
+   page.tab="overview";watch.triggered(1);check(page.tab==="episodes","an episode provider did not open Episodes");
+   step++;return;
+  }
+  if(step===3){
+   // Delegates return with the Episodes tab; click the local first episode.
+   if(!row)return;
+   row.clicked();step++;return;
+  }
+  if(step===4){
+   check(page.detailError==="fixture online=True provider=0 episode=1","online choice played the local copy: "+page.detailError);
+   page.tab="overview";watch.triggered(2);step++;return;
+  }
+  if(step===5){
+   check(page.tab==="overview","a provider without episode URLs opened Episodes");
+   check(page.detailError==="fixture online=True provider=1 episode=None","series page not requested: "+page.detailError);
+   watch.triggered(0);check(page.tab==="episodes","Local did not open Episodes");
+   step++;return;
+  }
+  if(step===6){
+   if(!row)return;
+   row.clicked();step++;return;
+  }
+  if(step===7){
+   // The request names the provider the button shows, not an earlier choice.
+   check(page.detailError==="fixture online=False provider=0 episode=1","Local choice did not prefer the file: "+page.detailError);
+   SpaceState.close("series");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(e){console.error("DISPLAY_FAIL",step,e);Qt.quit();}}}
+ Timer{interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",root.step);Qt.quit();}}
+}""",
+            setup=local_setup,
         )

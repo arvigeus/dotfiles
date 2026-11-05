@@ -39,6 +39,8 @@ FocusScope {
     readonly property bool animeMode: filters.genre === "Anime" && !localMode
     readonly property bool editingAnime: genre.currentText === "Anime"
     property var seasons: []
+    // The chosen season; the season picker follows it rather than owning it.
+    property string season: ""
     property var episodes: []
     property string episodeNext: ""
     property string nextPage: ""
@@ -113,7 +115,8 @@ FocusScope {
     }
     readonly property bool busy: loading || titleLoading || tabLoading || playLoading || animeGenresLoading || localService.pendingDownloads > 0 || localService.pendingChanges > 0 || (scanOpen && (scanPanel.scanning || scanPanel.matching))
     property bool gridMode: false
-    property int providerIndex: 0
+    // The provider the watch button shows (Local comes first while files exist).
+    readonly property int providerIndex: Math.max(0, watchIndex - (localFiles.length ? 1 : 0))
     property int trailerIndex: 0
     property bool artworkReady: false
     readonly property var trailers: selected.trailers || []
@@ -166,11 +169,9 @@ FocusScope {
             tab = "overview";
 
         if (kind === "tv" && localMode && files.length) {
-            const local = localSeasons(files);
-            // Reassigning an unchanged list would reset the season picker.
-            if (JSON.stringify(local) !== JSON.stringify(seasons))
-                seasons = local;
-
+            setSeasons(files.map(file => {
+                return file.season;
+            }));
             if (tab === "episodes")
                 showLocalEpisodes();
         }
@@ -219,12 +220,20 @@ FocusScope {
         Browser.open(url, kind === "tv" ? "series" : "movies", "", host);
     }
 
-    function localSeasons(files) {
-        return Array.from(new Set(files.map(file => {
-            return file.season;
-        }))).sort((a, b) => {
-            return a - b;
+    // Seasons are strings in viewing order with Specials (season 0) last, so the
+    // default is the first real season. The chosen season survives list changes.
+    function setSeasons(values) {
+        const rank = value => {
+            return Number(value) > 0 ? Number(value) : Infinity;
+        };
+        const next = Array.from(new Set(values.map(String))).sort((a, b) => {
+            return rank(a) - rank(b);
         });
+        if (JSON.stringify(next) !== JSON.stringify(seasons))
+            seasons = next;
+
+        if (!next.includes(season))
+            season = next.length ? next[0] : "";
     }
 
     // Every per-title request checks selectionGeneration, so bumping it
@@ -249,6 +258,7 @@ FocusScope {
         torrentEpisode = ({});
         subtitlePath = "";
         seasons = [];
+        season = "";
         episodes = [];
         episodeCatalogue.clear();
         episodeNext = "";
@@ -591,7 +601,9 @@ FocusScope {
                 if (!failure) {
                     localFiles = result;
                     if (kind === "tv" && result.length && (localMode || !seasons.length))
-                        seasons = localSeasons(result);
+                        setSeasons(result.map(file => {
+                            return file.season;
+                        }));
 
                     if (kind === "tv" && result.length && tab === "episodes" && !episodes.length && !episodeLoading)
                         loadEpisodes(false);
@@ -633,16 +645,19 @@ FocusScope {
         }
         if (kind === "tv") {
             service.fetch("episodes", {
-                "title": title
+                "title": title,
+                "refresh": !!refresh
             }, (result, failure) => {
                 if (!current())
                     return;
 
                 seasonsLoading = false;
                 if (!failure) {
-                    seasons = localMode && localFiles.length ? localSeasons(localFiles) : result.seasons;
+                    setSeasons(localMode && localFiles.length ? localFiles.map(file => {
+                        return file.season;
+                    }) : result.seasons);
                     if (tab === "episodes")
-                        loadEpisodes(false);
+                        loadEpisodes(false, refresh);
                 } else if (!localFiles.length) {
                     detailError = failure;
                 }
@@ -689,7 +704,8 @@ FocusScope {
     }
 
     function play(episode, online) {
-        if (!episode && kind === "tv" && !animeMode && (localFiles.length || episodeProviders[providerIndex])) {
+        // Choose an episode first unless the chosen online provider has no episode URLs.
+        if (!episode && kind === "tv" && !animeMode && (online ? episodeProviders[providerIndex] : localFiles.length)) {
             tab = "episodes";
             if (!episodes.length && !episodeLoading)
                 loadEpisodes(false);
@@ -719,8 +735,8 @@ FocusScope {
         });
     }
 
-    function loadEpisodes(append) {
-        if (!selected.id || !seasons.length)
+    function loadEpisodes(append, refresh) {
+        if (!selected.id || !season)
             return;
 
         const generation = ++episodeGeneration;
@@ -736,8 +752,9 @@ FocusScope {
         }
         service.fetch("episodes", {
             "title": selected,
-            "season": seasons[Math.max(0, seasonPicker.currentIndex)],
-            "page": append ? episodeNext : ""
+            "season": season,
+            "page": append ? episodeNext : "",
+            "refresh": !!refresh
         }, (result, failure) => {
             if (selection !== selectionGeneration || generation !== episodeGeneration)
                 return;
@@ -763,7 +780,7 @@ FocusScope {
         if (!localFiles.length)
             return;
 
-        const chosen = Number(seasons[Math.max(0, seasonPicker.currentIndex)]);
+        const chosen = Number(season);
         const rows = localFiles.filter(file => {
             return Number(file.season) === chosen;
         }).map(file => {
@@ -849,6 +866,12 @@ FocusScope {
         });
     }
 
+    // A season chosen in the picker, or replaced because the list lost it.
+    onSeasonChanged: {
+        seasonPicker.sync();
+        if (tab === "episodes")
+            loadEpisodes(false);
+    }
     onEditingAnimeChanged: {
         if (editingAnime) {
             requestAnimeGenres();
@@ -880,7 +903,6 @@ FocusScope {
         episodeProviders = animeMode ? animeProviders.map(() => {
             return true;
         }) : standardEpisodeProviders;
-        providerIndex = 0;
         if (animeMode)
             requestAnimeGenres();
     }
@@ -1472,12 +1494,7 @@ FocusScope {
                         currentIndex: root.watchIndex
                         onTriggered: index => {
                             root.watchIndex = index;
-                            if (root.localFiles.length && index === 0) {
-                                root.play(null, false);
-                            } else {
-                                root.providerIndex = index - (root.localFiles.length ? 1 : 0);
-                                root.play(null, true);
-                            }
+                            root.play(null, !(root.localFiles.length && index === 0));
                         }
                     }
 
@@ -1934,13 +1951,21 @@ FocusScope {
                         MovieChoice {
                             id: seasonPicker
 
+                            // A changed model resets the index; follow root.season again.
+                            function sync() {
+                                currentIndex = root.seasons.indexOf(root.season);
+                            }
+
                             objectName: "seasonPicker"
                             enabled: root.seasons.length > 0
                             Layout.preferredWidth: 160
                             model: root.seasons.map(s => {
-                                return "Season " + s;
+                                return s === "0" ? "Specials" : "Season " + s;
                             })
-                            onActivated: root.loadEpisodes(false)
+                            onModelChanged: sync()
+                            onActivated: index => {
+                                root.season = root.seasons[index];
+                            }
                             Accessible.name: "Season"
                         }
 
@@ -1950,7 +1975,7 @@ FocusScope {
                             enabled: root.seasons.length > 0
                             onClicked: {
                                 root.torrentEpisode = ({
-                                        "season": root.seasons[Math.max(0, seasonPicker.currentIndex)]
+                                        "season": root.season
                                     });
                                 root.tab = "torrent";
                             }
@@ -1982,7 +2007,8 @@ FocusScope {
                             localFile: root.localFiles.find(file => {
                                 return Number(file.season) === Number(episode.season) && Number(file.episode) === Number(episode.number);
                             }) || ({})
-                            onClicked: root.play(episode, false)
+                            // An explicit online choice streams even episodes kept locally.
+                            onClicked: root.play(episode, root.localFiles.length > 0 && root.watchIndex > 0)
                             onFindRequested: {
                                 root.torrentEpisode = ({
                                         "season": episode.season,

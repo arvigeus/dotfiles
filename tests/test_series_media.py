@@ -1,13 +1,97 @@
 """The Series worker namespace covers metadata, torrents and subtitles together."""
 
+import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import support
+
+sys.path.insert(0, str(support.DESKTOP))
+from spaces.movies.backend import Backend
+from spaces.movies.local import LocalLibrary
+
+
+class SeriesEpisodeTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.backend = Backend(
+            self.root / 'config/media.json', self.root / 'data', self.root / 'cache'
+        )
+        self.backend.config_path.write_text(json.dumps({'tmdb_key': 'fixture'}))
+        self.backend.config_path.chmod(0o600)
+
+    def test_refresh_bypasses_cached_seasons_and_episodes(self):
+        show = dict(id='tt101', imdbId='tt101', kind='tv', title='Show', tmdbId=7)
+        aired = []
+
+        def api(path, **params):
+            if path == 'tv/7':
+                return {'seasons': [{'season_number': n} for n in range(len(aired))]}
+            self.assertEqual(path, 'tv/7/season/1')
+            return {
+                'episodes': [
+                    {'episode_number': n, 'name': f'E{n}', 'air_date': f'2026-11-0{n}'}
+                    for n in range(1, len(aired) + 1)
+                ]
+            }
+
+        with patch.object(self.backend, 'tmdb', side_effect=api):
+            aired[:] = [0, 1]
+            self.assertEqual(
+                self.backend.episodes(dict(title=show))['seasons'], ['0', '1']
+            )
+            first = self.backend.episodes(dict(title=show, season='1'))
+            aired.append(2)  # A new season and episode air within the cache hour.
+            self.assertEqual(
+                self.backend.episodes(dict(title=show))['seasons'], ['0', '1']
+            )
+            self.assertEqual(
+                self.backend.episodes(dict(title=show, refresh=True))['seasons'],
+                ['0', '1', '2'],
+            )
+            refreshed = self.backend.episodes(
+                dict(title=show, season='1', refresh=True)
+            )
+            # The refreshed responses replace the cached ones for later reads.
+            self.assertEqual(
+                self.backend.episodes(dict(title=show))['seasons'], ['0', '1', '2']
+            )
+        self.assertEqual([row['number'] for row in first['items']], [1, 2])
+        self.assertEqual([row['number'] for row in refreshed['items']], [1, 2, 3])
+        # TMDB air dates appear like OMDb release dates and anime air dates.
+        self.assertEqual(refreshed['items'][2]['date'], '2026-11-03')
+
+    def test_local_episodes_follow_season_and_episode_order(self):
+        library = LocalLibrary(self.root / 'data')
+        show = dict(id='tt101', imdbId='tt101', kind='tv', title='Show', tmdbId=7)
+        # Earlier imports may be stored under the TMDB alias of the same series.
+        rows = [
+            ('tmdb:tv:7', 2, 1),
+            ('tt101', 1, 10),
+            ('tmdb:tv:7', 1, 2),
+            ('tt101', 0, 1),
+            ('tt101', 1, 1),
+        ]
+        with library.db() as db:
+            for identifier, season, episode in rows:
+                path = self.root / f'Videos/S{season:02d}E{episode:02d}.mkv'
+                path.parent.mkdir(exist_ok=True)
+                path.write_bytes(b'fixture')
+                db.execute(
+                    'INSERT INTO local_files VALUES (?,?,?,?,?,?)',
+                    ('tv', identifier, season, episode, str(path), json.dumps(show)),
+                )
+        self.assertEqual(
+            [(row['season'], row['episode']) for row in library.files(show)],
+            [(0, 1), (1, 1), (1, 2), (1, 10), (2, 1)],
+        )
 
 
 class SeriesMediaTests(unittest.TestCase):

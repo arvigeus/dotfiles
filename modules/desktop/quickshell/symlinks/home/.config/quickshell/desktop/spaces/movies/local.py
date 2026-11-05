@@ -799,7 +799,8 @@ class LocalLibrary:
             rows = db.execute(
                 'SELECT f.title_id,f.season,f.episode,f.path,f.title_json,'
                 "COALESCE(s.torrent_hash,'') "
-                'FROM local_files f LEFT JOIN local_sources s ON s.path=f.path WHERE f.kind=?',
+                'FROM local_files f LEFT JOIN local_sources s ON s.path=f.path WHERE f.kind=? '
+                'ORDER BY f.season,f.episode,f.path',
                 (title['kind'],),
             ).fetchall()
         files = []

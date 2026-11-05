@@ -5,10 +5,12 @@ trailers, seasons and episodes. It shares Movies’ cinematic appearance and
 supports provider playback, local episodes, subtitles and qBittorrent imports.
 
 Configure `~/.config/quickshell/desktop/spaces/series/media.json` using the
-[media example](../movies/media.example.json), mode 0600 once it holds keys, the
-OpenSubtitles account or a player command. A TMDB key enables discovery;
-OMDb is an optional search/detail fallback. Playback templates use `series_url`
-and can include `{season}` and `{episode}`.
+[media example](../movies/media.example.json); keep it mode 0600 once it holds
+keys, the OpenSubtitles account or a player command, or Series refuses it. It is
+separate from the Movies file, so copy the keys you need. A TMDB key enables
+discovery; OMDb is an optional search/detail fallback. Playback templates use
+`series_url`; with `{season}`/`{episode}`, Watch online opens Episodes to pick
+one, otherwise it opens the series page.
 
 For downloads, configure the shared `~/.config/quickshell/desktop/integrations/torrents.json`
 using the [qBittorrent example](../../integrations/torrents.example.json) (mode 0600 when it
