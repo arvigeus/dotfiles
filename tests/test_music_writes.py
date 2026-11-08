@@ -3,6 +3,8 @@
 from contextlib import ExitStack
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import re
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -15,6 +17,7 @@ import support
 sys.path.insert(0, str(support.DESKTOP))
 from integrations import nextcloud
 from spaces.music.remote_files import RemoteFiles
+from spaces.music import file_tags
 
 
 class ConditionalWriteTests(unittest.TestCase):
@@ -27,6 +30,10 @@ class ConditionalWriteTests(unittest.TestCase):
         self.requests = []
         self.after_copy = None
         self.before_put = None
+        self.before_range = None
+        self.range_status = 206
+        self.bad_range = False
+        self.bytes_read = 0
         case = self
         prefix = '/remote.php/dav/files/alice/'
 
@@ -43,7 +50,46 @@ class ConditionalWriteTests(unittest.TestCase):
                 if etag:
                     self.send_header('ETag', etag)
                 self.end_headers()
-                self.wfile.write(body)
+                try:
+                    self.wfile.write(body)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
+            def do_HEAD(self):
+                content, etag = case.files[self.key()]
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(content)))
+                self.send_header('ETag', etag)
+                self.end_headers()
+
+            def do_GET(self):
+                case.requests.append(('GET', dict(self.headers)))
+                if case.before_range:
+                    case.before_range()
+                content, etag = case.files[self.key()]
+                if self.headers.get('If-Match') != etag:
+                    self.respond(412)
+                    return
+                match = re.fullmatch(
+                    r'bytes=(\d+)-(\d+)', self.headers.get('Range', '')
+                )
+                start, end = map(int, match.groups())
+                body = content[start : end + 1] if case.range_status == 206 else content
+                self.send_response(case.range_status)
+                self.send_header('Content-Length', str(len(body)))
+                self.send_header(
+                    'Content-Range',
+                    'invalid'
+                    if case.bad_range
+                    else f'bytes {start}-{end}/{len(content)}',
+                )
+                self.send_header('ETag', etag)
+                self.end_headers()
+                case.bytes_read += len(body)
+                try:
+                    self.wfile.write(body)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
 
             def do_MKCOL(self):
                 self.respond(201)
@@ -121,6 +167,82 @@ class ConditionalWriteTests(unittest.TestCase):
         account = dict(url='https://cloud.example/', username='alice')
         self.remote = RemoteFiles.__new__(RemoteFiles)
         self.remote.dav = nextcloud.DAVClient(account, scope=prefix, opener=Loopback())
+
+    def test_partial_tag_reads_load_comments_lyrics_and_format_without_caching_audio(
+        self,
+    ):
+        for extension in ('flac', 'mp3', 'm4a', 'ogg', 'opus'):
+            with self.subTest(extension=extension):
+                path = self.path.with_suffix('.' + extension)
+                subprocess.run(
+                    [
+                        'ffmpeg',
+                        '-v',
+                        'error',
+                        '-y',
+                        '-f',
+                        'lavfi',
+                        '-i',
+                        'anoisesrc=r=48000',
+                        '-t',
+                        '30',
+                        '-metadata',
+                        'title=File title',
+                        '-metadata',
+                        'comment=File comment',
+                        '-metadata',
+                        'lyrics=Embedded lyrics',
+                        str(path),
+                    ],
+                    check=True,
+                )
+                payload = path.read_bytes()
+                self.files['Music/' + path.name] = (payload, '"v1"')
+                self.bytes_read = 0
+                with (
+                    patch(
+                        'spaces.music.local_files.checked',
+                        return_value=('fixture', path.name),
+                    ),
+                    patch('spaces.music.local_files.cached', return_value=None),
+                    patch.object(file_tags, 'RemoteFiles', return_value=self.remote),
+                ):
+                    result = file_tags.read({'source': 'nextcloud'})
+                self.assertEqual(result['tags']['title'], 'File title')
+                self.assertEqual(result['tags']['comment'], 'File comment')
+                self.assertEqual(result['tags']['lyrics'], 'Embedded lyrics')
+                self.assertIn('lyrics', result['knownFields'])
+                self.assertEqual(result['sampleRate'], 48000)
+                self.assertIn('48 kHz', result['fileInfo'])
+                self.assertGreater(result['duration'], 29)
+                if extension == 'flac':
+                    self.assertGreater(result['bitDepth'], 0)
+                self.assertEqual(result['remoteVersion'], '"v1"')
+                self.assertLess(self.bytes_read, len(payload))
+
+    def test_range_reader_rejects_ignored_or_malformed_ranges_without_reading_body(
+        self,
+    ):
+        self.files['Music/song.flac'] = (b'x' * 100000, '"v1"')
+        for status, bad in ((200, False), (206, True)):
+            self.range_status, self.bad_range = status, bad
+            with file_tags.RangeFile(self.remote, 'song.flac') as stream:
+                with self.assertRaises(file_tags.MusicError):
+                    stream.read(1)
+                self.assertEqual(stream.transferred, 0)
+
+    def test_range_reader_rejects_versions_changes_and_excessive_reads(self):
+        with file_tags.RangeFile(self.remote, 'song.flac') as stream:
+            self.before_range = lambda: self.files.update(
+                {'Music/song.flac': (b'new file', '"v2"')}
+            )
+            with self.assertRaisesRegex(file_tags.MusicError, 'changed'):
+                stream.read(1)
+        self.before_range = None
+        with file_tags.RangeFile(self.remote, 'song.flac') as stream:
+            stream.byte_limit = 1
+            with self.assertRaisesRegex(file_tags.MusicError, 'limit'):
+                stream.read(2)
 
     def test_update_streams_bytes_and_retains_the_previous_version(self):
         self.assertEqual(self.remote.etag('song.flac'), '"v1"')

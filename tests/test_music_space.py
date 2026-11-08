@@ -199,9 +199,10 @@ ShellRoot {
  SpaceHost {id:host;interactionState:interactions}
  TestCase {id:input;when:false;parent:host.contentItem}
  QtObject {
-  id:preview;property int reads:0;property int lyricReads:0
+  id:preview;property int reads:0;property int lyricReads:0;property int fileReads:0
   function request(op,args,callback){
    if(op==="song-info"){reads++;Qt.callLater(()=>callback({song:{playCount:17},tags:{title:"Saved song",artist:"Artist",album:"Album",lyrics:""},relativePath:"album/song.flac"},""));}
+   else if(op==="file-tags"){fileReads++;Qt.callLater(()=>callback({tags:{title:"Saved song",artist:"Artist",album:"Album",comment:"Existing comment",lyrics:"Embedded lyrics"},fileInfo:"FLAC · 24-bit · 96 kHz · Stereo"},""));}
    else if(op==="lyrics"){lyricReads++;Qt.callLater(()=>callback({available:true,lyrics:"Fetched lyrics",provider:"Fixture"},""));}
   }
  }
@@ -218,13 +219,14 @@ ShellRoot {
   if(root.step===1){info.catalogue=preview;info.showSong({id:"server-song",source:"nextcloud",kind:"song",account:"fixture",title:"Saved song"});root.step++;return;}
   if(info.busy||info.reading)return;
   if(root.step===2){
-   if(!find(info.contentItem,"musicInfoCover").imageReady)return;
-   check(!info.editing&&!info.ready&&!info.dirty&&files.jobs.length===0,"viewing prepared a local file");
+   if(info.loadingTags||!find(info.contentItem,"musicInfoCover").imageReady)return;
+   check(!info.editing&&!info.dirty&&files.jobs.length===0,"viewing prepared a local file");
    check(preview.reads===1&&preview.lyricReads===0,"lyrics fetched automatically");
-   const subtitle=find(info.contentItem,"musicFileInfo");check(subtitle.text==="17 plays"&&subtitle.parent.objectName==="musicInfoHeading","server play count missing from header");
-   info.song=Object.assign({},info.song,{playCount:0});check(subtitle.text==="0 plays","zero play count hidden");
-   info.song=Object.assign({},info.song,{playCount:1});check(subtitle.text==="1 play","singular play count incorrect");
-   info.song=Object.assign({},info.song,{playCount:null});check(subtitle.text===""&&!subtitle.visible,"missing count shown as zero");
+   check(preview.fileReads===1&&info.draft.comment==="Existing comment"&&info.draft.lyrics==="Embedded lyrics","Info did not load embedded metadata");
+   const subtitle=find(info.contentItem,"musicFileInfo");check(subtitle.text===info.fileInfo+" · 17 plays"&&subtitle.parent.objectName==="musicInfoHeading","server play count missing from header");
+   info.song=Object.assign({},info.song,{playCount:0});check(subtitle.text===info.fileInfo+" · 0 plays","zero play count hidden");
+   info.song=Object.assign({},info.song,{playCount:1});check(subtitle.text===info.fileInfo+" · 1 play","singular play count incorrect");
+   info.song=Object.assign({},info.song,{playCount:null});check(subtitle.text===info.fileInfo,"missing count shown as zero");
    info.song=Object.assign({},info.song,{playCount:17});
    const comment=find(info.contentItem,"musicTag:comment");check(comment.parent.visible&&comment.readOnly&&comment.placeholderText,"missing fields are hidden or editable");
    check(find(info.contentItem,"musicTag:title").readOnly&&find(info.contentItem,"musicLyrics").readOnly,"preview fields editable");
@@ -234,11 +236,12 @@ ShellRoot {
    click(find(info.contentItem,"musicFetchLyrics"));root.step++;return;
   }
   if(root.step===3){
-   if(info.lookingUp)return;check(info.draft.lyrics==="Fetched lyrics"&&!info.dirty&&preview.lyricReads===1,"explicit read-only lyric fetch failed");
-   click(find(info.contentItem,"musicEditMetadata"));root.step++;return;
+   if(info.lookingUp||info.loadingTags)return;check(info.draft.lyrics==="Fetched lyrics"&&info.dirty&&info.editing&&preview.lyricReads===1,"fetched lyrics did not enable saving");
+   check(files.jobs.length===0,"Fetching lyrics prepared an audio file");root.step++;return;
   }
   if(root.step===4){
-   check(info.editing&&info.ready&&!find(info.contentItem,"musicTag:title").readOnly,"Edit did not prepare metadata");
+   check(info.editing&&!find(info.contentItem,"musicTag:title").readOnly,"Edit did not enable metadata");
+   check(preview.fileReads===1,"Edit reread already loaded metadata");
    check(find(info.contentItem,"musicFileInfo").text===info.fileInfo+" · 17 plays"&&info.draft.playCount===undefined,"editing changed play count or made it a tag");
    const header=find(info.contentItem,"musicInfoHeader"),heading=find(info.contentItem,"musicInfoHeading");
    check(find(info.contentItem,"musicCancelMetadata").parent===header&&find(info.contentItem,"musicCancelMetadata").text==="Cancel"&&!find(info.contentItem,"musicEditMetadata"),"Edit did not become Cancel in the header");
@@ -273,12 +276,12 @@ ShellRoot {
   }
   if(root.step===5){
    check(!info.editing&&!info.dirty&&!info.coverDraft&&info.draft.title==="Edited title"&&!info.song.notUploaded,"Save did not return to read-only mode");
-   check(info.relativePath==="album/song.flac"&&files.jobs.length===2,"Save moved or re-prepared the file");
+   check(info.relativePath==="album/song.flac"&&files.jobs.length===1,"Save moved or re-prepared the file");
    type(find(info.contentItem,"musicMovePath"),"album/renamed.flac");check(find(info.contentItem,"musicMove").enabled&&!find(info.contentItem,"musicEditMetadata").enabled,"path draft can mix with metadata editing");
    click(find(info.contentItem,"musicMove"));root.step++;return;
   }
   if(root.step===6){
-   check(info.relativePath==="album/renamed.flac"&&!info.editing&&!info.song.local&&files.jobs.length===3,"Move downloaded or edited the song");
+   check(info.relativePath==="album/renamed.flac"&&!info.editing&&!info.song.local&&files.jobs.length===2,"Move downloaded or edited the song");
    check(preview.lyricReads===1,"Save or Move fetched lyrics");
    click(find(info.contentItem,"musicInfoCover"));input.wait(30);check(!info.coverPicker.visible,"read-only cover is clickable after save");
    info.prepare();root.step=7;return;
@@ -300,6 +303,106 @@ ShellRoot {
  Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at "+root.step);Qt.quit();}}
 }""",
             setup=info_setup,
+        )
+
+    def test_immediate_editing_merges_late_tags_and_saves_only_explicit_changes(self):
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "spaces/music"
+ShellRoot {
+ id:root
+ property var previews:[]
+ property var tags:[]
+ property var lyrics:[]
+ property var saves:[]
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ QtObject {id:fileService;function startJob(op,args,accepted){root.saves=root.saves.concat([args]);accepted("job","");}}
+ QtObject {id:catalogue;function request(op,args,callback){
+  if(op==="song-info")root.previews=root.previews.concat([callback]);
+  else if(op==="file-tags")root.tags=root.tags.concat([callback]);
+  else if(op==="lyrics")root.lyrics=root.lyrics.concat([callback]);
+  else throw new Error("Unexpected request "+op);
+ }}
+ FloatingWindow {id:window;visible:true;implicitWidth:1000;implicitHeight:950
+  MusicInfo {id:info;parent:window.contentItem;files:fileService;catalogue:catalogue}
+ }
+ Timer {interval:50;running:true;onTriggered:{try{
+  info.showSong({id:"one",source:"nextcloud",serverPath:"/one.flac",title:"Preview title"});
+  check(!info.editing&&info.loadingTags&&root.tags.length===1,"Info did not start its background metadata read");
+  info.prepare();
+  check(info.editing&&info.reading&&info.loadingTags&&!info.busy,"Edit waited for a file or preview");
+  check(!find(info.contentItem,"musicTag:title").readOnly&&!find(info.contentItem,"musicTag:comment").readOnly,"loading fields blocked editing");
+  check(root.saves.length===0&&root.lyrics.length===0,"Edit downloaded a song or fetched lyrics");
+  info.editTag("title","My title");info.editTag("comment","");
+  check(Object.keys(info.changes).length===2&&info.changes.comment==="","clearing an unknown comment was lost");
+  root.tags[0]({tags:{title:"File title",comment:"Existing comment",composer:"Existing composer",lyrics:"Embedded lyrics"},signature:[1,2,3],fileInfo:"FLAC · 24-bit · 96 kHz"},"");
+  check(info.draft.title==="My title"&&info.draft.comment===""&&info.draft.composer==="Existing composer","late tags overwrote an edit or failed to fill an untouched field");
+  root.previews[0]({tags:{title:"Late API title",comment:""},knownFields:["title"],relativePath:"one.flac",fileInfo:"FLAC · 320 kbps"},"");
+  check(info.draft.title==="My title"&&info.original.title==="File title","late preview replaced file tags");
+  check(info.draft.lyrics==="Embedded lyrics"&&info.fileInfo==="FLAC · 24-bit · 96 kHz","late API response replaced embedded lyrics or format details");
+  info.run("save");
+  check(root.saves.length===1&&root.saves[0].tags.title==="My title"&&root.saves[0].tags.comment===""&&Object.keys(root.saves[0].tags).length===2,"Save included untouched or unknown fields");
+  info.complete({},"Save failed");check(info.dirty&&info.draft.title==="My title","failure lost the draft");
+  info.cancelEdits();info.prepare();info.loadFileTags();info.editTag("comment","New comment");
+  info.run("save");
+  root.tags[1]({tags:{comment:"Stale comment"}},"");
+  check(info.draft.comment==="New comment","a superseded tag read changed a saving draft");
+  info.complete({action:"save",synced:false,error:"Upload failed",path:"/fixture/one.flac",relativePath:"one.flac",tags:{title:"File title",comment:"New comment",lyrics:""},signature:[4,5,6]},"");
+  check(!info.dirty&&info.editing&&info.song.pendingUpload&&find(info.contentItem,"musicSaveTags").enabled,"upload failure was not retryable");
+  info.run("save");check(Object.keys(root.saves[2].tags).length===0,"retry rewrote tags");
+  info.complete({action:"save",synced:true,relativePath:"one.flac",tags:{title:"File title",comment:"New comment",lyrics:""}},"");
+  check(!info.editing&&!info.dirty,"retry did not settle the editor");
+  info.showSong({id:"two",source:"nextcloud",serverPath:"/two.flac",title:"Second"});
+  root.previews[1]({tags:{title:"Second"}},"");info.prepare();
+  check(root.lyrics.length===0,"entering editing fetched lyrics");
+  info.lookupLyrics();info.editTag("lyrics","Manual lyrics");
+  root.lyrics[0]({available:true,lyrics:"Fetched lyrics"},"");
+  check(info.draft.lyrics==="Manual lyrics"&&!info.lookingUp,"late lyrics replaced manual edits");
+  info.cancelEdits();root.tags[2]({tags:{comment:"Cancelled read"}},"");
+  check(!info.editing&&!info.dirty&&info.draft.comment==="Cancelled read","cancel stopped Info from loading metadata or restored discarded edits");
+  console.log("DISPLAY_PASS");Qt.quit();
+ }catch(error){console.error("DISPLAY_FAIL",error.message+" "+error.stack);Qt.quit();}}}
+}""",
+            setup=setup,
+        )
+
+    def test_info_reuses_cached_tags_and_keeps_api_values_when_dav_fails(self):
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "spaces/music"
+ShellRoot {
+ id:root
+ property int fileReads:0
+ property var pending:null
+ function check(value,message){if(!value)throw new Error(message);}
+ QtObject {id:fileService;function startJob(op,args,accepted){throw new Error("Info downloaded a song");}}
+ QtObject {id:catalogue;function request(op,args,callback){
+  if(op==="song-info"){
+   if(args.song.local)callback({tags:{title:"Local title",comment:"Local comment",lyrics:"Local lyrics"},signature:[1,2,3],fileInfo:"FLAC · 24-bit"},"");
+   else callback({tags:{title:"Server title",comment:""},knownFields:["title"]},"");
+  }else if(op==="file-tags"){root.fileReads++;root.pending=callback;}
+  else throw new Error("Info started a lyrics lookup");
+ }}
+ FloatingWindow {id:window;visible:true;implicitWidth:1000;implicitHeight:950
+  MusicInfo {id:info;parent:window.contentItem;files:fileService;catalogue:catalogue}
+ }
+ Timer {interval:50;running:true;onTriggered:{try{
+  info.showSong({id:"local",source:"nextcloud",serverPath:"/local.flac",local:true});
+  check(info.draft.comment==="Local comment"&&info.draft.lyrics==="Local lyrics"&&root.fileReads===0&&!info.editing,"Info did not reuse existing file metadata");
+  info.prepare();check(root.fileReads===0&&info.editing,"Edit reread cached metadata");info.cancelEdits();
+  info.showSong({id:"remote",source:"nextcloud",serverPath:"/remote.flac"});
+  check(root.fileReads===1&&info.loadingTags&&!info.editing,"Info did not request remote metadata");
+  root.pending({},"Partial reads are unavailable");
+  check(!info.loadingTags&&info.draft.title==="Server title"&&!info.knownFields.includes("comment")&&!info.editing,"DAV failure discarded API metadata or invented an empty value");
+  info.prepare();info.editTag("comment","Replacement");
+  check(info.dirty&&info.draft.comment==="Replacement"&&root.fileReads===2,"DAV failure blocked editing");
+  console.log("DISPLAY_PASS");Qt.quit();
+ }catch(error){console.error("DISPLAY_FAIL",error.message);Qt.quit();}}}
+}""",
+            setup=setup,
         )
 
     def test_switching_songs_ignores_stale_lyrics_without_blocking_the_next_lookup(

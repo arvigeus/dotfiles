@@ -739,6 +739,13 @@ def file_job(args):
                 song=song,
             ),
         )
+    expected = args.get('remoteVersion')
+    if expected and action == 'save':
+        current = metadata(rel)
+        if not current or current.get('ETag') != expected:
+            raise MusicError(
+                'The server song changed since editing began. Your draft was kept; reload its metadata before saving.'
+            )
     path = download(song)
     # Capture a comparison baseline before edits; opening information never uploads.
     if (
@@ -776,6 +783,12 @@ def file_job(args):
             **states([song])[0],
         )
     if action in ('save', 'lyrics'):
+        if expected:
+            current = metadata(rel)
+            if not current or current.get('ETag') != expected:
+                raise MusicError(
+                    'The server song changed since editing began. Your draft was kept; reload its metadata before saving.'
+                )
         if args.get('signature') and signature(path) != args['signature']:
             raise MusicError(
                 'The local song changed. Reopen information before saving.'
@@ -783,6 +796,13 @@ def file_job(args):
         changes = (
             args.get('tags') if action == 'save' else {'lyrics': args.get('lyrics', '')}
         )
+        if isinstance(changes, dict):
+            current_tags = tags.read(path, run)['tags']
+            changes = {
+                key: value
+                for key, value in changes.items()
+                if current_tags.get(key) != value
+            }
         if changes or args.get('artwork'):
             tags.write(
                 path,

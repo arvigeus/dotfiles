@@ -229,6 +229,58 @@ class MusicLocalFilesTests(unittest.TestCase):
         self.assertEqual(remote.read_bytes(), b'concurrent server edit')
         self.assertEqual(local.read_bytes(), b'local edit')
 
+    def test_save_rejects_a_changed_preview_version_before_downloading_or_editing(self):
+        local, remote = self.seed('song.flac')
+        expected = self.meta('song.flac')['ETag']
+        remote.write_bytes(b'changed server song')
+        song = dict(
+            id='one', source='nextcloud', account='fixture', serverPath='/song.flac'
+        )
+        with self.assertRaisesRegex(files.MusicError, 'changed since editing'):
+            files.file_job(
+                dict(
+                    action='save',
+                    song=song,
+                    remoteVersion=expected,
+                    tags={'title': 'New title'},
+                )
+            )
+        self.assertEqual(local.read_bytes(), b'original music')
+        self.assertEqual(self.commands, [])
+
+    def test_saving_identical_lyrics_does_not_rewrite_or_upload_the_file(self):
+        local = self.local / 'song.flac'
+        subprocess.run(
+            [
+                'ffmpeg',
+                '-v',
+                'error',
+                '-f',
+                'lavfi',
+                '-i',
+                'anullsrc',
+                '-t',
+                '0.1',
+                '-metadata',
+                'lyrics=Already embedded',
+                str(local),
+            ],
+            check=True,
+        )
+        local, remote = self.seed('song.flac', local.read_bytes())
+        before = local.read_bytes()
+        song = dict(
+            id='one', source='nextcloud', account='fixture', serverPath='/song.flac'
+        )
+        result = files.file_job(
+            dict(action='save', song=song, tags={'lyrics': 'Already embedded'})
+        )
+        self.assertTrue(result['synced'])
+        self.assertEqual(local.read_bytes(), before)
+        self.assertEqual(remote.read_bytes(), before)
+        self.assertFalse(self.history.exists())
+        self.assertEqual(self.commands, [])
+
     def test_retry_adopts_a_committed_upload_when_the_response_was_lost(self):
         local, remote = self.seed('retry.flac')
         local.write_bytes(b'saved local edit')

@@ -1659,6 +1659,7 @@ def song_information(args):
     result = dict(
         song=song,
         tags=preview,
+        knownFields=[key for key, value in preview.items() if value],
         relativePath=str(song.get('serverPath') or '').lstrip('/'),
         fileInfo=song.get('fileInfo', ''),
     )
@@ -1676,7 +1677,12 @@ def song_information(args):
                 if not path:
                     raise
         if path:
+            before = local_files.signature(path)
             result |= tags.read(path, local_files.run)
+            if local_files.signature(path) != before:
+                raise MusicError('The local song changed while reading its tags.')
+            result['knownFields'] = list(result['tags'])
+            result['signature'] = before
     return result
 
 
@@ -1725,6 +1731,10 @@ def dispatch(args):
         return fetch_lyrics(args)
     if operation == 'song-info':
         return song_information(args)
+    if operation == 'file-tags':
+        from spaces.music.file_tags import read
+
+        return read(args.get('song') or {})
     if operation == 'download-capabilities':
         return download_capabilities()
     if operation == 'play':
@@ -1758,6 +1768,7 @@ def main():
             'album',
             'lyrics',
             'song-info',
+            'file-tags',
             'play',
         ),
         controls=(
@@ -1769,6 +1780,7 @@ def main():
             'player-state',
             'player-cleanup',
         ),
+        enrichment=('file-tags',),
         scope=request_scope,
     )
 

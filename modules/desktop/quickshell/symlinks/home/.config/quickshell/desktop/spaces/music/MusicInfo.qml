@@ -16,12 +16,20 @@ Popup {
     property var song: null
     property var original: ({})
     property var draft: ({})
+    property var touched: ({})
+    property var knownFields: []
+    property var changes: ({})
     property var fileSignature: []
+    property string remoteVersion: ""
     property string originalPath: ""
     property string relativePath: ""
     property string fileInfo: ""
     property string coverDraft: ""
-    property string fetchedLyrics: ""
+    property bool loadingTags: false
+    property bool tagsLoaded: false
+    property string tagError: ""
+    property int tagGeneration: 0
+    property int lyricGeneration: 0
     property string message: ""
     property bool importantMessage: false
     property string jobId: ""
@@ -31,10 +39,9 @@ Popup {
     property bool previewLoaded: false
     property bool lookingUp: false
     property bool editing: false
-    property bool ready: false
     property int generation: 0
     readonly property bool editable: song?.source === "nextcloud" || song?.source === "music-local"
-    readonly property bool dirty: editing && (!!coverDraft || JSON.stringify(original) !== JSON.stringify(draft))
+    readonly property bool dirty: editing && (!!coverDraft || Object.keys(changes).length > 0)
     readonly property bool pathDirty: relativePath !== originalPath
     readonly property string playCountText: song?.playCount !== undefined && song?.playCount !== null ? String(song.playCount) + (song.playCount === 1 ? " play" : " plays") : ""
     property alias coverPicker: coverChooser
@@ -89,9 +96,81 @@ Popup {
         importantMessage = !!important;
         message = text || "";
     }
+    function updateChanges() {
+        const pending = ({});
+        for (const key of Object.keys(touched))
+            if (!knownFields.includes(key) || draft[key] !== original[key])
+                pending[key] = draft[key] || "";
+        changes = pending;
+    }
+    function editTag(key, value) {
+        if (!editing || busy)
+            return;
+        if (lookingUp && ["lyrics", "title", "artist", "album"].includes(key)) {
+            ++lyricGeneration;
+            lookingUp = false;
+        }
+        touched = Object.assign({}, touched, {
+            [key]: true
+        });
+        draft = Object.assign({}, draft, {
+            [key]: value
+        });
+        updateChanges();
+    }
+    function applyTags(result) {
+        const values = result.tags || {}, known = result.knownFields || Object.keys(values);
+        const baseline = Object.assign({}, original), next = Object.assign({}, draft);
+        for (const key of known) {
+            baseline[key] = values[key] || "";
+            if (!touched[key])
+                next[key] = baseline[key];
+        }
+        original = baseline;
+        draft = next;
+        knownFields = Array.from(new Set(knownFields.concat(known)));
+        if (result.signature !== undefined) {
+            fileSignature = result.signature;
+            remoteVersion = "";
+        }
+        if (result.remoteVersion !== undefined) {
+            remoteVersion = result.remoteVersion;
+            fileSignature = [];
+        }
+        fileInfo = result.fileInfo || fileInfo;
+        updateChanges();
+    }
+    function loadFileTags() {
+        if (!editable || busy || loadingTags || !originalPath)
+            return;
+        const token = ++tagGeneration;
+        loadingTags = true;
+        tagError = "";
+        catalogue.request("file-tags", {
+            song: song,
+            lane: "info-tags"
+        }, (result, failure) => {
+            if (token !== tagGeneration)
+                return;
+            loadingTags = false;
+            if (failure) {
+                tagError = failure;
+                return;
+            }
+            tagsLoaded = true;
+            applyTags(result);
+        });
+    }
+    function placeholder(key) {
+        if (knownFields.includes(key))
+            return "No value";
+        return loadingTags ? "Loading existing value…" : "Existing value not loaded";
+    }
     function showSong(item) {
         if (busy || (song && song.id === item.id && song.source === item.source && (editing || reading || previewLoaded))) {
             open();
+            if (!tagsLoaded)
+                loadFileTags();
             return;
         }
         if (dirty) {
@@ -103,14 +182,21 @@ Popup {
         song = item;
         lookingUp = false;
         editing = false;
-        ready = false;
         reading = true;
         previewLoaded = false;
         coverDraft = "";
-        fetchedLyrics = "";
+        ++tagGeneration;
+        ++lyricGeneration;
+        loadingTags = false;
+        tagsLoaded = false;
+        tagError = "";
+        remoteVersion = "";
+        touched = ({});
+        changes = ({});
         fileSignature = [];
         setMessage("");
         original = previewTags(item);
+        knownFields = Object.keys(original).filter(key => !!original[key]);
         draft = Object.assign({}, original);
         originalPath = String(item.serverPath || "").replace(/^\/+/, "");
         relativePath = originalPath;
@@ -129,50 +215,63 @@ Popup {
             }
             previewLoaded = true;
             song = Object.assign({}, song, result.song || {});
-            original = Object.assign({}, original, result.tags || {});
-            draft = Object.assign({}, original);
+            // A slow preview must not replace edits made while it was loading.
+            if (!tagsLoaded) {
+                applyTags(result);
+                if (result.signature !== undefined)
+                    tagsLoaded = true;
+            }
+            const moving = pathDirty;
             originalPath = result.relativePath || originalPath;
-            relativePath = originalPath;
-            fileInfo = result.fileInfo || fileInfo;
+            if (!moving)
+                relativePath = originalPath;
+            if (!tagsLoaded)
+                fileInfo = result.fileInfo || fileInfo;
+            if (!tagsLoaded)
+                loadFileTags();
         });
+        if (!tagsLoaded && !item.local && !item.localPath && item.source !== "music-local")
+            loadFileTags();
     }
     function prepare() {
-        if (editable && !editing && !busy && !reading && !pathDirty && originalPath)
-            run("info");
+        if (!editable || editing || busy || pathDirty)
+            return;
+        editing = true;
+        setMessage("");
+        if (!tagsLoaded && !reading)
+            loadFileTags();
     }
     function chooseCover(file) {
-        if (file && editing && ready && !busy)
+        if (file && editing && !busy)
             coverDraft = String(file);
     }
     function run(action) {
-        if (!song || busy || reading || !editable)
+        if (!song || busy || !editable)
             return;
-        if (action === "save" && (!editing || !ready))
+        if (action === "save" && (!editing || !originalPath))
             return;
         if (action === "move" && (editing || !originalPath || !pathDirty))
             return;
-        if (action === "info" && (editing || pathDirty || !originalPath))
-            return;
         ++generation;
+        ++tagGeneration;
+        ++lyricGeneration;
+        reading = false;
+        loadingTags = false;
         lookingUp = false;
         busy = true;
         jobId = "";
         operation = action;
-        setMessage(action === "info" ? "Preparing metadata editing…" : action === "move" ? "Moving…" : "Saving locally and on Nextcloud…");
-        const changes = ({});
-        if (action === "save")
-            for (const key of Object.keys(draft))
-                if (draft[key] !== original[key])
-                    changes[key] = draft[key];
+        setMessage(action === "move" ? "Moving…" : "Saving locally and on Nextcloud…");
         const args = {
             action: action,
             song: song,
-            title: action === "info" ? "Prepare metadata editing" : action === "move" ? "Move song" : "Save metadata"
+            title: action === "move" ? "Move song" : "Save metadata"
         };
         if (action === "save") {
             args.tags = changes;
             args.artwork = coverDraft || null;
             args.signature = fileSignature;
+            args.remoteVersion = remoteVersion;
         }
         if (action === "move")
             args.relativePath = relativePath;
@@ -190,27 +289,7 @@ Popup {
         operation = "";
         if (failure) {
             setMessage(failure, true);
-            return;
-        }
-        if (action === "info") {
-            original = Object.assign({}, previewTags(song), result.tags || {});
-            draft = Object.assign({}, original);
-            if (!draft.lyrics && fetchedLyrics)
-                draft = Object.assign({}, draft, {
-                    lyrics: fetchedLyrics
-                });
-            fileSignature = result.signature || [];
-            fileInfo = result.fileInfo || fileInfo;
-            originalPath = result.relativePath || originalPath;
-            relativePath = originalPath;
-            song = Object.assign({}, song, {
-                local: true,
-                localPath: result.path,
-                pendingUpload: result.pendingUpload
-            });
-            ready = true;
-            editing = true;
-            setMessage("");
+            tagError = "Reload metadata to check the current values. Your draft will be kept.";
             return;
         }
         const rel = result.relativePath || originalPath;
@@ -227,13 +306,16 @@ Popup {
         if (action === "save") {
             original = Object.assign({}, draft, result.tags || {});
             draft = Object.assign({}, original);
+            knownFields = Object.keys(result.tags || original);
+            touched = ({});
+            changes = ({});
             fileSignature = result.signature || fileSignature;
             fileInfo = result.fileInfo || fileInfo;
             coverDraft = "";
-            fetchedLyrics = "";
+            remoteVersion = "";
+            tagsLoaded = true;
             if (result.synced) {
                 editing = false;
-                ready = false;
             }
         }
         setMessage(result.error ? "Saved locally. " + result.error : action === "move" ? "Song moved." : result.synced ? "Saved locally and on Nextcloud." : result.message || "Saved locally. The server file was not updated.", !!result.error || (action !== "move" && !result.synced));
@@ -242,19 +324,19 @@ Popup {
     function cancelEdits() {
         if (busy)
             return;
-        ++generation;
+        ++lyricGeneration;
         lookingUp = false;
         editing = false;
-        ready = false;
         coverDraft = "";
-        fetchedLyrics = "";
+        touched = ({});
+        changes = ({});
         draft = Object.assign({}, original);
         setMessage("");
     }
     function lookupLyrics() {
-        if (!song || busy || reading || lookingUp)
+        if (!song || busy || reading || lookingUp || (editable && pathDirty))
             return;
-        const token = ++generation, previous = String(draft.lyrics || "");
+        const token = ++lyricGeneration, previous = String(draft.lyrics || "");
         lookingUp = true;
         setMessage("Fetching lyrics…");
         catalogue.request("lyrics", {
@@ -262,7 +344,7 @@ Popup {
             refresh: true,
             lane: "info"
         }, (result, failure) => {
-            if (token !== generation)
+            if (token !== lyricGeneration)
                 return;
             lookingUp = false;
             if (String(draft.lyrics || "") !== previous)
@@ -271,11 +353,15 @@ Popup {
                 setMessage(failure || "No matching lyrics found.", !!failure);
                 return;
             }
-            fetchedLyrics = result.lyrics;
-            draft = Object.assign({}, draft, {
-                lyrics: result.lyrics
-            });
-            setMessage(editing ? "Lyrics loaded. Save to keep them in the file and on Nextcloud." : "Lyrics loaded. Edit metadata to save them.");
+            if (editable) {
+                prepare();
+                editTag("lyrics", result.lyrics);
+            } else {
+                draft = Object.assign({}, draft, {
+                    lyrics: result.lyrics
+                });
+            }
+            setMessage("Lyrics loaded. Save to keep them in the file and on Nextcloud.");
         });
     }
     function restoreFocus() {
@@ -296,7 +382,10 @@ Popup {
     onClosed: {
         coverChooser.close();
         ++generation;
+        ++tagGeneration;
+        ++lyricGeneration;
         lookingUp = false;
+        loadingTags = false;
         reading = false;
     }
     Component.onDestruction: coverChooser.close()
@@ -356,7 +445,7 @@ Popup {
                     iconName: "pencil"
                     text: "Edit cover art"
                     iconColor: MovieStyle.text
-                    visible: root.editing && root.ready
+                    visible: root.editing
                     enabled: !root.busy
                     onClicked: coverChooser.open()
                 }
@@ -387,7 +476,7 @@ Popup {
                 visible: root.editable
                 text: root.editing ? "Cancel" : "Edit metadata"
                 iconName: root.editing ? "x" : "pencil"
-                enabled: !root.busy && (root.editing || (!root.reading && !!root.originalPath && !root.pathDirty))
+                enabled: !root.busy && (root.editing || !root.pathDirty)
                 onClicked: root.editing ? root.cancelEdits() : root.prepare()
             }
             MovieButton {
@@ -395,7 +484,7 @@ Popup {
                 visible: root.editing
                 text: "Save"
                 iconName: "save"
-                enabled: root.editing && root.ready && !root.busy && (root.dirty || !!root.song?.notUploaded || !!root.song?.pendingUpload)
+                enabled: root.editing && !!root.originalPath && !root.busy && (root.dirty || !!root.song?.notUploaded || !!root.song?.pendingUpload)
                 onClicked: root.run("save")
             }
             MovieIconButton {
@@ -413,6 +502,23 @@ Popup {
             ColumnLayout {
                 width: editorScroll.availableWidth
                 spacing: 12
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: root.loadingTags || !!root.tagError
+                    MovieText {
+                        Layout.fillWidth: true
+                        text: root.loadingTags ? "Loading existing metadata…" : root.tagError
+                        color: MovieStyle.muted
+                        wrapMode: Text.Wrap
+                    }
+                    MovieButton {
+                        objectName: "musicReloadTags"
+                        text: "Reload metadata"
+                        visible: !!root.tagError
+                        enabled: !root.busy && !root.loadingTags
+                        onClicked: root.loadFileTags()
+                    }
+                }
                 GridLayout {
                     Layout.fillWidth: true
                     columns: 2
@@ -470,18 +576,26 @@ Popup {
                                 text: modelData.name
                                 color: MovieStyle.muted
                             }
-                            MovieInput {
-                                objectName: "musicTag:" + modelData.key
+                            RowLayout {
                                 Layout.fillWidth: true
-                                text: root.draft[modelData.key] || ""
-                                readOnly: !root.editing || !root.ready || root.busy
-                                placeholderText: root.reading ? "Loading…" : root.editing ? "No value" : "Not provided"
-                                Accessible.name: modelData.name
-                                onTextEdited: if (root.editing)
-                                    root.draft = Object.assign({}, root.draft, {
-                                        [modelData.key]: text
-                                    })
-                                Keys.onEscapePressed: root.dismissTransient()
+                                MovieInput {
+                                    objectName: "musicTag:" + modelData.key
+                                    Layout.fillWidth: true
+                                    text: root.draft[modelData.key] || ""
+                                    readOnly: !root.editing || root.busy
+                                    placeholderText: root.placeholder(modelData.key)
+                                    Accessible.name: modelData.name
+                                    onTextEdited: root.editTag(modelData.key, text)
+                                    Keys.onEscapePressed: root.dismissTransient()
+                                }
+                                MovieIconButton {
+                                    objectName: "musicClearTag:" + modelData.key
+                                    visible: root.editing
+                                    enabled: !root.busy
+                                    iconName: "x"
+                                    text: "Clear " + modelData.name.toLowerCase()
+                                    onClicked: root.editTag(modelData.key, "")
+                                }
                             }
                         }
                     }
@@ -494,10 +608,18 @@ Popup {
                         font.bold: true
                     }
                     MovieButton {
+                        objectName: "musicClearLyrics"
+                        visible: root.editing
+                        enabled: !root.busy
+                        text: "Clear"
+                        iconName: "x"
+                        onClicked: root.editTag("lyrics", "")
+                    }
+                    MovieButton {
                         objectName: "musicFetchLyrics"
                         text: root.lookingUp ? "Fetching…" : "Fetch lyrics"
                         iconName: "refresh-cw"
-                        enabled: !root.busy && !root.reading && !root.lookingUp
+                        enabled: !root.busy && !root.reading && !root.lookingUp && (!root.editable || !root.pathDirty)
                         onClicked: root.lookupLyrics()
                     }
                 }
@@ -506,23 +628,21 @@ Popup {
                     Layout.fillWidth: true
                     Layout.minimumHeight: 180
                     text: root.draft.lyrics || ""
-                    readOnly: !root.editing || !root.ready || root.busy
+                    readOnly: !root.editing || root.busy
                     wrapMode: TextEdit.Wrap
                     color: MovieStyle.text
                     font.family: MovieStyle.fontFamily
                     font.pixelSize: MovieStyle.fontSize
                     selectByMouse: true
-                    placeholderText: root.reading ? "Loading…" : "No lyrics loaded"
+                    placeholderText: root.reading || root.loadingTags ? "Loading existing lyrics…" : root.knownFields.includes("lyrics") ? "No embedded lyrics" : "Existing lyrics not loaded"
                     placeholderTextColor: MovieStyle.muted
                     background: Rectangle {
                         color: "#211b24"
                         radius: 4
                         border.color: parent.activeFocus ? MovieStyle.accent : MovieStyle.border
                     }
-                    onTextChanged: if (activeFocus && !readOnly)
-                        root.draft = Object.assign({}, root.draft, {
-                            lyrics: text
-                        })
+                    onTextChanged: if (activeFocus && !readOnly && text !== (root.draft.lyrics || ""))
+                        root.editTag("lyrics", text)
                     Keys.onEscapePressed: root.dismissTransient()
                 }
             }

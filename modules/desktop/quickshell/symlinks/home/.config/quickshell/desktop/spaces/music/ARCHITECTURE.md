@@ -17,17 +17,33 @@ library identity or playback source. Songs and Albums remain separate views.
 `playCount` property and Music-relative path. Existing local files override tags
 and format details through FFprobe, while retaining the server play count; server
 failures preserve local previews and any previously known count. Missing play
-counts are omitted rather than becoming zero. This never downloads audio
-or starts a lyric lookup. All tag fields remain visible, with placeholders for
+counts are omitted rather than becoming zero. Info also starts a `file-tags`
+request for uncached songs, merging embedded fields (including stored lyrics) and
+available duration/rate/bit-depth/channel/bitrate details from bounded DAV reads.
+A complete local `song-info` result is reused without another tag read. This never
+downloads/caches a complete song or starts a lyrics-provider lookup.
+All tag fields remain visible, with placeholders for
 missing values. Format/rate/bit-depth details reflect whatever the source exposes.
-A missing server path disables editing and moving rather than guessing a filename.
+A missing server path disables saving and moving rather than guessing a filename;
+the metadata draft can still be edited while its preview resolves.
 The title and muted subtitle with file details and play count share the header
 with the editing controls: Edit metadata becomes Cancel while editing, with Save
 beside it.
 
-Edit metadata starts one owned `info` file job to prepare a local copy and capture
-its authoritative tags/signature. Only then do fields and the cover pencil become
-editable. The cover image itself has no click action. The pencil opens a Qt Quick
+Edit metadata immediately enables every field and the cover pencil, reusing the
+metadata already loaded by Info. `knownFields`
+distinguishes unavailable values from known empty tags; `touched` records explicit
+user intent, including clearing an unknown field. `changes` contains only touched
+values that differ from known originals. Preview and embedded-tag results update
+originals and untouched fields, never replacing touched drafts. Embedded tags take
+precedence over late API previews. Save does not wait for background reads.
+Unknown fields remain editable after a read failure, with an explicit reload
+action and clear buttons. Independent song, tag-read and lyrics generations reject
+late results after saves, closing or switching songs. Cancel discards edits and
+invalidates provider lookups while existing metadata reads continue to fill the
+read-only view. Reloading metadata retains edits and updates their comparison baseline.
+
+The cover image itself has no click action. The pencil opens a Qt Quick
 file picker with `DontUseNativeDialog` and `Popup.Item`, keeping it inside the
 shell's overlay window. Escape rejects the picker before cancelling editing or
 closing Info. Hiding Music closes the picker and Info while retaining drafts.
@@ -35,21 +51,30 @@ The chooser inherits the window palette, so temporary per-role bindings apply
 Music's palette while it is visible and restore the previous values on closing.
 
 Fetch lyrics is explicit in both states. It reads existing local/server lyrics
-first, then configured providers when necessary. Fetched text stays read-only in
-viewing mode and can be carried into an editing draft when the local file has no
-saved lyrics. A lookup never writes tags. Results use the bounded lyrics cache;
+first, then configured providers when necessary. A successful fetch on a library
+song enters editing and stages the lyrics as an explicit change, even when their
+embedded state is unknown. Entering editing never starts a lyrics lookup;
+stored lyrics may already be visible from Info. Manual lyric or lookup-identity
+edits supersede an in-flight lookup. A lookup never writes tags. Results use the bounded lyrics cache;
 an explicit fetch refreshes it. Song generations reject stale replies, and closing
 an unfinished preview permits it to retry on reopening.
 Nextcloud Music's [Subsonic interface](https://github.com/nc-music/music/blob/master/lib/Controller/SubsonicController.php)
 provides lyric reads but no lyric/tag write endpoint. Fetch therefore remains a
 read operation; persistence uses metadata editing and the conditional DAV upload.
 
-Save writes the local tags/cover and explicitly uploads the resulting file,
+Save prepares/downloads the local file, reads its authoritative tags, applies only
+the explicit patch and explicitly uploads the resulting file. Downloaded songs
+remain in `~/Music`,
 including new local songs. Successful saves return to viewing mode. An upload
 failure retains the locally saved version and enables an explicit retry. Cancel
 editing discards unsaved drafts. Info owns its file-job ID, so background jobs
 cannot settle its operation; worker exit settles accepted jobs before clearing
-state. No automatic lyrics, tag writes, uploads or retries occur while viewing.
+state. No automatic lyrics-provider lookups, tag writes, uploads or retries occur while viewing.
+Values already present in the file skip tag rewriting; publishing an identical
+server file skips uploading. A captured local signature or remote preview ETag is
+checked before editing, in addition to the conditional DAV commit. Failures before
+local saving retain the draft; upload failures retain the saved file and permit
+a retry without rewriting tags.
 
 The path field and Move button stay at the bottom, outside the metadata editor.
 A path draft disables Edit metadata; editing disables the path and Move. Move jobs
@@ -101,6 +126,17 @@ removed. The observer operates independently of the background remote index buil
 
 ## File operations and tag editing
 
+`file_tags.py` exposes a seekable, read-only DAV range reader to Mutagen. HEAD
+provides the file size and strong ETag; each GET uses `Range` and `If-Match`,
+requires a matching 206/Content-Range/version and reads only the requested bytes.
+An ignored Range is closed before its body is consumed. A final conditional HEAD
+checks the version. Requests use the existing account-scoped DAV opener and keep
+credentials inside Python. Reads cache 64 KiB blocks in memory, bounded to 8 MiB,
+128 requests and a 25-second preview deadline (each request at most 8 seconds).
+Unsupported formats, oversized metadata, network failures or missing range
+support leave fields unknown; they never fall back to downloading/caching audio.
+Existing cached files use FFprobe/Mutagen with a stable local signature instead.
+
 `local_files.py` owns path validation, downloads, local-first playback and file
 jobs. Subsonic paths are relative to the server Music root despite a leading
 slash. They map to `~/Music/<relative path>`. Traversal, symbolic links and
@@ -131,9 +167,10 @@ identify the same account root as DAV. Missing local files never trigger remote
 deletion or synchronization, and missing unuploaded files cannot adopt unrelated
 server files with colliding names.
 
-`tags.py` belongs to Music and uses FFmpeg/FFprobe and Mutagen. Opus edits use
-Mutagen to preserve Vorbis picture comments and the original audio packets.
-Edits stream-copy audio, preserve other streams/metadata, verify requested tags
+`tags.py` owns canonical ID3/MP4/Vorbis/APE/ASF field normalization and uses
+FFprobe for local format details. Tag-only MP3/FLAC/M4A/Ogg/Opus edits use Mutagen
+on a private copy, retaining custom tags, embedded pictures and audio packets.
+Other edits use FFmpeg stream copy. All edits verify requested tags
 and source signature, then atomically replace the cache file. MP3/FLAC/M4A cover replacement removes only existing attached-picture streams,
 embeds the selected image, verifies its presence and checks both source versions.
 Local signatures invalidate thumbnails after cover changes. Temporary files

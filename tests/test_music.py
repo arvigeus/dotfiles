@@ -43,6 +43,7 @@ class MusicTests(unittest.TestCase):
                 local_files, 'cached', return_value=Path('/fixture/song.flac')
             ),
             patch.object(tags, 'read', return_value=local),
+            patch.object(local_files, 'signature', return_value=[1, 2, 3]),
             patch.object(cloud.CloudLibrary, 'song_info') as info,
             patch.object(cloud.CloudLibrary, '__init__', return_value=None),
         ):

@@ -6,12 +6,16 @@ Playlists with searchable lists. Artist
 pages include a picture, biography, albums and a playable song collection.
 
 Playback prefers cached files. New local songs appear automatically with an upload
-indicator; **Not uploaded** shows just those songs. **Info** opens read-only metadata
-without downloading the song. **Fetch lyrics** loads lyrics on request.
-Lyrics providers share `~/.config/audio-tools/lyrics.json` with Audio tools.
-**Edit metadata** prepares a local copy and enables tag editing and the cover's
-pencil button. **Save** writes the local file and uploads it; cover editing supports
-MP3, FLAC and M4A. Failed uploads keep local edits for an explicit retry.
+indicator; **Not uploaded** shows just those songs. **Info** reuses available metadata
+and reads missing tags, embedded lyrics and format details in the background through
+WebDAV, without caching the song. **Edit metadata** enables editing immediately;
+background values never replace your edits. **Fetch lyrics** explicitly looks for
+lyrics and opens an editable draft, ready to save. Lyrics providers share
+`~/.config/audio-tools/lyrics.json` with Audio tools.
+**Save** downloads the song into `~/Music` if needed, applies your changes and uploads it; cover
+editing supports MP3, FLAC and M4A. Failed uploads keep local edits for an explicit
+retry. An unavailable field stays marked as not loaded; typing replaces its value,
+and its clear button explicitly removes it.
 
 The path and **Move** action at the bottom are separate from metadata editing.
 Moves preserve the audio extension and do not download uncached songs.

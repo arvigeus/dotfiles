@@ -7,8 +7,9 @@ import shutil
 import stat
 import tempfile
 
-from mutagen import MutagenError
-from mutagen.oggopus import OggOpus
+from mutagen import File, MutagenError
+from mutagen.id3 import Frames, ID3, COMM, USLT
+from mutagen.mp4 import MP4Tags
 
 from spaces.music.records import MusicError
 
@@ -25,6 +26,197 @@ FIELDS = {
     'comment': 'Comment',
     'lyrics': 'Lyrics',
 }
+
+ID3_FIELDS = {
+    'title': 'TIT2',
+    'artist': 'TPE1',
+    'album': 'TALB',
+    'album_artist': 'TPE2',
+    'date': 'TDRC',
+    'track': 'TRCK',
+    'disc': 'TPOS',
+    'genre': 'TCON',
+    'composer': 'TCOM',
+    'comment': 'COMM',
+    'lyrics': 'USLT',
+}
+
+ID3_TEXT_ALIASES = {
+    'album_artist': ('album_artist', 'albumartist', 'album artist'),
+    'date': ('date', 'year'),
+    'track': ('track', 'tracknumber'),
+    'disc': ('disc', 'discnumber'),
+    'lyrics': ('lyrics', 'uslt', 'unsyncedlyrics'),
+}
+
+MP4_FIELDS = {
+    'title': '©nam',
+    'artist': '©ART',
+    'album': '©alb',
+    'album_artist': 'aART',
+    'date': '©day',
+    'track': 'trkn',
+    'disc': 'disk',
+    'genre': '©gen',
+    'composer': '©wrt',
+    'comment': '©cmt',
+    'lyrics': '©lyr',
+}
+
+TAG_FORMATS = {'.mp3', '.flac', '.m4a', '.mp4', '.ogg', '.opus'}
+
+
+def text(value):
+    if value is None:
+        return ''
+    if isinstance(value, (list, tuple)):
+        return '; '.join(map(str, value))
+    return str(value)
+
+
+def fields(audio):
+    tags = audio.tags
+    if isinstance(tags, ID3):
+        names = ID3_FIELDS
+        result = {}
+        for key, name in names.items():
+            frame = next(iter(tags.getall(name)), None)
+            if frame is None:
+                frame = next(
+                    (
+                        value
+                        for value in tags.getall('TXXX')
+                        if value.desc.casefold() in ID3_TEXT_ALIASES.get(key, (key,))
+                    ),
+                    None,
+                )
+            result[key] = text(getattr(frame, 'text', frame))
+        return result
+    if isinstance(tags, MP4Tags):
+        names = MP4_FIELDS
+        result = {key: text(tags.get(name)) for key, name in names.items()}
+        for key in ('track', 'disc'):
+            value = tags.get(names[key])
+            result[key] = (
+                '/'.join(map(str, value[0]))
+                if value and value[0][1]
+                else str(value[0][0])
+                if value
+                else ''
+            )
+        return result
+    values = {key.lower(): value for key, value in (tags or {}).items()}
+    aliases = {
+        'album_artist': ('albumartist', 'album artist', 'wm/albumartist'),
+        'date': ('year', 'wm/year'),
+        'track': ('tracknumber', 'wm/tracknumber'),
+        'disc': ('discnumber', 'wm/partofset'),
+        'artist': ('author',),
+        'album': ('wm/albumtitle',),
+        'genre': ('wm/genre',),
+        'composer': ('wm/composer',),
+        'comment': ('description',),
+        'lyrics': ('unsyncedlyrics', 'wm/lyrics'),
+    }
+    result = {
+        key: text(
+            next(
+                (
+                    values[name]
+                    for name in (key, *aliases.get(key, ()))
+                    if name in values
+                ),
+                None,
+            )
+        )
+        for key in FIELDS
+    }
+    for key in ('track', 'disc'):
+        total = text(values.get(key + 'total') or values.get('total' + key + 's'))
+        if total and result[key] and '/' not in result[key]:
+            result[key] += '/' + total
+    return result
+
+
+def update_tags(path, changes):
+    """Change only requested tags; keep custom frames, pictures and audio bytes."""
+    audio = File(path)
+    if audio is None:
+        raise MusicError('This file has no supported tag container.')
+    if audio.tags is None:
+        audio.add_tags()
+    tags = audio.tags
+    if isinstance(tags, ID3):
+        names = ID3_FIELDS
+        for key, value in changes.items():
+            name = names[key]
+            tags.delall(name)
+            for frame in tags.getall('TXXX'):
+                if frame.desc.casefold() in ID3_TEXT_ALIASES.get(key, (key,)):
+                    del tags[frame.HashKey]
+            if key == 'date':
+                tags.delall('TYER')
+            if not value:
+                continue
+            if key == 'lyrics':
+                tags.add(USLT(encoding=3, lang='eng', desc='', text=value))
+            elif key == 'comment':
+                tags.add(COMM(encoding=3, lang='eng', desc='', text=[value]))
+            else:
+                tags.add(Frames[name](encoding=3, text=[value]))
+    elif isinstance(tags, MP4Tags):
+        names = MP4_FIELDS
+        for key, value in changes.items():
+            name = names[key]
+            tags.pop(name, None)
+            if value:
+                if key in ('track', 'disc'):
+                    parts = value.split('/')
+                    if len(parts) > 2 or not all(part.isdecimal() for part in parts):
+                        raise MusicError(
+                            'Track and disc values must be numbers, optionally followed by /total.'
+                        )
+                    tags[name] = [
+                        (int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
+                    ]
+                else:
+                    tags[name] = [value]
+    else:
+        aliases = {
+            'album_artist': ('album_artist', 'albumartist'),
+            'date': ('date', 'year'),
+            'track': ('track', 'tracknumber', 'tracktotal', 'totaltracks'),
+            'disc': ('disc', 'discnumber', 'disctotal', 'totaldiscs'),
+            'comment': ('comment', 'description'),
+            'lyrics': ('lyrics', 'unsyncedlyrics'),
+        }
+        names = {
+            'album_artist': 'albumartist',
+            'track': 'tracknumber',
+            'disc': 'discnumber',
+        }
+        for key, value in changes.items():
+            for alias in aliases.get(key, (key,)):
+                if alias in tags:
+                    del tags[alias]
+            if value:
+                tags[names.get(key, key)] = [value]
+    audio.save()
+
+
+def format_summary(extension, *, bits=0, rate=0, channels=0, bitrate=0):
+    summary = [extension.upper()]
+    if bits:
+        summary.append(str(bits) + '-bit')
+    elif bitrate:
+        summary.append(str(round(bitrate / 1000)) + ' kbps')
+    if rate:
+        summary.append(f'{rate / 1000:g} kHz')
+    if channels:
+        summary.append(
+            {1: 'Mono', 2: 'Stereo'}.get(channels, str(channels) + ' channels')
+        )
+    return ' · '.join(filter(None, summary))
 
 
 def read(path, run):
@@ -62,6 +254,12 @@ def read(path, run):
     tags['lyrics'] = tags.get(
         'lyrics', next((v for k, v in tags.items() if k.startswith('lyrics-')), '')
     )
+    if Path(path).suffix.lower() in TAG_FORMATS:
+        try:
+            if audio_file := File(path):
+                tags.update(fields(audio_file))
+        except MutagenError:
+            pass
     duration = data.get('format', {}).get('duration') or audio[0].get('duration') or 0
     stream = audio[0]
 
@@ -77,19 +275,6 @@ def read(path, run):
     rate = integer(stream.get('sample_rate'))
     channels = integer(stream.get('channels'))
     bitrate = integer(stream.get('bit_rate') or data.get('format', {}).get('bit_rate'))
-    summary = [
-        Path(path).suffix.lstrip('.').upper() or stream.get('codec_name', '').upper()
-    ]
-    if bits:
-        summary.append(str(bits) + '-bit')
-    elif bitrate:
-        summary.append(str(round(bitrate / 1000)) + ' kbps')
-    if rate:
-        summary.append(f'{rate / 1000:g} kHz')
-    if channels:
-        summary.append(
-            {1: 'Mono', 2: 'Stereo'}.get(channels, str(channels) + ' channels')
-        )
     covers = [
         s.get('index')
         for s in data.get('streams', [])
@@ -101,7 +286,13 @@ def read(path, run):
         codec=stream.get('codec_name', ''),
         sampleRate=stream.get('sample_rate', ''),
         bitDepth=bits,
-        fileInfo=' · '.join(filter(None, summary)),
+        fileInfo=format_summary(
+            Path(path).suffix.lstrip('.') or stream.get('codec_name', ''),
+            bits=bits,
+            rate=rate,
+            channels=channels,
+            bitrate=bitrate,
+        ),
         coverIndexes=covers,
     )
 
@@ -190,17 +381,13 @@ def write(path, changes, run, signature, register, unregister, artwork=None):
             command += ['-metadata', key + '=' + value]
             if path.suffix.lower() in ('.mka', '.mkv', '.ogg', '.opus'):
                 command += ['-metadata:s:a:0', key + '=' + value]
-        if path.suffix.lower() == '.opus':
-            # Keep Ogg picture comments and audio packets intact when editing tags.
+        if path.suffix.lower() in TAG_FORMATS and not image:
             shutil.copyfile(path, temporary)
             try:
-                audio = OggOpus(temporary)
-                for key, value in changes.items():
-                    audio[key] = value
-                audio.save()
+                update_tags(temporary, changes)
             except MutagenError:
                 raise MusicError(
-                    'The Opus tags could not be saved. The original song was kept.'
+                    'The tags could not be saved. The original song was kept.'
                 ) from None
         elif run(command + [str(temporary)])[0]:
             raise MusicError(

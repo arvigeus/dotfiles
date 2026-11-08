@@ -216,6 +216,98 @@ class MusicCoverTests(unittest.TestCase):
 
 
 class MetadataEditingTests(unittest.TestCase):
+    def test_lyrics_only_edits_preserve_comments_custom_tags_and_audio_packets(self):
+        from mutagen import File
+        from mutagen.id3 import ID3, TXXX
+        from mutagen.mp4 import MP4Tags, MP4FreeForm
+        from spaces.music import tags
+
+        with tempfile.TemporaryDirectory() as directory:
+            for extension in ('mp3', 'flac', 'm4a', 'ogg', 'opus'):
+                with self.subTest(extension=extension):
+                    path = Path(directory) / ('song.' + extension)
+                    subprocess.run(
+                        [
+                            'ffmpeg',
+                            '-v',
+                            'error',
+                            '-f',
+                            'lavfi',
+                            '-i',
+                            'anullsrc',
+                            '-t',
+                            '0.2',
+                            '-metadata',
+                            'title=Title',
+                            '-metadata',
+                            'comment=Private comment',
+                            '-metadata',
+                            'lyrics=Existing lyrics',
+                            str(path),
+                        ],
+                        check=True,
+                    )
+                    audio = File(path)
+                    if isinstance(audio.tags, ID3):
+                        audio.tags.add(
+                            TXXX(encoding=3, desc='Custom', text=['Keep me'])
+                        )
+                        key = 'TXXX:Custom'
+                    elif isinstance(audio.tags, MP4Tags):
+                        key = '----:com.apple.iTunes:Custom'
+                        audio.tags[key] = [MP4FreeForm(b'Keep me')]
+                    else:
+                        key = 'custom'
+                        audio.tags[key] = ['Keep me']
+                    audio.save()
+                    custom = File(path).tags[key]
+                    self.assertEqual(
+                        tags.read(path, local_files.run)['tags']['lyrics'],
+                        'Existing lyrics',
+                    )
+                    command = [
+                        'ffmpeg',
+                        '-v',
+                        'error',
+                        '-i',
+                        str(path),
+                        '-map',
+                        '0:a:0',
+                        '-c',
+                        'copy',
+                        '-f',
+                        'hash',
+                        '-',
+                    ]
+                    packets = subprocess.check_output(command)
+                    tags.write(
+                        path,
+                        {'lyrics': 'New lyrics'},
+                        local_files.run,
+                        local_files.signature,
+                        local_files.register,
+                        local_files.unregister,
+                    )
+                    self.assertEqual(File(path).tags[key], custom)
+                    self.assertEqual(subprocess.check_output(command), packets)
+                    result = tags.read(path, local_files.run)['tags']
+                    self.assertEqual(result['comment'], 'Private comment')
+                    self.assertEqual(result['lyrics'], 'New lyrics')
+                    self.assertEqual(result['title'], 'Title')
+                    tags.write(
+                        path,
+                        {'lyrics': ''},
+                        local_files.run,
+                        local_files.signature,
+                        local_files.register,
+                        local_files.unregister,
+                    )
+                    self.assertEqual(
+                        tags.read(path, local_files.run)['tags']['lyrics'], ''
+                    )
+                    self.assertEqual(File(path).tags[key], custom)
+                    self.assertEqual(subprocess.check_output(command), packets)
+
     def test_cover_replacement_preserves_audio_and_existing_tags_in_supported_formats(
         self,
     ):
@@ -404,6 +496,8 @@ class StoredLyricsTests(unittest.TestCase):
                 result = backend.song_information({'song': song})
             self.assertEqual(result['tags']['composer'], 'Composer')
             self.assertEqual(result['tags']['comment'], '')
+            self.assertNotIn('comment', result['knownFields'])
+            self.assertIn('composer', result['knownFields'])
             self.assertEqual(result['relativePath'], 'Artist/song.flac')
             client.request.assert_called_once_with('getSong', id='one')
             client.open.assert_not_called()

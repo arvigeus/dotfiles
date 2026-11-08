@@ -367,6 +367,15 @@ class CloudLibrary:
             track=str(raw.get('track') or ''),
             disc=str(raw.get('discNumber') or ''),
         )
+        names = {
+            'album_artist': ('albumArtist',),
+            'date': ('date', 'year'),
+            'track': ('track',),
+            'disc': ('discNumber',),
+        }
+        known = [
+            key for key in tags if any(name in raw for name in names.get(key, (key,)))
+        ]
         song = record(raw, 'song', self.account)
         from spaces.music.local_files import pending_path
 
@@ -375,6 +384,7 @@ class CloudLibrary:
         return dict(
             song=song,
             tags=tags,
+            knownFields=known,
             relativePath=song['serverPath'].lstrip('/'),
             fileInfo=song['fileInfo'],
         )
