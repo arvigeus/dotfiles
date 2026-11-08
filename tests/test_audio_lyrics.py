@@ -100,6 +100,24 @@ class SharedLyricsTests(unittest.TestCase):
             self.assertNotIn('fixture-private-token', url)
         self.assertNotIn(b'fixture-private-token', cache.path.read_bytes())
 
+    def test_client_identification_uses_the_general_private_contact_profile(self):
+        profile = self.root / 'config/user-profile.json'
+        profile.write_text(
+            json.dumps({'version': 1, 'contact': {'email': 'fixture@example.test'}})
+        )
+        headers = audio_lyrics.provider_headers({})
+        self.assertIn('fixture@example.test', headers['User-Agent'])
+        self.assertEqual(headers['User-Agent'], headers['Lrclib-Client'])
+        self.assertEqual(
+            audio_lyrics.provider_headers(
+                {'headers': {'User-Agent': 'Explicit client'}}
+            )['User-Agent'],
+            'Explicit client',
+        )
+        profile.write_text(json.dumps({'contact': {'email': 'bad\nheader'}}))
+        with self.assertRaises(audio_lyrics.LyricsError):
+            audio_lyrics.provider_headers({})
+
     def test_missing_provider_falls_back_and_rate_limits_do_not_repeat_http(self):
         missing = self.provider | {
             'base_url': self.provider['base_url'].replace('/api', '/missing')

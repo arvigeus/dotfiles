@@ -102,6 +102,10 @@ completed edit; it never performs file copying or conversion on the UI thread.
 `$XDG_CONFIG_HOME/audio-tools/lyrics.json` on each provider lookup. The file is
 private. A missing file uses LRCLIB, and invalid
 settings are reported without replacing them.
+Client identification reads optional `contact.email` (or `contact.url`) from the
+general `$XDG_CONFIG_HOME/user-profile.json`, owned by private dotfiles. The same
+profile can identify other personal clients; provider headers may override the
+generated User-Agent/Lrclib-Client values. Contact data is never hardcoded here.
 
 The schema is `{"version":1,"providers":[...]}` with up to eight providers.
 An empty list disables online lookup. Each provider supports `name`, `base_url`

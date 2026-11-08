@@ -93,10 +93,33 @@ def provider_headers(provider):
     values = provider.get('headers') or {}
     if not isinstance(values, dict):
         raise LyricsError('Lyrics provider headers must be an object.')
+    profile_path = config_path().parent.parent / 'user-profile.json'
+    try:
+        profile = json.loads(profile_path.read_text())
+    except FileNotFoundError:
+        profile = {}
+    except (OSError, ValueError):
+        raise LyricsError('The shared user profile could not be read.') from None
+    if not isinstance(profile, dict) or not isinstance(
+        profile.get('contact', {}), dict
+    ):
+        raise LyricsError('The shared user profile contains invalid contact settings.')
+    contact = (
+        profile.get('contact', {}).get('email')
+        or profile.get('contact', {}).get('url')
+        or ''
+    )
+    if (
+        not isinstance(contact, str)
+        or len(contact) > 512
+        or any(c in contact for c in '\r\n\0')
+    ):
+        raise LyricsError('The shared user profile contains invalid contact settings.')
+    client = 'Desktop Audio tools/1.0' + (' (' + contact + ')' if contact else '')
     headers = {
         'Accept': 'application/json',
-        'User-Agent': 'Desktop Audio tools',
-        'Lrclib-Client': 'Desktop Audio tools',
+        'User-Agent': client,
+        'Lrclib-Client': client,
     }
     values = dict(values)
     key = str(provider.get('api_key') or '').strip()
