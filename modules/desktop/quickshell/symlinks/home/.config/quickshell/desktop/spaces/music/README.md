@@ -21,7 +21,7 @@ The path and **Move** action at the bottom are separate from metadata editing.
 Moves preserve the audio extension and do not download uncached songs.
 The notifications bell holds transfer progress and controls.
 
-**Discover** browses your configured Apple Music playlist and searches its
+**Browse** opens your configured Apple Music playlist and searches its
 catalogue. Artist and album pickers search online as you type. Downloads save
 tagged FLAC files named `Title - Artist - Album (YYYY-MM-DD).flac` in `~/Music`,
 ready to review and upload. FLAC preserves the source's decoded audio; it does not
@@ -29,7 +29,7 @@ improve a lossy source. Downloads try configured sources in order when a source
 cannot match or save a song.
 
 My Library uses the shared Nextcloud account, Music API key and rclone remote.
-Discover needs `music.json` with a catalogue token; full-track playback and downloads
+Browse needs `music.json` with a catalogue token; full-track playback and downloads
 also require a configured provider. An Apple Music subscription alone does not
 configure that provider.
 

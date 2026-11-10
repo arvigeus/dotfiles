@@ -41,6 +41,70 @@ def setup(root):
 class MoviesSpaceTests(unittest.TestCase):
     run_qml = support.run_qml
 
+    def test_header_refresh_bypasses_catalogue_cache_and_keeps_library_scan_explicit(
+        self,
+    ):
+        def refresh_setup(root):
+            setup(root)
+            (root / 'spaces/movies/backend.py').write_text("""import json,sys
+for line in sys.stdin:
+ r=json.loads(line);op=r['op'];title=dict(id='fixture',kind=r.get('kind','movie'),title='Refreshed' if r.get('refresh') else 'Saved',year='2024',poster='',backdrop='',query=r.get('query'),genre=r.get('filters',{}).get('genre'))
+ if op=='init':result=dict(providers=[],episodeProviders=[],animeProviders=[],genres=[])
+ elif op=='local_titles':result=dict(items=[])
+ elif op in ('browse','snapshot'):result=dict(items=[title],next='')
+ elif op=='details':result=r['title']
+ elif op=='artwork':result=dict(title=r['title'],warnings=[])
+ elif op=='personal':result=dict(favorite=False,note='',url='')
+ elif op=='local_files':result=[]
+ elif op=='episodes':result=dict(seasons=[],items=[])
+ else:result={}
+ print(json.dumps(dict(id=r['id'],result=result)),flush=True)
+""")
+
+        for kind in ('movie', 'tv'):
+            with self.subTest(kind=kind):
+                self.run_qml(
+                    """import QtQuick
+import QtTest
+import Quickshell
+import "spaces/movies"
+FloatingWindow {
+ id:root
+ implicitWidth:1440;implicitHeight:900
+ MediaBrowser {id:page;anchors.fill:parent;active:true;kind:MEDIA_KIND}
+ TestCase {id:input;when:false;parent:root.contentItem}
+ property int step:0
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ function click(item){input.mouseClick(item,item.width/2,item.height/2);}
+ Timer {id:driver;interval:60;running:true;repeat:false;onTriggered:{try{
+  if(page.loading||!page.titles.length&&root.step<2)return;
+  const toolbar=find(page,"movieToolbar"),refresh=find(toolbar,"refreshButton");
+  if(root.step===0){
+   check(find(toolbar,"mediaLibraryTab").text==="My Library"&&find(toolbar,"mediaBrowseTab").text==="Browse","inconsistent library/browse labels");
+   check(refresh.iconName==="refresh-cw"&&refresh.x>find(toolbar,"mediaFavoritesTab").x,"Refresh is not a right-hand icon");
+   check(!toolbar.children.some(item=>item.text==="Scan"),"Scan still sits beside navigation");
+   page.searchOpen=true;find(toolbar,"mediaSearch").text="fixture";page.filters={genre:"Drama"};click(refresh);root.step++;return;
+  }
+  if(root.step===1){
+   check(page.titles[0].title==="Refreshed"&&page.titles[0].query==="fixture"&&page.titles[0].genre==="Drama","Refresh did not bypass the cache with current search/filters");
+   click(find(toolbar,"mediaLibraryTab"));root.step++;return;
+  }
+  if(root.step===2){
+   check(page.localMode&&!page.scanOpen,"library tab opened the scanner");
+   click(refresh);const scan=find(page,"mediaScan");
+   check(page.scanOpen&&scan.visible&&!scan.scanning,"Refresh did not open explicit scan controls");
+   check(find(scan,"scanPath").placeholderText==="Optional folder or file","optional scan path missing");
+   check(page.dismissTransient()&&!page.scanOpen&&page.searchOpen,"Escape did not dismiss scan before search");
+   click(refresh);click(refresh);check(!page.scanOpen,"Refresh cannot close the scanner");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(error){console.error("DISPLAY_FAIL",error);Qt.quit();}finally{driver.restart();}}}
+ Timer {interval:6000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",root.step);Qt.quit();}}
+}""".replace('MEDIA_KIND', '"' + kind + '"'),
+                    setup=refresh_setup,
+                )
+
     def test_real_host_hide_restore_close_and_native_page(self):
         self.run_qml(
             """import QtQuick

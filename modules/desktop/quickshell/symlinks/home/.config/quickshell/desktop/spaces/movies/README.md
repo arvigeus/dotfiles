@@ -14,7 +14,7 @@ For downloads, enable qBittorrent’s Web UI and search plugins; configure its
 shared connection in `~/.config/quickshell/desktop/integrations/torrents.json` using
 [torrents.example.json](../../integrations/torrents.example.json); keep it mode 0600 when it
 holds a password or API key. Downloads use `Videos/Movies`
-(or your XDG Videos directory). **Local → Scan** can organize existing files;
+(or your XDG Videos directory). **My Library → Refresh** opens the scanner for existing files;
 review uncertain matches before importing. Scan skips hidden folders, samples and
 trailers. Held deletion permanently removes the
 movie folder, or the associated torrent and all its downloaded files.

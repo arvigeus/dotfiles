@@ -1,7 +1,7 @@
 # Books
 
 Open Library discovery and search, favorites, author profiles and editions in a
-fullscreen cover browser. Local ebooks open in the system reader; **Scan** adds
+fullscreen cover browser. Local ebooks open in the system reader; **My Library → Refresh** adds
 existing files after you choose their catalogue match. **Find** searches
 qBittorrent and any configured private providers.
 

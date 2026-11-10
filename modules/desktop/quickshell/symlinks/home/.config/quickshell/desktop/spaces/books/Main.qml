@@ -739,47 +739,41 @@ Item {
         height: root.toolbarHeight
         visible: root.active
         spacing: 8
-        MovieButton {
+        MovieTab {
+            objectName: "booksLibraryTab"
             iconName: "folder-open"
-            text: "Local"
+            text: "My Library"
             highlighted: root.localMode
             onClicked: {
                 root.localMode = true;
                 root.favorites = false;
+                root.tab = "overview";
                 root.browse(false, false);
             }
         }
-        MovieButton {
+        MovieTab {
+            objectName: "booksBrowseTab"
             iconName: "globe"
-            text: "Discover"
+            text: "Browse"
             highlighted: !root.localMode && !root.favorites
             onClicked: {
                 root.localMode = false;
                 root.favorites = false;
+                root.tab = "overview";
                 root.browse(false, false);
             }
         }
-        MovieButton {
+        MovieTab {
+            objectName: "booksFavoritesTab"
             iconName: "star"
             text: "Favorites"
             highlighted: !root.localMode && root.favorites
             onClicked: {
                 root.localMode = false;
                 root.favorites = true;
+                root.tab = "overview";
                 root.browse(false, false);
             }
-        }
-        MovieButton {
-            objectName: "booksScanButton"
-            iconName: "file-search-corner"
-            text: "Scan"
-            onClicked: root.tab = root.tab === "scan" ? "overview" : "scan"
-        }
-        MovieButton {
-            iconName: "download"
-            text: service.activeJobCount ? "Transfers (" + service.activeJobCount + ")" : "Activity"
-            enabled: activity.hasActivity
-            onClicked: activity.showActivity()
         }
         Item {
             Layout.fillWidth: true
@@ -941,6 +935,30 @@ Item {
                 if (root.filtersOpen)
                     sortFilter.currentIndex = root.effectiveSortIndex();
             }
+        }
+        MovieIconButton {
+            objectName: "booksRefreshButton"
+            Layout.minimumWidth: 42
+            Layout.maximumWidth: 42
+            iconName: "refresh-cw"
+            text: root.localMode ? "Refresh library" : "Refresh catalogue"
+            highlighted: root.localMode && root.tab === "scan"
+            enabled: root.localMode || !root.loading
+            onClicked: {
+                if (root.localMode)
+                    root.tab = root.tab === "scan" ? "overview" : "scan";
+                else {
+                    searchDelay.stop();
+                    root.browse(false, true);
+                }
+            }
+        }
+        MovieIconButton {
+            objectName: "booksActivityButton"
+            iconName: "download"
+            text: service.activeJobCount ? "Transfers (" + service.activeJobCount + ")" : "Activity"
+            enabled: activity.hasActivity
+            onClicked: activity.showActivity()
         }
         MovieIconButton {
             objectName: "layoutButton"

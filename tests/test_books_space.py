@@ -148,13 +148,19 @@ ShellRoot {
    if(page.authorLoading||!page.authorWorks.length)return;
    check(page.authorDetails.biography==="A saved biography","author missing");
    host.escapeHandler();check(page.tab==="overview"&&host.opened,"author Escape hid Books");
-   click(find(host.contentItem,"booksScanButton"));input.wait(40);
+   click(find(host.contentItem,"booksLibraryTab"));root.step=20;return;
+  }
+  if(root.step===20){
+   click(find(host.contentItem,"booksRefreshButton"));input.wait(40);
    check(page.tab==="scan"&&find(page,"booksScan").visible,"scan inaccessible");
    host.escapeHandler();check(host.opened&&page.tab==="overview","scan Escape hid Books");
+   click(find(host.contentItem,"booksBrowseTab"));root.step=21;return;
+  }
+  if(root.step===21){
    page.downloadOffer({title:"Fixture download"});root.retained=page;
    host.dismiss();check(SpaceState.runningIds.includes("books")&&!page.active,"hide destroyed Books");
    check(!find(host.contentItem,"booksLoadingIndicator").running,"hidden toolbar spinner kept running");
-   root.step++;return;
+   root.step=4;return;
   }
   if(root.step===4){
    const service=Array.from(root.retained.data).find(item=>item.objectName==="booksService");

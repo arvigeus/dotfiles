@@ -43,7 +43,7 @@ ColumnLayout {
                 return;
             }
             review = result.review;
-            info = result.imported.length + " added to Local; " + result.review.length + " need a catalogue match." + (result.limited ? " Scan stopped after 500 files." : "") + (result.warning ? " " + result.warning : "");
+            info = result.imported.length + " added to your library; " + result.review.length + " need a catalogue match." + (result.limited ? " Scan stopped after 500 files." : "") + (result.warning ? " " + result.warning : "");
             if (result.imported.length)
                 imported();
         });
@@ -120,7 +120,7 @@ ColumnLayout {
             });
             current = ({});
             matches = [];
-            info = "Added " + title.title + " to Local. " + review.length + " files still need a match.";
+            info = "Added " + title.title + " to your library. " + review.length + " files still need a match.";
             imported();
         });
     }
@@ -135,22 +135,24 @@ ColumnLayout {
         }
     }
 
-    MovieText {
-        Layout.fillWidth: true
-        text: "Scan completed qBittorrent downloads and your " + (kind === "movie" ? "Movies" : kind === "tv" ? "Series" : "Local") + " folder. Choose a folder or file only to scan somewhere else. Exact catalogue matches are organized automatically; other files wait for review."
-        wrapMode: Text.Wrap
-        color: MovieStyle.muted
-    }
-
     RowLayout {
         Layout.fillWidth: true
 
         MovieInput {
             id: pathField
 
+            objectName: "scanPath"
             Layout.fillWidth: true
             placeholderText: "Optional folder or file"
+            Accessible.name: "Folder or file to scan"
+            Accessible.description: "Leave empty to scan completed downloads and your " + (root.kind === "movie" ? "Movies" : root.kind === "tv" ? "Series" : root.kind === "book" ? "Books" : "local media") + " folder."
             onAccepted: root.scan()
+
+            PassiveToolTip {
+                target: pathField
+                text: pathField.Accessible.description
+                maximumLineCount: 3
+            }
         }
 
         MovieButton {

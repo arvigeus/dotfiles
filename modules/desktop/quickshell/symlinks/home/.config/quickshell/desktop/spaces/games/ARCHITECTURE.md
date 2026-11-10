@@ -31,11 +31,12 @@ implementation. The IGDB mark comes from
 [Simple Icons](https://github.com/simple-icons/simple-icons/blob/develop/icons/igdb.svg),
 as does the [GOG.com mark](https://github.com/simple-icons/simple-icons/blob/develop/icons/gogdotcom.svg).
 
-The library, discovery, favorites, genre/platform/year/order filters, exact store
-matching, ProtonDB, install/play/uninstall, imported local files and qBittorrent
-workflows are retained. Library is the default so installed games work without
-IGDB credentials. Local imports are files, not installed launcher entries; they
-open in the file manager and never execute automatically. The shared torrent and
+The top-level tabs are My Library, Browse and Favorites. Library is the default
+so installed games work without IGDB credentials. Genre/platform/year/order
+filters, exact store matching, ProtonDB, install/play/uninstall, imported local
+files and qBittorrent workflows are available from these views. Local imports
+are files, not installed launcher entries; each game's folder button opens them
+in the file manager and never executes them automatically. The shared torrent and
 local-library implementation uses the Games storage namespace and `game` kind.
 
 [Game Glance](https://github.com/michpalm/game-glance) informed the title-logo,
@@ -225,7 +226,8 @@ owned worker as usual.
 
 QML keeps the returned page separately from its visible catalogue and patches rows
 in place unless a game's visibility changes. The Filters button opens the
-inline header group used by Movies and Books. NSFW is available there in Library,
+inline header group used by Movies and Books. The All games/Installed/Owned
+dropdown is part of that group in Library. NSFW is available there in Library,
 Browse and Favorites without catalogue credentials; genre, platform, sort and year
 fields with Apply/Reset appear only in configured Browse. The inverse toggle value
 persists as `catalogue/hideNsfw` in `games-ui.ini`. The toggle's tooltip counts

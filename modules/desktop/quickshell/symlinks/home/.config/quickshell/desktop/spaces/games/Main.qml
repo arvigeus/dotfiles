@@ -116,11 +116,7 @@ Item {
         monitorKind: "game"
         monitorJobs: true
         foreground: root.active
-        onLibraryChanged: {
-            if (root.mode === "local")
-                root.browse(false);
-            root.loadLocalFiles();
-        }
+        onLibraryChanged: root.loadLocalFiles()
     }
     ArtworkCache {
         id: artCache
@@ -361,25 +357,6 @@ Item {
             nextOffset = 0;
             contentQueue = [];
         }
-        if (mode === "local") {
-            service.request("local_list", {}, (result, failure) => {
-                if (generation !== browseGeneration)
-                    return;
-                loading = false;
-                setupRequired = false;
-                if (failure) {
-                    error = failure;
-                    return;
-                }
-                const query = search.text.trim().toLowerCase();
-                updateCatalogue((result || []).filter(game => !query || game.title.toLowerCase().includes(query)), false);
-                if (titles.length)
-                    selectGame(titles.find(game => game.id === selected.id) || titles[0]);
-                else
-                    clearSelection();
-            });
-            return;
-        }
         service.request(mode === "library" ? "library_games" : "browse", {
             query: search.text,
             offset: offset,
@@ -454,10 +431,6 @@ Item {
         if (!active || !selected.id)
             return;
         loadLocalFiles();
-        if (mode === "local" && selected.local) {
-            detailLoading = false;
-            return;
-        }
         // Refresh, install completion and match edits can re-hydrate the same
         // game; only the newest hydration may apply its responses.
         const selection = selectionGeneration;
@@ -565,8 +538,7 @@ Item {
             }
             catalogState = result.catalog;
             browse(false, true);
-            if (mode !== "local")
-                hydrateSelection(true);
+            hydrateSelection(true);
         });
     }
     function execute(action) {
@@ -778,7 +750,7 @@ Item {
         spacing: 8
         MovieTab {
             objectName: "libraryTab"
-            text: "My library"
+            text: "My Library"
             iconName: "gamepad-2"
             highlighted: root.mode === "library"
             onClicked: root.showMode("library")
@@ -796,22 +768,6 @@ Item {
             iconName: "star"
             highlighted: root.mode === "favorites"
             onClicked: root.showMode("favorites")
-        }
-        MovieTab {
-            text: "Local"
-            iconName: "folder-open"
-            highlighted: root.mode === "local"
-            onClicked: root.showMode("local")
-        }
-        MovieChoice {
-            id: libraryChoice
-            visible: root.mode === "library"
-            model: ["All games", "Installed", "Owned"]
-            Accessible.name: "Library filter"
-            onActivated: {
-                root.libraryFilter = ["all", "installed", "owned"][currentIndex];
-                root.browse(false);
-            }
         }
         Item {
             Layout.fillWidth: true
@@ -840,6 +796,16 @@ Item {
             Row {
                 id: filterFields
                 spacing: 8
+                MovieChoice {
+                    id: libraryChoice
+                    visible: root.mode === "library"
+                    model: ["All games", "Installed", "Owned"]
+                    Accessible.name: "Library filter"
+                    onActivated: {
+                        root.libraryFilter = ["all", "installed", "owned"][currentIndex];
+                        root.browse(false);
+                    }
+                }
                 MovieButton {
                     id: nsfwFilter
                     objectName: "gameContentFilter"
@@ -981,7 +947,6 @@ Item {
             objectName: "gameFiltersButton"
             iconName: "sliders-horizontal"
             text: "Filters"
-            enabled: root.mode !== "local"
             highlighted: root.filtersOpen
             onClicked: {
                 root.filtersOpen = !root.filtersOpen;
@@ -1003,8 +968,8 @@ Item {
         }
         MovieIconButton {
             objectName: "catalogueLayoutToggle"
-            iconName: root.gridMode ? "list" : "layout-grid"
-            text: root.gridMode ? "Poster rail" : "Poster grid"
+            iconName: root.gridMode ? "panels-top-left" : "layout-grid"
+            text: root.gridMode ? "Show poster rail" : "Show grid"
             onClicked: {
                 root.gridMode = !root.gridMode;
                 preferences.setValue("catalogue/grid", root.gridMode);
@@ -1224,7 +1189,6 @@ Item {
                     }
                     MovieIconButton {
                         objectName: "gameFavorite"
-                        visible: !root.selected.local
                         text: root.selected.favorite ? "Remove favorite" : "Add favorite"
                         iconName: root.selected.favorite ? "star-filled" : "star"
                         highlighted: !!root.selected.favorite
@@ -1366,11 +1330,7 @@ Item {
                         kind: "game",
                         year: (root.selected.releaseDate || "").slice(0, 4)
                     })
-                    onImported: {
-                        root.loadLocalFiles();
-                        if (root.mode === "local")
-                            root.browse(false);
-                    }
+                    onImported: root.loadLocalFiles()
                 }
             }
             ColumnLayout {
@@ -1394,7 +1354,7 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.Wrap
                     color: MovieStyle.muted
-                    text: root.setupRequired ? "Add igdb_client_id and igdb_client_secret to " + (root.catalogState.configPath || "games.json") + ". My library works without catalogue credentials." : root.hideNsfw && root.allTitles.length ? "Games labelled NSFW, or still being classified, are hidden. Enable NSFW in Filters to show them." : root.mode === "library" ? "Install a Steam game, sign in with legendary auth for Epic, or sign into GOG in Heroic, then refresh your libraries." : root.mode === "favorites" ? "Save games with the Favorite button." : root.mode === "local" ? "Find a local copy from a game in Browse. Imported files open in your file manager." : "Try another search or change the filters."
+                    text: root.setupRequired ? "Add igdb_client_id and igdb_client_secret to " + (root.catalogState.configPath || "games.json") + ". My library works without catalogue credentials." : root.hideNsfw && root.allTitles.length ? "Games labelled NSFW, or still being classified, are hidden. Enable NSFW in Filters to show them." : root.mode === "library" ? "Install a Steam game, sign in with legendary auth for Epic, or sign into GOG in Heroic, then refresh your libraries." : root.mode === "favorites" ? "Save games with the Favorite button." : "Try another search or change the filters."
                 }
                 MovieButton {
                     Layout.alignment: Qt.AlignHCenter

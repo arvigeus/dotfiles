@@ -6,8 +6,10 @@
 surface and controls as Radio. A fresh instance opens My Library, all songs, with
 no filters. Tabs preserve in-memory queries, navigation, results and scroll.
 The general search filters songs; `MusicPicker.qml` owns searchable, virtualized
-artist/album/playlist menus, grouped with Genres behind My Library’s filter button. Library pickers read indexed metadata immediately;
-Discover pickers wait for two query characters and search Apple dynamically.
+artist/album/playlist menus. Artist and album pickers are grouped with Genres
+behind the filter button in both tabs; playlists are library-only.
+Library pickers read indexed metadata immediately;
+Browse pickers wait for two query characters and search Apple dynamically.
 Artist pages enrich their header independently of song reads, first from
 Subsonic `getArtistInfo2`, then Apple when needed. Enrichment never changes the
 library identity or playback source. Songs and Albums remain separate views.
@@ -185,7 +187,7 @@ A cached file changes its local name as part of the action; an uncached song mov
 on the server without downloading. Baselines and pending catalogue associations
 follow the move. Filesystem changes never infer remote moves or deletes.
 
-## Discover providers and playback
+## Browse providers and playback
 
 `backend.py` owns Apple catalogue searches, artist/album expansion, lyrics,
 provider matching, downloads and player IPC. `records.py` normalizes provider
@@ -234,7 +236,7 @@ collisions with numbered names, and register finished files locally. This does
 not imply the original stream was lossless. Album jobs report partial failures.
 
 `MusicPlayback.qml` owns one mpv process, MPRIS identity, queue and IPC socket.
-Local Music is preferred. Uncached Nextcloud songs and configured Discover
+Local Music is preferred. Uncached Nextcloud songs and configured Browse
 providers use `cloud_stream.py`'s owned loopback gateway. Only temporary track
 capabilities reach QML, mpv and FFmpeg. Nextcloud uses authenticated POST/range
 requests with redirects disabled. Provider headers and signed URLs remain in

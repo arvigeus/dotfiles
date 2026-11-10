@@ -27,6 +27,18 @@ visibility to page activation, since its visual parent is the host. Drawer entri
 use only their close X to indicate a running instance.
 Do not put the backdrop back inside that inset content area.
 
+Catalogue Spaces use underlined `MovieTab` navigation: My Library, Browse and
+Favorites where supported. The right-hand actions start with Search, Filters and
+Refresh, followed by transfer/activity and layout controls where applicable.
+Movies, TV Series and Books use Refresh in My Library to toggle the existing
+scan/review panel; scanning remains an explicit action with an optional path.
+Its default-path guidance lives in the path input's tooltip and accessible
+description. Browse Refresh bypasses the saved catalogue response while retaining
+the query and filters; Favorites Refresh rereads saved favorites. Movies and
+Series skip the initial snapshot on explicit refresh, retaining their displayed
+results until the current request settles; provider failures can still return
+the backend's saved catalogue with an offline warning.
+
 Movies deliberately has one cinematic dark appearance in both desktop modes:
 near-black surfaces, white text, saturated red primary actions, ghost secondary
 controls and red underlines on active tabs. `MovieStyle.qml` owns these colors;
@@ -131,7 +143,7 @@ local-file inventory, favorites and playback resolution always reach the worker.
 The SQLite cache keeps provider responses across instance/shell restarts. Each
 metadata worker start drops responses older than 30 days, except title records
 used by a personal row (favorite, note, URL) or a local file: favorites and the
-Local view are built from them. Never clear title records as artwork-cache
+My Library view are built from them. Never clear title records as artwork-cache
 maintenance.
 
 ## Workers and persistence
@@ -156,7 +168,8 @@ temporary files on worker close. `local.publish()` and `place()` use a hard link
 or `renameat2(RENAME_NOREPLACE)` where the filesystem has none (vfat, exFAT);
 subtitle writes and Music downloads use the same primitives. Each torrent job's
 `torrent-locks/` file serializes imports across workers and is removed once the
-job is imported or needs review. Interrupted indexing can be recovered by Scan.
+job is imported or needs review. Interrupted indexing can be recovered through
+My Library's Refresh scanner.
 Scan walks visible folders only and skips samples, `-trailer` files and
 Extras/Samples/Trailers folders. `movie.nfo` identifies only its folder's single
 feature; `tvshow.nfo` may sit one level above Season folders.

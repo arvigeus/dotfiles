@@ -204,6 +204,10 @@ FocusScope {
         if (closePopup(toolbar) || closePopup(root))
             return true;
 
+        if (scanOpen) {
+            scanOpen = false;
+            return true;
+        }
         if (searchOpen) {
             searchOpen = false;
             search.text = "";
@@ -337,7 +341,7 @@ FocusScope {
         event.accepted = false;
     }
 
-    function browse(append, keepSelection) {
+    function browse(append, keepSelection, refresh) {
         if (!append && !keepSelection)
             linkedTitleId = "";
 
@@ -398,7 +402,7 @@ FocusScope {
         const generation = ++browseGeneration;
         loading = true;
         error = "";
-        if (!append)
+        if (!append && !refresh)
             service.fetch("snapshot", {
                 "kind": kind,
                 "query": search.text,
@@ -421,7 +425,8 @@ FocusScope {
             "query": search.text,
             "filters": filters,
             "favorites": favorites,
-            "page": append ? nextPage : ""
+            "page": append ? nextPage : "",
+            "refresh": !!refresh
         }, (result, failure) => {
             if (generation !== browseGeneration)
                 return;
@@ -1030,9 +1035,10 @@ FocusScope {
         visible: root.active
         spacing: 8
 
-        MovieButton {
+        MovieTab {
+            objectName: "mediaLibraryTab"
             iconName: "folder-open"
-            text: "Local"
+            text: "My Library"
             highlighted: root.localMode
             onClicked: {
                 root.localMode = true;
@@ -1042,7 +1048,8 @@ FocusScope {
             }
         }
 
-        MovieButton {
+        MovieTab {
+            objectName: "mediaBrowseTab"
             iconName: "globe"
             text: "Browse"
             highlighted: !root.localMode && !root.favorites
@@ -1054,7 +1061,8 @@ FocusScope {
             }
         }
 
-        MovieButton {
+        MovieTab {
+            objectName: "mediaFavoritesTab"
             iconName: "star"
             text: "Favorites"
             highlighted: !root.localMode && root.favorites
@@ -1064,14 +1072,6 @@ FocusScope {
                 root.scanOpen = false;
                 root.browse(false);
             }
-        }
-
-        MovieButton {
-            visible: root.localMode
-            iconName: "file-search-corner"
-            text: "Scan"
-            highlighted: root.scanOpen
-            onClicked: root.scanOpen = !root.scanOpen
         }
 
         Item {
@@ -1311,6 +1311,24 @@ FocusScope {
         }
 
         MovieIconButton {
+            objectName: "refreshButton"
+            Layout.minimumWidth: 42
+            Layout.maximumWidth: 42
+            iconName: "refresh-cw"
+            text: root.localMode ? "Refresh library" : "Refresh catalogue"
+            highlighted: root.localMode && root.scanOpen
+            enabled: root.localMode || !root.loading
+            onClicked: {
+                if (root.localMode)
+                    root.scanOpen = !root.scanOpen;
+                else {
+                    searchDelay.stop();
+                    root.browse(false, true, true);
+                }
+            }
+        }
+
+        MovieIconButton {
             objectName: "catalogueLayoutToggle"
             Layout.minimumWidth: 42
             Layout.maximumWidth: 42
@@ -1352,6 +1370,7 @@ FocusScope {
             LocalScan {
                 id: scanPanel
 
+                objectName: "mediaScan"
                 showStatus: false
                 showLoading: false
                 service: localService

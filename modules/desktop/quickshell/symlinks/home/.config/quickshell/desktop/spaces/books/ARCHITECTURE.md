@@ -14,6 +14,10 @@ leaving a missing column. One toolbar spinner covers catalogue, details, provide
 author, edition, Find and scan requests; nested spinners are disabled. Author
 profiles and editions remain separate views. The presentation
 uses the same immersive palette in both desktop theme modes.
+My Library, Browse and Favorites use the shared underlined tabs. The right-hand
+Refresh action toggles scan/review in My Library and forces a catalogue read in
+Browse; transfer activity sits beside it. See the
+[shared header contract](../movies/ARCHITECTURE.md#presentation-contract).
 
 Open restores one lazy instance. Hide retains selections, search/filter drafts,
 layout and jobs. It stops search debounce, pagination, delayed detail loads and

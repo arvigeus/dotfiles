@@ -15,7 +15,7 @@ one, otherwise it opens the series page.
 For downloads, configure the shared `~/.config/quickshell/desktop/integrations/torrents.json`
 using the [qBittorrent example](../../integrations/torrents.example.json) (mode 0600 when it
 holds a password or API key). Enable its Web UI
-and search plugins. **Local → Scan** organizes existing episodes under
+and search plugins. **My Library → Refresh** opens the scanner for existing episodes under
 `Videos/Series` (or your XDG Videos directory), skipping hidden folders, samples
 and trailers. Held local deletion removes the
 whole season folder; torrent deletion removes the associated torrent and all its

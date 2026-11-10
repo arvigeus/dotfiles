@@ -41,7 +41,8 @@ Steam's custom title/hero artwork takes priority. When HowLongToBeat has no matc
 click its clock to enter a game link or ID. Estimates
 and descriptions stay available offline after their first successful lookup.
 
-**Find** uses qBittorrent search and imports completed game files into **Local**.
+**Find** uses qBittorrent search and imports completed game files. Use the game's
+folder button to open its imported files.
 Configure the shared `~/.config/quickshell/desktop/integrations/torrents.json` using the
 [connection example](../../integrations/torrents.example.json); the managed local client
 only needs `{"url":"http://127.0.0.1:8080"}`; keep the file mode 0600 if you add a

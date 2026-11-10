@@ -893,7 +893,7 @@ Item {
         }
         MovieTab {
             objectName: "musicDiscoverTab"
-            text: "Discover"
+            text: "Browse"
             iconName: "globe"
             highlighted: root.section === "discover"
             onClicked: root.changeSection("discover")
@@ -946,7 +946,7 @@ Item {
         MovieButton {
             id: artistPicker
             objectName: "musicArtists"
-            visible: !root.entity && (root.section !== "library" || root.filtersOpen)
+            visible: !root.entity && root.filtersOpen
             text: "Artists"
             onClicked: {
                 picker.parent = artistPicker;
@@ -956,7 +956,7 @@ Item {
         MovieButton {
             id: albumPicker
             objectName: "musicAlbums"
-            visible: !root.entity && (root.section !== "library" || root.filtersOpen)
+            visible: !root.entity && root.filtersOpen
             text: "Albums"
             onClicked: {
                 picker.parent = albumPicker;
@@ -989,7 +989,7 @@ Item {
             visible: root.searchOpen
             Layout.preferredWidth: Math.min(280, root.width * 0.23)
             Layout.minimumWidth: 90
-            placeholderText: root.entity ? "Search this " + root.entity.kind + "…" : root.section === "library" ? "Search My Library…" : "Search Discover…"
+            placeholderText: root.entity ? "Search this " + root.entity.kind + "…" : root.section === "library" ? "Search My Library…" : "Search music…"
             Accessible.name: "Search music"
             onTextChanged: if (root.initialized && !root.restoringView) {
                 if (root.active)
@@ -1036,6 +1036,13 @@ Item {
             }
         }
         MovieIconButton {
+            objectName: "musicRefresh"
+            iconName: "refresh-cw"
+            text: "Refresh music"
+            enabled: !root.loading
+            onClicked: root.initialized ? root.browse(false, true) : root.initialize()
+        }
+        MovieIconButton {
             objectName: "musicPendingFilter"
             visible: root.section === "library" && !root.entity
             iconName: "upload"
@@ -1052,13 +1059,6 @@ Item {
             text: "Notifications"
             highlighted: activity.activeCount > 0
             onClicked: activity.visible ? activity.close() : activity.showActivity()
-        }
-        MovieIconButton {
-            objectName: "musicRefresh"
-            iconName: "refresh-cw"
-            text: "Refresh music"
-            enabled: !root.loading
-            onClicked: root.initialized ? root.browse(false, true) : root.initialize()
         }
     }
 
