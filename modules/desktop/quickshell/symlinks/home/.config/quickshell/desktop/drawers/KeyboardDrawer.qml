@@ -26,6 +26,13 @@ DrawerPage {
     property var shortcutRows: []
     property string shortcutError: ""
     property bool shortcutsBusy: false
+    readonly property var filteredShortcutRows: {
+        const terms = shortcutSearch.text.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        return shortcutRows.filter(row => {
+            const text = (row.keys + " " + row.description).toLowerCase();
+            return terms.every(term => text.includes(term));
+        });
+    }
     readonly property var languages: [
         {
             code: "en",
@@ -420,13 +427,15 @@ DrawerPage {
         x: root.referenceAnchor ? root.mapToItem(parent, 0, 0).x : 0
         y: root.referenceAnchor ? parent.height + 4 : 0
         width: root.width
-        height: Math.max(0, Math.min(referenceScroll.contentHeight + tabs.implicitHeight + 36, 700, (Overlay.overlay?.height ?? root.height) - 16))
+        height: Math.max(0, Math.min(referenceScroll.contentHeight + tabs.implicitHeight + (shortcutSearch.visible ? shortcutSearch.implicitHeight + 12 : 0) + 36, 700, (Overlay.overlay?.height ?? root.height) - 16))
         padding: 12
         margins: 8
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
         onOpened: {
             tabs.currentIndex = 0;
+            shortcutSearch.clear();
+            shortcutSearch.forceActiveFocus(Qt.PopupFocusReason);
             root.refreshShortcuts();
         }
         onClosed: {
@@ -469,6 +478,16 @@ DrawerPage {
                     text: qsTr("Phonetic")
                     Accessible.name: qsTr("Bulgarian phonetic map")
                 }
+            }
+            InputField {
+                id: shortcutSearch
+                objectName: "keyboardShortcutSearch"
+                visible: tabs.currentIndex === 0
+                Layout.fillWidth: true
+                placeholderText: qsTr("Search shortcuts")
+                clearAccessibleName: qsTr("Clear shortcut search")
+                onTextChanged: if (referenceScroll.contentItem)
+                    referenceScroll.contentItem.contentY = 0
             }
             DrawerColumn {
                 id: referenceScroll
@@ -633,8 +652,13 @@ DrawerPage {
                         visible: !root.shortcutsBusy && root.shortcutError === "" && root.shortcutRows.length === 0
                         text: qsTr("No active keyboard bindings.")
                     }
+                    Note {
+                        objectName: "keyboardShortcutsNoMatches"
+                        visible: root.shortcutError === "" && root.shortcutRows.length > 0 && root.filteredShortcutRows.length === 0
+                        text: qsTr("No shortcuts match this search.")
+                    }
                     Repeater {
-                        model: root.shortcutRows
+                        model: root.filteredShortcutRows
                         delegate: RowLayout {
                             required property var modelData
                             Layout.fillWidth: true

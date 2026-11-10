@@ -774,7 +774,11 @@ class BarNavigationTests(unittest.TestCase):
         self.assertCountEqual(
             hyprland.dispatches,
             [
-                'hl.dsp.focus({window = "address:0xa2"})',
+                'function()'
+                ' hl.dispatch(hl.dsp.focus({window = "address:0xa2"}))'
+                ' hl.dispatch(hl.dsp.layout("center"))'
+                ' hl.dispatch(hl.dsp.event("desktop-layout-changed"))'
+                ' end',
                 'function() DesktopWorkspaces.step(1, 0) end',
                 'function() DesktopWorkspaces.step(-1, 7) end',
             ],

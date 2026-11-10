@@ -19,6 +19,7 @@
         "mpvpaper",
         "python",
         "ffmpeg",
+        "whisper-cpp",
         "mpv",
         "mpv-mpris",
         "python-requests",
@@ -33,7 +34,8 @@
             "cliphist@image.service"
         ],
         "aur_packages": [
-            "wallpiper-hyprland"
+            "wallpiper-hyprland",
+            "voxtype-bin"
         ]
     }
 }

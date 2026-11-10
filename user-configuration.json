@@ -191,6 +191,7 @@
             "pi-coding-agent-bin",
             "arkenfox-user.js",
             "wallpiper-hyprland",
+            "voxtype-bin",
             "legendary",
             "librespeed-cli-bin",
             "cloudflare-warp-nox-bin",
@@ -1869,6 +1870,10 @@
                 "target": "home/.config/quickshell/desktop/drawers/capture/CaptureService.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/DictationService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/capture/DictationService.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/WebcamCard.qml",
                 "target": "home/.config/quickshell/desktop/drawers/capture/WebcamCard.qml"
             },
@@ -1885,12 +1890,20 @@
                 "target": "home/.config/quickshell/desktop/drawers/capture/WebcamService.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/dictation.toml",
+                "target": "home/.config/quickshell/desktop/drawers/capture/dictation.toml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/qmldir",
                 "target": "home/.config/quickshell/desktop/drawers/capture/qmldir"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/recorder.py",
                 "target": "home/.config/quickshell/desktop/drawers/capture/recorder.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/speech.py",
+                "target": "home/.config/quickshell/desktop/drawers/capture/speech.py"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/webcam.py",
@@ -3585,6 +3598,10 @@
                 "target": "home/.config/quickshell/desktop/ui/SearchInput.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/SearchableChoice.qml",
+                "target": "home/.config/quickshell/desktop/ui/SearchableChoice.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/ShellButton.qml",
                 "target": "home/.config/quickshell/desktop/ui/ShellButton.qml"
             },
@@ -3803,6 +3820,7 @@
         "mpvpaper",
         "python",
         "ffmpeg",
+        "whisper-cpp",
         "mpv",
         "mpv-mpris",
         "python-requests",

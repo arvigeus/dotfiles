@@ -1,5 +1,5 @@
 [Unit]
-Description=Desktop screen recording controls
+Description=Desktop screen and speech capture controls
 Requires=desktop-capture.socket
 After=desktop-capture.socket graphical-session.target
 PartOf=graphical-session.target
@@ -8,7 +8,8 @@ ConditionEnvironment=WAYLAND_DISPLAY
 
 [Service]
 Type=exec
+UMask=0077
 ExecStart=/usr/bin/python3 "%E/quickshell/desktop/drawers/capture/recorder.py"
 Slice=session.slice
 KillMode=mixed
-TimeoutStopSec=20s
+TimeoutStopSec=25s

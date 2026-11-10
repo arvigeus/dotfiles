@@ -69,6 +69,22 @@ It continues through shell reloads and saves when the graphical session ends.
 Win+Shift+R selects an area when idle and stops an active recording. Webcam tests
 stop on drawer dismissal; privacy controls depend on camera support.
 
+**Transcribe** converts microphone audio to text locally and copies it to the
+clipboard; **Win+Shift+D** starts and finishes capture. Its menu also offers
+automatic paste, audio recording and transcription of existing audio/video files.
+Language selection is searchable. Whisper Small (466 MB) is the default model;
+larger models use more memory and take longer to process. Download a selected
+model once, with progress in a notification; subsequent use works offline. Short
+clips and background noise can reduce accuracy.
+
+Voice recordings save as WAV in Music/Recordings. Dictation is limited to two
+minutes; saved audio and imported files to 30 minutes. Auto-paste applies to
+microphone transcription and skips insertion if focus changed or a shell surface
+is open. File transcripts copy to the clipboard. Results and errors arrive as
+notifications without reopening Capture.
+Muted inputs offer **Unmute and transcribe** and return to mute when recording
+stops. Unavailable inputs offer a button to open microphone controls.
+
 Clipboard history is local and limited to 50 items. Pause collection before
 copying sensitive data. Pausing survives shell reloads and resets at the next
 login. It does not remove existing history.
@@ -132,7 +148,7 @@ Keep awake is temporary, per display, and pauses automatic locking/suspend too.
 The keyboard offers English, Bulgarian phonetic and Vietnamese Telex. Alt+Shift
 switches English and the selected secondary language. Lighting controls depend
 on hardware; the lowest brightness is off. Its info menu shows language maps
-and current Hyprland shortcuts. See [Logitech backlighting](../../hardware/peripherals/logitech/README.md).
+and searchable Hyprland shortcuts. See [Logitech backlighting](../../hardware/peripherals/logitech/README.md).
 
 ## Time, calendar and notifications
 

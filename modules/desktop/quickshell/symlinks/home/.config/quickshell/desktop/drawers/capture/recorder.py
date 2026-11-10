@@ -102,14 +102,17 @@ def recording_command(source, path, options, ipc):
     return command
 
 
-def check_microphone():
-    default = subprocess.run(
-        ['pactl', 'get-default-source'],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=3,
-    ).stdout.strip()
+def check_microphone(name=None):
+    default = (
+        name
+        or subprocess.run(
+            ['pactl', 'get-default-source'],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        ).stdout.strip()
+    )
     sources = json.loads(
         subprocess.run(
             ['pactl', '--format=json', 'list', 'sources'],
@@ -129,6 +132,22 @@ def check_microphone():
         raise ValueError(
             'No microphone is available. Connect one or turn off Microphone before recording.'
         )
+    return source
+
+
+def set_microphone_mute(source, muted):
+    current = check_microphone(source['name'])
+    if current['index'] != source['index'] or any(
+        current.get('properties', {}).get(key) != source.get('properties', {}).get(key)
+        for key in ('object.serial', 'device.serial')
+    ):
+        raise ValueError('The microphone changed. Start transcription again.')
+    subprocess.run(
+        ['pactl', 'set-source-mute', str(source['index']), '1' if muted else '0'],
+        check=True,
+        capture_output=True,
+        timeout=3,
+    )
 
 
 class Recorder:
@@ -338,10 +357,24 @@ def listener(endpoint):
 
 
 def serve():
+    from speech import Speech
+
     endpoint = runtime_dir() / 'control.sock'
     server, owned = listener(endpoint)
     server.setblocking(False)
     recorder = Recorder()
+    speech = Speech(
+        runtime_dir(),
+        config_dir() / 'speech.json',
+        location('music') / 'Recordings',
+        atomic_write,
+        check_microphone,
+        set_microphone_mute,
+    )
+
+    def snapshot():
+        return dict(recorder.snapshot(), speech=speech.snapshot())
+
     selector = selectors.DefaultSelector()
     selector.register(server, selectors.EVENT_READ)
     wake, writer = socket.socketpair()
@@ -398,19 +431,33 @@ def serve():
         while b'\n' in buffer:
             line, _, rest = buffer.partition(b'\n')
             buffer[:] = rest
+            request = {}
             try:
                 request = json.loads(line)
                 if not isinstance(request, dict):
                     raise ValueError('Expected a recording command object.')
-                recorder.request(request)
+                if str(request.get('op', '')).startswith('speech-'):
+                    speech.request(request)
+                else:
+                    recorder.request(request)
             except (
                 ValueError,
                 OSError,
                 TypeError,
                 subprocess.SubprocessError,
             ) as error:
-                recorder.error = str(error)
-            queue(connection, recorder.snapshot(), reply=True)
+                if isinstance(request, dict) and str(request.get('op', '')).startswith(
+                    'speech-'
+                ):
+                    speech.fail(
+                        str(error),
+                        'Speech model download failed'
+                        if request['op'] == 'speech-setup'
+                        else 'Speech capture failed',
+                    )
+                else:
+                    recorder.error = str(error)
+            queue(connection, snapshot(), reply=True)
             if connection not in clients:
                 return
         if not data or len(buffer) > 8192:
@@ -419,13 +466,19 @@ def serve():
     idle_since = time.monotonic()
     try:
         while not stopping:
-            if recorder.process or clients:
+            if recorder.process or speech.keep_alive or clients:
                 idle_since = time.monotonic()
             elif not owned and time.monotonic() - idle_since >= IDLE_EXIT:
                 # Queued connections stay in systemd's socket and restart the service.
                 break
             timeout = (
-                0.25 if recorder.process else None if owned or clients else IDLE_EXIT
+                0.1
+                if recorder.process or speech.phase != 'idle'
+                else 1
+                if speech.keep_alive
+                else None
+                if owned or clients
+                else IDLE_EXIT
             )
             for key, events in selector.select(timeout):
                 connection = key.fileobj
@@ -437,7 +490,7 @@ def serve():
                     except BlockingIOError:
                         continue
                     client.setblocking(False)
-                    clients[client] = Client(json.dumps(recorder.snapshot()))
+                    clients[client] = Client(json.dumps(snapshot()))
                     selector.register(client, selectors.EVENT_READ)
                 else:
                     if events & selectors.EVENT_WRITE and connection in clients:
@@ -445,14 +498,16 @@ def serve():
                     if events & selectors.EVENT_READ and connection in clients:
                         receive(connection)
             recorder.tick()
-            snapshot = recorder.snapshot()
-            state = json.dumps(snapshot)
+            speech.tick()
+            current = snapshot()
+            state = json.dumps(current)
             for connection, client in list(clients.items()):
                 # A backlogged reader gets only the newest state once it drains.
                 if client.state != state and not client.output:
-                    queue(connection, snapshot)
+                    queue(connection, current)
     finally:
         recorder.close()
+        speech.close()
         for connection in list(clients):
             disconnect(connection)
         if owned:

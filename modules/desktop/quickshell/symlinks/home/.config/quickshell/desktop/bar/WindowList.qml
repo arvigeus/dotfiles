@@ -94,7 +94,7 @@ Surface {
         if (!/^(0x)?[0-9a-f]+$/i.test(toplevel.address))
             return;
         const address = toplevel.address.replace(/^0x/i, "");
-        Hyprland.dispatch('hl.dsp.focus({window = "address:0x' + address + '"})');
+        Hyprland.dispatch('function() hl.dispatch(hl.dsp.focus({window = "address:0x' + address + '"})) hl.dispatch(hl.dsp.layout("center")) hl.dispatch(hl.dsp.event("desktop-layout-changed")) end');
     }
 
     implicitWidth: Math.min(available, windows.length * tabWidth + Math.max(0, windows.length - 1) * Theme.spacingSmall)

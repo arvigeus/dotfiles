@@ -10,13 +10,15 @@ import "capture"
 DrawerPage {
     id: root
     property var service: CaptureService
+    property var dictation: DictationService
     property var webcams: visibleWebcams(devices.videoInputs)
     property var openCamera: null
     property var outputs: Quickshell.screens
     readonly property string selectedOutput: outputs.some(output => output.name === service.output) ? service.output : screen?.name ?? outputs[0]?.name ?? ""
     readonly property alias screenshotMenu: timing
     readonly property alias recordingMenu: recordingOptions
-    escapeHandler: timing.visible || recordingOptions.visible || !!openCamera?.settingsOpen ? () => {
+    readonly property alias speechMenu: speechOptions
+    escapeHandler: timing.visible || recordingOptions.visible || speechOptions.visible || !!openCamera?.settingsOpen ? () => {
         closePopovers();
         return true;
     } : null
@@ -30,6 +32,7 @@ DrawerPage {
     function closePopovers(): void {
         timing.close();
         recordingOptions.close();
+        speechOptions.close();
         openCamera?.closeSettings();
         openCamera = null;
     }
@@ -348,6 +351,144 @@ DrawerPage {
                         }
                     }
                 }
+                CaptureButton {
+                    id: speechButton
+                    objectName: "captureSpeech"
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    text: root.dictation.waitingForMicrophone ? qsTr("Cancel") : root.dictation.recording ? qsTr("Stop") : root.dictation.options.mode === "audio" ? qsTr("Record audio") : qsTr("Transcribe")
+                    iconName: root.dictation.waitingForMicrophone ? "x" : root.dictation.recording ? "square" : "mic"
+                    hint: root.dictation.waitingForMicrophone ? qsTr("Cancel transcription request") : root.dictation.recording ? root.dictation.options.mode === "audio" ? qsTr("Save audio recording") : qsTr("Stop recording and transcribe") : root.dictation.options.mode === "audio" ? qsTr("Record microphone audio to a WAV file") : !root.dictation.modelReady ? qsTr("Download %1 · %2").arg(root.dictation.selectedModel.name).arg(root.dictation.selectedModel.size) : root.dictation.options.paste ? qsTr("Record, transcribe, and paste into the current app") : qsTr("Record and transcribe to the clipboard")
+                    highlighted: root.dictation.recording
+                    actionEnabled: root.active && root.dictation.ready && !root.dictation.pending && !root.dictation.preparing && !root.dictation.processing
+                    optionsEnabled: root.active
+                    onClicked: {
+                        root.closePopovers();
+                        root.dictation.toggle();
+                    }
+                    onOptionsClicked: {
+                        if (speechOptions.visible)
+                            speechOptions.close();
+                        else {
+                            root.closePopovers();
+                            speechOptions.open();
+                        }
+                    }
+                    InfoPopover {
+                        id: speechOptions
+                        objectName: "captureSpeechPopup"
+                        button: speechButton.menuButton
+                        active: root.active
+                        width: Math.min(300, Math.max(0, (Overlay.overlay?.width ?? 416) - 16))
+                        padding: 6
+                        contentSpacing: 2
+                        Heading {
+                            text: qsTr("Action")
+                            Layout.margins: 6
+                        }
+                        ShellChoice {
+                            objectName: "speechOutput"
+                            Layout.fillWidth: true
+                            model: [qsTr("Transcribe to clipboard"), qsTr("Transcribe and paste"), qsTr("Record audio")]
+                            currentIndex: root.dictation.options.mode === "audio" ? 2 : root.dictation.options.paste ? 1 : 0
+                            enabled: root.dictation.ready && !root.dictation.pending && !root.dictation.active && !root.dictation.preparing
+                            Accessible.name: qsTr("Capture action")
+                            onActivated: index => root.dictation.setOutput(["copy", "paste", "audio"][index])
+                        }
+                        Heading {
+                            text: qsTr("Language")
+                            Layout.margins: 6
+                            visible: root.dictation.options.mode !== "audio"
+                        }
+                        SearchableChoice {
+                            objectName: "speechLanguage"
+                            Layout.fillWidth: true
+                            visible: root.dictation.options.mode !== "audio"
+                            model: root.dictation.languages
+                            textRole: "name"
+                            searchRole: "code"
+                            searchPlaceholder: qsTr("Search languages")
+                            currentIndex: root.dictation.languages.findIndex(language => language.code === root.dictation.options.language)
+                            enabled: root.dictation.ready && !root.dictation.pending && !root.dictation.active && !root.dictation.preparing && root.dictation.options.mode !== "audio"
+                            Accessible.name: qsTr("Transcription language")
+                            onActivated: index => root.dictation.setOption("language", root.dictation.languages[index].code)
+                        }
+                        Heading {
+                            text: qsTr("Transcription model")
+                            Layout.margins: 6
+                            visible: root.dictation.options.mode !== "audio"
+                        }
+                        ShellChoice {
+                            id: speechModel
+                            objectName: "speechModel"
+                            Layout.fillWidth: true
+                            visible: root.dictation.options.mode !== "audio"
+                            model: root.dictation.models.map(model => ({
+                                        id: model.id,
+                                        label: model.name + " · " + model.size + (model.installed ? " ✓" : "")
+                                    }))
+                            textRole: "label"
+                            currentIndex: root.dictation.models.findIndex(model => model.id === root.dictation.options.model)
+                            enabled: root.dictation.ready && !root.dictation.pending && !root.dictation.active && !root.dictation.preparing && root.dictation.options.mode !== "audio"
+                            Accessible.name: qsTr("Transcription model")
+                            onActivated: index => root.dictation.setOption("model", root.dictation.models[index].id)
+                            PassiveToolTip {
+                                target: speechModel
+                                text: qsTr("Larger models need more memory and processing time. Installed models are marked ✓.")
+                            }
+                        }
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: 1
+                            Layout.margins: 4
+                            color: Theme.border
+                        }
+                        MenuEntry {
+                            objectName: "speechTranscribeFile"
+                            iconName: "file-text"
+                            text: qsTr("Transcribe audio/video file…")
+                            visible: root.dictation.options.mode !== "audio"
+                            enabled: root.dictation.ready && root.dictation.modelReady && !root.dictation.pending && !root.dictation.active && !root.dictation.preparing
+                            hint: qsTr("Audio or video, up to 30 minutes; transcript is copied")
+                            onClicked: {
+                                root.closePopovers();
+                                root.dictation.chooseFile();
+                            }
+                        }
+                        MenuEntry {
+                            objectName: "speechSetup"
+                            iconName: "download"
+                            text: qsTr("Download %1 · %2").arg(root.dictation.selectedModel.name).arg(root.dictation.selectedModel.size)
+                            visible: !root.dictation.modelReady && root.dictation.options.mode !== "audio"
+                            enabled: root.dictation.ready && !root.dictation.pending && !root.dictation.active && !root.dictation.preparing
+                            onClicked: {
+                                root.closePopovers();
+                                root.dictation.setup();
+                            }
+                        }
+                        MenuEntry {
+                            objectName: "speechFolder"
+                            iconName: "folder-open"
+                            text: qsTr("Open recordings folder")
+                            visible: root.dictation.options.mode === "audio" || !!root.dictation.state.lastAudio
+                            enabled: !!root.dictation.state.folder
+                            onClicked: {
+                                root.closePopovers();
+                                root.dictation.openPath(root.dictation.state.folder);
+                            }
+                        }
+                        MenuEntry {
+                            objectName: "speechLastAudio"
+                            iconName: "play"
+                            text: qsTr("Open last recording")
+                            visible: !!root.dictation.state.lastAudio
+                            onClicked: {
+                                root.closePopovers();
+                                root.dictation.openPath(root.dictation.state.lastAudio);
+                            }
+                        }
+                    }
+                }
             }
             ShellButton {
                 objectName: "captureCancel"
@@ -373,6 +514,23 @@ DrawerPage {
                     text: root.service.paused ? qsTr("Resume recording") : qsTr("Pause recording")
                     enabled: !root.service.savingRecordingOption
                     onClicked: root.service.pauseRecording()
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                visible: root.dictation.active || root.dictation.preparing || root.dictation.starting
+                Note {
+                    objectName: "dictationStatus"
+                    text: root.dictation.description
+                    color: root.dictation.recording ? Theme.danger : Theme.muted
+                }
+                IconButton {
+                    objectName: "dictationCancel"
+                    iconName: "x"
+                    text: root.dictation.preparing ? qsTr("Cancel model download") : root.dictation.processing ? qsTr("Cancel transcription") : qsTr("Discard recording")
+                    visible: root.dictation.active || root.dictation.preparing
+                    enabled: root.dictation.canCancel && !root.dictation.pending
+                    onClicked: root.dictation.cancel()
                 }
             }
             Heading {

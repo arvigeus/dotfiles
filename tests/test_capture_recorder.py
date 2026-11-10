@@ -102,6 +102,35 @@ class RecorderTests(unittest.TestCase):
                 owner.request(dict(op='start', source='DP-3'))
             launch.assert_not_called()
 
+    def test_mute_write_checks_identity_and_targets_the_selected_input(self):
+        source = dict(
+            name='test-microphone',
+            index=12,
+            mute=True,
+            properties={'object.serial': '42'},
+        )
+        with patch.object(
+            recorder.subprocess,
+            'run',
+            side_effect=[
+                MagicMock(stdout=json.dumps([source])),
+                MagicMock(),
+            ],
+        ) as run:
+            recorder.set_microphone_mute(source, False)
+        self.assertEqual(
+            run.call_args_list[-1].args[0], ['pactl', 'set-source-mute', '12', '0']
+        )
+        changed = dict(source, properties={'object.serial': '99'})
+        with patch.object(
+            recorder.subprocess,
+            'run',
+            return_value=MagicMock(stdout=json.dumps([changed])),
+        ) as run:
+            with self.assertRaisesRegex(ValueError, 'microphone changed'):
+                recorder.set_microphone_mute(source, False)
+        self.assertEqual(run.call_count, 1)
+
     def test_duplicate_start_stop_saving_and_completion(self):
         owner = recorder.Recorder()
         process = MagicMock()
@@ -346,7 +375,7 @@ while True:
             clients.append(client)
         script = (
             'import os,runpy,sys\nos.dup2(int(sys.argv[2]),3)\nos.environ["LISTEN_PID"]=str(os.getpid())\n'
-            'os.environ["LISTEN_FDS"]="1"\nimport importlib.util\n'
+            'os.environ["LISTEN_FDS"]="1"\nsys.path.insert(0,os.path.dirname(sys.argv[1]))\nimport importlib.util\n'
             'spec=importlib.util.spec_from_file_location("r",sys.argv[1]);r=importlib.util.module_from_spec(spec)\n'
             f'spec.loader.exec_module(r);r.IDLE_EXIT={idle_exit};'
             'r.location=lambda kind:r.Path(os.environ["XDG_RUNTIME_DIR"])/kind\n'

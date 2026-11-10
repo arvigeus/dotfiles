@@ -163,7 +163,10 @@ Records start empty after a reload and on a newly attached output.
 
 Window tabs share the strip down to 96 px before it scrolls; shrunk tabs show
 their close button only on hover. The strip follows the focused window like the
-compositor view. Edge markers count tabs not wholly in view; clicking one
+compositor view. Selecting a tab runs focus, layout `center` and the
+`desktop-layout-changed` event in one Lua callback, matching Alt+Tab's column
+centering without changing Win+Left/Right focus navigation.
+Edge markers count tabs not wholly in view; clicking one
 reveals the nearest hidden window needing attention, otherwise scrolls a page.
 A marker's width includes its fade, so revealed tabs stay clear of both.
 `tests/test_desktop_workspaces.py` runs the bar against a fake Hyprland IPC.
@@ -220,6 +223,125 @@ system-audio/microphone/pointer choices in `recording.json`. Region selection
 uses Slurp; its pre-selection delay restarts and dismisses again when another
 surface opens. A shell reconnect recovers the existing recording state rather
 than starting one.
+
+Speech uses selectable local multilingual Whisper models, defaulting to `small`.
+`whisper-cpp` provides the `whisper-cli` inference command; `voxtype-bin` provides
+model acquisition and its
+JSON download progress protocol. Both update as normal packages through Topgrade.
+The downloaded model is a fixed release under
+`$XDG_DATA_HOME/voxtype/models/ggml-<model>.bin`, with the ordinary XDG fallback.
+`capture/dictation.toml` configures that downloader; each setup passes the selected
+model explicitly without activating Voxtype's own daemon. Tiny, Base, Small,
+Medium, Large v3 and Large v3 Turbo have download-size labels and installed marks.
+Selection persists without downloading; a later explicit setup/transcription
+action acquires missing weights. Installed models remain cached when switching.
+Model, language, audio-only and auto-paste preferences live in `speech.json`.
+The menu presents one Action choice: Transcribe to clipboard, Transcribe and
+paste or Record audio. The labels stand alone without explanatory text below. A
+`speech-output` command updates the stored mode/paste pair atomically. Audio mode
+hides transcription-only controls. `SearchableChoice` keeps language search above
+its scrolling results, matches names/codes without regard to case and emits the
+original model index; the caller retains ownership of selection.
+
+`language_catalog()` reads the installed `libwhisper` C API through ctypes
+(`whisper_lang_max_id`, `whisper_lang_str`, `whisper_lang_str_full`), without
+loading weights or recording audio. The UI uses this catalogue instead of a
+separate language list. Each checkpoint limits it to the vocabulary it supports:
+99 languages for original models, 100 including Cantonese for v3/turbo. Switching
+to a model that cannot handle the chosen language selects Auto. The engine
+package remains necessary for transcription, while audio-only/setup can run
+without its language catalogue.
+
+`capture/speech.py` owns one speech job inside `desktop-capture.service` and
+publishes its state under the recording snapshot's `speech` field. Requests use
+`speech-*` operations on the existing socket/reply protocol. QML retains the
+connection while speech is active; reconnecting restores the job after a shell
+reload. Screen and speech capture can run independently. Each job freezes its
+options. Preference changes are refused while busy; the backend validates values
+again and saves them atomically. `DictationService` adapts these states and waits
+400 ms after dismissing surfaces before microphone start/stop. The global
+`desktop:dictation` toggle follows the selected speech mode and preserves AltGr.
+
+The first transcription action downloads the model and stops at ready: setup
+never opens the microphone. Downloads run with Capture dismissed and update one
+replaceable transient desktop notification, with progress at most once per second,
+using the standard integer `value` progress hint. Completion, cancellation and
+failure replace that notification. `SpeechNotification` also reports saved audio,
+copied/pasted transcripts, empty recognition and errors. Finished notifications
+are non-transient so they remain in notification history. They contain no
+transcript text. `notify-send` runs asynchronously with a timeout; notification
+failure does not stop the job. The service stays alive until pending notifications
+finish. Audio-only recording needs no
+model. PipeWire records
+16 kHz mono PCM WAV from the default microphone, with a two-minute dictation
+limit and a 30-minute audio-only limit. Explicit stop publishes audio-only files
+in XDG Music/Recordings with exclusive timestamped names; discard removes only
+temporary data. Session shutdown saves an audio-only recording and discards
+unfinished transcription. The existing microphone drawer owns device selection.
+Before microphone capture, the backend checks the default input and its mute
+state. Muted/unavailable inputs wait in `microphone-muted`/`microphone-unavailable`
+without opening an audio stream. `SpeechNotification` waits up to thirty seconds
+for its native action; cancellation interrupts notify-send to withdraw the prompt.
+An unmute action moves to `microphone-approved`; retained `DictationService`
+dismisses shell surfaces and waits 400 ms before `speech-resume`. Approval expires
+after ten seconds and cannot follow a changed default source. The job retains
+its original options and paste target throughout the prompt.
+
+The approved operation snapshots the source name, Pulse index, PipeWire object
+serial and device serial, then unmutes only that source and verifies the result.
+The recording targets that name explicitly. Only a mute changed by this job is
+restored, as soon as Stop is requested and before inference; unexpected recorder
+exit, failed startup, discard and orderly service shutdown also restore it.
+Restoration looks up the original name and verifies identity, so it neither
+follows a changed default nor changes a replacement with a reused name/index.
+An unavailable device is left alone. A failed restoration keeps an actionable
+warning even after transcript delivery. The controls action sets an acknowledged,
+bounded `openMicrophoneControls` request, which the shell routes to the existing
+Microphone drawer. It does not enable device profiles or bypass hardware mute.
+
+`pw-record` handles SIGINT and can finalize a recording while returning status 1.
+The stopping phase accepts that status only without diagnostics, then verifies
+the WAV format and declared sample data before transcription or saving. Other
+nonzero exits remain errors. The fake recorder uses the same stop status so
+ordinary transcription checks exercise this path.
+
+File import accepts existing local files only and uses FFmpeg to decode a mono
+16 kHz WAV. Decoding reads at most 30 minutes plus one second, then rejects longer
+input rather than silently truncating it. Inference writes plain text into a
+private job directory, using the frozen model/language selection and no
+translation or LLM rewriting. FFmpeg/inference are bounded to 15 minutes;
+downloads to 30 minutes. Discard kills the owned process group, including download
+children. Job data and logs are removed at completion/cancellation. Input files
+are never modified. Recognition quality still needs real microphone testing.
+
+The file chooser belongs to retained `DictationService`, not the lazy drawer.
+`chooseFile()` releases the drawer's exclusive layer input, waits 400 ms for its
+exit, then starts Zenity as a normal window. Reopened shell surfaces are dismissed
+during this handoff. The chooser and its stdout collection survive drawer page
+destruction; cancellation releases its pending state without a speech job. A
+selected absolute path is passed directly to the backend, without shell parsing.
+
+Successful transcription starts a `wl-copy --foreground` provider from the text
+file. The capture service stays alive while that provider owns the selection,
+so systemd cannot kill the clipboard when its ordinary idle timer expires. It
+releases the provider on clipboard replacement/session shutdown. Errors and
+empty transcripts preserve the previous selection. Text is not included in
+socket snapshots, notifications or the journal. The drawer shows only live
+progress and cancellation; results never reopen it. Backend notifications survive
+shell reloads without replaying old results. File-chooser failures notify directly
+from `DictationService`. Existing clipboard-history collection still applies.
+
+Auto-paste is opt-in for microphone transcription. QML reports whether a shell
+surface owns input; the backend defaults to blocking paste until that context
+arrives. Delivery also compares the original Hyprland window address/class with
+the focused application and uses the native `hl.dsp.send_shortcut` dispatcher
+(Ctrl+Shift+V for known terminals, Ctrl+V otherwise). It never activates another
+window or sends Return. Changed focus, an open shell surface or dispatcher failure
+leaves the transcript on the clipboard. Imported-file transcripts always copy.
+
+`tests/test_dictation.py` covers worker lifecycle, persistence, native paste
+arguments, Unicode paths, clipboard ownership and the three-button drawer through
+fake tools/private sockets. It must not capture host audio or alter its clipboard.
 
 `WebcamService` enumerates through V4L2; `WebcamControls` reflects supported types,
 ranges and writability. Mutations validate device identity/control support.
@@ -545,6 +667,9 @@ manual/automatic mode transitions and rollback; see the peripheral architecture.
 
 The Keyboard drawer's header info button sits beside input-method settings and
 opens the reference with Shortcuts first, followed by Telex and Phonetic maps.
+The Shortcuts search stays above the scrolling list and filters keys and action
+descriptions locally, matching every whitespace-separated term without regard
+to case. Opening the popup clears and focuses the search.
 The shortcut tab reads `hyprctl -j binds` when opened, again every five seconds
 while visible, and after Hyprland config reloads. The helper excludes mouse
 button and wheel binds, formats modifier masks and submaps, and uses each bind

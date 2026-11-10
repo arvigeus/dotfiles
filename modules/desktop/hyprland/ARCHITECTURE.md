@@ -177,6 +177,9 @@ shortcut. It selects an area through Slurp when idle and stops an active recordi
 The shell owns recording preferences and the supervised recording service; see
 [Capture architecture](../quickshell/ARCHITECTURE.md#capture).
 
+Win+Shift+D invokes `desktop:dictation`; Quickshell owns setup, daemon readiness
+and start/stop state. The toggle preserves AltGr for multilingual keyboard layouts.
+
 Night light uses the packaged `hyprsunset.service`. Its enablement belongs to the
 Display drawer toggle, so provisioning does not enable it globally. The native
 `hyprsunset.conf` asset defines the filter and optional profiles.

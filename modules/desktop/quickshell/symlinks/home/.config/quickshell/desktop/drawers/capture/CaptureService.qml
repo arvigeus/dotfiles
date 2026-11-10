@@ -76,7 +76,7 @@ Singleton {
         control.flush();
     }
     function release(): void {
-        if (!sessionActive && !awaiting && !outbox.length)
+        if (!sessionActive && (!recorder.speech || recorder.speech.phase === "idle") && !awaiting && !outbox.length)
             control.connected = false;
     }
     function capture(name: string, mode = "output"): bool {

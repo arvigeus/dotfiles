@@ -1,4 +1,5 @@
 singleton CaptureService 1.0 CaptureService.qml
+singleton DictationService 1.0 DictationService.qml
 CaptureButton 1.0 CaptureButton.qml
 WebcamPreview 1.0 WebcamPreview.qml
 WebcamCard 1.0 WebcamCard.qml

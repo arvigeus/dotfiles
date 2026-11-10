@@ -70,6 +70,27 @@ ShellRoot {
 
     GlobalShortcut {
         appid: "desktop"
+        name: "dictation"
+        description: qsTr("Start or finish local transcription")
+        onPressed: DictationService.toggle()
+    }
+    Connections {
+        target: DictationService
+        function onMicrophoneSettingsRequested(): void {
+            drawers.openDrawer("microphone", drawers.focusedOutput());
+        }
+        function onHideRequested(): void {
+            drawers.dismiss();
+            launcher.dismiss();
+        }
+    }
+    Binding {
+        target: DictationService
+        property: "pasteBlocked"
+        value: !!interactions.activeSurface
+    }
+    GlobalShortcut {
+        appid: "desktop"
         name: "record-region"
         description: qsTr("Record an area or stop the current recording")
         onPressed: CaptureService.recordRegion()
@@ -85,8 +106,10 @@ ShellRoot {
     Connections {
         target: interactions
         function onActiveSurfaceChanged(): void {
-            if (interactions.activeSurface)
+            if (interactions.activeSurface) {
                 CaptureService.guardDismissal();
+                DictationService.guardDismissal();
+            }
         }
     }
 

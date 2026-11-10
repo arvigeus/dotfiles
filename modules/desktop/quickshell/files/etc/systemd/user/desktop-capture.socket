@@ -1,5 +1,5 @@
 [Unit]
-Description=Desktop screen recording control socket
+Description=Desktop screen and speech capture control socket
 PartOf=graphical-session.target
 
 [Socket]

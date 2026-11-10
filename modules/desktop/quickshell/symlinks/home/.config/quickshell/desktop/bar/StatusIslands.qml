@@ -111,10 +111,10 @@ Item {
                     BarEntry {
                         key: "capture"
                         title: qsTr("Capture")
-                        iconName: CaptureService.sessionActive ? "video" : "camera"
-                        iconColor: CaptureService.sessionActive ? Theme.danger : CaptureService.waiting ? Theme.accent : Theme.text
+                        iconName: DictationService.active || DictationService.preparing || DictationService.starting ? "mic" : CaptureService.sessionActive ? "video" : "camera"
+                        iconColor: DictationService.recording || CaptureService.sessionActive ? Theme.danger : DictationService.processing || DictationService.preparing || DictationService.starting || CaptureService.waiting ? Theme.accent : Theme.text
                         label: CaptureService.sessionActive ? CaptureService.recordingTime : CaptureService.waiting ? String(CaptureService.remaining) : ""
-                        description: CaptureService.sessionActive ? (CaptureService.paused ? qsTr("Recording paused · %1") : qsTr("Recording · %1 · open to stop")).arg(CaptureService.recordingTime) : CaptureService.waiting ? qsTr("Screenshot in %1 s · open to cancel").arg(CaptureService.remaining) : qsTr("Capture · screenshots, recording and webcam")
+                        description: DictationService.active || DictationService.preparing || DictationService.starting ? DictationService.description : CaptureService.sessionActive ? (CaptureService.paused ? qsTr("Recording paused · %1") : qsTr("Recording · %1 · open to stop")).arg(CaptureService.recordingTime) : CaptureService.waiting ? qsTr("Screenshot in %1 s · open to cancel").arg(CaptureService.remaining) : qsTr("Capture · screenshots, recording, dictation and webcam")
                     }
                 ]
                 onDrawerRequested: key => root.drawerRequested(key)

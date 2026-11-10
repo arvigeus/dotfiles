@@ -1,0 +1,5 @@
+engine = "whisper"
+
+[whisper]
+mode = "local"
+model = "small"

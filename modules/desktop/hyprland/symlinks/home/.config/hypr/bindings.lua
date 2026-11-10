@@ -49,6 +49,7 @@ bind(mainMod .. " + PRINT", app("desktop-screenshot active-window"), "Capture fo
 bind(mainMod .. " + CTRL + PRINT", app("desktop-screenshot window"), "Select window to capture")
 bind("SHIFT + PRINT", app("desktop-screenshot output"), "Capture current display")
 bind(mainMod .. " + SHIFT + R", hl.dsp.global("desktop:record-region"), "Start or stop area recording")
+bind(mainMod .. " + SHIFT + D", hl.dsp.global("desktop:dictation"), "Start or finish dictation")
 bind(mainMod .. " + period", layoutAction(hl.dsp.layout("center")), "Center current column")
 bind(mainMod .. " + J", layoutAction(hl.dsp.layout("promote")), "Promote stacked window to its own column")
 bind(mainMod .. " + bracketright", layoutAction(hl.dsp.layout("colresize +conf")), "Widen current column")
