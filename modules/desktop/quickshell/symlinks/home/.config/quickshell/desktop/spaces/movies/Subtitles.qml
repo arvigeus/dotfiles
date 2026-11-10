@@ -1,3 +1,4 @@
+import "../../drawers/capture"
 import "../../ui"
 import QtQuick
 import QtQuick.Controls
@@ -20,6 +21,7 @@ ColumnLayout {
     property bool searching: false
     property bool moreLoading: false
     property bool changing: false
+    readonly property bool generating: fileSpeech.working
     property string error: ""
     property string info: ""
     property var inventory: ({
@@ -367,9 +369,8 @@ ColumnLayout {
     onRequestedPathChanged: {
         if (requestedPath && files.some(file => {
             return file.path === requestedPath;
-        })) {
+        }))
             path = requestedPath;
-        }
     }
     onPathChanged: {
         results = [];
@@ -396,15 +397,27 @@ ColumnLayout {
     }
     onResultsChanged: fillTimer.restart()
     onVisibleChanged: {
-        if (visible) {
+        if (visible)
             refresh();
-        }
     }
 
     SubtitleService {
         id: service
 
         spaceId: root.spaceId
+        onFailed: message => {
+            return root.error = message;
+        }
+    }
+
+    FileSpeech {
+        id: fileSpeech
+
+        path: root.path
+        onCompleted: message => {
+            root.info = message;
+            root.refresh();
+        }
         onFailed: message => {
             return root.error = message;
         }
@@ -447,6 +460,23 @@ ColumnLayout {
             visible: root.showLoading && running
             Layout.preferredWidth: 28
             Layout.preferredHeight: 28
+        }
+
+        MovieIconButton {
+            objectName: "generateSubtitles"
+            iconName: fileSpeech.working ? "square" : "captions"
+            text: fileSpeech.working ? "Cancel subtitle generation" : "Generate subtitles"
+            hint: !fileSpeech.available ? "Reboot to load the updated transcription service" : fileSpeech.working ? fileSpeech.description + " · Cancel" : "Generate .srt beside this video · " + fileSpeech.modelName + " · " + fileSpeech.languageName + ". Existing subtitles are kept."
+            highlighted: fileSpeech.working
+            enabled: !!root.path && fileSpeech.available && (fileSpeech.working || (!fileSpeech.busy && !fileSpeech.requestedId && !root.changing))
+            onClicked: {
+                root.error = "";
+                root.info = "";
+                if (fileSpeech.working)
+                    fileSpeech.cancel();
+                else
+                    fileSpeech.generate();
+            }
         }
 
         MovieButton {
@@ -638,9 +668,8 @@ ColumnLayout {
                                     inputMethodHints: Qt.ImhFormattedNumbersOnly
                                     Accessible.name: "Subtitle time offset in seconds"
                                     onAccepted: {
-                                        if (timingRow.timingChanged && !root.changing) {
+                                        if (timingRow.timingChanged && !root.changing)
                                             root.retime(modelData.path, sourceRate.text, text);
-                                        }
                                     }
                                 }
                             }

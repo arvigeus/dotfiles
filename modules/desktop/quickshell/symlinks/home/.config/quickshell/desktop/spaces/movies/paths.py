@@ -50,3 +50,38 @@ def media_config(path):
             'it must be owned by you with mode 0600.'
         )
     return config
+
+
+def extra_library_roots(kind):
+    """User-owned library locations; provisioning copies only the example."""
+    key = {'movie': 'movies', 'tv': 'series'}.get(kind)
+    if not key:
+        return []
+    config = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / (
+        'quickshell/desktop/integrations/media-library.json'
+    )
+    try:
+        text, _ = private.read(config, follow_symlinks=False)
+        settings = json.loads(text)
+    except FileNotFoundError:
+        return []
+    except (private.UnreadableFile, ValueError) as error:
+        raise ValueError(f'Cannot read {config}: {error}') from None
+    if not isinstance(settings, dict):
+        raise ValueError(f'{config} must contain a JSON object.')
+    values = settings.get(key, [])
+    if not isinstance(values, list) or any(
+        not isinstance(p, str) or not p.strip() for p in values
+    ):
+        raise ValueError(f'{config}: {key} must be a list of directory paths.')
+    roots = []
+    for value in values:
+        root = Path(value.replace('$HOME', str(Path.home()))).expanduser()
+        if not root.is_absolute() or not root.is_dir():
+            raise ValueError(
+                f'Library directory does not exist or is not absolute: {value}'
+            )
+        root = root.resolve()
+        if root not in roots:
+            roots.append(root)
+    return roots

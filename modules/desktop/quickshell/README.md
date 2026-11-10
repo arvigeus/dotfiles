@@ -71,16 +71,17 @@ stop on drawer dismissal; privacy controls depend on camera support.
 
 **Transcribe** converts microphone audio to text locally and copies it to the
 clipboard; **Win+Shift+D** starts and finishes capture. Its menu also offers
-automatic paste, audio recording and transcription of existing audio/video files.
+automatic paste and audio recording.
 Language selection is searchable. Whisper Small (466 MB) is the default model;
 larger models use more memory and take longer to process. Download a selected
 model once, with progress in a notification; subsequent use works offline. Short
 clips and background noise can reduce accuracy.
 
 Voice recordings save as WAV in Music/Recordings. Dictation is limited to two
-minutes; saved audio and imported files to 30 minutes. Auto-paste applies to
+minutes; saved audio to 30 minutes. Audio/Video tools transcribe existing files
+and can generate video subtitles (up to six hours). Auto-paste applies to
 microphone transcription and skips insertion if focus changed or a shell surface
-is open. File transcripts copy to the clipboard. Results and errors arrive as
+is open. File transcripts can copy to the clipboard or save as subtitles. Results and errors arrive as
 notifications without reopening Capture.
 Muted inputs offer **Unmute and transcribe** and return to mute when recording
 stops. Unavailable inputs offer a button to open microphone controls.

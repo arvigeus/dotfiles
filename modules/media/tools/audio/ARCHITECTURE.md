@@ -138,3 +138,12 @@ stale drafts, MP3/FLAC saving, provider failures.
 `python3 -m unittest tests.test_media_tools_gui` verifies single-file registration,
 picker cancellation and native dark/light palette changes in both dialogs. The
 live theme test uses an isolated D-Bus session and temporary XDG directories.
+
+## Transcription
+
+The Transcribe tab embeds the shared native speech client from
+`/usr/local/lib/desktop-speech`. It freezes the current source path when starting
+and disables other tabs while its file job runs. Closing the dialog leaves that
+service-owned job running. See the
+[transcription architecture](../transcription/ARCHITECTURE.md) for protocol,
+options and validation.

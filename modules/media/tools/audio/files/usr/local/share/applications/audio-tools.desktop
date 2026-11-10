@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Audio tools
-Comment=Edit audio tags and convert with saved presets
+Comment=Edit audio tags, convert and transcribe speech
 Icon=audio-x-generic
 Exec=/usr/local/bin/audio-tools %f
 MimeType=audio/mpeg;audio/flac;audio/ogg;audio/mp4;audio/x-wav;audio/x-matroska;audio/aac;audio/x-opus+ogg;audio/x-aiff;audio/x-ape;audio/x-wavpack;audio/x-ms-wma;audio/mp2;audio/webm;

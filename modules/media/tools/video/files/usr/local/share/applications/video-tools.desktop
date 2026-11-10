@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Video tools
-Comment=Inspect video streams and convert with saved presets
+Comment=Inspect, convert and transcribe video with subtitle generation
 Icon=video-x-generic
 Exec=/usr/local/bin/video-tools %f
 MimeType=video/mp4;video/x-matroska;video/webm;video/quicktime;video/x-msvideo;video/mpeg;video/mp2t;video/ogg;video/x-flv;video/x-ms-wmv;video/3gpp;

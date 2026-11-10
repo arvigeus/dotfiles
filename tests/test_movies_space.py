@@ -41,11 +41,28 @@ def setup(root):
 class MoviesSpaceTests(unittest.TestCase):
     run_qml = support.run_qml
 
-    def test_header_refresh_bypasses_catalogue_cache_and_keeps_library_scan_explicit(
+    def test_header_refresh_scans_library_and_reviews_only_unidentified_files(
         self,
     ):
         def refresh_setup(root):
             setup(root)
+            (
+                root / 'spaces/movies/torrent_backend.py'
+            ).write_text("""import json,sys,time
+scans=0
+for line in sys.stdin:
+ r=json.loads(line);op=r['op']
+ if op=='scan':
+  assert not r.get('path'),r
+  time.sleep(.15);scans+=1
+  result=dict(imported=[],review=[] if scans==1 else [dict(token='ronja',path='/Series/Ronja/01_02.mkv',guess=dict(title='Ronja',season=1,episode=1,episodeEnd=2),reason='Choose the matching catalogue title.')],limited=False)
+ elif op=='scan_lookup':result=[dict(id='ronja',kind=r.get('kind','tv'),title='Ronja',year='2014')]
+ elif op=='scan_import':
+  if 'season' in r:assert (r['season'],r['episode'],r['episodeEnd'])==(1,1,2),r
+  result=dict(path='/Series/Ronja/Season 01/S01E01E02.mkv',removedTokens=['ronja'])
+ else:result=[]
+ print(json.dumps(dict(id=r['id'],result=result)),flush=True)
+""")
             (root / 'spaces/movies/backend.py').write_text("""import json,sys
 for line in sys.stdin:
  r=json.loads(line);op=r['op'];title=dict(id='fixture',kind=r.get('kind','movie'),title='Refreshed' if r.get('refresh') else 'Saved',year='2024',poster='',backdrop='',query=r.get('query'),genre=r.get('filters',{}).get('genre'))
@@ -92,11 +109,32 @@ FloatingWindow {
   }
   if(root.step===2){
    check(page.localMode&&!page.scanOpen,"library tab opened the scanner");
-   click(refresh);const scan=find(page,"mediaScan");
-   check(page.scanOpen&&scan.visible&&!scan.scanning,"Refresh did not open explicit scan controls");
-   check(find(scan,"scanPath").placeholderText==="Optional folder or file","optional scan path missing");
-   check(page.dismissTransient()&&!page.scanOpen&&page.searchOpen,"Escape did not dismiss scan before search");
-   click(refresh);click(refresh);check(!page.scanOpen,"Refresh cannot close the scanner");
+   click(refresh);
+   check(page.localScan.scanning&&!page.scanOpen,"Refresh did not scan directly");
+   root.step++;return;
+  }
+  if(root.step===3){
+   if(page.localScan.scanning)return;
+   check(!page.scanOpen,"A matched scan opened review");
+   click(refresh);root.step++;return;
+  }
+  if(root.step===4){
+   if(page.localScan.scanning||!page.scanOpen)return;
+   const scan=page.localScan;
+   check(scan.review.length===1&&!scan.showScanControls,"Review has scan path controls");
+   check(find(page,"catalogueGrid").visible===page.gridMode,"Review replaced the catalogue");
+   check(page.dismissTransient()&&!page.scanOpen&&page.searchOpen,"Escape did not dismiss review before search");
+   page.scanPopup.open();scan.choose(scan.review[0]);root.step++;return;
+  }
+  if(root.step===5){
+   const scan=page.localScan;
+   if(scan.matching||!scan.matches.length)return;
+   if(page.kind==="tv")check(find(scan,"scanSeason").text==="1"&&find(scan,"scanEpisode").text==="1-2","Episode range missing in review");
+   scan.selectedMatch=scan.matches[0];click(find(scan,"scanImport"));root.step++;return;
+  }
+  if(root.step===6){
+   if(page.localScan.importing)return;
+   check(!page.scanOpen&&!page.localScan.review.length&&!page.localScan.error,"Import did not finish and close review");
    console.log("DISPLAY_PASS");Qt.quit();
   }
  }catch(error){console.error("DISPLAY_FAIL",error);Qt.quit();}finally{driver.restart();}}}

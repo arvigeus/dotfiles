@@ -174,7 +174,16 @@ class VideoToolsTests(unittest.TestCase):
         env = dict(
             os.environ,
             QT_QPA_PLATFORM='offscreen',
-            PYTHONPATH=str(LIB),
+            PYTHONPATH=os.pathsep.join(
+                map(
+                    str,
+                    (
+                        LIB,
+                        REPO
+                        / 'modules/media/tools/transcription/files/usr/local/lib/desktop-speech',
+                    ),
+                )
+            ),
             VIDEO_TEST_SOURCE=str(self.source),
             VIDEO_TEST_CONFIG=str(CONFIG),
         )

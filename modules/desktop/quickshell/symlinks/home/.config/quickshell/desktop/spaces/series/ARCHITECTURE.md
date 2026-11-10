@@ -29,8 +29,9 @@ The page's `season` string is the chosen season and the single input to episode
 loading, local episode rows and season torrent search; the season picker only
 reflects it. `setSeasons()` is the one place seasons are assigned: values become
 strings, ordered numerically with TMDB's season 0 last and labelled Specials, so
-the default is the first regular season. Local mode lists the local files'
-seasons; otherwise the provider list wins, with local seasons standing in until
+the default is the first regular season. `providerSeasons` retains the catalogue
+list separately from inventory. My Library combines both lists, including missing
+seasons; elsewhere the provider list wins, with local seasons standing in until
 it arrives. A chosen season survives list changes (imports, deletions, refresh)
 while it still exists; otherwise the first season is chosen and an open Episodes
 tab reloads, so the rows always match the picker. Qt 6.12 resets a ComboBox
@@ -48,6 +49,21 @@ provider. `providerIndex` derives from the watch button's `watchIndex`, so a
 request always names the provider the button shows after a selection or Local
 availability change. Local episode rows follow the library's season/episode
 order, including files indexed under an older TMDB alias.
+
+My Library loads the full episode catalogue, including missing episodes, using
+the same provider requests and pagination as discovery. `providerEpisodes` retains
+the current season's metadata; `updateEpisodes()` merges it with local inventory
+by season/episode number. Catalogue titles, descriptions, dates and thumbnails
+remain available for owned episodes. Local names fill missing/generic titles, and
+files absent from the provider's episode list remain playable as fallback rows.
+Inventory updates preserve loaded metadata; failed requests retain it and local
+rows with an inline error. Selection and season changes discard the old rows and
+invalidate outstanding episode responses.
+
+Episode Find is available in discovery and, in My Library, only on episodes
+without a local file. Season Find is available there when the selected season has
+no local episodes. Missing media retains catalogue metadata; owned media keeps
+its local playback, subtitle and deletion actions.
 
 ## Workers and storage
 
@@ -80,8 +96,16 @@ is destroyed. No credentials or personal records belong to this image cache.
 
 Series uses `series` qBittorrent tags. Imports write `tvshow.nfo` beside the
 Season folders and a per-episode `.release.nfo` with `seriesrelease` metadata;
-JSON media sidecars belong only to non-video kinds. Provider identifiers and
-personal record formats stay stable. Payloads use the XDG Videos `Series` directory.
+JSON media sidecars belong only to non-video kinds. Episode basenames are
+`S01E01 - Episode title.ext`; a combined file uses `S01E01E02 - Titles.ext` and its
+stored `episodeEnd` expands to both episode rows referencing the same file.
+The scanner infers season 1 for bare anime episode numbers, retaining contiguous
+ranges for review. Canonical basenames derive their series title from the parent
+series folder and preserve punctuation in the episode title. Refresh reconciles
+registered filenames as well as filling missing titles, retaining subtitle paths
+and original release metadata; a named episode is not exempt from normalization. Provider identifiers and
+personal record formats stay stable. Payloads use the XDG Videos `Series` directory, with user-owned extra roots from
+the shared [library configuration](../movies/ARCHITECTURE.md#private-configuration-and-provisioning).
 
 ## Provisioning and recovery
 
@@ -96,12 +120,17 @@ Use the repository unittest discovery command. `test_series_space.py` uses the r
 host, drawer, page and worker transport over isolated cached metadata: drawer open,
 seasons, episode switching, compact rating pairs, independent preferences/favorites,
 hide/restore, explicit close and fresh reopen. Its season fixtures cover Specials
-ordering, a chosen season kept across a refresh that adds a season, local seasons
-replacing a loading provider list without stale rows, and watch-option routing
+ordering, a chosen season kept across a refresh that adds a season, catalogue and
+local inventory merging, rendered episode thumbnails/descriptions, missing-media
+Find actions, offline metadata retention and watch-option routing
 through a worker that rejects every playback request, so nothing is launched.
 `test_series_media.py` exercises the Series environment across all three backends,
 episode imports, local/provider playback resolution, refresh bypassing cached
 seasons/episodes and alias-independent local episode order. Existing
 Movies/provider/worker tests cover the reused code.
+`test_movies_torrents.py` additionally covers bare anime numbers, combined files,
+registered filename reconciliation with sidecars, extra-root preservation,
+collection-safe deletion and malformed directory configuration. The shared
+Movies header integration exercises direct Refresh and review/import in both kinds.
 Real playback/download completion and multi-monitor focus/hotplug require
 interactive validation.

@@ -70,6 +70,10 @@ elif name=='whisper-cli':
     (root/'whisper-args').write_text(json.dumps(args))
     if (root/'transcribe-failure').exists():
         print('PRIVATE_TRANSCRIPT');sys.exit(1)
+    (root/'inference-ready').touch()
+    while (root/'inference-wait').exists(): time.sleep(.01)
+    if '-osrt' in args:
+        Path(args[args.index('-of')+1]+'.srt').write_text('' if (root/'empty-transcript').exists() else '1\\n00:00:00,000 --> 00:00:01,000\\nHello · Xin chào · Здравей\\n')
     Path(args[args.index('-of')+1]+'.txt').write_text('' if (root/'empty-transcript').exists() else 'Hello · Xin chào · Здравей\\n')
 elif name=='wl-copy':
     (root/'clipboard').write_bytes(sys.stdin.buffer.read())
@@ -560,6 +564,115 @@ else: sys.exit(2)
         self.assertEqual(source.read_bytes(), b'input left alone')
         self.assertFalse(self.owner.error)
 
+    def file_job(self, **options):
+        source = self.root / 'Movie · бг.mkv'
+        source.write_bytes(b'original media')
+        self.owner.request(
+            dict(
+                op='speech-file',
+                path=str(source),
+                output='srt',
+                jobId='library-job',
+                **options,
+            )
+        )
+        return source, source.with_suffix('.srt')
+
+    def test_subtitles_download_model_continue_and_publish_without_clipboard(self):
+        source, target = self.file_job()
+        self.assertEqual(self.owner.phase, 'preparing')
+        self.until(lambda: self.owner.phase == 'idle')
+        self.assertIn('00:00:00,000 --> 00:00:01,000', target.read_text())
+        self.assertEqual(source.read_bytes(), b'original media')
+        self.assertFalse((self.root / 'clipboard').exists())
+        self.assertFalse((self.root / 'microphone-ready').exists())
+        self.assertEqual(
+            self.owner.snapshot()['result'],
+            dict(id='library-job', status='saved', path=str(target)),
+        )
+        args = json.loads((self.root / 'whisper-args').read_text())
+        self.assertIn('-osrt', args)
+        self.assertNotIn('-nt', args)
+        self.assertFalse(any(self.owner.directory.iterdir()))
+
+    def test_file_model_language_overrides_are_frozen_without_changing_preferences(
+        self,
+    ):
+        options = dict(self.owner.options)
+        _, target = self.file_job(model='tiny', language='vi')
+        self.until(lambda: self.owner.phase == 'idle')
+        self.assertEqual(self.owner.options, options)
+        args = json.loads((self.root / 'whisper-args').read_text())
+        self.assertEqual(args[args.index('-l') + 1], 'vi')
+        self.assertTrue(args[args.index('-m') + 1].endswith('ggml-tiny.bin'))
+        self.assertTrue(target.exists())
+        self.assertFalse(self.owner.model_ready('small'))
+
+    def test_subtitles_refuse_existing_and_concurrently_created_output(self):
+        self.ready_model()
+        (self.root / 'inference-wait').touch()
+        _, target = self.file_job()
+        self.until(lambda: (self.root / 'inference-ready').exists())
+        target.write_text('keep this subtitle')
+        (self.root / 'inference-wait').unlink()
+        self.until(lambda: self.owner.phase == 'idle')
+        self.assertEqual(target.read_text(), 'keep this subtitle')
+        self.assertEqual(self.owner.result['status'], 'error')
+        with self.assertRaisesRegex(ValueError, 'already exist'):
+            self.owner.request(
+                dict(
+                    op='speech-file', path=str(target.with_suffix('.mkv')), output='srt'
+                )
+            )
+        self.assertFalse(any(self.owner.directory.iterdir()))
+
+    def test_subtitles_reject_changed_source_and_stale_cancel(self):
+        self.ready_model()
+        (self.root / 'inference-wait').touch()
+        source, target = self.file_job()
+        self.until(lambda: (self.root / 'inference-ready').exists())
+        self.owner.request(dict(op='speech-cancel', jobId='previous-job'))
+        self.assertEqual(self.owner.phase, 'transcribing')
+        source.write_bytes(b'changed media')
+        (self.root / 'inference-wait').unlink()
+        self.until(lambda: self.owner.phase == 'idle')
+        self.assertFalse(target.exists())
+        self.assertIn('source changed', self.owner.result['error'])
+
+    def test_subtitles_cancel_and_empty_recognition_do_not_leave_sidecars(self):
+        self.ready_model()
+        (self.root / 'inference-wait').touch()
+        _, target = self.file_job()
+        self.until(lambda: (self.root / 'inference-ready').exists())
+        self.owner.request(dict(op='speech-cancel', jobId='library-job'))
+        self.assertEqual(self.owner.result['status'], 'cancelled')
+        self.assertFalse(target.exists())
+        self.assertFalse(any(self.owner.directory.iterdir()))
+        (self.root / 'inference-wait').unlink()
+        (self.root / 'empty-transcript').touch()
+        self.file_job()
+        self.until(lambda: self.owner.phase == 'idle')
+        self.assertFalse(target.exists())
+        self.assertEqual(self.owner.result['message'], 'No speech detected.')
+
+    def test_long_media_uses_media_limit_and_timestamps(self):
+        self.ready_model()
+        self.file_job()
+        self.owner.process.wait(timeout=2)
+        with patch.object(self.owner, 'audio_duration', return_value=7200):
+            self.owner.tick()
+        self.assertEqual(self.owner.phase, 'transcribing')
+        self.until(lambda: self.owner.phase == 'idle')
+        self.assertEqual(self.owner.result['status'], 'saved')
+        Path(self.owner.result['path']).unlink()
+        self.file_job()
+        self.owner.process.wait(timeout=2)
+        with patch.object(
+            self.owner, 'audio_duration', return_value=speech.MEDIA_LIMIT + 1
+        ):
+            self.owner.tick()
+        self.assertEqual(self.owner.result['status'], 'error')
+
     def test_decode_failure_preserves_clipboard_and_cleans_temporary_files(self):
         self.ready_model()
         (self.root / 'decode-failure').touch()
@@ -690,6 +803,7 @@ class FakeControl:
         self.resumed_after = 0
         self.speech = dict(
             phase='recording' if recording else 'idle',
+            fileOutputs=['clipboard', 'srt'],
             modelReady=ready,
             options=dict(speech.DEFAULTS),
             elapsed=0,
@@ -811,16 +925,36 @@ class FakeControl:
                             elif op == 'speech-controls-opened':
                                 self.speech['openMicrophoneControls'] = False
                             elif op in ('speech-stop', 'speech-file'):
+                                if op == 'speech-file':
+                                    self.speech.update(
+                                        jobId=request['jobId'],
+                                        source=request['path'],
+                                        output=request.get('output', 'clipboard'),
+                                        result={},
+                                    )
                                 self.speech['phase'] = 'transcribing'
                                 self.deadline = time.monotonic() + 0.15
                             elif op == 'speech-cancel':
                                 self.speech['phase'] = 'idle'
+                                self.speech['result'] = dict(
+                                    id=self.speech.get('jobId', ''),
+                                    status='cancelled',
+                                    message='Cancelled.',
+                                )
                             connection.sendall(self.state(True))
                         if (
                             self.speech['phase'] in ('preparing', 'transcribing')
                             and time.monotonic() > self.deadline
                         ):
                             self.speech.update(phase='idle', modelReady=True)
+                            if self.speech.get('jobId'):
+                                self.speech['result'] = dict(
+                                    id=self.speech['jobId'],
+                                    status='saved',
+                                    path=str(
+                                        Path(self.speech['source']).with_suffix('.srt')
+                                    ),
+                                )
                             for model in self.speech['models']:
                                 if model['id'] == self.speech['options']['model']:
                                     model['installed'] = True
@@ -930,30 +1064,10 @@ ShellRoot {
             isolate_bus=True,
         )
 
-    def control(self, *, picker=None, cancel=False, **kwargs):
+    def control(self, **kwargs):
         def setup(root):
             self.fake = FakeControl(root, **kwargs)
             self.addCleanup(self.fake.close)
-            if picker is not None:
-                command = root / 'picker'
-                command.write_text(
-                    f'#!{sys.executable}\n'
-                    + f"""import sys,time
-from pathlib import Path
-root=Path({str(root)!r})
-closed=root/'config/picker-closed'
-assert closed.exists(), 'drawer retained input'
-assert time.time()*1000-float(closed.read_text())>=300, 'picker started before drawer exit'
-time.sleep(.1)
-if {cancel!r}: sys.exit(1)
-print({picker!r})
-"""
-                )
-                command.chmod(0o755)
-                source = root / 'drawers/capture/DictationService.qml'
-                source.write_text(
-                    source.read_text().replace('"zenity"', json.dumps(str(command)))
-                )
 
         return setup
 
@@ -1009,7 +1123,7 @@ print({picker!r})
             any(item['op'] == 'speech-resume' for item in self.fake.requests)
         )
 
-    def test_three_buttons_language_output_options_and_file_selection(self):
+    def test_three_buttons_language_and_output_options(self):
         support.run_qml(
             self,
             PREAMBLE
@@ -1031,18 +1145,13 @@ print({picker!r})
    check(!find(drawer.speechMenu.contentItem,"speechModel").visible,"model visible in audio mode");
    check(find(drawer,"captureSpeech").text==="Record audio","audio action not labelled");
    drawer.width=268;check(drawer.escapeHandler()&&!drawer.speechMenu.visible,"Escape failed");
-   check(DictationService.transcribeFile("file:///tmp/voice%20%D0%B1%D0%B3.mp3"),"file rejected");test.step++;
-  }else if(test.step===5&&DictationService.processing){
-   check(!DictationService.transcribeFile("file:///tmp/other.wav"),"concurrent file accepted");test.step++;
-  }else if(test.step===6&&!DictationService.active&&!DictationService.pending){console.log("DISPLAY_PASS");Qt.quit();}
+   check(!find(drawer.speechMenu.contentItem,"speechTranscribeFile"),"file transcription still lives in Capture");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
 """
             + END,
             self.control(ready=True),
         )
-        imported = next(
-            item for item in self.fake.requests if item['op'] == 'speech-file'
-        )
-        self.assertEqual(imported['path'], '/tmp/voice бг.mp3')
 
     def test_language_search_selects_matching_language_and_resets_on_reopen(self):
         support.run_qml(
@@ -1153,54 +1262,6 @@ print({picker!r})
             self.control(ready=True),
         )
         self.assertFalse(any(r['op'] == 'speech-setup' for r in self.fake.requests))
-
-    def test_file_chooser_survives_drawer_destruction_and_cancel_releases_it(self):
-        for cancel in (False, True):
-            with self.subTest(cancel=cancel):
-                body = """import QtQuick
-import Quickshell
-import Quickshell.Io
-import "drawers"
-import "drawers/capture"
-ShellRoot {
- id:test
- property int step:0
- property int ticks:0
- FileView{id:closed;path:Quickshell.env("XDG_CONFIG_HOME")+"/picker-closed"}
- FloatingWindow{implicitWidth:460;implicitHeight:650;visible:true
-  Loader{id:page;anchors.fill:parent;sourceComponent:Component{CaptureDrawer{active:true;webcams:[]}}}
- }
- Connections{target:DictationService
-  function onHideRequested(){closed.setText(String(Date.now()));page.active=false;}
- }
- function check(ok,message){if(!ok){console.log("DISPLAY_FAIL",message);Qt.quit();}}
- Component.onCompleted:CaptureService.start()
- Timer{interval:40;running:true;repeat:true;onTriggered:{
-  test.ticks++;if(test.ticks>150){console.log("DISPLAY_FAIL","picker timed out",DictationService.error);Qt.quit();}
-  if(test.step===0&&DictationService.ready&&!DictationService.pending){
-   check(DictationService.chooseFile(),"picker rejected");
-   check(!DictationService.chooseFile(),"duplicate picker accepted");test.step++;
-  }else if(test.step===1&&test.ticks>5&&!DictationService.pending&&!DictationService.active){
-   check(!page.item,"drawer survived chooser handoff");check(!DictationService.error,"picker failed: "+DictationService.error);
-   console.log("DISPLAY_PASS");Qt.quit();
-  }
- }}
-}
-"""
-                support.run_qml(
-                    self,
-                    body,
-                    self.control(
-                        ready=True, picker='/tmp/voice бг #.mp3', cancel=cancel
-                    ),
-                )
-                files = [r for r in self.fake.requests if r['op'] == 'speech-file']
-                self.assertEqual(
-                    files,
-                    []
-                    if cancel
-                    else [dict(op='speech-file', path='/tmp/voice бг #.mp3')],
-                )
 
 
 if __name__ == '__main__':

@@ -6,6 +6,12 @@ The information view shows container details, resolution, frame rate, codecs,
 color information, audio layouts, subtitles, chapters and tags. Information can
 be copied.
 
+**Transcribe** copies speech to the clipboard or saves timed subtitles beside the
+video as `filename.srt`. Choose the spoken language or Auto-detect; existing
+subtitles are kept. It uses the desktop speech service, downloads missing models
+on first use, and continues after closing the window. Media can be up to six
+hours long.
+
 Seven presets provide H.264 MP4, smaller MP4 up to 1080p, VP9 WebM up to 1080p,
 two AV1/MKV options, MKV remuxing with all tracks, and AAC/M4A audio extraction.
 Presets live in `~/.config/video-tools/presets.json`; persistent changes belong in the managed

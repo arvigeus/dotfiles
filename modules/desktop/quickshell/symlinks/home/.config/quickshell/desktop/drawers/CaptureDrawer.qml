@@ -444,18 +444,6 @@ DrawerPage {
                             color: Theme.border
                         }
                         MenuEntry {
-                            objectName: "speechTranscribeFile"
-                            iconName: "file-text"
-                            text: qsTr("Transcribe audio/video file…")
-                            visible: root.dictation.options.mode !== "audio"
-                            enabled: root.dictation.ready && root.dictation.modelReady && !root.dictation.pending && !root.dictation.active && !root.dictation.preparing
-                            hint: qsTr("Audio or video, up to 30 minutes; transcript is copied")
-                            onClicked: {
-                                root.closePopovers();
-                                root.dictation.chooseFile();
-                            }
-                        }
-                        MenuEntry {
                             objectName: "speechSetup"
                             iconName: "download"
                             text: qsTr("Download %1 · %2").arg(root.dictation.selectedModel.name).arg(root.dictation.selectedModel.size)

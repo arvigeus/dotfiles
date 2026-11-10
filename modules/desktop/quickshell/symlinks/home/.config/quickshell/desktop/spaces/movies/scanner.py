@@ -85,8 +85,13 @@ def sidecar_identity(path, kind):
         folders = (path.parent, path.parent.parent)
     else:
         return {}
-    for folder in folders:
-        nfo = folder / ('movie.nfo' if kind == 'movie' else 'tvshow.nfo')
+    nfos = [
+        folder / ('movie.nfo' if kind == 'movie' else 'tvshow.nfo')
+        for folder in folders
+    ]
+    if kind == 'movie':
+        nfos.insert(0, path.with_suffix('.nfo'))
+    for nfo in nfos:
         try:
             root = ET.parse(nfo).getroot()
         except (OSError, ET.ParseError):
@@ -146,6 +151,14 @@ def guess(path, kind):
         if kind == 'tv':
             output['episodeTitle'] = str(data.get('episode_title') or '')
             season, episode = data.get('season'), data.get('episode')
+            if (
+                isinstance(episode, list)
+                and episode
+                and all(isinstance(n, int) for n in episode)
+            ):
+                if episode == list(range(episode[0], episode[-1] + 1)):
+                    output['episodeEnd'] = episode[-1]
+                    episode = episode[0]
             if not isinstance(season, int):
                 match = re.search(r'(?i)\bSeason[ ._-]*(\d{1,2})\b', path.parent.name)
                 if match:
@@ -155,8 +168,23 @@ def guess(path, kind):
                 match = re.search(r'(?i)\b(?:E|Episode)[ ._-]*(\d{1,3})\b', path.stem)
                 if match:
                     episode = int(match[1])
-            if isinstance(season, int) and isinstance(episode, int):
-                output.update(season=season, episode=episode)
+            # Anime releases commonly have a bare episode number and no season.
+            # Keep the inferred season editable in review. Contiguous combined
+            # episodes carry their last episode; ambiguous lists stay unnumbered.
+            if isinstance(episode, int):
+                output['episode'] = episode
+                output['season'] = season if isinstance(season, int) else 1
+            marker = re.match(
+                r'(?i)^S\d{1,2}E\d{1,3}(?:E\d{1,3})?\s*(?:-\s*(.*))?$', path.stem
+            )
+            if marker:
+                folder = (
+                    path.parent.parent
+                    if re.fullmatch(r'(?i)Season[ ._-]*\d+', path.parent.name)
+                    else path.parent
+                )
+                output['title'] = folder.name.split(' (')[0]
+                output['episodeTitle'] = marker[1] or ''
         return output
     if kind == 'music':
         tags = audio_tags(path)

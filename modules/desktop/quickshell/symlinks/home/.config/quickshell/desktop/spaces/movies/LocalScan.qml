@@ -8,21 +8,25 @@ ColumnLayout {
 
     property bool showLoading: true
     property bool showStatus: true
+    property bool showScanControls: true
     required property string kind
     property string error: ""
     property string info: ""
     property bool scanning: false
     property bool matching: false
+    property bool importing: false
     property int lookupGeneration: 0
     property var review: []
     property var current: ({})
     property var matches: []
+    property var selectedMatch: ({})
     property var service: ownedService
 
-    signal imported
+    signal imported(bool fromScan)
+    signal scanFinished
 
     function scan() {
-        if (scanning)
+        if (scanning || importing)
             return;
 
         ++lookupGeneration;
@@ -33,6 +37,7 @@ ColumnLayout {
         review = [];
         current = ({});
         matches = [];
+        selectedMatch = ({});
         service.change("scan", {
             "kind": kind,
             "path": pathField.text.trim()
@@ -40,12 +45,15 @@ ColumnLayout {
             scanning = false;
             if (failure) {
                 error = failure;
+                scanFinished();
                 return;
             }
             review = result.review;
             info = result.imported.length + " added to your library; " + result.review.length + " need a catalogue match." + (result.limited ? " Scan stopped after 500 files." : "") + (result.warning ? " " + result.warning : "");
             if (result.imported.length)
-                imported();
+                imported(true);
+
+            scanFinished();
         });
     }
 
@@ -53,11 +61,12 @@ ColumnLayout {
         ++lookupGeneration;
         current = item;
         matches = [];
+        selectedMatch = ({});
         matching = false;
         error = "";
         lookup.text = kind === "music" ? [item.guess.artist, item.guess.title].filter(Boolean).join(" ") : item.guess.title || "";
-        seasonField.text = item.guess.season === undefined ? "" : String(item.guess.season);
-        episodeField.text = item.guess.episode === undefined ? "" : String(item.guess.episode);
+        seasonField.text = item.guess.season === undefined ? "1" : String(item.guess.season);
+        episodeField.text = item.guess.episode === undefined ? "" : String(item.guess.episode) + (item.guess.episodeEnd ? "-" + item.guess.episodeEnd : "");
         dateField.text = item.guess.releaseDate || "";
         findMatches();
     }
@@ -67,7 +76,7 @@ ColumnLayout {
         if (kind !== "tv")
             return "";
 
-        const code = parsed.season === undefined || parsed.episode === undefined ? "" : "S" + String(parsed.season).padStart(2, "0") + "E" + String(parsed.episode).padStart(2, "0");
+        const code = parsed.season === undefined || parsed.episode === undefined ? "" : "S" + String(parsed.season).padStart(2, "0") + "E" + String(parsed.episode).padStart(2, "0") + (parsed.episodeEnd ? "E" + String(parsed.episodeEnd).padStart(2, "0") : "");
         return [code, parsed.episodeTitle].filter(Boolean).join(" · ");
     }
 
@@ -77,6 +86,7 @@ ColumnLayout {
 
         const token = current.token;
         const generation = ++lookupGeneration;
+        selectedMatch = ({});
         matching = true;
         matches = [];
         service.request("scan_lookup", {
@@ -95,22 +105,34 @@ ColumnLayout {
     }
 
     function importMatch(title) {
+        if (importing)
+            return;
+        error = "";
+
         const args = {
             "token": current.token,
             "title": title
         };
         if (kind === "tv") {
-            if (!seasonField.text || !episodeField.text) {
+            if (!seasonField.acceptableInput || !episodeField.acceptableInput) {
                 error = "Confirm the season and episode number first.";
                 return;
             }
             args.season = Number(seasonField.text);
-            args.episode = Number(episodeField.text);
+            const numbers = episodeField.text.split("-").map(Number);
+            if (numbers.length > 1 && numbers[1] < numbers[0]) {
+                error = "The last episode must follow the first episode.";
+                return;
+            }
+            args.episode = numbers[0];
+            args.episodeEnd = numbers[numbers.length - 1];
         }
         if (kind === "music" && dateField.text.trim())
             args.releaseDate = dateField.text.trim();
 
+        importing = true;
         service.change("scan_import", args, (result, failure) => {
+            importing = false;
             if (failure) {
                 error = failure;
                 return;
@@ -120,8 +142,9 @@ ColumnLayout {
             });
             current = ({});
             matches = [];
+            selectedMatch = ({});
             info = "Added " + title.title + " to your library. " + review.length + " files still need a match.";
-            imported();
+            imported(false);
         });
     }
 
@@ -136,6 +159,7 @@ ColumnLayout {
     }
 
     RowLayout {
+        visible: root.showScanControls
         Layout.fillWidth: true
 
         MovieInput {
@@ -193,10 +217,12 @@ ColumnLayout {
         MovieButton {
             iconName: "arrow-left"
             text: "All scan results"
+            enabled: !root.importing
             onClicked: {
                 ++root.lookupGeneration;
                 root.current = ({});
                 root.matches = [];
+                root.selectedMatch = ({});
                 root.matching = false;
             }
         }
@@ -208,6 +234,14 @@ ColumnLayout {
         }
     }
 
+    MovieText {
+        visible: !!root.current.token && !!root.current.reason
+        Layout.fillWidth: true
+        text: root.current.reason || ""
+        color: MovieStyle.muted
+        wrapMode: Text.Wrap
+    }
+
     RowLayout {
         visible: !!root.current.token
         Layout.fillWidth: true
@@ -215,6 +249,7 @@ ColumnLayout {
         MovieInput {
             id: lookup
 
+            objectName: "scanLookup"
             Layout.fillWidth: true
             placeholderText: "Find catalogue title"
             onAccepted: root.findMatches()
@@ -232,10 +267,20 @@ ColumnLayout {
             Layout.preferredWidth: 24
             Layout.preferredHeight: 24
         }
+    }
+
+    RowLayout {
+        visible: !!root.current.token && root.kind === "tv"
+        Layout.fillWidth: true
+
+        MovieText {
+            text: "Season"
+        }
 
         MovieInput {
             id: seasonField
 
+            objectName: "scanSeason"
             visible: root.kind === "tv"
             Layout.preferredWidth: 80
             placeholderText: "Season"
@@ -246,18 +291,38 @@ ColumnLayout {
             }
         }
 
+        MovieText {
+            text: "Episode"
+        }
+
         MovieInput {
             id: episodeField
 
+            objectName: "scanEpisode"
             visible: root.kind === "tv"
-            Layout.preferredWidth: 80
+            Layout.preferredWidth: 110
             placeholderText: "Episode"
+            Accessible.name: "Episode number or range"
+            Accessible.description: "For a combined file, enter a range such as 1-2."
 
-            validator: IntValidator {
-                bottom: 1
-                top: 999
+            PassiveToolTip {
+                target: episodeField
+                text: episodeField.Accessible.description
+            }
+
+            validator: RegularExpressionValidator {
+                regularExpression: /[1-9][0-9]{0,2}(-[1-9][0-9]{0,2})?/
             }
         }
+
+        Item {
+            Layout.fillWidth: true
+        }
+    }
+
+    RowLayout {
+        visible: !!root.current.token && root.kind === "music"
+        Layout.fillWidth: true
 
         MovieInput {
             id: dateField
@@ -287,8 +352,26 @@ ColumnLayout {
             required property var modelData
 
             width: ListView.view.width
+            highlighted: !!root.current.token && root.selectedMatch.id === modelData.id
+            enabled: !root.importing
             text: root.current.token ? modelData.title + (root.kind === "music" ? " — " + modelData.artist + " · " + modelData.album : " (" + (modelData.year || "?") + ")") + (root.kind === "tv" && modelData.episodeLabel ? " · " + modelData.episodeLabel : "") : (modelData.guess.title || "Unknown") + (root.episodeLabel(modelData) ? " · " + root.episodeLabel(modelData) : "") + " · " + modelData.path
-            onClicked: root.current.token ? root.importMatch(modelData) : root.choose(modelData)
+            onClicked: {
+                if (root.current.token)
+                    root.selectedMatch = modelData;
+                else
+                    root.choose(modelData);
+            }
         }
+    }
+
+    MovieButton {
+        objectName: "scanImport"
+        visible: !!root.current.token
+        Layout.alignment: Qt.AlignRight
+        text: root.importing ? "Importing…" : "Import"
+        iconName: "check"
+        highlighted: true
+        enabled: !!root.selectedMatch.id && !root.importing
+        onClicked: root.importMatch(root.selectedMatch)
     }
 }

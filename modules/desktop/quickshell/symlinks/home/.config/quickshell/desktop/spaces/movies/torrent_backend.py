@@ -33,6 +33,7 @@ from spaces.movies.local import (
     destination,
     episode_numbers,
     identity,
+    in_extra_library,
     label,
     library_root,
     subtitle_associations,
@@ -46,7 +47,7 @@ from spaces.movies.scanner import (
     sidecar_identity,
 )
 
-from spaces.movies.paths import DATA, SPACE
+from spaces.movies.paths import DATA, SPACE, extra_library_roots
 
 CONFIG = private.config_root() / 'torrents.json'
 
@@ -523,7 +524,11 @@ class TorrentBackend:
             ):
                 raise ValueError('The completed torrent file is unavailable or unsafe.')
             target = destination(title, source, season, episode, preserve_name)
-            location = target.parent.parent if kind == 'tv' else target.parent
+            location = (
+                save
+                if in_extra_library(source, kind)
+                else (target.parent.parent if kind == 'tv' else target.parent)
+            )
             locations.add(location)
             if target.exists() and target != source:
                 association = self.library.source(target)
@@ -719,6 +724,11 @@ class TorrentBackend:
                 or guess(Path(source), 'tv').get('episodeTitle')
                 or ''
             )
+            if not supplied and title.get('episodeEnd'):
+                name = ' + '.join(
+                    seasons.get(key, {}).get(number) or f'Episode {number}'
+                    for number in range(episode, int(title['episodeEnd']) + 1)
+                )
             if re.fullmatch(r'(?i)Episode\s+\d+', name):
                 name = ''
             item = {
@@ -751,7 +761,7 @@ class TorrentBackend:
         return [str(target) for _, target in moved]
 
     def refresh_registered_episodes(self, root, torrents, catalogue):
-        """A requested scan also adds missing names to previously indexed episodes."""
+        """Reconcile indexed episode filenames and fill names when available."""
         with self.db() as db:
             rows = db.execute(
                 'SELECT f.path,f.title_json,f.season,f.episode,s.torrent_hash FROM local_files f '
@@ -764,12 +774,16 @@ class TorrentBackend:
             source = Path(path)
             title = json.loads(payload)
             if (
-                title.get('episodeTitle')
-                or not source.is_file()
+                not source.is_file()
                 or source.is_symlink()
                 or not (
                     source.resolve() == root or source.resolve().is_relative_to(root)
                 )
+            ):
+                continue
+            if (
+                title.get('episodeTitle')
+                and destination(title, source, season, episode) == source
             ):
                 continue
             pending.append((source, title, season, episode, False))
@@ -779,7 +793,10 @@ class TorrentBackend:
         groups = {}
         for assignment in self.episode_assignments(pending, catalogue):
             source, title, season, episode, _ = assignment
-            if title.get('episodeTitle'):
+            if (
+                title.get('episodeTitle')
+                or destination(title, source, season, episode) != source
+            ):
                 torrent_hash = hashes[source]
                 groups.setdefault(
                     (torrent_hash, None if torrent_hash else source), []
@@ -1331,6 +1348,9 @@ class TorrentBackend:
         root = Path(given or library_root(kind)).expanduser()
         if given and not root.exists():
             raise TorrentError('The scan folder or file does not exist.')
+        roots = [root]
+        if not given:
+            roots.extend(extra_library_roots(kind))
         # Register completed tracked downloads before looking for untracked files.
         try:
             self.jobs({'kind': kind})
@@ -1363,15 +1383,23 @@ class TorrentBackend:
         self.scan_pending = {}
         imported, review, checked = [], [], 0
         if kind == 'tv':
-            imported, rename_errors = self.refresh_registered_episodes(
-                root, torrents, catalogue
-            )
-            if rename_errors:
-                warning = ' '.join([warning, *rename_errors]).strip()
+            for folder in dict.fromkeys(path.resolve() for path in roots):
+                renamed, rename_errors = self.refresh_registered_episodes(
+                    folder, torrents, catalogue
+                )
+                imported.extend(renamed)
+                if rename_errors:
+                    warning = ' '.join([warning, *rename_errors]).strip()
         with self.db() as db:
             registered = {row[0] for row in db.execute('SELECT path FROM local_files')}
         discovered = list(
-            candidates(kind, root, qbit, managed, torrents, managed_hashes)
+            {
+                entry['path']: entry
+                for folder in roots
+                for entry in candidates(
+                    kind, folder, qbit, managed, torrents, managed_hashes
+                )
+            }.values()
         )
         source_videos = (
             [entry['path'] for entry in discovered] if kind in ('movie', 'tv') else []
@@ -1423,7 +1451,12 @@ class TorrentBackend:
                         assignments = [
                             (
                                 Path(entry['path']),
-                                title,
+                                title
+                                | (
+                                    {'episodeEnd': parsed['episodeEnd']}
+                                    if parsed.get('episodeEnd')
+                                    else {}
+                                ),
                                 parsed['season'],
                                 parsed['episode'],
                                 False,
@@ -1457,6 +1490,8 @@ class TorrentBackend:
                 )
             if title:
                 title['kind'] = kind
+                if parsed.get('episodeEnd'):
+                    title['episodeEnd'] = parsed['episodeEnd']
                 try:
                     if item['torrent_hash']:
                         torrent = next(
@@ -1653,6 +1688,10 @@ class TorrentBackend:
             parsed = item['guess']
             season = request.get('season', parsed.get('season'))
             episode = request.get('episode', parsed.get('episode'))
+            if item['kind'] == 'tv':
+                end = request.get('episodeEnd', parsed.get('episodeEnd'))
+                if end is not None:
+                    title['episodeEnd'] = int(end)
             if item['torrent_hash']:
                 torrent = self.torrent(item['torrent_hash'])
                 if not torrent:
@@ -1666,10 +1705,15 @@ class TorrentBackend:
                     numbers = entry['guess']
                     chosen_season = season if key == token else numbers.get('season')
                     chosen_episode = episode if key == token else numbers.get('episode')
+                    chosen_title = dict(title)
+                    if key != token:
+                        chosen_title.pop('episodeEnd', None)
+                        if numbers.get('episodeEnd'):
+                            chosen_title['episodeEnd'] = numbers['episodeEnd']
                     assignments.append(
                         (
                             Path(entry['path']),
-                            title,
+                            chosen_title,
                             chosen_season,
                             chosen_episode,
                             item['kind'] == 'game',
@@ -1723,6 +1767,7 @@ class TorrentBackend:
             if row['path'] == path
             or (
                 selected['kind'] in ('movie', 'tv')
+                and not in_extra_library(path, selected['kind'])
                 and row['kind'] == selected['kind']
                 and Path(row['path']).parent == Path(path).parent
             )
@@ -1740,7 +1785,9 @@ class TorrentBackend:
             folders = {
                 Path(row['path']).parent
                 for row in rows
-                if row['path'] in paths and row['kind'] in ('movie', 'tv')
+                if row['path'] in paths
+                and row['kind'] in ('movie', 'tv')
+                and not in_extra_library(row['path'], row['kind'])
             }
             paths.update(
                 row['path']

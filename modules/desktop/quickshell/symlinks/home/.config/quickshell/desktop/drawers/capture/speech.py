@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 import time
 import wave
+import uuid
 
 DEFAULTS = {'language': 'auto', 'mode': 'transcribe', 'paste': False, 'model': 'small'}
 # Multilingual checkpoints. Whisper's original vocabulary has 99 languages;
@@ -31,6 +32,7 @@ MODELS = {
     },
 }
 FILE_LIMIT = 1800
+MEDIA_LIMIT = 6 * 60 * 60
 
 
 @functools.lru_cache(maxsize=1)
@@ -257,6 +259,7 @@ class Speech:
         self.paste_blocked = True
         self.target = ('', '')
         self.job = {}
+        self.result = {}
         self.progress = -1
         self.since = 0
         self.deadline = 0
@@ -318,6 +321,11 @@ class Speech:
     def snapshot(self):
         return dict(
             phase=self.phase,
+            fileOutputs=['clipboard', 'srt'],
+            jobId=self.job.get('id', ''),
+            source=self.job.get('source', ''),
+            output=self.job.get('output', 'clipboard'),
+            result=dict(self.result),
             options=dict(self.options),
             modelReady=self.model_ready(),
             models=[
@@ -330,6 +338,7 @@ class Speech:
                 for key, meta in MODELS.items()
             ],
             languages=self.languages(),
+            allLanguages=self.languages('large-v3'),
             progress=self.progress,
             elapsed=int(time.monotonic() - self.since)
             if self.phase == 'recording'
@@ -346,7 +355,8 @@ class Speech:
         if operation == 'context':
             self.paste_blocked = request.get('blocked') is not False
         elif operation == 'cancel':
-            self.cancel()
+            if not request.get('jobId') or request['jobId'] == self.job.get('id'):
+                self.cancel()
         elif operation == 'clear-error':
             self.error = ''
         elif operation == 'controls-opened':
@@ -398,74 +408,65 @@ class Speech:
         elif operation in ('start', 'file', 'setup'):
             if self.phase != 'idle':
                 raise ValueError('A speech job is already running.')
+            job = dict(self.options, file=operation == 'file', id=uuid.uuid4().hex)
+            if operation == 'file':
+                source = request.get('path')
+                output = request.get('output', 'clipboard')
+                identifier = request.get('jobId', job['id'])
+                if (
+                    not isinstance(source, str)
+                    or not Path(source).is_absolute()
+                    or not Path(source).is_file()
+                ):
+                    raise ValueError('Choose an existing local audio or video file.')
+                if output not in ('clipboard', 'srt'):
+                    raise ValueError('Unknown transcription output.')
+                if not isinstance(identifier, str) or not re.fullmatch(
+                    r'[a-zA-Z0-9-]{1,80}', identifier
+                ):
+                    raise ValueError('Invalid transcription job identifier.')
+                for key in ('model', 'language'):
+                    if key in request:
+                        if not self.valid_option(key, request[key]):
+                            raise ValueError('Unknown speech option.')
+                        job[key] = request[key]
+                if job['language'] not in {
+                    item['code'] for item in self.languages(job['model'])
+                }:
+                    raise ValueError('This language needs a different speech model.')
+                source = Path(source).resolve()
+                target = source.with_suffix('.srt')
+                if output == 'srt' and os.path.lexists(target):
+                    raise ValueError(f'Subtitles already exist: {target.name}')
+                stat = source.stat()
+                job.update(
+                    id=identifier,
+                    source=str(source),
+                    output=output,
+                    target=str(target),
+                    identity=(stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns),
+                )
+            if operation == 'file' or job['mode'] == 'transcribe':
+                if not shutil.which('whisper-cli'):
+                    raise ValueError('Install whisper-cpp to enable transcription.')
+                if operation == 'start' and not self.model_ready(job['model']):
+                    raise ValueError('Download the speech model before transcribing.')
             self.error = self.message = ''
+            self.result = {}
             self.mute_restore_failed = False
             self.directory.mkdir(parents=True, exist_ok=True)
             self.temporary = tempfile.TemporaryDirectory(
                 prefix='speech-', dir=self.directory
             )
             self.path = Path(self.temporary.name)
-            self.job = dict(self.options, file=operation == 'file')
-            if operation == 'setup':
-                self.progress = -1
-                self.notified_progress = -1
-                name = MODELS[self.job['model']]['name']
-                self.notification.update(
-                    f'Downloading {name}', 'Preparing model download…'
-                )
-                self.spawn(
-                    [
-                        'voxtype',
-                        '--config',
-                        str(self.config),
-                        'setup',
-                        '--download',
-                        '--model',
-                        self.job['model'],
-                        '--progress-format',
-                        'json',
-                    ],
-                    'preparing',
-                )
+            self.job = job
+            if operation == 'setup' or (
+                operation == 'file' and not self.model_ready(job['model'])
+            ):
+                self.download_model()
                 return
-            if operation == 'file' or self.job['mode'] == 'transcribe':
-                if not self.snapshot()['modelReady']:
-                    self.cleanup()
-                    raise ValueError('Download the speech model before transcribing.')
-                if not shutil.which('whisper-cli'):
-                    self.cleanup()
-                    raise ValueError('Install whisper-cpp to enable transcription.')
             if operation == 'file':
-                source = request.get('path')
-                if (
-                    not isinstance(source, str)
-                    or not Path(source).is_absolute()
-                    or not Path(source).is_file()
-                ):
-                    self.cleanup()
-                    raise ValueError('Choose an existing local audio or video file.')
-                self.spawn(
-                    [
-                        'ffmpeg',
-                        '-nostdin',
-                        '-v',
-                        'error',
-                        '-y',
-                        '-i',
-                        source,
-                        '-vn',
-                        '-t',
-                        str(FILE_LIMIT + 1),
-                        '-ar',
-                        '16000',
-                        '-ac',
-                        '1',
-                        '-c:a',
-                        'pcm_s16le',
-                        str(self.path / 'audio.wav'),
-                    ],
-                    'converting',
-                )
+                self.decode_file()
             else:
                 try:
                     self.target = active_window()
@@ -475,6 +476,78 @@ class Speech:
                     raise
         else:
             raise ValueError('Unknown speech command.')
+
+    def download_model(self):
+        self.progress = -1
+        self.notified_progress = -1
+        name = MODELS[self.job['model']]['name']
+        self.notification.update(f'Downloading {name}', 'Preparing model download…')
+        self.spawn(
+            [
+                'voxtype',
+                '--config',
+                str(self.config),
+                'setup',
+                '--download',
+                '--model',
+                self.job['model'],
+                '--progress-format',
+                'json',
+            ],
+            'preparing',
+        )
+
+    def decode_file(self):
+        self.notification.update('Reading media…', self.job['source'])
+        self.spawn(
+            [
+                'ffmpeg',
+                '-nostdin',
+                '-v',
+                'error',
+                '-y',
+                '-i',
+                self.job['source'],
+                '-map',
+                '0:a:0',
+                '-vn',
+                '-t',
+                str(MEDIA_LIMIT + 1),
+                '-ar',
+                '16000',
+                '-ac',
+                '1',
+                '-c:a',
+                'pcm_s16le',
+                str(self.path / 'audio.wav'),
+            ],
+            'converting',
+        )
+
+    def save_subtitles(self):
+        source = Path(self.job['source'])
+        stat = source.stat()
+        if (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns) != self.job[
+            'identity'
+        ]:
+            raise ValueError('The source changed during transcription. Try again.')
+        transcript = self.path / 'transcript.srt'
+        if not transcript.read_text().strip():
+            self.complete('No speech detected.')
+            return
+        target = Path(self.job['target'])
+        # Stage on the destination filesystem; link publishes without clobbering
+        # even a subtitle file created while recognition was running.
+        with tempfile.TemporaryDirectory(
+            prefix='.subtitles-', dir=target.parent
+        ) as folder:
+            staged = Path(folder) / target.name
+            with staged.open('xb') as output, transcript.open('rb') as data:
+                os.chmod(staged, 0o600)
+                shutil.copyfileobj(data, output)
+            os.link(staged, target)
+        self.result = dict(id=self.job['id'], status='saved', path=str(target))
+        self.complete('Subtitles saved.', str(target))
 
     @staticmethod
     def microphone_identity(source):
@@ -610,7 +683,13 @@ class Speech:
             raise
         self.phase = phase
         # File decoding and inference are bounded separately from recording.
-        self.deadline = time.monotonic() + (1800 if phase == 'preparing' else 900)
+        self.deadline = time.monotonic() + (
+            1800
+            if phase == 'preparing'
+            else 24 * 60 * 60
+            if self.job.get('file')
+            else 900
+        )
 
     def audio_duration(self):
         try:
@@ -634,13 +713,25 @@ class Speech:
 
     def transcribe(self):
         duration = self.audio_duration()
-        if duration > FILE_LIMIT:
-            raise ValueError('Choose a recording no longer than 30 minutes.')
+        limit = MEDIA_LIMIT if self.job.get('file') else FILE_LIMIT
+        if duration > limit:
+            raise ValueError(
+                f'Choose media no longer than {limit // 3600} hours.'
+                if self.job.get('file')
+                else 'Choose a recording no longer than 30 minutes.'
+            )
         if duration < 0.2:
             self.complete(
                 'No speech detected.', 'Try speaking louder or check your microphone.'
             )
             return
+        if self.job.get('file'):
+            self.notification.update(
+                'Generating subtitles…'
+                if self.job.get('output') == 'srt'
+                else 'Transcribing media…',
+                self.job['source'],
+            )
         self.spawn(
             [
                 'whisper-cli',
@@ -650,10 +741,9 @@ class Speech:
                 self.job['language'],
                 '-f',
                 str(self.path / 'audio.wav'),
-                '-otxt',
+                '-osrt' if self.job.get('output') == 'srt' else '-otxt',
                 '-of',
                 str(self.path / 'transcript'),
-                '-nt',
                 '-np',
                 '-t',
                 str(min(8, os.cpu_count() or 1)),
@@ -791,8 +881,11 @@ class Speech:
                     }.get(phase, 'Speech capture failed.')
                 )
             if phase == 'preparing':
-                if not self.snapshot()['modelReady']:
+                if not self.model_ready(self.job['model']):
                     raise ValueError('The speech model download did not complete.')
+                if self.job.get('file'):
+                    self.decode_file()
+                    return
                 name = MODELS[self.job['model']]['name']
                 self.message = f'{name} ready.'
                 self.notification.update(
@@ -804,13 +897,18 @@ class Speech:
             elif phase in ('recording', 'stopping', 'converting'):
                 self.transcribe()
             elif phase == 'transcribing':
-                self.copy_transcript()
+                if self.job.get('output') == 'srt':
+                    self.save_subtitles()
+                else:
+                    self.copy_transcript()
         except (OSError, ValueError, EOFError, wave.Error) as error:
             self.fail(str(error))
             self.cleanup()
 
-    def fail(self, message, title=None):
+    def fail(self, message, title=None, affect_job=True):
         self.error = message
+        if affect_job and self.job.get('file') and self.phase != 'idle':
+            self.result = dict(id=self.job['id'], status='error', error=message)
         if self.mute_restore_failed:
             self.notification.update(
                 'Microphone could not be muted',
@@ -831,6 +929,8 @@ class Speech:
         )
 
     def complete(self, message, detail=''):
+        if self.job.get('file') and not self.result:
+            self.result = dict(id=self.job['id'], status='done', message=message)
         self.message = message
         if self.mute_restore_failed:
             self.notification.update(
@@ -852,6 +952,10 @@ class Speech:
         self.phase = 'idle'
 
     def cancel(self):
+        if self.job.get('file') and self.phase != 'idle' and not self.result:
+            self.result = dict(
+                id=self.job['id'], status='cancelled', message='Cancelled.'
+            )
         if self.phase.startswith('microphone-'):
             self.notification.cancel_prompt()
         if self.phase == 'preparing' and not self.error:

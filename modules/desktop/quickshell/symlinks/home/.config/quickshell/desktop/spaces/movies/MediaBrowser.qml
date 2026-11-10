@@ -39,9 +39,11 @@ FocusScope {
     readonly property bool animeMode: filters.genre === "Anime" && !localMode
     readonly property bool editingAnime: genre.currentText === "Anime"
     property var seasons: []
+    property var providerSeasons: []
     // The chosen season; the season picker follows it rather than owning it.
     property string season: ""
     property var episodes: []
+    property var providerEpisodes: []
     property string episodeNext: ""
     property string nextPage: ""
     property string error: ""
@@ -57,7 +59,10 @@ FocusScope {
     property bool playLoading: false
     property bool favorites: false
     property bool localMode: false
-    property bool scanOpen: false
+    readonly property bool scanOpen: scanDialog.opened
+    property alias localScan: scanPanel
+    property alias scanPopup: scanDialog
+    property bool reviewPending: false
     property int watchIndex: 0
     property var localFiles: []
     property var torrentEpisode: ({})
@@ -108,12 +113,12 @@ FocusScope {
         case "torrent":
             return torrentPanel.connectionLoading || torrentPanel.searching || torrentPanel.extraSearching || torrentPanel.reviewLoading || torrentPanel.moreLoading || torrentPanel.startLoading || torrentPanel.launchPending;
         case "subtitles":
-            return subtitlePanel.loading || subtitlePanel.searching || subtitlePanel.moreLoading || subtitlePanel.changing;
+            return subtitlePanel.loading || subtitlePanel.searching || subtitlePanel.moreLoading || subtitlePanel.changing || subtitlePanel.generating;
         default:
             return false;
         }
     }
-    readonly property bool busy: loading || titleLoading || tabLoading || playLoading || animeGenresLoading || localService.pendingDownloads > 0 || localService.pendingChanges > 0 || (scanOpen && (scanPanel.scanning || scanPanel.matching))
+    readonly property bool busy: loading || titleLoading || tabLoading || playLoading || animeGenresLoading || localService.pendingDownloads > 0 || localService.pendingChanges > 0 || (scanPanel.scanning || scanPanel.matching || scanPanel.importing)
     property bool gridMode: false
     // The provider the watch button shows (Local comes first while files exist).
     readonly property int providerIndex: Math.max(0, watchIndex - (localFiles.length ? 1 : 0))
@@ -168,12 +173,10 @@ FocusScope {
         if (!files.length && tab === "subtitles")
             tab = "overview";
 
-        if (kind === "tv" && localMode && files.length) {
-            setSeasons(files.map(file => {
-                return file.season;
-            }));
+        if (kind === "tv") {
+            updateSeasons();
             if (tab === "episodes")
-                showLocalEpisodes();
+                updateEpisodes();
         }
     }
 
@@ -205,7 +208,7 @@ FocusScope {
             return true;
 
         if (scanOpen) {
-            scanOpen = false;
+            scanDialog.close();
             return true;
         }
         if (searchOpen) {
@@ -240,6 +243,11 @@ FocusScope {
             season = next.length ? next[0] : "";
     }
 
+    function updateSeasons() {
+        const local = localFiles.map(file => file.season);
+        setSeasons(localMode ? providerSeasons.concat(local) : providerSeasons.length ? providerSeasons : local);
+    }
+
     // Every per-title request checks selectionGeneration, so bumping it
     // abandons them all; their loading flags must be cleared here too.
     function resetSelection(title) {
@@ -262,8 +270,10 @@ FocusScope {
         torrentEpisode = ({});
         subtitlePath = "";
         seasons = [];
+        providerSeasons = [];
         season = "";
         episodes = [];
+        providerEpisodes = [];
         episodeCatalogue.clear();
         episodeNext = "";
         links = [];
@@ -484,7 +494,7 @@ FocusScope {
         const needsBrowse = localMode || favorites || !animeMode || !!search.text || !!filters.animeGenre || !!filters.sort || !!filters.country || !!filters.minYear || !!filters.maxYear || !!filters.rating || !!filters.votes;
         localMode = false;
         favorites = false;
-        scanOpen = false;
+        scanDialog.close();
         filters = ({
                 "genre": "Anime"
             });
@@ -604,11 +614,7 @@ FocusScope {
 
                 filesLoading = false;
                 if (!failure) {
-                    localFiles = result;
-                    if (kind === "tv" && result.length && (localMode || !seasons.length))
-                        setSeasons(result.map(file => {
-                            return file.season;
-                        }));
+                    applyLocalFiles(result);
 
                     if (kind === "tv" && result.length && tab === "episodes" && !episodes.length && !episodeLoading)
                         loadEpisodes(false);
@@ -658,9 +664,8 @@ FocusScope {
 
                 seasonsLoading = false;
                 if (!failure) {
-                    setSeasons(localMode && localFiles.length ? localFiles.map(file => {
-                        return file.season;
-                    }) : result.seasons);
+                    providerSeasons = result.seasons || [];
+                    updateSeasons();
                     if (tab === "episodes")
                         loadEpisodes(false, refresh);
                 } else if (!localFiles.length) {
@@ -748,12 +753,8 @@ FocusScope {
         const selection = selectionGeneration;
         episodeLoading = true;
         if (!append) {
-            episodes = [];
-            episodeCatalogue.clear();
-        }
-        if (localMode && localFiles.length) {
-            showLocalEpisodes();
-            return;
+            episodeNext = "";
+            updateEpisodes();
         }
         service.fetch("episodes", {
             "title": selected,
@@ -766,43 +767,42 @@ FocusScope {
 
             episodeLoading = false;
             if (failure) {
-                if (localFiles.length)
-                    showLocalEpisodes();
-                else
-                    detailError = failure;
+                updateEpisodes(true);
+                detailError = failure;
             } else {
-                episodes = (append ? episodes : []).concat(result.items);
-                for (const episode of result.items)
-                    episodeCatalogue.append({
-                        "payload": JSON.stringify(episode)
-                    });
-                episodeNext = result.next;
+                providerEpisodes = (append ? providerEpisodes : []).concat(result.items);
+                updateEpisodes();
+                episodeNext = result.next || "";
             }
         });
     }
 
-    function showLocalEpisodes() {
-        if (!localFiles.length)
-            return;
-
+    function updateEpisodes(includeLocal) {
         const chosen = Number(season);
-        const rows = localFiles.filter(file => {
-            return Number(file.season) === chosen;
-        }).map(file => {
-            return ({
-                    "season": file.season,
-                    "number": file.episode,
-                    "title": file.episodeTitle || "Episode " + file.episode
-                });
-        });
+        const rows = providerEpisodes.slice();
+        if (localMode || includeLocal) {
+            for (const file of localFiles.filter(file => Number(file.season) === chosen)) {
+                const index = rows.findIndex(row => Number(row.season) === chosen && Number(row.number) === Number(file.episode));
+                const fallback = file.episodeTitle || "Episode " + file.episode;
+                if (index < 0)
+                    rows.push({
+                        "season": String(file.season),
+                        "number": file.episode,
+                        "title": fallback
+                    });
+                else if (!rows[index].title || /^Episode\s+\d+$/i.test(rows[index].title))
+                    rows[index] = Object.assign({}, rows[index], {
+                        "title": fallback
+                    });
+            }
+            rows.sort((a, b) => Number(a.number) - Number(b.number));
+        }
         episodeCatalogue.clear();
         episodes = rows;
         for (const episode of rows)
             episodeCatalogue.append({
                 "payload": JSON.stringify(episode)
             });
-        episodeNext = "";
-        episodeLoading = false;
     }
 
     function deleteLocal(path) {
@@ -873,22 +873,38 @@ FocusScope {
 
     // A season chosen in the picker, or replaced because the list lost it.
     onSeasonChanged: {
+        ++episodeGeneration;
+        providerEpisodes = [];
+        episodes = [];
+        episodeCatalogue.clear();
+        episodeNext = "";
+        episodeLoading = false;
         seasonPicker.sync();
         if (tab === "episodes")
             loadEpisodes(false);
     }
+    onLocalModeChanged: {
+        const previousSeason = season;
+        updateSeasons();
+        if (tab === "episodes" && season === previousSeason)
+            loadEpisodes(false);
+    }
     onEditingAnimeChanged: {
-        if (editingAnime) {
+        if (editingAnime)
             requestAnimeGenres();
-        }
     }
     onActiveChanged: {
         if (!active) {
             gallery.close();
+            scanDialog.close();
             selectionDelay.stop();
             pagination.stop();
             searchDelay.stop();
         } else {
+            if (reviewPending && localMode) {
+                reviewPending = false;
+                scanDialog.open();
+            }
             // Resume only a hydration that hiding cancelled before it started.
             if (selected.id && hydratedSelection !== selectionGeneration)
                 selectionDelay.restart();
@@ -1004,6 +1020,89 @@ FocusScope {
         parent: root
     }
 
+    Popup {
+        id: scanDialog
+
+        objectName: "libraryReview"
+        parent: root
+        width: Math.min(1100, parent.width)
+        height: Math.min(700, parent.height)
+        x: (parent.width - width) / 2
+        y: (parent.height - height) / 2
+        modal: false
+        dim: true
+        focus: true
+        popupType: Popup.Item
+        padding: 14
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onOpened: contentItem.forceActiveFocus()
+        onClosed: root.initialFocus.forceActiveFocus()
+
+        Overlay.modeless: Rectangle {
+            color: "#b3000000"
+        }
+
+        background: Rectangle {
+            color: MovieStyle.background
+            border.color: MovieStyle.border
+            radius: MovieStyle.radius
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 12
+
+            RowLayout {
+                Layout.fillWidth: true
+
+                MovieText {
+                    text: "Unidentified " + (root.kind === "tv" ? "episodes" : "movies")
+                    font.bold: true
+                    Layout.fillWidth: true
+                }
+
+                MovieIconButton {
+                    objectName: "closeLibraryReview"
+                    iconName: "x"
+                    text: "Close library review"
+                    onClicked: scanDialog.close()
+                }
+            }
+
+            LocalScan {
+                id: scanPanel
+
+                objectName: "mediaScan"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                showStatus: false
+                showLoading: false
+                showScanControls: false
+                service: localService
+                kind: root.kind
+                onImported: fromScan => {
+                    if (!fromScan)
+                        root.refreshLocalLibrary();
+
+                    if (!review.length)
+                        scanDialog.close();
+                }
+                onScanFinished: {
+                    root.refreshLocalLibrary();
+                    if (error) {
+                        root.error = error;
+                    } else if (review.length) {
+                        if (root.active && root.localMode)
+                            scanDialog.open();
+                        else
+                            root.reviewPending = true;
+                    } else {
+                        scanDialog.close();
+                    }
+                }
+            }
+        }
+    }
+
     Timer {
         id: selectionDelay
 
@@ -1043,8 +1142,12 @@ FocusScope {
             onClicked: {
                 root.localMode = true;
                 root.favorites = false;
-                root.scanOpen = false;
+                scanDialog.close();
                 root.browse(false);
+                if (root.reviewPending) {
+                    root.reviewPending = false;
+                    scanDialog.open();
+                }
             }
         }
 
@@ -1056,7 +1159,7 @@ FocusScope {
             onClicked: {
                 root.localMode = false;
                 root.favorites = false;
-                root.scanOpen = false;
+                scanDialog.close();
                 root.browse(false);
             }
         }
@@ -1069,7 +1172,7 @@ FocusScope {
             onClicked: {
                 root.localMode = false;
                 root.favorites = true;
-                root.scanOpen = false;
+                scanDialog.close();
                 root.browse(false);
             }
         }
@@ -1279,7 +1382,7 @@ FocusScope {
                             "watch": "Loading viewing options…",
                             "spoilers": "Loading spoilers…",
                             "person": "Loading filmography…"
-                        })[root.tab]), task(root.playLoading, "player", "Opening player…"), task(root.animeGenresLoading, "genres", "Loading anime genres…"), task(root.tab === "torrent" && root.tabLoading, "find", "Loading downloads…"), task(root.tab === "subtitles" && root.tabLoading, "subtitles", "Loading subtitles…"), task(localService.pendingDownloads > 0, "download", "Downloading media…"), task(localService.pendingChanges > 0, "library", "Updating local library…"), task(root.scanOpen && (scanPanel.scanning || scanPanel.matching), "scan", "Scanning local library…")]
+                        })[root.tab]), task(root.playLoading, "player", "Opening player…"), task(root.animeGenresLoading, "genres", "Loading anime genres…"), task(root.tab === "torrent" && root.tabLoading, "find", "Loading downloads…"), task(root.tab === "subtitles" && root.tabLoading, "subtitles", "Loading subtitles…"), task(localService.pendingDownloads > 0, "download", "Downloading media…"), task(localService.pendingChanges > 0, "library", "Updating local library…"), task(scanPanel.scanning || scanPanel.matching || scanPanel.importing, "scan", "Scanning local library…")]
             }
         }
 
@@ -1316,12 +1419,13 @@ FocusScope {
             Layout.maximumWidth: 42
             iconName: "refresh-cw"
             text: root.localMode ? "Refresh library" : "Refresh catalogue"
-            highlighted: root.localMode && root.scanOpen
-            enabled: root.localMode || !root.loading
+            enabled: root.localMode ? !scanPanel.scanning && !scanPanel.importing : !root.loading
             onClicked: {
-                if (root.localMode)
-                    root.scanOpen = !root.scanOpen;
-                else {
+                if (root.localMode) {
+                    root.reviewPending = false;
+                    root.error = "";
+                    scanPanel.scan();
+                } else {
                     searchDelay.stop();
                     root.browse(false, true, true);
                 }
@@ -1367,25 +1471,12 @@ FocusScope {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            LocalScan {
-                id: scanPanel
-
-                objectName: "mediaScan"
-                showStatus: false
-                showLoading: false
-                service: localService
-                anchors.fill: parent
-                visible: root.localMode && root.scanOpen
-                kind: root.kind
-                onImported: root.browse(false)
-            }
-
             GridView {
                 id: grid
 
                 cacheBuffer: height * 1.5
                 objectName: "catalogueGrid"
-                visible: root.gridMode && !root.scanOpen
+                visible: root.gridMode
                 width: parent.width * 0.51
                 height: parent.height
                 clip: true
@@ -1395,22 +1486,19 @@ FocusScope {
                 keyNavigationEnabled: true
                 keyNavigationWraps: false
                 onCurrentItemChanged: {
-                    if (!root.updatingCatalogue && !root.keepLinkedSelection() && activeFocus && currentItem && !root.sameTitle(currentItem.title, root.selected)) {
+                    if (!root.updatingCatalogue && !root.keepLinkedSelection() && activeFocus && currentItem && !root.sameTitle(currentItem.title, root.selected))
                         root.selectTitle(currentItem.title);
-                    }
                 }
                 Keys.onPressed: event => {
                     return root.releaseLinkedSelection(event);
                 }
                 Keys.onReturnPressed: {
-                    if (currentItem) {
+                    if (currentItem)
                         root.selectTitle(currentItem.title);
-                    }
                 }
                 Keys.onEnterPressed: {
-                    if (currentItem) {
+                    if (currentItem)
                         root.selectTitle(currentItem.title);
-                    }
                 }
                 onContentYChanged: pagination.restart()
 
@@ -1445,7 +1533,7 @@ FocusScope {
                 x: root.gridMode ? parent.width * 0.55 : 16
                 width: root.gridMode ? parent.width * 0.45 : Math.min(parent.width * 0.7, 1000)
                 height: root.gridMode ? parent.height : parent.height - Math.min(270, parent.height * 0.38)
-                visible: !!root.selected.id && !root.scanOpen
+                visible: !!root.selected.id
                 spacing: 8
 
                 Item {
@@ -1876,14 +1964,12 @@ FocusScope {
                     activeFocusOnTab: true
                     keyNavigationEnabled: true
                     Keys.onReturnPressed: {
-                        if (currentItem) {
+                        if (currentItem)
                             root.selectTitle(currentItem.title);
-                        }
                     }
                     Keys.onEnterPressed: {
-                        if (currentItem) {
+                        if (currentItem)
                             root.selectTitle(currentItem.title);
-                        }
                     }
                     visible: root.tab === "person"
                     Layout.fillWidth: true
@@ -1989,8 +2075,10 @@ FocusScope {
                         }
 
                         MovieIconButton {
+                            objectName: "findSeason"
                             iconName: "file-search-corner"
                             text: "Find selected season"
+                            visible: !root.localMode || !root.localFiles.some(file => Number(file.season) === Number(root.season))
                             enabled: root.seasons.length > 0
                             onClicked: {
                                 root.torrentEpisode = ({
@@ -2022,7 +2110,7 @@ FocusScope {
 
                             width: episodeView.width
                             episode: JSON.parse(payload)
-                            findAvailable: true
+                            findAvailable: !root.localMode || !localFile.path
                             localFile: root.localFiles.find(file => {
                                 return Number(file.season) === Number(episode.season) && Number(file.episode) === Number(episode.number);
                             }) || ({})
@@ -2070,7 +2158,7 @@ FocusScope {
 
                 cacheBuffer: width * 2
                 objectName: "catalogueRail"
-                visible: !root.gridMode && !root.scanOpen
+                visible: !root.gridMode
                 anchors.bottom: parent.bottom
                 width: parent.width
                 height: Math.min(250, parent.height * 0.36)
@@ -2081,22 +2169,19 @@ FocusScope {
                 keyNavigationEnabled: true
                 keyNavigationWraps: false
                 onCurrentItemChanged: {
-                    if (!root.updatingCatalogue && !root.keepLinkedSelection() && activeFocus && currentItem && !root.sameTitle(currentItem.title, root.selected)) {
+                    if (!root.updatingCatalogue && !root.keepLinkedSelection() && activeFocus && currentItem && !root.sameTitle(currentItem.title, root.selected))
                         root.selectTitle(currentItem.title);
-                    }
                 }
                 Keys.onPressed: event => {
                     return root.releaseLinkedSelection(event);
                 }
                 Keys.onReturnPressed: {
-                    if (currentItem) {
+                    if (currentItem)
                         root.selectTitle(currentItem.title);
-                    }
                 }
                 Keys.onEnterPressed: {
-                    if (currentItem) {
+                    if (currentItem)
                         root.selectTitle(currentItem.title);
-                    }
                 }
                 onContentXChanged: pagination.restart()
 
@@ -2128,7 +2213,7 @@ FocusScope {
 
             MovieText {
                 anchors.centerIn: parent
-                visible: !root.loading && !root.titles.length && !root.scanOpen
+                visible: !root.loading && !root.titles.length
                 text: root.error ? "" : root.localMode ? "No local titles yet." : root.favorites ? "No saved favorites yet." : "No matching titles."
                 color: MovieStyle.muted
             }

@@ -21,7 +21,16 @@ class AudioDialogTests(unittest.TestCase):
                 AUDIO_TEST_DIR=folder,
                 AUDIO_TEST_CONFIG=str(CONFIG),
                 AUDIO_TEST_SUFFIX=source_suffix,
-                PYTHONPATH=str(LIB),
+                PYTHONPATH=os.pathsep.join(
+                    map(
+                        str,
+                        (
+                            LIB,
+                            REPO
+                            / 'modules/media/tools/transcription/files/usr/local/lib/desktop-speech',
+                        ),
+                    )
+                ),
                 XDG_CONFIG_HOME=str(Path(folder) / 'config'),
             )
             setup = """

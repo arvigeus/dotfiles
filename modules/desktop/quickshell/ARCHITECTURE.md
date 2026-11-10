@@ -305,21 +305,37 @@ the WAV format and declared sample data before transcription or saving. Other
 nonzero exits remain errors. The fake recorder uses the same stop status so
 ordinary transcription checks exercise this path.
 
-File import accepts existing local files only and uses FFmpeg to decode a mono
-16 kHz WAV. Decoding reads at most 30 minutes plus one second, then rejects longer
-input rather than silently truncating it. Inference writes plain text into a
-private job directory, using the frozen model/language selection and no
-translation or LLM rewriting. FFmpeg/inference are bounded to 15 minutes;
-downloads to 30 minutes. Discard kills the owned process group, including download
-children. Job data and logs are removed at completion/cancellation. Input files
-are never modified. Recognition quality still needs real microphone testing.
+File transcription uses the same owner through `speech-file`; the Capture drawer
+handles microphone input only. File requests accept an absolute local path,
+`output` (`clipboard` or `srt`), an opaque `jobId`, and optional model/language
+overrides. Overrides are validated and frozen without changing microphone
+preferences. A missing model downloads before the file is decoded, within the
+same cancellable job. Model setup alone still stops at ready.
 
-The file chooser belongs to retained `DictationService`, not the lazy drawer.
-`chooseFile()` releases the drawer's exclusive layer input, waits 400 ms for its
-exit, then starts Zenity as a normal window. Reopened shell surfaces are dismissed
-during this handoff. The chooser and its stdout collection survive drawer page
-destruction; cancellation releases its pending state without a speech job. A
-selected absolute path is passed directly to the backend, without shell parsing.
+FFmpeg decodes the first audio stream as mono 16 kHz PCM WAV, reading at most six
+hours plus one second; longer media is rejected without publishing truncated
+results. Microphone recording limits remain independent. File decode/inference
+have a 24-hour deadline per phase; microphone inference has fifteen minutes and
+model downloads thirty minutes. Discard kills the owned process group, including
+download children. Private job data and logs are removed on completion or cancel.
+Input media is never modified. Recognition quality still needs real-media testing.
+
+SRT jobs use Whisper's timed `-osrt` output without translation. A nonempty result
+stages mode-0600 data in a private adjacent directory and publishes `stem.srt`
+with an atomic hard link. Both existing files (including dangling symlinks) and
+concurrent output creation are refused. Source device/inode/size/mtime must still
+match before publication. Empty recognition, failure and cancellation leave no
+sidecar. SRT output never changes the clipboard. File jobs expose their identifier,
+source, output and final result metadata in snapshots, without recognized text.
+A cancel carrying an outdated job identifier has no effect. Command rejection
+uses per-reply `requestError`/`requestJobId`, so it cannot corrupt an active job's
+result. Jobs survive client disconnection and shell reloads.
+
+`capture/FileSpeech.qml` adapts this protocol for the shared Movies/Series
+subtitle panel. It follows jobs for the selected path, refreshes inventory on
+completion, and permits cancellation of that job while navigation remains usable.
+`media/tools/transcription` owns the native Qt client used by Audio/Video tools;
+see its [architecture](../../media/tools/transcription/ARCHITECTURE.md).
 
 Successful transcription starts a `wl-copy --foreground` provider from the text
 file. The capture service stays alive while that provider owns the selection,

@@ -816,6 +816,161 @@ class TorrentTests(unittest.TestCase):
         self.assertTrue(Path(imported['path']).exists())
         self.assertFalse(source.exists())
 
+    def library_config(self, **settings):
+        path = self.root / 'config/quickshell/desktop/integrations/media-library.json'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(settings))
+        return path
+
+    def test_extra_library_roots_scan_once_and_keep_collections_in_place(self):
+        folder = self.root / 'Ghibli'
+        folder.mkdir()
+        self.library_config(
+            movies=[str(folder), str(folder), str(folder.parent / 'Ghibli')]
+        )
+        files = [folder / f'Film {n}.mkv' for n in (1, 2)]
+        for n, source in enumerate(files, 1):
+            source.write_bytes(b'video')
+            source.with_suffix('.nfo').write_text(
+                f'<movie><title>Film {n}</title><uniqueid type="imdb">tt{n}</uniqueid></movie>'
+            )
+        files[0].with_suffix('.en.srt').write_text('subtitles')
+        result = self.backend.scan({'kind': 'movie'})
+        self.assertEqual(len(result['imported']), 2)
+        self.assertEqual(result['review'], [])
+        self.assertEqual(
+            {row['path'] for row in result['imported']}, set(map(str, files))
+        )
+        self.assertFalse((self.root / 'Videos/Movies').exists())
+        self.assertEqual(self.backend.scan({'kind': 'movie'})['imported'], [])
+        self.backend.delete_local({'path': str(files[0])})
+        self.assertFalse(files[0].exists())
+        self.assertFalse(files[0].with_suffix('.en.srt').exists())
+        self.assertTrue(files[1].exists())
+        self.assertTrue(files[1].with_suffix('.nfo').exists())
+
+    def test_extra_library_manual_match_and_torrent_stay_in_collection(self):
+        folder = self.root / 'Ghibli'
+        folder.mkdir()
+        self.library_config(movies=[str(folder)])
+        source = folder / 'Unknown.mkv'
+        source.write_bytes(b'video')
+        with patch('spaces.movies.torrent_backend.catalogue_match', return_value=None):
+            review = self.backend.scan({'kind': 'movie'})['review']
+        self.assertEqual(len(review), 1)
+        result = self.backend.scan_import(
+            {'token': review[0]['token'], 'title': self.movie}
+        )
+        self.assertEqual(result['path'], str(source))
+        self.assertTrue(source.with_suffix('.nfo').exists())
+
+        torrent_source = folder / 'The.General.1926.mkv'
+        torrent_source.write_bytes(b'torrent')
+        self.fake.save_path = str(folder)
+        self.fake.files = [{'name': torrent_source.name, 'priority': 1}]
+        result = self.backend.import_torrent_files(
+            self.fake.call('torrents/info')[0],
+            [(torrent_source, self.movie, None, None, False)],
+        )
+        self.assertEqual(result, [str(torrent_source)])
+        self.assertFalse(any(op == 'torrents/setLocation' for op, _ in self.fake.calls))
+
+    def test_invalid_extra_directory_config_fails_before_importing(self):
+        config = self.library_config(movies='not a list')
+        with self.assertRaisesRegex(ValueError, 'list of directory paths'):
+            self.backend.scan({'kind': 'movie'})
+        config.write_text('{broken')
+        with self.assertRaisesRegex(ValueError, 'Cannot read'):
+            self.backend.scan({'kind': 'movie'})
+
+    def test_refresh_normalizes_registered_episode_and_preserves_sidecars(self):
+        show = dict(
+            id='tt101',
+            kind='tv',
+            title='NieR Automata Ver1.1a',
+            year='2023',
+            episodeTitle='or not to [B]e',
+        )
+        folder = self.root / 'Videos/Series/NieR Automata Ver1.1a (2023)/Season 01'
+        folder.mkdir(parents=True)
+        source = folder / 'NieR Automata Ver1.1a (2023) - S01E01 - or not to [B]e.mkv'
+        source.write_bytes(b'episode')
+        source.with_suffix('.en.srt').write_text('subtitles')
+        source.with_suffix('.release.nfo').write_text(
+            '<episodedetails><seriesrelease><originalfilename>original.mkv</originalfilename></seriesrelease></episodedetails>'
+        )
+        with self.backend.library.db() as db:
+            db.execute(
+                'INSERT INTO local_files VALUES (?,?,?,?,?,?)',
+                ('tv', 'tt101', 1, 1, str(source), json.dumps(show)),
+            )
+            db.execute(
+                'INSERT INTO local_sources VALUES (?,?,?)',
+                (str(source), '', 'original.mkv'),
+            )
+        result = self.backend.scan({'kind': 'tv'})
+        target = folder / 'S01E01 - or not to [B]e.mkv'
+        self.assertEqual([row['path'] for row in result['imported']], [str(target)])
+        self.assertFalse(source.exists())
+        self.assertEqual(target.read_bytes(), b'episode')
+        self.assertEqual(target.with_suffix('.en.srt').read_text(), 'subtitles')
+        self.assertIn('original.mkv', target.with_suffix('.release.nfo').read_text())
+        self.assertFalse(source.with_suffix('.release.nfo').exists())
+        from spaces.movies.scanner import guess
+
+        parsed = guess(target, 'tv')
+        self.assertEqual(parsed['title'], show['title'])
+        self.assertEqual(parsed['episodeTitle'], show['episodeTitle'])
+        self.assertEqual(
+            [row['path'] for row in self.backend.library.files(show)], [str(target)]
+        )
+        self.assertEqual(self.backend.scan({'kind': 'tv'})['imported'], [])
+
+    @unittest.skipUnless(
+        __import__('importlib').util.find_spec('guessit'), 'python-guessit is required'
+    )
+    def test_ronja_numbers_and_combined_episodes_import_with_explicit_match(self):
+        from spaces.movies.scanner import guess
+
+        folder = self.root / 'Videos/Series/Sanzoku no Musume Ronja'
+        folder.mkdir(parents=True)
+        source = (
+            folder
+            / '[Cleo]Sanzoku_no_Musume_Ronja_-_01_02_(Dual Audio_10bit_1080p_x265).mkv'
+        )
+        source.write_bytes(b'combined episodes')
+        third = (
+            folder
+            / '[Cleo]Sanzoku_no_Musume_Ronja_-_03_(Dual Audio_10bit_1080p_x265).mkv'
+        )
+        third.write_bytes(b'episode three')
+        self.assertEqual(
+            (guess(third, 'tv')['season'], guess(third, 'tv')['episode']), (1, 3)
+        )
+        with patch('spaces.movies.torrent_backend.catalogue_match', return_value=None):
+            review = self.backend.scan({'kind': 'tv'})['review']
+        item = next(row for row in review if row['path'] == str(source))
+        self.assertEqual(item['guess']['episodeEnd'], 2)
+        show = dict(
+            id='tt101', kind='tv', title="Ronja, the Robber's Daughter", year='2014'
+        )
+        result = self.backend.scan_import(
+            {
+                'token': item['token'],
+                'title': show,
+                'season': 1,
+                'episode': 1,
+                'episodeEnd': 2,
+            }
+        )
+        target = Path(result['path'])
+        self.assertTrue(target.name.startswith('S01E01E02 - '))
+        self.assertEqual(target.read_bytes(), b'combined episodes')
+        self.assertEqual(
+            [row['episode'] for row in self.backend.library.files(show)], [1, 2]
+        )
+        self.assertTrue(third.exists())
+
     def test_scan_existing_qbit_file_moves_seeding_source(self):
         incoming = self.root / 'Incoming'
         incoming.mkdir()

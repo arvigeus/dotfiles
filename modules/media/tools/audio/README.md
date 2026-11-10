@@ -3,12 +3,17 @@
 **Open with → Audio tools** opens an audio file in a desktop dialog for:
 
 - Tags, lyrics and cover art.
+- Local speech transcription to the clipboard.
 - Conversion with progress, cancellation and optional loudness normalization.
 - Audio stream details, the complete tag list and same-folder file renaming.
 
 **Fetch lyrics** fills the lyrics draft; **Save tags** writes it to the file.
 Lyrics providers share `~/.config/audio-tools/lyrics.json` with the Music space
 (LRCLIB by default).
+
+The **Transcribe** tab uses the desktop speech service. Choose a model and spoken
+language; missing models download on first use. Jobs continue after closing the
+window. Media can be up to six hours long.
 
 Seven presets cover AAC/M4A 320 kbps, MP3 192/320, FLAC, Opus 192, Vorbis quality
 6 and WAV PCM 16-bit. Presets live in `~/.config/audio-tools/presets.json`.

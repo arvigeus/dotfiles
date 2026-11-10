@@ -432,6 +432,7 @@ def serve():
             line, _, rest = buffer.partition(b'\n')
             buffer[:] = rest
             request = {}
+            request_error = ''
             try:
                 request = json.loads(line)
                 if not isinstance(request, dict):
@@ -449,15 +450,27 @@ def serve():
                 if isinstance(request, dict) and str(request.get('op', '')).startswith(
                     'speech-'
                 ):
+                    request_error = str(error)
                     speech.fail(
                         str(error),
                         'Speech model download failed'
                         if request['op'] == 'speech-setup'
                         else 'Speech capture failed',
+                        affect_job=False,
                     )
                 else:
                     recorder.error = str(error)
-            queue(connection, snapshot(), reply=True)
+            queue(
+                connection,
+                dict(
+                    snapshot(),
+                    requestError=request_error,
+                    requestJobId=request.get('jobId', '')
+                    if isinstance(request, dict)
+                    else '',
+                ),
+                reply=True,
+            )
             if connection not in clients:
                 return
         if not data or len(buffer) > 8192:

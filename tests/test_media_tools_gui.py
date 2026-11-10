@@ -24,7 +24,20 @@ class MediaDialogTests(unittest.TestCase):
             )
             library = module / f'files/usr/local/lib/{kind}-tools'
             name = 'gui' if kind == 'audio' else 'video_gui'
-            env = dict(os.environ, QT_QPA_PLATFORM='offscreen', PYTHONPATH=str(library))
+            env = dict(
+                os.environ,
+                QT_QPA_PLATFORM='offscreen',
+                PYTHONPATH=os.pathsep.join(
+                    map(
+                        str,
+                        (
+                            library,
+                            REPO
+                            / 'modules/media/tools/transcription/files/usr/local/lib/desktop-speech',
+                        ),
+                    )
+                ),
+            )
             script = f"""
 from unittest.mock import patch
 import {name} as gui
@@ -76,6 +89,7 @@ theme = importlib.util.module_from_spec(spec); spec.loader.exec_module(theme)
 theme.SOURCE = repo / 'modules/look-and-feel/palette/symlinks/etc/desktop-palette.json'
 theme.apply('dark', notifications=False)
 sys.path[:0] = [str(repo / f'modules/media/tools/{kind}/files/usr/local/lib/{kind}-tools') for kind in ('audio', 'video')]
+sys.path.insert(0, str(repo / 'modules/media/tools/transcription/files/usr/local/lib/desktop-speech'))
 from gui import AudioTools
 from video_gui import VideoTools
 app = QApplication(['media-tools-theme-test'])

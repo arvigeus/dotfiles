@@ -873,6 +873,11 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/desktop/quickshell/files/home/.config/quickshell/desktop/integrations/media-library.json.example",
+                "target": "home/.config/quickshell/desktop/integrations/media-library.json.example",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/desktop/quickshell/files/usr/local/bin/account-tools",
                 "target": "/usr/local/bin/account-tools",
                 "mode": "0755"
@@ -1443,6 +1448,11 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/media/tools/transcription/files/usr/local/lib/desktop-speech/speech_gui.py",
+                "target": "/usr/local/lib/desktop-speech/speech_gui.py",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/media/tools/video/files/home/.config/video-tools/presets.json",
                 "target": "home/.config/video-tools/presets.json",
                 "mode": "0644"
@@ -1874,6 +1884,10 @@
                 "target": "home/.config/quickshell/desktop/drawers/capture/DictationService.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/FileSpeech.qml",
+                "target": "home/.config/quickshell/desktop/drawers/capture/FileSpeech.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/capture/WebcamCard.qml",
                 "target": "home/.config/quickshell/desktop/drawers/capture/WebcamCard.qml"
             },
@@ -2130,6 +2144,10 @@
                 "target": "home/.config/quickshell/desktop/drawers/notifications/qmldir"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/power/ARCHITECTURE.md",
+                "target": "home/.config/quickshell/desktop/drawers/power/ARCHITECTURE.md"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/power/ChargeGauge.qml",
                 "target": "home/.config/quickshell/desktop/drawers/power/ChargeGauge.qml"
             },
@@ -2324,6 +2342,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/camera.svg",
                 "target": "home/.config/quickshell/desktop/icons/camera.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/captions.svg",
+                "target": "home/.config/quickshell/desktop/icons/captions.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/check.svg",
@@ -3228,6 +3250,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/cloud_stream.py",
                 "target": "home/.config/quickshell/desktop/spaces/music/cloud_stream.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/file_tags.py",
+                "target": "home/.config/quickshell/desktop/spaces/music/file_tags.py"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/inventory.py",

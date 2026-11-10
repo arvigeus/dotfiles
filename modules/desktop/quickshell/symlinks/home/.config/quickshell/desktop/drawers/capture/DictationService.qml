@@ -1,7 +1,6 @@
 pragma Singleton
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import "../../ui"
 
 Singleton {
@@ -21,7 +20,7 @@ Singleton {
     readonly property bool ready: !!CaptureService.recorder.speech
     readonly property string phase: state.phase
     readonly property var options: state.options
-    readonly property string error: pickerError || state.error
+    readonly property string error: state.error
     readonly property var languages: state.languages ?? [
         {
             code: "auto",
@@ -39,15 +38,13 @@ Singleton {
     readonly property bool preparing: phase === "preparing"
     readonly property real progress: state.progress ?? -1
     readonly property bool starting: ["start", "resume"].includes(planned)
-    readonly property bool pending: !!planned || choosingFile || CaptureService.awaiting > 0 || CaptureService.outbox.length > 0
+    readonly property bool pending: !!planned || CaptureService.awaiting > 0 || CaptureService.outbox.length > 0
     readonly property bool active: phase !== "idle" && !preparing
     readonly property bool waitingForMicrophone: phase.startsWith("microphone-")
     readonly property bool canCancel: waitingForMicrophone || ["recording", "stopping", "converting", "transcribing", "preparing"].includes(phase)
     readonly property bool openMicrophoneControls: !!state.openMicrophoneControls
     property bool pasteBlocked: true
     property string planned: ""
-    property bool choosingFile: false
-    property string pickerError: ""
     readonly property string description: preparing ? (progress >= 0 ? qsTr("Downloading speech model · %1%").arg(Math.floor(progress)) : qsTr("Downloading speech model…")) : starting ? qsTr("Starting microphone…") : waitingForMicrophone ? qsTr("Waiting for microphone…") : recording ? qsTr("Listening · %1 s · Win+Shift+D to finish").arg(state.elapsed || 0) : phase === "stopping" ? qsTr("Finishing audio…") : phase === "converting" ? qsTr("Reading audio file…") : processing ? qsTr("Transcribing locally…") : ""
     signal hideRequested
     signal microphoneSettingsRequested
@@ -99,10 +96,6 @@ Singleton {
     function cancel(): void {
         settling.stop();
         planned = "";
-        if (choosingFile) {
-            choosingFile = false;
-            picker.running = false;
-        }
         if (canCancel)
             send("cancel");
     }
@@ -119,30 +112,8 @@ Singleton {
                 value
             });
     }
-    function transcribeFile(url: string): bool {
-        if (!url.startsWith("file:///"))
-            return false;
-        return transcribePath(decodeURIComponent(url.slice(7)));
-    }
-    function transcribePath(path: string): bool {
-        if (!path.startsWith("/") || !ready || pending || active || preparing || !modelReady)
-            return false;
-        return send("file", {
-            path
-        });
-    }
-    function chooseFile(): bool {
-        if (!ready || pending || active || preparing || !modelReady)
-            return false;
-        pickerError = "";
-        choosingFile = true;
-        planned = "file";
-        hideRequested();
-        settling.restart();
-        return true;
-    }
     function guardDismissal(): void {
-        if (planned || choosingFile) {
+        if (planned) {
             if (planned)
                 settling.restart();
             hideRequested();
@@ -158,38 +129,8 @@ Singleton {
         onTriggered: {
             const action = root.planned;
             root.planned = "";
-            if (action === "file")
-                picker.running = true;
-            else if (action)
+            if (action)
                 root.send(action);
-        }
-    }
-    Process {
-        id: picker
-        command: ["env", "zenity", "--file-selection", "--title=Transcribe an audio or video file", "--file-filter=Audio and video | *.wav *.mp3 *.m4a *.aac *.ogg *.opus *.flac *.mp4 *.mkv *.webm", "--file-filter=All files | *"]
-        property string selected: ""
-        property string detail: ""
-        onStarted: {
-            selected = "";
-            detail = "";
-        }
-        stdout: StdioCollector {
-            onStreamFinished: picker.selected = text.replace(/\r?\n$/, "")
-        }
-        stderr: StdioCollector {
-            onStreamFinished: picker.detail = text.trim()
-        }
-        onExited: code => {
-            const cancelled = !root.choosingFile;
-            root.choosingFile = false;
-            if (cancelled)
-                return;
-            if (code === 0 && selected)
-                root.transcribePath(selected);
-            else if (code !== 1) {
-                root.pickerError = detail || qsTr("Could not open the file chooser.");
-                Quickshell.execDetached(["notify-send", "--app-name=Speech", "--icon=audio-input-microphone", qsTr("Could not choose an audio file"), root.pickerError]);
-            }
         }
     }
 }

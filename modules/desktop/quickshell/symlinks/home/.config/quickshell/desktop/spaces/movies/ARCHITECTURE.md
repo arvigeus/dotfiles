@@ -30,10 +30,13 @@ Do not put the backdrop back inside that inset content area.
 Catalogue Spaces use underlined `MovieTab` navigation: My Library, Browse and
 Favorites where supported. The right-hand actions start with Search, Filters and
 Refresh, followed by transfer/activity and layout controls where applicable.
-Movies, TV Series and Books use Refresh in My Library to toggle the existing
-scan/review panel; scanning remains an explicit action with an optional path.
-Its default-path guidance lives in the path input's tooltip and accessible
-description. Browse Refresh bypasses the saved catalogue response while retaining
+Movies and TV Series use Refresh in My Library to scan immediately while keeping
+the catalogue visible. Only unidentified entries open the shared `LocalScan` review
+in a modeless, dimmed `Popup.Item`, using the gallery's overlay/close convention
+and leaving the host hide control reachable. Select a match, then explicitly
+import; the labelled TV fields accept a season and an episode or contiguous range.
+Hidden scans defer review until My Library is shown again. Books retains its
+explicit scan panel and optional path. Browse Refresh bypasses the saved catalogue response while retaining
 the query and filters; Favorites Refresh rereads saved favorites. Movies and
 Series skip the initial snapshot on explicit refresh, retaining their displayed
 results until the current request settles; provider failures can still return
@@ -170,6 +173,12 @@ subtitle writes and Music downloads use the same primitives. Each torrent job's
 `torrent-locks/` file serializes imports across workers and is removed once the
 job is imported or needs review. Interrupted indexing can be recovered through
 My Library's Refresh scanner.
+Scan includes the default library, completed downloads and configured extra
+library roots, deduplicating overlapping locations before import. Extra roots
+retain their existing directories and movie filenames; TV basenames still follow
+the episode convention. qBittorrent renames its own files without relocating an
+extra collection. Flat movie collections use per-video `.nfo` identities. Local
+deletion in extra roots removes only the selected video and associated sidecars.
 Scan walks visible folders only and skips samples, `-trailer` files and
 Extras/Samples/Trailers folders. `movie.nfo` identifies only its folder's single
 feature; `tvshow.nfo` may sit one level above Season folders.
@@ -205,6 +214,21 @@ XDG namespace:
   from disk, so restore them by comparing with `"true"`.
 - `~/.local/share/quickshell/desktop/spaces/movies/library.sqlite`: personal/library state.
 
+`~/.config/quickshell/desktop/integrations/media-library.json` is user-owned and
+independent of private provider settings. Only `media-library.json.example` is a
+copied `files/home/` asset; the active file is never generated or reconciled by
+dotfiles. Its object has `movies` and `series` arrays of existing absolute directory
+paths (`~` and `$HOME` expand). For example:
+
+```json
+{"movies": ["~/Videos/Ghibli"], "series": []}
+```
+
+The workers reread it on scans/imports; missing configuration means no extra roots.
+Invalid JSON, invalid list values or unavailable directories fail with a visible
+error before scanning. Reads are bounded regular-file reads without symlink
+following. No credentials belong here.
+
 Examples are secret-free and do not get copied over user configuration. Keys remain in Python;
 QML sees provider labels and resolved playback targets. Worker stderr is reduced
 to one generic diagnostic per two-second burst rather than publishing provider
@@ -239,3 +263,18 @@ simulates filesystems without hard links.
 Delayed replies check that refresh and empty views leave no request spinning.
 Multi-monitor focus/stacking, scaling, hotplug, real playback and real download
 completion still require desktop/device interaction.
+
+## Generated subtitles
+
+The shared `Subtitles.qml` panel includes one caption icon beside the selected
+local file, switching to a cancel action while that file's SRT job runs. Tooltips
+expose the model/language from Capture preferences. `capture/FileSpeech.qml`
+uses the retained capture socket owner; generation does not require an
+OpenSubtitles account and continues while browsing another title/episode or after
+closing the Space. Other paths cannot cancel the active job. Completion refreshes
+the selected inventory, and reopening a title reads any completed sidecar.
+The same panel serves Movies and TV Series; episode filenames determine their
+own output names. See the shell's [speech architecture](../../../../../../../ARCHITECTURE.md)
+for file limits, frozen options, publication and cancellation guarantees.
+`tests/test_media_transcription.py` exercises both Space IDs using isolated
+socket owners, including navigation, completion, refresh and cancellation.

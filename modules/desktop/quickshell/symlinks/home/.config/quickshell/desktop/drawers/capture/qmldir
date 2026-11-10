@@ -5,3 +5,4 @@ WebcamPreview 1.0 WebcamPreview.qml
 WebcamCard 1.0 WebcamCard.qml
 WebcamControls 1.0 WebcamControls.qml
 WebcamService 1.0 WebcamService.qml
+FileSpeech 1.0 FileSpeech.qml

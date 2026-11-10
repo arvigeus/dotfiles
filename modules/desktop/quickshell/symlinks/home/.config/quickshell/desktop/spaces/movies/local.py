@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
-from spaces.movies.paths import SPACE
+from spaces.movies.paths import SPACE, extra_library_roots
 
 _transfers = set()
 _transfer_lock = threading.Lock()
@@ -295,6 +295,13 @@ def subtitle_associations(videos, subtitles):
     return result
 
 
+def in_extra_library(source, kind):
+    return any(
+        Path(source).resolve().is_relative_to(root)
+        for root in extra_library_roots(kind)
+    )
+
+
 def destination(title, source, season=None, episode=None, preserve_name=False):
     kind = title['kind']
     suffix = source.suffix.lower()
@@ -309,7 +316,11 @@ def destination(title, source, season=None, episode=None, preserve_name=False):
     root = library_root(kind)
     name = label(title)
     if kind == 'movie':
-        return root / name / fit(name, suffix)
+        return (
+            source
+            if in_extra_library(source, kind)
+            else root / name / fit(name, suffix)
+        )
     if kind == 'tv':
         numbers = (
             (season, episode)
@@ -323,14 +334,18 @@ def destination(title, source, season=None, episode=None, preserve_name=False):
         s, e = map(int, numbers)
         if not (0 <= s <= 99 and 1 <= e <= 999):
             raise ValueError('Season must be 0–99 and episode must be 1–999.')
+        end = int(title.get('episodeEnd') or e)
+        if not e <= end <= 999:
+            raise ValueError(
+                'The last episode must be between the first episode and 999.'
+            )
         episode_title = str(title.get('episodeTitle') or '').strip()
         episode_name = f' - {safe_name(episode_title)}' if episode_title else ''
-        return (
-            root
-            / name
-            / f'Season {s:02d}'
-            / fit(f'{name} - S{s:02d}E{e:02d}{episode_name}', suffix)
-        )
+        code = f'S{s:02d}E{e:02d}' + (f'E{end:02d}' if end != e else '')
+        filename = fit(f'{code}{episode_name}', suffix)
+        if in_extra_library(source, kind):
+            return source.with_name(filename)
+        return root / name / f'Season {s:02d}' / filename
     if kind == 'music':
         artist = safe_name(title.get('artist'))
         album = safe_name(title.get('album'))
@@ -386,6 +401,17 @@ def write_nfo(path, title, *, original_name='', release_name='', source=''):
     target = (path.parent if kind == 'movie' else path.parent.parent) / (
         'movie.nfo' if kind == 'movie' else 'tvshow.nfo'
     )
+    if in_extra_library(path, kind):
+        target = (
+            path.with_suffix('.nfo')
+            if kind == 'movie'
+            else (
+                path.parent.parent
+                if re.fullmatch(r'(?i)Season[ ._-]*\d+', path.parent.name)
+                else path.parent
+            )
+            / 'tvshow.nfo'
+        )
     created = not target.exists()
     if created:
         root = ET.Element('movie' if kind == 'movie' else 'tvshow')
@@ -680,6 +706,10 @@ class LocalLibrary:
                 if kind in ('movie', 'tv'):
                     target = Path(path)
                     folder = target.parent
+                    # Extra roots can be flat collections containing many titles.
+                    # Only their selected file and matching sidecars are owned.
+                    if in_extra_library(target, kind):
+                        continue
                     root = library_root(kind).resolve()
                     # Compare resolved paths: a linked Videos directory must not
                     # let a row in the root itself select the whole library.
@@ -718,6 +748,22 @@ class LocalLibrary:
                 ).fetchone()[0]
                 if not any(target.is_relative_to(folder) for folder in folders):
                     target.unlink(missing_ok=True)
+                    if kind in ('movie', 'tv'):
+                        for sidecar in target.parent.glob('*'):
+                            if sidecar.is_symlink() or not sidecar.is_file():
+                                continue
+                            if (
+                                sidecar == target.with_suffix('.nfo')
+                                or sidecar == target.with_suffix('.release.nfo')
+                                or (
+                                    sidecar.suffix.lower() in SUBTITLE_EXTENSIONS
+                                    and (
+                                        sidecar.stem == target.stem
+                                        or sidecar.stem.startswith(target.stem + '.')
+                                    )
+                                )
+                            ):
+                                sidecar.unlink()
                     for sidecar in media_sidecar_paths(target):
                         try:
                             value = json.loads(sidecar.read_text())
@@ -738,6 +784,8 @@ class LocalLibrary:
                     if kind == 'tv'
                     else None
                 )
+                if kind in ('movie', 'tv') and in_extra_library(target, kind):
+                    folder = None
                 if (
                     folder
                     and not db.execute(
@@ -814,13 +862,18 @@ class LocalLibrary:
             if stored.get('tmdbId'):
                 ids.add(f'tmdb:{stored["kind"]}:{stored["tmdbId"]}')
             if not aliases.isdisjoint(ids) and Path(path).is_file():
-                files.append(
+                files.extend(
                     {
                         'season': season,
-                        'episode': episode,
+                        'episode': number,
                         'episodeTitle': stored.get('episodeTitle') or '',
                         'path': path,
                         'torrent': bool(torrent_hash),
                     }
+                    for number in range(
+                        episode, int(stored.get('episodeEnd') or episode) + 1
+                    )
                 )
-        return files
+        return sorted(
+            files, key=lambda row: (row['season'], row['episode'], row['path'])
+        )

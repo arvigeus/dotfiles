@@ -115,8 +115,33 @@ def specials_setup(root):
 
 
 def local_setup(root):
+    from PySide6.QtGui import QImage
+
     setup(root)
     backend = specials(root)
+    artwork = QImage(160, 90, QImage.Format_RGB32)
+    artwork.fill(0xFFFF0000)
+    artwork.save(str(root / 'episode.png'))
+    backend.put(
+        'episodes:' + json.dumps(['tt101', '2', '']),
+        dict(
+            items=[
+                dict(
+                    season='2',
+                    number=number,
+                    title=name,
+                    plot='Episode synopsis ' + str(number),
+                    image=(root / 'episode.png').as_uri(),
+                )
+                for number, name in (
+                    (1, 'Catalogue one'),
+                    (2, 'Episode 2'),
+                    (3, 'Missing three'),
+                )
+            ],
+            next='',
+        ),
+    )
     template = 'https://example.invalid/'
     backend.config_path.write_text(
         json.dumps(
@@ -137,7 +162,7 @@ def local_setup(root):
     folder = root / 'Videos/Series/Fixture series (2024)/Season 02'
     folder.mkdir(parents=True)
     with LocalLibrary(backend.data).db() as db:
-        for episode, name in ((2, 'Local two'), (1, 'Local one')):
+        for episode, name in ((2, 'Local two'), (1, 'Local one'), (4, 'Local four')):
             path = folder / f'Fixture series - S02E0{episode}.mkv'
             path.write_bytes(b'fixture')
             db.execute(
@@ -158,6 +183,7 @@ def local_setup(root):
  if request['op']=='play':
   raise MediaError(f"fixture online={bool(request.get('online'))} provider={request.get('provider')} episode={request.get('episode')}")
  if request['op']=='episodes' and request.get('season') is None:time.sleep(0.3)
+ if request['op']=='episodes' and request.get('season') is not None and request.get('refresh'):raise MediaError('fixture episode metadata unavailable')
  if request['op']=='local_files':time.sleep(1)
  return backend.handle(request)""",
     )
@@ -478,7 +504,7 @@ ShellRoot {
             setup=specials_setup,
         )
 
-    def test_local_seasons_replace_loading_remote_list_and_watch_choice_is_kept(self):
+    def test_library_episode_metadata_missing_media_and_watch_choice(self):
         self.run_qml(
             """import QtQuick
 import Quickshell
@@ -505,34 +531,53 @@ ShellRoot {
   const row=find(page,item=>item.objectName==="episodeRow"&&item.episode.number===1);
   const shown=page.episodes.map(row=>row.season+":"+row.title).join(",");
   if(step===2){
-   check(page.localFiles.length===2,"local files missing");
-   check(JSON.stringify(page.seasons)==='["2"]'&&page.season==="2"&&picker.displayText==="Season 2","picker does not follow local seasons: "+picker.displayText);
-   check(shown==="2:Local one,2:Local two"&&!page.detailError,"rows disagree with the season picker: "+shown+page.detailError);
+   check(page.localFiles.length===3,"local files missing");
+   check(JSON.stringify(page.seasons)==='["1","2","0"]'&&page.season==="1"&&picker.displayText==="Season 1","missing seasons were hidden: "+JSON.stringify(page.seasons));
+   check(row&&row.findAvailable&&!row.localFile.path&&find(page,named("findSeason")).visible,"missing episode/season has no Find action");
+   picker.currentIndex=1;picker.activated(1);step++;return;
+  }
+  if(step===3){
+   if(!row)return;
+   check(shown==="2:Catalogue one,2:Local two,2:Missing three,2:Local four"&&!page.detailError,"catalogue/local merge failed: "+shown+page.detailError);
+   check(row.episode.plot==="Episode synopsis 1"&&row.episode.image.endsWith("/episode.png"),"owned episode lost its catalogue description or thumbnail");
+   const image=find(row,item=>item.displayedSource!==undefined);
+   if(!image?.hasImage)return;
+   check(image.displayedSource.toString().endsWith("/episode.png"),"episode thumbnail did not render");
+   const missing=find(page,item=>item.objectName==="episodeRow"&&item.episode.number===3);
+   check(!row.findAvailable&&row.localFile.path&&missing?.findAvailable&&!missing.localFile.path&&!find(page,named("findSeason")).visible,"owned/missing Find actions disagree");
+   page.applyLocalFiles(page.localFiles.filter(file=>file.episode!==2));
+   check(page.episodes[0].plot==="Episode synopsis 1"&&page.episodes.some(episode=>episode.number===2),"inventory update discarded metadata or missing episode");
+   const second=find(page,item=>item.objectName==="episodeRow"&&item.episode.number===2);
+   if(second)check(second.findAvailable&&!second.localFile.path,"removed episode did not gain Find");
    page.tab="overview";watch.triggered(1);check(page.tab==="episodes","an episode provider did not open Episodes");
    step++;return;
   }
-  if(step===3){
+  if(step===4){
    // Delegates return with the Episodes tab; click the local first episode.
    if(!row)return;
    row.clicked();step++;return;
   }
-  if(step===4){
+  if(step===5){
    check(page.detailError==="fixture online=True provider=0 episode=1","online choice played the local copy: "+page.detailError);
    page.tab="overview";watch.triggered(2);step++;return;
   }
-  if(step===5){
+  if(step===6){
    check(page.tab==="overview","a provider without episode URLs opened Episodes");
    check(page.detailError==="fixture online=True provider=1 episode=None","series page not requested: "+page.detailError);
    watch.triggered(0);check(page.tab==="episodes","Local did not open Episodes");
    step++;return;
   }
-  if(step===6){
+  if(step===7){
    if(!row)return;
    row.clicked();step++;return;
   }
-  if(step===7){
+  if(step===8){
    // The request names the provider the button shows, not an earlier choice.
    check(page.detailError==="fixture online=False provider=0 episode=1","Local choice did not prefer the file: "+page.detailError);
+   page.loadEpisodes(false,true);step++;return;
+  }
+  if(step===9){
+   check(page.detailError==="fixture episode metadata unavailable"&&page.episodes[0].plot==="Episode synopsis 1"&&page.episodes[3].title==="Local four","offline refresh discarded metadata or local-only episodes");
    SpaceState.close("series");console.log("DISPLAY_PASS");Qt.quit();
   }
  }catch(e){console.error("DISPLAY_FAIL",step,e);Qt.quit();}}}

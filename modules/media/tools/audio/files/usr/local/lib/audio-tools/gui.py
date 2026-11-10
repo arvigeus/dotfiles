@@ -45,6 +45,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+sys.path.insert(0, '/usr/local/lib/desktop-speech')
+from speech_gui import TranscriptionPanel
+
 CONFIG = (
     Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config'))
     / 'audio-tools/presets.json'
@@ -101,6 +104,11 @@ class AudioTools(QDialog):
         self.tabs.addTab(self.tags_tab(), 'Tags && artwork')
         self.tabs.addTab(self.convert_tab(), 'Convert')
         self.tabs.addTab(self.information_tab(), 'File information')
+        self.transcription = TranscriptionPanel(lambda: self.current, video=False)
+        self.transcription.busyChanged.connect(
+            lambda busy: self.tabs.tabBar().setEnabled(not busy)
+        )
+        self.tabs.addTab(self.transcription, 'Transcribe')
         layout.addWidget(self.tabs, 1)
         self.status = QLabel()
         self.status.setWordWrap(True)

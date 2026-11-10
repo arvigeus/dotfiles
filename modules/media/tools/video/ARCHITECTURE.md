@@ -60,3 +60,12 @@ races and the actual offscreen dialog's conversion/cancellation.
 `tests/test_media_tools_gui.py` also checks single-file launch behavior and native
 dark/light palette changes in both media dialogs, using an isolated D-Bus session
 and temporary XDG directories.
+
+## Transcription
+
+The Transcribe tab embeds the shared native speech client from
+`/usr/local/lib/desktop-speech`. It freezes the current source path when starting
+and disables other tabs while its file job runs. Closing the dialog leaves that
+service-owned job running. See the
+[transcription architecture](../transcription/ARCHITECTURE.md) for protocol,
+options and validation.

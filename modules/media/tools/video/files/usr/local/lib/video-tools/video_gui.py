@@ -28,6 +28,9 @@ from PySide6.QtWidgets import (
 )
 from video_core import conversion, probe_command, read_presets, video_info
 
+sys.path.insert(0, '/usr/local/lib/desktop-speech')
+from speech_gui import TranscriptionPanel
+
 CONFIG = (
     Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config'))
     / 'video-tools/presets.json'
@@ -138,6 +141,11 @@ class VideoTools(QDialog):
         buttons.addWidget(self.convert)
         convert_layout.addLayout(buttons)
         self.tabs.addTab(page, 'Convert')
+        self.transcription = TranscriptionPanel(lambda: self.current, video=True)
+        self.transcription.busyChanged.connect(
+            lambda busy: self.tabs.tabBar().setEnabled(not busy)
+        )
+        self.tabs.addTab(self.transcription, 'Transcribe')
         layout.addWidget(self.tabs, 1)
         self.status = QLabel()
         self.status.setWordWrap(True)
