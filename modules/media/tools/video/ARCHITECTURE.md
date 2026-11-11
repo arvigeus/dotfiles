@@ -53,14 +53,6 @@ partial files. Cancellation sends terminate and then kills the owned process
 after two seconds if necessary.
 Escape/close also use that path, keeping the dialog open until it finishes.
 
-`tests/test_video_tools.py` exercises all seven presets (including actual 10-bit AV1 encoding) on generated video with
-subtitles, audio, tags and chapters; no upscaling, source retention, publication
-races and the actual offscreen dialog's conversion/cancellation.
-
-`tests/test_media_tools_gui.py` also checks single-file launch behavior and native
-dark/light palette changes in both media dialogs, using an isolated D-Bus session
-and temporary XDG directories.
-
 ## Transcription
 
 The Transcribe tab embeds the shared native speech client from

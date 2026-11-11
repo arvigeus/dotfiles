@@ -40,10 +40,6 @@ adding frame-synchronization/VRR overrides without corresponding measurements.
 
 ## Validation
 
-`python3 -m unittest discover -s tests -p 'test_mpv_power.py' -v` covers shader/menu
-generation, native profile switching and Powersave restoration. `test_apply.py` covers repeatable
-generation without accumulated profile sections or unexpected symlinks.
-
 For physical render checks, compare the same local sample in windowed/fullscreen
 mode through mpv IPC. Temporarily use a different shader list/profile in the owned
 test player; keep its source, codec, display, power mode and decoder constant.

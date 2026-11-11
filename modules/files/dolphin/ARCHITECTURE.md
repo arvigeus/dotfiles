@@ -26,7 +26,7 @@ The standalone terminal preference remains owned by `base/terminal`.
 The Quickshell module owns the **Share → Add to Assistant** KDE Purpose provider
 and its launcher.
 It passes local file selections to the running shell's attachment importer; see
-[Assistant context integration](../../desktop/quickshell/ARCHITECTURE.md#dolphin-context-action).
+[Assistant context integration](../../desktop/quickshell/ARCHITECTURE.md#attachments-and-dolphin-sharing).
 
 PDF tools, File tools and Encryption tools register desktop application entries
 with `%F`, file MIME types and `inode/directory`. Open with can launch them for
@@ -45,8 +45,3 @@ The three custom apps share the PySide6 shell and worker protocol described in
 [desktop file tools architecture](../tools/common/ARCHITECTURE.md). Their functional
 modules own the actual operations and dependencies. Regenerate
 `user-configuration.json` when assets or hooks change.
-
-`tests/test_file_app_registrations.py` verifies desktop registrations, checksum
-MIME ownership and OCR package ownership. Backend and real-dialog tests live in
-`tests/test_file_tools.py` and `tests/test_file_tools_gui.py`. Native desktop-entry
-validation covers the three custom apps without changing the real MIME defaults.

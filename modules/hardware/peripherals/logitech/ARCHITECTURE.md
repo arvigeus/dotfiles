@@ -21,6 +21,3 @@ once per two seconds, and rediscovers devices every fifteen seconds. Reads never
 change lighting. Writes validate identity, mode choices and brightness range,
 check readback, and attempt restoration of the previous mode/level if a partial
 write fails. Closing releases device handles.
-
-`tests/test_keyboard_backlight.py` covers mode selection, validation, rollback
-and provider discovery/routing without hardware changes.

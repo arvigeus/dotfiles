@@ -52,10 +52,3 @@ changes share `org.fedoraproject.FirewallD1.config`, and reading rich rules need
 `.config.info`. `50-firewall.rules` grants both to active local wheel sessions so
 no authentication dialog competes with the drawer's keyboard focus. Direct,
 policy and `.all` actions keep the packaged authentication defaults.
-
-## Validation
-
-`tests/test_network_ports.py` replaces firewalld's zone methods and `ip` with an
-in-memory host. It covers rule shape, zone lookup, read-only status, input
-validation, D-Bus call shape, error mapping, the polkit rule and the zone and
-policy assets.

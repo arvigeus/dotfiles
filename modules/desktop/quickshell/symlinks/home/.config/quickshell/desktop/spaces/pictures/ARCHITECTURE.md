@@ -112,30 +112,6 @@ and Wallpiper's Hyprland portal for Wallpaper Engine. Steam remains launcher-own
 [Wallpiper upstream](https://github.com/ejalxndr/wallpiper) describes the supported
 runtime setup and its experimental status.
 
-## Validation
-
-`test_pictures.py` covers SFW filtering, pagination, downloads/deadlines, stable
-shared still publication, failed-write preservation, random Apply and preferences.
-`test_picture_providers.py` exercises plugin identity, opaque pagination, resolve
-headers, redacted failures, command timeout/shutdown and video fallback.
-`test_wallpaper_engine.py` checks 43 ownership, recovery, pause, Steam discovery,
-Workshop, crash and shutdown cases with executable fixtures. It starts no real
-Steam/Proton renderer. `test_pictures_space.py` drives the production host and
-workers with isolated providers, checking cinematic backdrop/toolbar, rail/grid geometry, filters/search Escape,
-favorites, hidden action completion, retained identity, independent Movies close,
-fresh instances and saved grid preference, plus the shared random action.
-`test_pictures_worker.py` exercises the production protocol and owned converter
-group shutdown without terminating detached applications.
-
-Live Wallhaven downloads, native surfaces and lock configuration are checked
-separately. Actual locking, animation/decoding quality, multiple monitor scales,
-hotplug and native fullscreen/DPMS behavior still need interactive validation.
-
-The controller protocol targets Wallpiper 2.1; compatibility with the AUR
-Wallpiper/portal 2.0.1 packages requires native validation. Pictures reports setup
-requirements when Wallpaper Engine or the configured Proton is unavailable.
-
-`test_progressive_image.py` delays the original behind a small preview and verifies
-the original replaces it, decoding meets display width and backdrop/detail make
-only one request per source. The Displays header fixture verifies the image/shuffle
-badge, single action, busy state and absence of a Pictures-launch button.
+The controller targets Wallpiper 2.1; the AUR Wallpiper/portal 2.0.1 packages need
+native compatibility checks. Missing Wallpaper Engine/Proton reports setup
+requirements rather than starting a renderer.

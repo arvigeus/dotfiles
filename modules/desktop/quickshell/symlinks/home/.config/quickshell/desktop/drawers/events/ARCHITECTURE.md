@@ -1,36 +1,8 @@
 # Calendar and task drawers
 
-`EventsDrawer.qml` presents Calendar and Tasks in the existing full-height drawer.
-Calendar combines a Monday-first month grid and a date-grouped Agenda beneath it.
-Month and year have independent arrow controls; the ghost Today icon restores
-both the current month and selected date. The section's plus button creates an
-event on the selected day (or a task in Tasks). Agenda starts with events overlapping
-or following the selected date. The current month includes the cached upcoming
-60-day window; other months end at the next month boundary, matching the fetched
-range. Today and the selected day remain distinct, with event indicators in the grid.
-Task views include open, due today/overdue, upcoming, important,
-completed and all, with collection and text/tag filters. Future repeating tasks
-remain available in Open/Upcoming. Completed recurrence exceptions are history.
-Notification history has its own drawer and never changes calendar data.
-Agenda and task rows use the System Tray card style: shared `ButtonBackground`
-with `Theme.surface` fill, `Theme.border` idle outline and a minimum height of
-64 pixels, expanding for wrapped content. Task rows share one background across
-the checkbox and edit target.
-A passive hover handler and either control's keyboard focus highlight the whole
-row; checking/reopening a task and opening its editor remain independent actions.
-Agenda items use the same shared full-row hover, keyboard-focus and pressed style.
-
-Agenda and Tasks reserve one fixed-height status line immediately below their
-section heading. Loading, refreshing, stale data, configuration, errors and empty
-results share that slot; it stays in the layout even without a message. Text is
-elided to one line, with the complete message in a tooltip, so long errors cannot
-move controls or content. The editor reserves its own error line below its fixed
-action toolbar and above its scrolling form. Back, Save and Delete use Lucide
-icon buttons with accessible names and tooltips. Deletion uses the shared
-`HoldButton`: hold the trash icon for 1.3 seconds, with a progress indicator.
-Early release, focus loss, dismissal, disabling or switching the edited item
-cancels the hold. The tooltip identifies when deletion affects an entire series.
-No status message is inserted above the calendar or tabs.
+`EventsDrawer.qml` hosts a month/agenda view and filtered task lists. Agenda ranges
+match the fetched month/upcoming window; completed recurrence exceptions remain
+history. Status/error slots have fixed heights so async reads cannot move controls.
 
 `CalendarService` is an engine singleton started by the shell root. It warms the
 current month's private disk snapshot and refreshes it quietly when due, even
@@ -161,19 +133,6 @@ No writes occur during discovery or observation. Read-only calendars stay visibl
 
 Native notifications have their own [architecture](../notifications/ARCHITECTURE.md).
 
-Verification from the repository root:
-
-```sh
-python3 -m unittest discover -s tests -p test_calendar_drawer.py -v
-python3 -m unittest discover -s tests -p test_notification_history.py -v
-python3 -m unittest discover -s tests -p test_desktop_interactions.py -v
-python3 -m unittest discover -s tests -p test_generation.py -v
-```
-
-Tests use isolated account/cache roots and fake DAV responses. QML fixtures load
-production drawers, filters, editor and keyboard dismissal; service fixtures cover
-late month replies, writes surviving dismissal, errors, workers that
-fail to start and a running shell crossing midnight. Live verification uses
-only discovery and read requests; fixture tests own all remote mutation coverage.
+Live checks use discovery/read requests; fixtures own remote mutation coverage.
 Protocol references: [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545),
 [CalDAV client operations](https://sabre.io/dav/building-a-caldav-client/).

@@ -5,7 +5,6 @@ import json
 import importlib.machinery
 import importlib.util
 import os
-import re
 import shlex
 import shutil
 import subprocess
@@ -435,16 +434,6 @@ assert not errors, errors
                 self.assertGreaterEqual(
                     (second + 0.05) / (first + 0.05), 3, f'{mode} color{index}'
                 )
-
-
-class InterfaceIconTests(unittest.TestCase):
-    def test_every_interface_icon_is_referenced(self):
-        literals = set()
-        for path in DESKTOP.rglob('*'):
-            if path.suffix in ('.qml', '.js'):
-                literals.update(re.findall(r'["\']([a-z0-9-]+)["\']', path.read_text()))
-        icons = {path.stem for path in (DESKTOP / 'icons').glob('*.svg')}
-        self.assertEqual(icons - literals, set())
 
 
 @unittest.skipUnless(

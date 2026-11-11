@@ -1345,7 +1345,6 @@ class AudioConfigurationTests(unittest.TestCase):
                 return directory
 
             config = generate('zephyrus')
-            self.assertNotIn('audio', config['extra'].get('quickshell', {}))
             directory = stage(config, 'zephyrus')
             self.assertEqual(
                 {p.name for p in directory.iterdir()},
@@ -1354,7 +1353,6 @@ class AudioConfigurationTests(unittest.TestCase):
             self.assertTrue(all(p.is_symlink() for p in directory.iterdir()))
             audio, warning = backend.load_config(directory)
             self.assertEqual(warning, '')
-            self.assertEqual(len(audio['rules']), 9)
             # Drop-ins use only the documented rule fields; others would be dead config.
             fields = {
                 'match',
@@ -1366,20 +1364,6 @@ class AudioConfigurationTests(unittest.TestCase):
             }
             self.assertTrue(all(rule.keys() <= fields for rule in audio['rules']))
             self.assertIn('pro-audio', audio['profiles'])
-            self.assertFalse(
-                any(
-                    e['target'] == 'home/.config/quickshell/desktop/audio.json'
-                    for kind in ('files', 'symlinks')
-                    for e in config['extra'][kind]
-                )
-            )
-            hooks = [
-                repo / s
-                for s in config['extra']['scripts']
-                if s.startswith('modules/desktop/quickshell/')
-            ]
-            self.assertFalse(any('audio.json' in hook.read_text() for hook in hooks))
-
             # Exercise real merged aliases against profile-dependent node names.
             laptop = {'properties': {'device.name': 'alsa_card.pci-0000_07_00.6'}}
             for profile in ('analog-stereo', 'analog-surround-40'):

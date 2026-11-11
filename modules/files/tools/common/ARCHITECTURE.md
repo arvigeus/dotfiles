@@ -48,15 +48,3 @@ with RENAME_NOREPLACE. Existing or concurrently created outputs are refused.
 Sources remain unchanged except an explicitly applied rename. Publication and
 renaming do not fall back to overwrite-capable operations. Long native tool
 operations report progress per input file rather than fabricated percentages.
-
-## Validation
-
-`python3 -m unittest tests.test_file_tools tests.test_file_tools_gui
- tests.test_file_app_registrations tests.test_generation` uses disposable PDFs, unusual
-filenames, collisions, checksum tampering, stale rename previews and real offscreen
-dialogs. PDF regressions exercise cumulative edits, undo, passwords, toolbar/menu
-controls, export destinations, page ranges, archival conversion without OCR and
-child-process cancellation.
-Encryption tests use disposable GnuPG homes/keys, never the user's keyring.
-Environments that block Unix agent sockets need isolated tests outside that
-restriction. Live smoke checks likewise use disposable fixtures.

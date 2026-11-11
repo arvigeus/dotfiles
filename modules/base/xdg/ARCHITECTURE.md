@@ -23,14 +23,3 @@ adds standard directory bookmarks only when those directories exist during its
 initial setup. Creating directories before first login prevents a partially
 initialized Dolphin sidebar. Existing `user-places.xbel` bookmarks are user-owned
 and are not replaced during provisioning.
-
-Validate generation and staged directory publication with:
-
-```sh
-python3 -m unittest discover -s tests -p test_generation.py
-python3 -m unittest discover -s tests -p test_execution.py
-```
-
-For native sidebar checks, instantiate `KFilePlacesModel` with an isolated home
-after publication; expect Home, Desktop, Documents, Downloads, Music, Pictures
-and Videos. Keep the real user's bookmarks out of fixtures.

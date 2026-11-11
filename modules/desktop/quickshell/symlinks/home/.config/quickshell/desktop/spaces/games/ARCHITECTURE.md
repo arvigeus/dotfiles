@@ -2,57 +2,26 @@
 
 ## Scope and presentation
 
-Games is registered in `ui/SpaceState.qml` and uses the retained fullscreen
-`SpaceHost`. It shares the Movies presentation controls, dark cinematic palette,
-toolbar placement, edge-to-edge backdrop, poster rail/grid, image gallery and
-scrolling primitives. Each instance owns its catalogue, selection, worker,
-preferences, artwork cache and optional torrent worker. Other Spaces retain
-their independent instances. See the [presentation contract](../movies/ARCHITECTURE.md#presentation-contract).
+Games uses the retained SpaceHost and shared cinematic
+[presentation contract](../movies/ARCHITECTURE.md#presentation-contract). Each
+instance owns its catalogue, selection, workers, preferences and artwork cache.
+Library is the default so installed games work without IGDB credentials. Local
+imports are files, not launcher installations, and never execute automatically.
+Torrent/local-library helpers use the Games namespace and `game` kind.
 
-The facts row presents the IGDB mark/score, the supplied colored ProtonDB tier
-badge (the native badge when Steam's store platforms list a Linux build, falling
-back to the client cache's `oslist`, which can still list discontinued ports; the
-first lookup fills platforms for the owned library in batched reads) and a clock with HowLongToBeat's main-story hours. The clock/time form one
-link to the matched HLTB page; a passive tooltip shows all three estimates,
-stale status and lookup warnings. Without a match, the clock opens the editable
-HLTB link/ID dialog instead. The adjacent link icon opens the official website.
-Steam/Epic/GOG actions use adjacent blue/black/purple split buttons with white brand marks,
-dynamic action labels and menus for store links, matching and uninstall.
-Compact favorite and refresh icons follow the store buttons. Menu Escape and
-hiding follow the existing page dismissal policy.
+Store actions must distinguish ownership, installation and launch availability.
+A native ProtonDB badge follows Steam's platform data, with cached `oslist` as
+fallback (it may include discontinued ports). HLTB estimates link to their match;
+missing/ambiguous matches require manual correction. Account-only Steam data
+such as achievements, cloud-sync state and friends is unavailable.
 
-The header, facts and actions remain visible above the Overview/Find tabs, matching
-Movies/Series. Find uses the selected game's detail area, not the whole Space.
-The Movies `ImageStrip` follows the overview text and metadata inside the same
-scroll area, without a bottom-pinned gap. It uses the Games artwork cache;
-pointer or keyboard activation opens the existing gallery at the selected image.
-ProtonDB badges and store SVGs reuse the supplied artwork from the earlier Games
-implementation. The IGDB mark comes from
-[Simple Icons](https://github.com/simple-icons/simple-icons/blob/develop/icons/igdb.svg),
-as does the [GOG.com mark](https://github.com/simple-icons/simple-icons/blob/develop/icons/gogdotcom.svg).
-
-The top-level tabs are My Library, Browse and Favorites. Library is the default
-so installed games work without IGDB credentials. Genre/platform/year/order
-filters, exact store matching, ProtonDB, install/play/uninstall, imported local
-files and qBittorrent workflows are available from these views. Local imports
-are files, not installed launcher entries; each game's folder button opens them
-in the file manager and never executes them automatically. The shared torrent and
-local-library implementation uses the Games storage namespace and `game` kind.
-
-[Game Glance](https://github.com/michpalm/game-glance) informed the title-logo,
-custom Steam artwork priority, public beat-time estimates, manual match correction,
-offline metadata and local playtime/last-played features. The Python HLTB adapter
-is an independent implementation of the public site's request protocol; no Decky
-or vendored frontend code is included. Steam's friends, achievements, cloud-sync
-status, recommendations and wishlist deals rely on client/account APIs not
-available here and are not represented as known. Its screensaver and replacement
-Steam Home are outside this Space's scope.
+IGDB and GOG marks come from [Simple Icons](https://github.com/simple-icons/simple-icons);
+store and ProtonDB badges retain their supplied artwork.
 
 ## Provider and worker boundaries
 
-`backend.py` retains the earlier game records, UUID identity, provider IDs,
-favorites, store overrides, IGDB OAuth/pacing, store-description fallbacks and
-ProtonDB cache. Credentials stay in Python. QML uses bounded JSON-lines transport
+`backend.py` owns UUID records, provider IDs, favorites, store overrides,
+IGDB OAuth/pacing, store-description fallbacks and the ProtonDB cache. Credentials stay in Python. QML uses bounded JSON-lines transport
 through the existing Movies `Worker`, with a selectable backend directory.
 The worker owns a process group; explicit close releases its request threads and
 owned subprocesses. User-launched games and launcher actions run independently
@@ -162,7 +131,7 @@ third-party clients and may change independently.
 Steam labels come first from the installed client's PICS cache,
 `appcache/appinfo.vdf` under each Steam root. It holds `common/content_descriptors`
 for owned and viewed apps, and omits the section when an app declares none, as the
-store does; for 300 owned games both agreed on every label. Only format v29 (magic
+store does. Only format v29 (magic
 `0x07564429`, string-table keys) is read, bounded to 128 MiB. The app index is
 rebuilt when the file's mtime or size changes, and each app's key/values are
 parsed on first use. Other apps, an app without `common` data, another format or a
@@ -224,19 +193,12 @@ libraries or invalidate saved metadata. Browse generations reject late callbacks
 after search or view changes. Hiding stops queued reads; closing terminates the
 owned worker as usual.
 
-QML keeps the returned page separately from its visible catalogue and patches rows
-in place unless a game's visibility changes. The Filters button opens the
-inline header group used by Movies and Books. The All games/Installed/Owned
-dropdown is part of that group in Library. NSFW is available there in Library,
-Browse and Favorites without catalogue credentials; genre, platform, sort and year
-fields with Apply/Reset appear only in configured Browse. The inverse toggle value
-persists as `catalogue/hideNsfw` in `games-ui.ini`. The toggle's tooltip counts
-games hidden by labels, awaiting classification and shown without labels.
-Pagination retains the provider's raw offset, waits for the current
-classification queue and advances through wholly hidden pages.
-Games backdrops use the shared one-second retention period: the previous image
-stays visible while the new backdrop loads, then yields to the selected game's
-poster if loading is still in progress.
+QML keeps raw pages separate from visible rows, patching identities in place.
+The inverse toggle persists as `catalogue/hideNsfw` in `games-ui.ini`. Pagination
+uses the provider's raw offset and waits for classification before advancing
+through wholly hidden pages. Toggle changes refilter, not reload the catalogue.
+
+### Beat times and artwork
 
 `hltb.py` uses bounded HTTPS reads, browser-compatible auth headers, one auth/search
 lock and an in-memory auth token. It discovers a changed search route from
@@ -306,52 +268,3 @@ Steam installs, account credentials, local custom art and Legendary authenticati
 stay owned by their launchers. Fresh installs must sign in again and reinstall or
 remount games. `proton_path` is machine-specific and must point to an installed
 Proton if supplied.
-
-## Validation
-
-`test_games_backend.py` covers parsers, providers and store actions.
-`test_games_extras.py` covers HLTB auth, route discovery, exact/ambiguous matching,
-direct links, stale/offline responses, custom local art, account selection. `test_games_space.py` drives the production worker and
-fullscreen host with isolated providers: opening, rail/grid preference,
-badge assets, HLTB hover/link/manual-match behavior, inline Find tabs, compact
-favorite/refresh/website actions, branded store action changes, image-strip
-gallery activation, gallery/dialog/picker/menu Escape, top-left hide, restore identity, drawer close,
-fresh reopen and independence from Movies. Fixtures do not launch real games or
-contact accounts. Native validation restores `ui/InteractionWindow.qml` in the
-fixture to use a Wayland layer surface. For native tooltip hover, move the real
-compositor pointer to the control's window coordinates plus its output offset,
-then restore the pointer afterward; Qt's simulated move does not reliably reach
-an offset output. Movies/Series UI/cache tests cover the shared changes.
-The targeted native GOG smoke checks branding, adjacent buttons, manual matching,
-the management handoff and retained state; it excludes tooltip hover, which is
-covered by the full offscreen suite.
-`test_games_gog.py` covers current/legacy native/Flatpak caches, profile isolation,
-malformed/missing/bounded reads, metadata, safe IDs/URLs, three-store library union,
-filters, favorites, saved matches and action-time revalidation. Launcher calls are
-mocked; UI fixtures check the GOG logo, menu, labels and retained launcher handoff.
-`test_games_content.py` covers native tag/descriptor parsing, synthetic v29
-Steam client caches (labels, fallback, rewrites, other formats, truncation),
-batched Steam store items, the bulk GOG NSFW listing (paging, weekly/daily
-renewal, untagged pages, secret products), an unreachable description host,
-unknown/malformed data, exact identity/override handling, combined stores, cache
-reuse/restart, awaiting versus attempted labels, outage pauses and back-off,
-one-day cooldowns for missing Steam apps, refresh and single-connection listings. `test_games_backend.py`
-also covers the native badge, cached Epic ownership while offline and rescans for
-Refresh game. The Games UI fixture checks header placement, hiding labelled and
-never-classified artwork, showing unavailable labels, tooltip counts, selection
-clearing, Favorites, persisted toggles, scrolling a paged 120-game library with
-batched classification and no per-game requests, newest-hydration ordering, match edits that keep the selection, in-place row patches, the native
-badge, uninstall rechecks and no polling while idle. UI fixtures stub Steam roots
-and storefront HTTP. Threaded backend regressions check nonblocking listing;
-`test_movies_worker.py` checks that blocked enrichment leaves foreground, launcher
-and control lanes available.
-
-Live public HLTB search and direct-page reads both resolved Portal 2 (Steam 620)
-to HLTB 7231. Actual store launch/install/uninstall, download completion and
-multi-monitor scaling/focus/hotplug need interactive validation.
-Epic install fixtures exercise real detached supervisors with a fake Legendary
-executable: telemetry, duplicate requests, backend restart, completion, failure,
-interruption and sanitized errors. The UI regression clicks Install, checks
-percentage/speed/ETA, the activity indicator and Downloads, closes/reopens Games
-during installation and verifies Play on completion. It never contacts an account
-or downloads a real game.

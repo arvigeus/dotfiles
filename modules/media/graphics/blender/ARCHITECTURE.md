@@ -33,7 +33,5 @@ extension installation and repeated setup, check that unrelated preferences
 survive, and read the saved preferences in a second process. After live setup,
 open Blender and call an MCP scene-summary tool to verify the bridge.
 
-`extra.uv_tools` entries have `name` and `source` fields. The package executor
-records tool names it installed in `~/.local/state/dotfiles/uv-tools`; when a
-managed declaration disappears it uninstalls only names in that record. This
-keeps unrelated uv tools untouched and makes module selection the desired state.
+Managed uv tool ownership/removal follows the shared
+[package executor](../../../../scripts/ARCHITECTURE.md).

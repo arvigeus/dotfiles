@@ -27,8 +27,3 @@ this panel is busy to prevent a simultaneous file edit/conversion.
 
 The [speech owner architecture](../../../desktop/quickshell/ARCHITECTURE.md)
 describes duration limits, model downloads, privacy and atomic SRT publication.
-`tests/test_media_transcription.py` uses fake owners with private sockets and real
-offscreen Qt/QML clients to check output choices, frozen options, cancellation,
-reattachment and library navigation. `tests/test_dictation.py` covers the worker
-with fake FFmpeg/Whisper executables, including long files, missing models,
-empty speech, source changes, collisions and stale cancellation.

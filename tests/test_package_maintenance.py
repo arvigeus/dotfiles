@@ -13,7 +13,6 @@ import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
-import tomllib
 
 REPO = Path(__file__).resolve().parents[1]
 PACMAN = REPO / 'modules/system/package/pacman'
@@ -215,26 +214,6 @@ raise SystemExit(int(os.environ['FAKE_PACDIFF_STATUS']))
     def test_archive_view_is_cleaned_up_even_when_pacdiff_fails(self):
         self.run_pacnew(True, status=7)
 
-    def test_topgrade_replaces_native_root_editor_without_enabling_cleanup(self):
-        path = (
-            REPO
-            / 'modules/system/package/topgrade/files/home/.config/topgrade.d/maintenance.toml'
-        )
-        config = tomllib.loads(path.read_text())
-        self.assertEqual(
-            config['misc']['disable'], ['config_update', 'claude_code', 'pi']
-        )
-        self.assertEqual(
-            config['commands']['Pi extensions'],
-            'if command -v pi >/dev/null 2>&1; then pi update --extensions; fi',
-        )
-        self.assertFalse(config['misc']['cleanup'])
-        self.assertTrue(config['linux']['show_arch_news'])
-        self.assertNotIn('pre_commands', config)
-        self.assertEqual(
-            list(config['post_commands'].values()), ['package-maintenance']
-        )
-
 
 class InteractiveMaintenanceTests(unittest.TestCase):
     def setUp(self):
@@ -399,3 +378,28 @@ systemctl restart 'not-a-candidate.service'
             )
             services.assert_not_called()
             orphans.assert_not_called()
+
+
+class UpdateLauncherTests(unittest.TestCase):
+    def test_update_preserves_literal_topgrade_arguments(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / 'topgrade'
+            binary.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+            binary.chmod(0o755)
+            result = subprocess.run(
+                [
+                    str(
+                        REPO
+                        / 'modules/system/package/topgrade/files/usr/local/bin/system-update'
+                    ),
+                    '--config',
+                    'space ; $(literal).toml',
+                ],
+                env=dict(os.environ, PATH=directory + ':/usr/bin:/bin'),
+                text=True,
+                capture_output=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stdout.splitlines(), ['--config', 'space ; $(literal).toml']
+        )

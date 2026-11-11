@@ -1,244 +1,120 @@
 # Desktop shell
 
-A Quickshell bar and drawers for applications, workspaces, audio, networking,
-displays, capture, clipboard history, calendar, notifications and system controls.
+A Quickshell bar and drawers for apps, workspaces, devices, capture, calendar,
+notifications and system maintenance. **Win+R** opens application search;
+**Win+1 / Shift+Tab** opens Spaces; **Ctrl+Shift+Tab** opens Performance.
+In application search, **Ctrl+D** favorites the selected app.
+See [Hyprland](../hyprland/README.md) for window, session and capture shortcuts.
 
-## Shortcuts
+## Spaces
 
-| Shortcut                 | Action                                       |
-| ------------------------ | -------------------------------------------- |
-| Win+R                    | Application search                           |
-| Win+1 or Shift+Tab       | Spaces and session actions                   |
-| Ctrl+Shift+Tab           | Performance, including over fullscreen apps  |
-| Ctrl+Alt+Delete          | Launch btop in Kitty                         |
-| Win+Shift+P              | Performance                                  |
-| Ctrl+D in search         | Favorite the selected app                    |
-| Ctrl+Win+Up / Down       | Previous / next workspace on this display    |
-| Ctrl+Win+Shift+Up / Down | Move the window to that workspace and follow |
-| Win+Arrow                | Focus a window                               |
-| Win+Shift+Left / Right   | Move a column                                |
-| Win+J                    | Give a stacked window its own column         |
-| Win+[ / Win+]            | Resize the current column                    |
-| Win+.                    | Center the column                            |
-| Win+mouse wheel          | Scroll columns                               |
-| Win+M / Win+V            | Maximize / toggle floating                   |
-| Win+Q or Alt+F4          | Close a window                               |
+Fullscreen destinations retain their state while hidden; close a running entry
+from Spaces to release it.
 
-Workspace navigation stays on the current display without wrapping. Empty
-workspaces disappear when left. Three-finger vertical swipes follow their natural
-direction; horizontal swipes scroll columns. With many windows, the bar's tabs
-narrow and then scroll; edge markers count hidden tabs and page through them.
-Amber tabs, arrows and markers indicate windows requesting attention. Apps must
-report urgency; unread browser tabs alone may not.
+- [Movies](symlinks/home/.config/quickshell/desktop/spaces/movies/README.md)
+  and [TV Series](symlinks/home/.config/quickshell/desktop/spaces/series/README.md):
+  discovery, local libraries, subtitles and downloads.
+- [Games](symlinks/home/.config/quickshell/desktop/spaces/games/README.md):
+  Steam/Epic/GOG libraries, discovery and compatibility information.
+- [Books](symlinks/home/.config/quickshell/desktop/spaces/books/README.md)
+  and [Pictures](symlinks/home/.config/quickshell/desktop/spaces/pictures/README.md):
+  ebook libraries and desktop wallpapers.
+- [Music](symlinks/home/.config/quickshell/desktop/spaces/music/README.md),
+  [Radio](symlinks/home/.config/quickshell/desktop/spaces/radio/README.md),
+  [Television](symlinks/home/.config/quickshell/desktop/spaces/television/README.md)
+  and [Streaming](symlinks/home/.config/quickshell/desktop/spaces/streaming/README.md):
+  local/cloud music, stations, IPTV and YouTube.
 
-## Spaces and session controls
+**Restart → Reload** closes applications and starts a fresh desktop session.
+Shutdown timers continue with the drawer closed. Temporary sleep/locking pauses
+end on shell reload; manual lock and suspend remain available.
 
-[Movies](symlinks/home/.config/quickshell/desktop/spaces/movies/README.md) offers fullscreen
-discovery, favorites, playback links and a local library with subtitles and downloads.
-[TV Series](symlinks/home/.config/quickshell/desktop/spaces/series/README.md) adds
-season and episode browsing in the same cinematic style.
-[Television](symlinks/home/.config/quickshell/desktop/spaces/television/README.md)
-browses live IPTV channels with local favorites and playback in your normal mpv.
-[Streaming](symlinks/home/.config/quickshell/desktop/spaces/streaming/README.md) offers
-YouTube feeds, native playback, Gemini summaries, offline video and Music downloads.
-[Games](symlinks/home/.config/quickshell/desktop/spaces/games/README.md) combines
-Steam/Epic libraries, discovery, title artwork, ProtonDB and HowLongToBeat.
-[Pictures](symlinks/home/.config/quickshell/desktop/spaces/pictures/README.md) browses
-wallpapers and applies them to the desktop and lock screen.
-[Books](symlinks/home/.config/quickshell/desktop/spaces/books/README.md) offers Open Library
-discovery, favorites, author/edition details and local ebook reading.
-[Music](symlinks/home/.config/quickshell/desktop/spaces/music/README.md) offers songs,
-artists, albums, local music and background queue playback.
-[Radio](symlinks/home/.config/quickshell/desktop/spaces/radio/README.md) offers station
-search, country/genre filters, favorites and background listening.
+## Capture
 
-Hold session actions for two seconds. Shutdown timers continue with the drawer
-closed. **Restart → Reload** closes applications and starts a fresh desktop.
-Sleep/locking pauses clear on shell reload/exit; screen blanking and manual
-lock/suspend remain available. See [desktop sessions](../hyprland/README.md).
+Screenshots save to Pictures/Screenshots and copy to the clipboard. Capture's
+editor/save preferences also apply to shortcuts; clipboard-only mode creates no
+file or notification. Reopen Capture during a countdown to cancel it.
+Screen recording saves H.264/AAC MP4 to Videos/Recordings, survives shell reloads
+and finalizes at session end.
 
-## Capture and clipboard
+**Win+Shift+D** starts/finishes the selected speech action. Transcription runs
+locally with Whisper; download a model once for offline use. Setup downloads the
+model without recording. Dictation is limited to two minutes; saved WAV audio to
+30 minutes, under Music/Recordings. Audio/Video tools also transcribe files or
+create subtitles for media up to six hours. Results arrive as notifications.
+Auto-paste skips insertion if focus changed or a shell surface is open. Temporary
+microphone unmuting restores the original mute when recording stops.
 
-Screenshots save under Pictures/Screenshots and copy to the clipboard. Capture's
-editor/save preferences also apply to [screenshot shortcuts](../hyprland/README.md#screenshots-and-recording).
-Clipboard-only capture creates no image file and skips the editor/notification.
-Reopen Capture during a countdown to cancel it.
-
-Recording uses GPU Screen Recorder and saves H.264/AAC MP4 in Videos/Recordings.
-It continues through shell reloads and saves when the graphical session ends.
-Win+Shift+R selects an area when idle and stops an active recording. Webcam tests
-stop on drawer dismissal; privacy controls depend on camera support.
-
-**Transcribe** converts microphone audio to text locally and copies it to the
-clipboard; **Win+Shift+D** starts and finishes capture. Its menu also offers
-automatic paste and audio recording.
-Language selection is searchable. Whisper Small (466 MB) is the default model;
-larger models use more memory and take longer to process. Download a selected
-model once, with progress in a notification; subsequent use works offline. Short
-clips and background noise can reduce accuracy.
-
-Voice recordings save as WAV in Music/Recordings. Dictation is limited to two
-minutes; saved audio to 30 minutes. Audio/Video tools transcribe existing files
-and can generate video subtitles (up to six hours). Auto-paste applies to
-microphone transcription and skips insertion if focus changed or a shell surface
-is open. File transcripts can copy to the clipboard or save as subtitles. Results and errors arrive as
-notifications without reopening Capture.
-Muted inputs offer **Unmute and transcribe** and return to mute when recording
-stops. Unavailable inputs offer a button to open microphone controls.
-
-Clipboard history is local and limited to 50 items. Pause collection before
-copying sensitive data. Pausing survives shell reloads and resets at the next
-login. It does not remove existing history.
+Clipboard history retains 50 local items. Pause before copying sensitive data;
+pause survives shell reloads until the next login and leaves existing history.
 
 ## Assistant
 
-Opening Assistant checks Lemonade's status. Sending a message, opening the model
-chooser or opening the Lemonade app starts the server as needed. Closing the
-drawer keeps replies running; use Stop to shut down the shared server. Its model
-chooser combines installed models and Lemonade's download catalogue, with
-downloaded models first. The first message downloads the selected model if needed.
-Deleting a custom user model also removes its Lemonade registration.
-Automatic downloads show a waiting status; downloads started through Lemonade's
-app expose percentage progress and pause/resume. Downloads continue with the
-drawer closed. Native Lemonade aliases appear above model names in the
-same chooser. Create a named model shortcut with
-`lemonade alias add NAME MODEL_ID`; aliases do not add a system prompt.
-Model availability follows Lemonade's compatibility settings.
+Assistant uses local Lemonade models and starts the server on demand for sending,
+model selection or opening its app. Closing the drawer keeps replies/downloads
+running. Chats and drafts last until New chat or shell restart; preferences persist.
+Native aliases can be created with `lemonade alias add NAME MODEL_ID`.
 
-Attach images, text/code files, PDFs, DOCX or ODT with the paperclip, drag-and-drop
-or Ctrl+V. Click an attachment to preview it. Images require a vision model; the
-chooser adapts when the conversation contains images. Documents contribute their
-text, not their layout. Scanned PDFs need OCR or page images. Limits are six files
-per message, 16 MB per file and 64,000 extracted characters per document.
+Attach images, text/code, PDF, DOCX or ODT through the paperclip, paste or drop.
+Limits are six files/message, 16 MB/file and 64,000 extracted characters/document.
+Images require a vision model; scanned PDFs need OCR or page images.
+Dolphin's **Share → Add to Assistant** accumulates frozen file snapshots in the
+draft without opening the drawer or sending. Restart Dolphin after installation
+if the Share action is missing. See [service details](ARCHITECTURE.md#assistant).
 
-Dolphin's **Share → Add to Assistant** collects selected local files while the drawer
-stays closed. Further selections add to the same draft; a notification confirms
-which files were prepared. Later file edits do not change these attachments.
-Restart Dolphin if a newly installed Share action is not visible.
+## Devices and networking
 
-Options offer reply length, response style and Thinking. Thinking → Off requests
-a direct answer on models that support it; Model default preserves Lemonade's
-settings. Reply length guides verbosity; output limits follow Lemonade. Thinking
-can be expanded in a reply. The last question can be restored for editing with
-its attachments when the current draft is empty.
+Audio boost is remembered per device; hardware names/ceilings use
+[audio drop-ins](ARCHITECTURE.md#audio-configuration). Bluetooth Connect authorizes
+future reconnections; dismissal cancels unfinished pairing.
+**Charge to 100% once** restores the previous limit after unplugging. It requires
+the shell running; an unplug/replug while stopped cannot be detected. See
+[power modes](../../hardware/power/README.md).
 
-Messages render Markdown after sending, including typed line breaks. Editing
-restores the original Markdown.
+Wi-Fi enterprise/WEP setup uses the connection editor. Devices discovery checks
+up to 256 private IPv4 addresses; sleeping/firewalled devices may not answer.
+Ports opens TCP/IPv4 access from the current subnet until firewalld reload/reboot;
+closing a rule may leave established connections alive. See
+[firewall access](../../system/security/firewall/README.md).
 
-Chats and drafts last until New chat or shell restart; closing the drawer keeps
-them and lets a reply finish. Preferences persist. Options can release a model's
-memory while keeping it installed. The pencil opens the full Lemonade app,
-starting the server if needed.
-See [assistant integration](ARCHITECTURE.md#assistant) for service configuration.
+Each connected monitor combination remembers its own layout, including disabled
+displays. Undocking keeps the panel usable. Brightness is independent; Powersave
+caps the panel to 60 Hz until an explicit refresh change or another mode change.
+`display-tools` edits arrangement; hold Shift while dragging to bypass snapping.
+Night light uses `~/.config/hypr/hyprsunset.conf`; restart `hyprsunset.service`
+after editing. Keep awake is temporary and also pauses automatic lock/suspend.
 
-## Audio, Bluetooth and power
+## Calendar and notifications
 
-Sound/Microphone include per-app controls and tests. Boost is remembered per
-device. For names and ceilings, see [audio configuration](ARCHITECTURE.md#audio-configuration).
-Bluetooth pairing and Connect authorize future reconnections. Closing the drawer
-cancels unfinished pairing; searching ends after 30 seconds.
-
-**Charge to 100% once** restores the previous limit after unplugging. It needs the
-shell running; pending restoration recovers at startup, but an unplug/replug while
-the shell is stopped cannot be detected. Manual limit changes cancel it.
-
-On Zephyrus, plugging in selects Balanced and unplugging selects Powersave;
-Performance stays selected. See the [mode comparison](../../hardware/power/README.md).
-Performance recording observes your workload until stopped and ends on shell
-exit/reload. Detailed readings do not wake sleeping GPUs.
-
-## Networking
-
-Wi-Fi, Ethernet, VPN and Cloudflare WARP controls share connection information and
-an internet speed test following the current route. The public IPv4 lookup runs
-only on opening information and caches for ten minutes. A new network is saved
-only once it connects. Enterprise/WEP networks use the connection editor.
-
-**Devices on this network** discovers reachable IPv4 devices on the connected
-private network (up to 256 addresses). Hover for gateway/local-device labels and
-response times when available. Sleeping or firewalled devices may not respond.
-
-Ports opens TCP/IPv4 access from the current local subnet. Openings disappear on
-firewalld reload/reboot. A changed address/subnet makes them inactive; they can
-apply again if that network returns. Closing a rule may leave established
-connections active. Firewall changes made elsewhere while the drawer is open (for
-example `firewall-cmd --reload`) appear the next time you open it.
-See [firewall access](../../system/security/firewall/README.md).
-
-## Displays and keyboard
-
-Each monitor's cog opens resolution, refresh, scale, orientation and mirroring
-settings. Changes apply and save immediately. **Configure display arrangement**
-opens a dedicated app (`display-tools`): drag monitors or enter exact coordinates,
-then **Apply arrangement** to apply and save together. Edges snap; hold Shift to
-move freely.
-
-Each connected monitor combination remembers its own settings and arrangement,
-including disabled displays. Reconnecting restores that setup automatically;
-new combinations start side by side. Undocking keeps the laptop panel usable.
-Brightness is not restored from the layout. Powersave normally caps the internal
-panel to 60 Hz; choosing another refresh overrides that until the next mode change.
-
-**Random Wallhaven wallpaper** applies a random SFW image to every display and
-the lock screen. Pictures owns wallpaper settings and playback.
-
-Dark mode applies the [shared desktop appearance](../../look-and-feel/README.md).
-Night light remembers its enabled state; edit
-`~/.config/hypr/hyprsunset.conf` for warmth/times and restart `hyprsunset.service`.
-Keep awake is temporary, per display, and pauses automatic locking/suspend too.
-
-The keyboard offers English, Bulgarian phonetic and Vietnamese Telex. Alt+Shift
-switches English and the selected secondary language. Lighting controls depend
-on hardware; the lowest brightness is off. Its info menu shows language maps
-and searchable Hyprland shortcuts. See [Logitech backlighting](../../hardware/peripherals/logitech/README.md).
-
-## Time, calendar and notifications
-
-Weather places live in `~/.config/quickshell/desktop/weather.json`; see the
+Weather places use `~/.config/quickshell/desktop/weather.json`; see the
 [format](ARCHITECTURE.md#time-and-weather). Pinning changes the system timezone;
-browsing another place leaves it unchanged. Forecasts refresh every 30 minutes
-and remain visible offline. Alarms/reminders continue with the drawer closed
-and across shell reloads until you log out, keep their clock time when the
-timezone changes and cannot wake a sleeping computer. Alarms show during Do Not
-Disturb and stay until dismissed; focus/break prompts follow it.
+browsing does not. Alarms/reminders survive shell reloads until logout, keep their
+local clock time across timezone changes and cannot wake a sleeping computer.
+Alarms bypass Do Not Disturb; focus/break prompts follow it.
 
-Events/tasks use Nextcloud and keep cached data available offline. Writes need a
-connection; recurring event edits and individual task exceptions are read-only.
-Configure `~/.config/quickshell/desktop/integrations/nextcloud.json` with the
+Events/tasks use Nextcloud with offline cached reads; writes require a connection.
+Recurring-event edits and individual task exceptions are read-only.
+Configure `~/.config/quickshell/desktop/integrations/nextcloud.json` from the
 [account example](symlinks/home/.config/quickshell/desktop/integrations/nextcloud.example.json).
-Save a Nextcloud DAV app password in `integrations/nextcloud-app-password`, owned
-by you with mode `0600`; keep the integrations directory private (`0700`).
-Optional `calendar.json` [selections](symlinks/home/.config/quickshell/desktop/drawers/events/calendar.example.json)
-choose collection names/slugs. Omitted arrays include all; empty arrays include none.
+Save the DAV app password in `integrations/nextcloud-app-password` with mode 0600
+and keep the directory mode 0700. Optional
+[calendar selections](symlinks/home/.config/quickshell/desktop/drawers/events/calendar.example.json)
+choose names/slugs: omitted arrays include all, empty arrays none.
+Tray attention requires an application attention signal or unseen notification;
+legacy XEmbed icons are unsupported.
 
-Notifications provide popups, history and Do Not Disturb, which still shows
-critical notifications. The tray highlights
-reported attention or unseen desktop notifications; apps must expose one of these
-signals for unread messages to be detectable. Legacy XEmbed tray icons are unsupported.
+## Maintenance
 
-## System and storage
-
-System combines updates, boot times, failed services/logs and timers. Package
-health checks report missing files/dependency problems and can reinstall affected
-repository packages with a full update. Signing repair reloads installed keyrings;
-Update system obtains newer keyring packages.
-
-Disks provides mount/unmount/unlock, on-demand drive health, Filelight and the
-partition editor. System mounts stay mounted and sleeping ATA drives stay asleep.
-Unmounting an encrypted volume locks it again, so the next mount asks for the
-passphrase; volumes in `/etc/crypttab` stay unlocked. Drives are never powered off,
-so use your file manager to remove one safely. Clean system offers selected caches, unused container/runtime resources and mise
-tools. Package cleanup may request administrator authentication.
-
-## Service
+System offers updates, service logs and package health/repair. Disks offers
+mount/unlock, on-demand health, Filelight and selected cache cleanup. Unmounting
+encrypted volumes locks them unless `/etc/crypttab` owns them. Drives are never
+powered off; use the file manager for safe removal. Sleeping ATA drives stay asleep.
 
 ```sh
 systemctl --user restart desktop-shell.service
 journalctl --user -b -u desktop-shell.service -n 50
 ```
 
-Applications launched from the shell run independently and survive its restart.
-Desktop entries whose file names contain spaces, `+` or non-ASCII characters
-(common for Steam and Wine shortcuts) launch, but UWSM shows a warning about the
-non-standard entry ID. Temporary pauses, tests and reminders end on restart. See
-[implementation and validation notes](ARCHITECTURE.md).
+Launched applications survive shell restart. Steam/Wine desktop IDs containing
+spaces, `+` or non-ASCII characters launch with a UWSM warning. See
+[ARCHITECTURE.md](ARCHITECTURE.md) for implementation details.

@@ -28,10 +28,6 @@ chosen swatch. Never construct the nested mode value from the public mode number
 Aura's derived enum encoding differs for Pulse. The daemon owns preference
 persistence; the shell adds none.
 
-`tests/test_keyboard_backlight.py` covers supported effects, RGB capability,
-wire values, stale-controller rejection and provider routing without hardware
-changes. `tests/test_generation.py` checks that other hosts omit the adapter.
-
 ## Battery care and performance
 
 `symlinks/home/.config/devices/power/backends/asus.py` extends the desktop's
@@ -49,7 +45,3 @@ The Performance drawer exposes the three coordinated modes; CPU boost and ASUS
 profile selection have no independent shell controls. Hardware control ownership
 and application integration are defined in the
 [power architecture](../../power/ARCHITECTURE.md).
-
-`tests/test_power_drawers.py` checks capability discovery, stale requests, preset
-range validation and applied-value readback with a mock bus. Generation tests verify
-that only Zephyrus installs this provider.

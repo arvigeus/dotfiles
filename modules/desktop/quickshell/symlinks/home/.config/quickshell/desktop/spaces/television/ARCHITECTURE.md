@@ -102,22 +102,3 @@ regenerable catalogue is under `$XDG_CACHE_HOME/quickshell/desktop/spaces/televi
 mpv sockets are under the owner-only `quickshell-television-UID` runtime directory.
 Caches and sockets are regenerable; streamed video is not stored. Television
 has no account, secret or machine-bound credential to recover.
-
-## Validation
-
-`tests/test_television.py` covers provider grouping/feeds, exclusions, anonymous
-streams, headers, pagination, filters, offline snapshots, favorites, corruption
-preservation, stream identity, mpv argv/config inheritance, switching, pause/stop,
-worker close and plugin-helper process groups. Fixture tests never play host
-audio or mutate audio devices. `test_television_playback.py` generates a local HLS
-fixture and uses real mpv with null audio/video outputs; it verifies decoding,
-private normal-config inheritance, pause/resume and cleanup.
-
-`test_television_space.py` exercises the shared fullscreen host with production
-workers, fixture provider data and a fake native player. It checks the compact
-layout, icon, website spacing, paging, nested Escape, favorites, native-player
-handoff, hidden timers, restore, independent close and fresh-instance preferences.
-
-Run `python3 -m unittest discover -s tests -p 'test_television*.py' -v`.
-Interactive native window focus, audible output and multi-monitor hotplug require live use;
-stream availability and regional restrictions vary by channel.

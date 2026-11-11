@@ -8,8 +8,6 @@ This file links to the configuration in this module, so edits update the checkou
 
 ```conf
 action_alias project_shell launch --type=tab --cwd=~/Projects
-action_alias git_status launch --type=tab --cwd=current --hold git status
-action_alias system_update launch --type=tab topgrade
 ```
 
 Aliases appear in the palette without needing individual keyboard shortcuts.

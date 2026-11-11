@@ -127,36 +127,3 @@ up. Nextcloud Music sync also uses the shared `nextcloud.json` and
 `nextcloud-music-api-key`, shared by all consumers. They share
 the existing Nextcloud integration directory with the DAV app password; Radio has
 no separate account configuration.
-
-## Validation
-
-`tests/test_radio.py` covers genre aliases, union paging/deduplication, expansion
-bounds, offline snapshots, corruption preservation, file modes, URL validation,
-metadata and real subprocess/IPC ownership using an isolated fake mpv. It verifies
-pause, replacement, failed streams and worker SIGTERM cleanup. No test changes
-host audio devices or plays sound.
-
-`tests/test_radio_space.py` uses production workers and the shared fullscreen host
-with fixture APIs/player. It covers toolbar geometry, black background, light
-desktop theme, scrolling/pagination, favorites, nested Escape, pause/resume,
-hide/restore, navigation, explicit close, fresh-instance restore and a late
-resolution arriving after Stop.
-
-`tests/test_radio_sync.py` covers initial union, add/remove in both directions,
-remote edits, offline retry, lost create/delete replies, account isolation,
-serialized syncs, safe transport and shared credential file checks.
-`tests/test_radio_matching.py` covers verified URL/UUID matches, quality metadata,
-scheme aliases, private-stream lookup exclusion, cache behavior, unavailable
-streams and correction of cloud records without changing their IDs. The QML test
-also verifies hidden import completion, suppressed hidden polling, duplicate
-catalogue/favorite recognition and responsive playback during slow sync.
-
-`tests/test_radio_mpris.py` uses an isolated D-Bus session, local HTTP/WAV fixture,
-real mpv/plugin and null audio output. Production Sound controls pause/resume
-Radio, retain its controls after stream removal and stop its session without
-affecting a second mpv player. The existing audio drawer suite covers the other
-association, device and routing behavior.
-
-Run `python3 -m unittest discover -s tests -p 'test_radio*.py' -v`.
-Multi-monitor focus/hotplug and an audible listening session require interactive
-validation.

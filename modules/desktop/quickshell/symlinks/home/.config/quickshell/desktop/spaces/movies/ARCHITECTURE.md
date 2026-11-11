@@ -2,115 +2,48 @@
 
 ## Scope and integration
 
-Movies runs in the shared Spaces host; see its
-[lifecycle](../../../../../../../ARCHITECTURE.md#spaces). A related anime of the
-other kind opens in TV Series (or Movies) only while this page is shown; a lookup
-that finishes after the page was hidden is dropped without an error.
-
-Movies retains the established catalogue/detail and rail/grid workflows.
-Browser targets
-use xdg-open through Apps/UWSM; custom old shell browser commands are not imported.
-TV Series reuses this browser and presentation with its own workers and storage;
-see [Series architecture](../series/ARCHITECTURE.md). There is no embedded player.
-The provider/library implementation retains legacy record formats and aliases;
-Provider IDs and record formats remain stable across both applications.
+Movies uses the shared [Spaces lifecycle](../../../../../../../ARCHITECTURE.md#spaces).
+TV Series reuses its browser, controls and workers with independent storage; see
+[Series architecture](../series/ARCHITECTURE.md). Related anime may switch Spaces
+only while the requesting page is shown. Players/browser targets launch through
+Apps/UWSM; there is no embedded player.
 
 ## Presentation contract
 
-Spaces are immersive destinations, with no Spaces navigation button inside an
-opened module. Keep the host's top-left hide control reachable over popups.
-The page's `backdropTarget` points to the host's edge-to-edge background layer;
-only the foreground content uses the host's padding and header allowance.
-The page's single toolbar is reparented into `toolbarTarget`, beside the hide
-control and a separator, without a duplicate Space title. Bind that toolbar's
-visibility to page activation, since its visual parent is the host. Drawer entries
-use only their close X to indicate a running instance.
-Do not put the backdrop back inside that inset content area.
+Spaces use one cinematic dark palette in both desktop modes. `MovieStyle.qml`
+owns near-black surfaces, white text and red actions; only typography follows the
+shell. Shared `Movie*` controls apply it without restyling shell controls.
+The host owns the edge-to-edge backdrop and single toolbar: pages provide
+`backdropTarget` / `toolbarTarget`, bind toolbar visibility to activation and keep
+the host's hide control reachable over popups. Do not add in-page Spaces links.
 
-Catalogue Spaces use underlined `MovieTab` navigation: My Library, Browse and
-Favorites where supported. The right-hand actions start with Search, Filters and
-Refresh, followed by transfer/activity and layout controls where applicable.
-Movies and TV Series use Refresh in My Library to scan immediately while keeping
-the catalogue visible. Only unidentified entries open the shared `LocalScan` review
-in a modeless, dimmed `Popup.Item`, using the gallery's overlay/close convention
-and leaving the host hide control reachable. Select a match, then explicitly
-import; the labelled TV fields accept a season and an episode or contiguous range.
-Hidden scans defer review until My Library is shown again. Books retains its
-explicit scan panel and optional path. Browse Refresh bypasses the saved catalogue response while retaining
-the query and filters; Favorites Refresh rereads saved favorites. Movies and
-Series skip the initial snapshot on explicit refresh, retaining their displayed
-results until the current request settles; provider failures can still return
-the backend's saved catalogue with an offline warning.
+Catalogue tabs and toolbar actions share ordering across Spaces. Refresh retains
+query/filters and displayed results while replacing metadata; Favorites rereads
+saved state. My Library scans immediately, showing `LocalScan` only for unidentified
+files. Review is modeless and defers while hidden. Only explicit Import publishes
+a chosen match. Provider failures may retain saved catalogues with an offline
+warning. Refresh must not cancel pending playback or unrelated tab requests.
 
-Movies deliberately has one cinematic dark appearance in both desktop modes:
-near-black surfaces, white text, saturated red primary actions, ghost secondary
-controls and red underlines on active tabs. `MovieStyle.qml` owns these colors;
-only typography follows the desktop. Local `Movie*` controls apply this palette
-to popups, inputs, cards and scrollbars without changing shared shell controls.
-Do not reintroduce gray button/tab fills or light/dark variants to match the shell.
-Artwork uses full-size cropped images with directional dark gradients for text
-legibility. The moderate reading scrim follows the detail column: left in rail
-mode, right in grid mode; the artwork remains visible beneath it. `MovieText` adds a subtle dark shadow. Keep the artwork visible
-on the opposite side rather than flattening the whole background.
-Rating links use the bundled full-color service marks in `ratings/`, including
-score-dependent Rotten Tomatoes and audience marks. Logo/score pairs use intrinsic
-row widths and a fixed six-pixel gap rather than a stretching layout. Preserve accessible service
-names and scores; do not replace the marks with text-only badges or tint them.
+Use cropped artwork and directional gradients for legibility without obscuring
+the opposite side. Rating links retain full-color service marks, readable scores
+and accessible names. `Catalogue.update()` reconciles identity-keyed JSON payloads
+to preserve delegates, decoded images and scroll position; appended pages dedupe.
+This differs from the role-based shell `ui/Models.js`. `ScrollArea` sizes to its
+single child unless content dimensions are explicit.
 
-`ActivityIndicator.qml` provides the toolbar activity control shared by every
-Space. Pages supply keyed pending tasks and their job snapshots; simultaneous
-work appears on separate tooltip lines, including job phase and progress. The
-red ring animates only while work is pending and the page is active. The
-indicator and tooltip disappear completely when idle or hidden; there is no
-completion marker or retained last-action text. Completed, failed, cancelled
-and reviewable jobs remain in the existing notification/activity panels.
-The cached ring repaints after canvas allocation, sizing or visibility changes,
-including asynchronous page creation and retained-page restoration.
+`ActivityIndicator` derives concurrent tasks/progress from live request and job
+snapshots. It animates only while active/pending and disappears while idle/hidden.
+Canvas allocation/visibility changes must repaint it. Completed jobs belong to
+activity panels; errors and recovery controls stay local. Embedded scan/download/
+subtitle panels use `showStatus: false` to avoid duplicate routine notices.
+Selection and tab generations prevent older replies from clearing newer loading
+state or replacing content; `resetSelection()` clears all per-title requests.
 
-Every Space reuses this directory's `Movie*` controls, `ScrollArea` and
-`Catalogue.js`. `ScrollArea` steps mouse wheels like the shell's drawers and
-sizes its content from its single declared child unless the page sets
-`contentWidth`/`contentHeight`. `Catalogue.update()` keeps catalogue rows
-(`key` plus a JSON `payload`) keyed by identity, so delegates, decoded artwork
-and scroll position survive refreshes; appended pages add only unseen keys. It
-stays separate from the shell's role-based `ui/Models.js`.
-
-Progress derives directly from pending tasks and job snapshots; the indicator
-does not collect operation history. Errors, validation and actions requiring
-intervention stay beside their controls.
-Music's metadata dialog retains failed/partial saves and unsaved-edit warnings
-inline. Embedded download, scan and subtitle panels use `showStatus: false`
-instead of rendering a second routine status line. Their standalone presentation
-remains self-contained.
-Explicit transfer/review panels retain their detailed controls and job rows.
-
-Movies covers catalogue loading, selected-movie metadata, personal state,
-local-file inventory, backdrop/logo decoding and the visible tab's requests.
-The image gallery uses its own spinner while hiding the toolbar animation.
-Activity descriptions appear in the tooltip and accessible name. An extra-request generation prevents
-an earlier tab's response from clearing a later tab's loading state or replacing
-its content. Selection generations protect personal state and file inventory too.
-`resetSelection()` is the one place that abandons a selection's requests, so it
-also clears every per-title loading flag. Refresh supersedes only metadata
-hydration; pending playback and tab requests still settle.
-
-`tests/test_space_activity.py` exercises concurrent tasks/jobs, live tooltip
-updates, progress, hidden/idle disappearance and rendered spinner contrast against
-the native UI. The Series integration test captures the actual toolbar ring
-during a delayed episode request and after hide/restore, checking red pixels
-rather than only its loading flags. Space integration tests cover each toolbar
-and verify routine notices no longer consume content rows.
-
-Backdrops allow the previous movie's image a 1 second grace period. A ready
-replacement crossfades directly; otherwise the old image yields to the current
-movie's poster, cropped to fill the screen. Poster decoding starts during that
-grace period, and its buffer resets on URL changes to prevent stale poster reuse.
-The real backdrop replaces the poster when ready; failures retain the poster.
-Only backdrops opt into this deadline. Logos reset immediately on source changes.
-`ProgressiveImage.qml` owns the two cached image layers and preview/full-source
-handoff shared by backdrops and the Pictures detail preview. Pictures clears the
-previous original immediately on source changes; backdrops retain their bounded
-grace period. Both layers decode for the physical surface size.
+`ProgressiveImage` owns cached preview/full layers. Backdrops retain their old
+image for up to one second, then use the current poster until the new backdrop
+is ready; failure retains the poster. Buffers reset on source changes. Pictures
+previews clear the prior original immediately, and logos reset immediately.
+Decode both layers for physical surface size.
 
 ## Artwork and response caches
 
@@ -239,31 +172,6 @@ All Spaces read one qBittorrent connection from
 for authentication. Torrent jobs, libraries and worker
 lifetimes remain independent per Space.
 
-## Validation
-
-Use the repository unittest discovery entry point. `test_movies_media.py`,
-`test_movies_torrents.py` and `test_movies_subtitles.py` cover provider failover,
-identity, favorites, subtitle operations and movie import/data preservation.
-`test_movies_space.py` runs the production page, workers and SpaceHost over an
-isolated database and an offscreen native-window substitute. It covers lazy load,
-hide/restore identity, popup/input Escape priority, top-left hiding over the image
-gallery, drawer close, full-row pointer hover including its independent X,
-persisted favorites and fresh reopen. Artwork fixtures verify gallery completion,
-worker restart/delegate recreation without repeat downloads, and scaled thumbnail
-decoding. `test_movies_cache.py` exercises persistent hits, request coalescing,
-retention/LRU limits and interrupted downloads. Delayed worker
-responses also exercise tab loading, one visible spinner until inventory and
-primary images finish, and stale-response rejection. Backdrop fixtures cover
-fast transitions, poster fallback, failed images and superseded downloads.
-Native Wayland smoke checks cover real fullscreen geometry and opening/closing
-in dark and light modes. `test_movies_worker.py` checks subprocess cleanup while
-retaining a detached application, including when the QML `Worker` is destroyed,
-strict per-request responses and single stderr diagnostics. `test_movies_import.py`
-simulates filesystems without hard links.
-Delayed replies check that refresh and empty views leave no request spinning.
-Multi-monitor focus/stacking, scaling, hotplug, real playback and real download
-completion still require desktop/device interaction.
-
 ## Generated subtitles
 
 The shared `Subtitles.qml` panel includes one caption icon beside the selected
@@ -276,5 +184,3 @@ the selected inventory, and reopening a title reads any completed sidecar.
 The same panel serves Movies and TV Series; episode filenames determine their
 own output names. See the shell's [speech architecture](../../../../../../../ARCHITECTURE.md)
 for file limits, frozen options, publication and cancellation guarantees.
-`tests/test_media_transcription.py` exercises both Space IDs using isolated
-socket owners, including navigation, completion, refresh and cancellation.

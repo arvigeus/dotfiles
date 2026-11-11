@@ -113,24 +113,3 @@ Series uses the existing quickshell, mpv, ffmpeg, qBittorrent and browser/XDG mo
 dependencies; no additional package is needed. Provider templates need `series_url`.
 Remote qBittorrent paths must also exist on this machine. Expired API credentials
 or account sessions require renewal in the Series configuration.
-
-## Validation
-
-Use the repository unittest discovery command. `test_series_space.py` uses the real
-host, drawer, page and worker transport over isolated cached metadata: drawer open,
-seasons, episode switching, compact rating pairs, independent preferences/favorites,
-hide/restore, explicit close and fresh reopen. Its season fixtures cover Specials
-ordering, a chosen season kept across a refresh that adds a season, catalogue and
-local inventory merging, rendered episode thumbnails/descriptions, missing-media
-Find actions, offline metadata retention and watch-option routing
-through a worker that rejects every playback request, so nothing is launched.
-`test_series_media.py` exercises the Series environment across all three backends,
-episode imports, local/provider playback resolution, refresh bypassing cached
-seasons/episodes and alias-independent local episode order. Existing
-Movies/provider/worker tests cover the reused code.
-`test_movies_torrents.py` additionally covers bare anime numbers, combined files,
-registered filename reconciliation with sidecars, extra-root preservation,
-collection-safe deletion and malformed directory configuration. The shared
-Movies header integration exercises direct Refresh and review/import in both kinds.
-Real playback/download completion and multi-monitor focus/hotplug require
-interactive validation.

@@ -127,18 +127,6 @@ discarding drafts, starting a file job, or closing cancels the lookup. Completio
 also checks the original song details and lyrics before applying a response.
 MP3's language-qualified ID3 lyrics are normalized for display and verification.
 
-## Validation
-
-`python3 -m unittest tests.test_audio_tools tests.test_audio_tools_gui tests.test_audio_lyrics` uses
-throwaway fixtures: all seven presets, Unicode and cleared tags, covers,
-unchanged audio, backups, source changes, output races, job errors/cancellation
-and the real offscreen dialog. Native application queries verify audio MIME registration.
-Lyrics fixtures check shared settings, authenticated requests, cancellation,
-stale drafts, MP3/FLAC saving, provider failures.
-`python3 -m unittest tests.test_media_tools_gui` verifies single-file registration,
-picker cancellation and native dark/light palette changes in both dialogs. The
-live theme test uses an isolated D-Bus session and temporary XDG directories.
-
 ## Transcription
 
 The Transcribe tab embeds the shared native speech client from

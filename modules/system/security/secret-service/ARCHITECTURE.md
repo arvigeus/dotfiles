@@ -22,7 +22,5 @@ Credential storage lives in `~/.local/share/keyrings`. Stop credential
 consumers and the daemon before restoring keyring files, then start the daemon
 again. The user supplies the keyring password; it is not stored in dotfiles.
 
-Validate module discovery using `python3 -m unittest tests.test_generation`.
-
 References: [GNOME Keyring](https://help.gnome.org/seahorse/keyring.html)
 and [KWallet Secret Service support](https://github.com/KDE/kwallet/blob/v6.31.0/README.md).

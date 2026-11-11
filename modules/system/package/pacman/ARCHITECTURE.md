@@ -34,6 +34,3 @@ modules. No duplicate automatic implementation is added for these tasks.
 References: [arch-update tasks](https://github.com/Antiz96/arch-update),
 [checkservices flags and behavior](https://github.com/archlinux/contrib/blob/master/admin/checkservices),
 [ALPM hook format](https://man.archlinux.org/man/alpm-hooks.5.en).
-
-Run `python3 -m unittest discover -s tests -p test_package_maintenance.py`.
-Tests use isolated commands; they never mutate packages or host services.

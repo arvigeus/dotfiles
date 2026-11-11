@@ -28,8 +28,7 @@ The caption icon uses the Capture menu’s speech model and spoken language;
 missing models download on first use. Generation preserves the original language
 and existing subtitles, and continues when the Space closes.
 
-X and Escape hide Movies; the X beside its running entry in Spaces closes it.
-Downloads accepted by qBittorrent continue; reopening Movies resumes indexing.
+Closing Movies leaves accepted qBittorrent downloads running; reopening resumes indexing.
 
 Media files themselves need a separate backup or mount at their original paths.
 See [architecture](ARCHITECTURE.md) for configuration and storage details.

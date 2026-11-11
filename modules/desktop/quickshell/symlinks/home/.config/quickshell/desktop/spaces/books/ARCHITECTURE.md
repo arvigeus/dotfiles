@@ -95,17 +95,3 @@ The library contains favorites and cached metadata, local file associations and
 Books torrent job records. Settings/provider packages and database files use
 owner-only permissions. Response/artwork caches live under
 `$XDG_CACHE_HOME/quickshell/desktop/spaces/books/` and are regenerable. Ebook payloads and browser sessions need independent storage and account sign-in.
-
-## Validation
-
-`test_books.py` exercises normalized IDs, search filters/rate policy, caching,
-offline favorites, editions/authors, local matching and imports.
-`test_book_providers.py` exercises ISBN matching, packages/env files, safe URLs,
-redacted errors, downloads, collisions, cancellation and owned child shutdown.
-`test_books_space.py` drives the production host and workers for toolbar/grid/rail,
-search/filter Escape, author/edition/scan views, hide/restore, hidden transfer
-completion, independent Movies close, fresh instances and saved layout.
-
-Native multi-monitor scaling/hotplug, actual ebook reader handoff and live torrent
-completion still require interactive validation. Test fixtures do not prove those
-paths.

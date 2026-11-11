@@ -34,14 +34,9 @@ menu referenced, when `menu` is reassigned. It also closes on dismissal, when it
 item unregisters (before Quickshell deletes the item) and when the item drops its
 menu. Escape cancels a menu that is still loading over D-Bus.
 
-## Verification
+## Native checks
 
-`tests/test_tray_drawer.py` runs every QML case on a private bus
-(`support.private_bus`), where `SystemTray` becomes the watcher and never
-registers with the user's session. Fake items sit in a `ScriptModel` standing in
-for `SystemTray.items`. `tests/fixtures/tray_service.py` publishes a real SNI item
-and DBusMenu; the native case covers menu semantics, activation, scrolling,
-status, removal and a same-ID replacement while a menu is open. Menus run
-offscreen, because synthetic input has no seat serial for a grabbing popup. Icon
-themes are checked only with `DISPLAY_PREVIEW_PLATFORM=wayland`, which opens a
-real window. Pointer grabs and real applications need a desktop session.
+Use a private bus so the test watcher cannot register with the user's session.
+Menus run offscreen: synthetic input has no seat serial for grabbing popups.
+Icon-theme checks use `DISPLAY_PREVIEW_PLATFORM=wayland`; pointer grabs still
+require a real desktop session. See the [test guide](../../../../../../../../../../tests/ARCHITECTURE.md).

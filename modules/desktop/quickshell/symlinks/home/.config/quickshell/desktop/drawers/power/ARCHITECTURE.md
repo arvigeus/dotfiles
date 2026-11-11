@@ -39,10 +39,9 @@ Policy readback covers `zephyrus-*` TuneD profiles only. It follows
 `/etc/tuned/profiles`. It compares the platform profile, EPP, governor, global
 boost and frequency ceiling, plus ASUS PPT values and custom fan mode. A missing
 include or option reports an incomplete policy. TuneD writes `active_profile`
-before it applies the profile in its own thread: 0.3–0.5 s on GA402RK, and twice
-per AC/DC edge because TuneD-PPD re-resolves the battery variant before
-`power-source` selects the daily mode. Readback is therefore skipped for 5 s
-after that file changes.
+before its worker thread applies the profile. AC/DC changes can apply twice
+as TuneD-PPD resolves the battery variant and `power-source` selects the daily
+mode. Readback skips the first 5 s after that file changes.
 
 Telemetry never reads sensors on runtime-suspended devices or their parents.
 The generic hwmon loop skips display-class (PCI `0x03`) chips whatever their
@@ -80,12 +79,3 @@ signal-ended runs `interrupted`, so only an abort reason or a missing summary is
 shown as a warning. power-study keeps every sample in memory until the summary
 (about 11 KB per sample on GA402RK, roughly 19 MiB per hour). The drawer sets no
 time limit.
-
-## Tests
-
-`tests/test_power_drawers.py` covers TuneD include merging against the shipped
-profiles, the readback settle window, runtime-PM-safe telemetry, provider
-validation and drawer layout/actions with mock services. `tests/test_power_session.py`
-covers confirmed mode selection, service availability, charge-once recovery, real
-helper lifetimes (QProcess kill and closed output) and footer actions. No test
-switches the host's mode, charge limit or recorder.

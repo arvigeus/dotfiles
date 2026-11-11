@@ -93,6 +93,3 @@ References: [Topgrade configuration](https://github.com/topgrade-rs/topgrade/blo
 [Arch updater](https://github.com/topgrade-rs/topgrade/blob/main/src/steps/os/archlinux.rs),
 [config_update](https://github.com/topgrade-rs/topgrade/blob/main/src/steps/os/linux.rs),
 [pacdiff modes](https://man.archlinux.org/man/pacdiff.8.en).
-
-Verification uses `tests/test_package_maintenance.py`, `tests/test_system_drawer.py`
-and the generation suite. No test runs Topgrade against the host's package state.

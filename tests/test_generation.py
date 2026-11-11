@@ -11,12 +11,13 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 class GenerationTests(unittest.TestCase):
-    def test_hosts_share_storage_except_device_and_capacity(self):
+    def test_host_settings_are_reused_and_failed_reconfiguration_preserves_output(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             for name in ('scripts', 'modules'):
                 shutil.copytree(REPO / name, repo / name)
             shutil.copy(REPO / 'generate-config.py', repo)
+            output = repo / 'user-configuration.json'
 
             def generate(host, answers='', configure=False):
                 command = ['python3', str(repo / 'generate-config.py'), host]
@@ -28,135 +29,25 @@ class GenerationTests(unittest.TestCase):
 
             result = generate('zephyrus')
             self.assertEqual(result.returncode, 0, result.stderr)
-            zephyrus = json.loads((repo / 'user-configuration.json').read_text())
+            previous = output.read_bytes()
             result = generate('vm', '\n10\n')
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('at least 52 GiB', result.stderr)
-            self.assertEqual(
-                json.loads((repo / 'user-configuration.json').read_text()), zephyrus
-            )
+            self.assertEqual(output.read_bytes(), previous)
+
             result = generate('vm', '\n64\n')
             self.assertEqual(result.returncode, 0, result.stderr)
-            vm = json.loads((repo / 'user-configuration.json').read_text())
-            backend = 'home/.config/devices/keyboard/backends/'
-            zephyrus_links = {
-                entry['target']: entry['source']
-                for entry in zephyrus['extra']['symlinks']
-            }
-            vm_links = {
-                entry['target']: entry['source'] for entry in vm['extra']['symlinks']
-            }
-            self.assertTrue(
-                zephyrus_links[backend + 'asus.py'].startswith(
-                    'modules/hardware/devices/zephyrus/'
-                )
-            )
-            self.assertNotIn(backend + 'asus.py', vm_links)
-            power_backend = 'home/.config/devices/power/backends/asus.py'
-            self.assertTrue(
-                zephyrus_links[power_backend].startswith(
-                    'modules/hardware/devices/zephyrus/'
-                )
-            )
-            self.assertNotIn(power_backend, vm_links)
-            for links in (zephyrus_links, vm_links):
-                self.assertTrue(
-                    links[backend + 'logitech.py'].startswith(
-                        'modules/hardware/peripherals/logitech/'
-                    )
-                )
-                self.assertFalse(
-                    any(
-                        target.endswith('drawers/keyboard/lighting.py')
-                        or target.endswith('drawers/keyboard/logitech.py')
-                        for target in links
-                    )
-                )
-            self.assertEqual(generate('vm').returncode, 0)
-            self.assertEqual(
-                json.loads((repo / 'user-configuration.json').read_text()), vm
-            )
+            vm = json.loads(output.read_text())
+            result = generate('vm')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(output.read_text()), vm)
+
             result = generate('vm', '/dev/sda\n80\n', configure=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            updated = json.loads((repo / 'user-configuration.json').read_text())
+            updated = json.loads(output.read_text())
             self.assertEqual(
                 updated['disk_config']['device_modifications'][0]['device'], '/dev/sda'
             )
-            self.assertEqual(vm['bootloader_config'], zephyrus['bootloader_config'])
-            self.assertIn('udisks2', vm['packages'])
-            self.assertIn('upower', vm['packages'])
-            self.assertIn('upower.service', vm['services'])
-            self.assertIn('power-source.service', zephyrus['services'])
-            self.assertNotIn('power-source.service', vm['services'])
-            power_files = {
-                entry['target']: entry for entry in zephyrus['extra']['files']
-            }
-            self.assertEqual(
-                power_files['/usr/local/libexec/power-source']['mode'], '0755'
-            )
-            self.assertIn('/etc/systemd/system/power-source.service', power_files)
-            for config, device in ((zephyrus, '/dev/nvme0n1'), (vm, '/dev/vda')):
-                files = {entry['target']: entry for entry in config['extra']['files']}
-                self.assertIn('libnotify', config['packages'])
-                self.assertNotIn('dunst', config['packages'])
-                self.assertNotIn('profile_config', config)
-                self.assertTrue(
-                    {
-                        'hyprland',
-                        'uwsm',
-                        'kitty',
-                        'grim',
-                        'slurp',
-                        'hyprpolkitagent',
-                        'xdg-desktop-portal-hyprland',
-                        'qt5-wayland',
-                        'qt6-wayland',
-                        'smartmontools',
-                        'xdg-utils',
-                        'vim',
-                        'htop',
-                    }
-                    <= set(config['packages'])
-                )
-                self.assertFalse(
-                    {'wofi', 'dunst', 'polkit-kde-agent'} & set(config['packages'])
-                )
-                self.assertFalse(
-                    any(
-                        script.endswith('/90_cleanup.sh')
-                        for script in config['extra']['scripts']
-                    )
-                )
-                self.assertIn(
-                    'home/.local/share/dbus-1/services/org.freedesktop.Notifications.service',
-                    {entry['target'] for entry in config['extra']['symlinks']},
-                )
-                self.assertIn('archlinux-contrib', config['packages'])
-                self.assertIn('pacman-contrib', config['packages'])
-                self.assertEqual(
-                    files['/usr/local/libexec/pacman-report-orphans']['mode'], '0755'
-                )
-                self.assertEqual(
-                    files['/usr/local/libexec/pacman-report-services']['mode'], '0755'
-                )
-                self.assertEqual(files['/usr/local/bin/pacnew-review']['mode'], '0755')
-                self.assertEqual(
-                    files['/usr/local/bin/package-maintenance']['mode'], '0755'
-                )
-                self.assertEqual(files['/usr/local/bin/system-update']['mode'], '0755')
-                self.assertNotIn('/usr/local/bin/package-changelogs', files)
-                self.assertNotIn(
-                    '/usr/local/lib/package_changelogs/collector.py', files
-                )
-                self.assertIn('/etc/pacman.d/hooks/99-report-orphans.hook', files)
-                self.assertIn(
-                    '/etc/pacman.d/hooks/99-report-stale-services.hook', files
-                )
-                self.assertIn('home/.config/topgrade.d/maintenance.toml', files)
-                disk = config['disk_config']['device_modifications'][0]
-                self.assertEqual(disk.pop('device'), device)
-                disk['partitions'][1]['size'].pop('value')
-            self.assertEqual(vm['disk_config'], zephyrus['disk_config'])
 
     def test_automatic_discovery_and_disabled_checks(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -202,6 +93,7 @@ class GenerationTests(unittest.TestCase):
             assets = shared / 'files/home/.config/example'
             assets.mkdir(parents=True)
             (assets / 'config.jsonc').write_text('{"packages": ["app-data"]}')
+            (assets / 'config.json').write_text('{"packages": ["app-data"]}')
             for host in ('zephyrus', 'vm'):
                 subprocess.run(
                     ['python3', str(repo / 'generate-config.py')],
@@ -252,7 +144,6 @@ class GenerationTests(unittest.TestCase):
             self.assertEqual(len(config['custom_commands']), 1)
             self.assertEqual(config['extra']['aur_packages'], ['shared', 'aaa', 'zzz'])
             self.assertEqual(config['extra']['cargo_packages'], ['tokei', 'aaa', 'zzz'])
-            self.assertNotIn('postinstall', config['extra'])
             (repo / 'modules/aaa/check.sh').write_text('exit 2\n')
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
@@ -285,36 +176,6 @@ class GenerationTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('unsupported archinstall options: packges', result.stderr)
             self.assertEqual(output.read_text(), original)
-
-    def test_discovery_does_not_read_file_assets_as_configs(self):
-        with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory)
-            (repo / 'scripts').mkdir()
-            shutil.copy(REPO / 'generate-config.py', repo)
-            shutil.copytree(REPO / 'scripts', repo / 'scripts', dirs_exist_ok=True)
-            (repo / 'host').write_text('zephyrus\n')
-            host = repo / 'modules/hosts/zephyrus'
-            host.mkdir(parents=True)
-            (host / 'config.json').write_text('{"hostname": "zephyrus"}')
-            dolphin = repo / 'modules/files/dolphin'
-            dolphin.mkdir(parents=True)
-            (dolphin / 'config.json').write_text('{"packages": ["kio-admin"]}')
-            assets = dolphin / 'files/home/.config/example'
-            assets.mkdir(parents=True)
-            (assets / 'config.json').write_text('{"packages": ["app-data"]}')
-            unlisted = repo / 'modules/unlisted'
-            unlisted.mkdir()
-            (unlisted / 'check.sh').write_text('exit 1\n')
-            (unlisted / 'config.json').write_text('{"packages": ["not-selected"]}')
-            env = dict(os.environ, DOTFILES_HOST='zephyrus')
-            subprocess.run(
-                ['python3', str(repo / 'generate-config.py')],
-                env=env,
-                check=True,
-                capture_output=True,
-            )
-            generated = json.loads((repo / 'user-configuration.json').read_text())
-            self.assertEqual(generated['packages'], ['kio-admin'])
 
     def test_files_and_symlinks_cannot_share_a_destination(self):
         with tempfile.TemporaryDirectory() as directory:

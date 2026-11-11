@@ -2,15 +2,11 @@
 
 YouTube search, followed channels, creator posts and offline downloads in
 the Spaces drawer. Videos open in your native mpv player, with its usual captions,
-speed, quality controls and playback resume. Switch between Movies-style rail and grid
-views. Overview, Summary, Chapters and
-Downloads have separate detail tabs. Follow a channel URL or `@handle` to build
-your Discover feed; use the toolbar search to find YouTube videos or open a video URL.
+speed, quality controls and playback resume. Follow a channel URL or `@handle`
+to build your feed; search also accepts video URLs.
 
 Members-only uploads are hidden. **Posts** combines your followed creators' public
-updates, images, polls and shared videos. Videos and Posts load continuously as
-you scroll. Voting and comments open on YouTube.
-The subscription action switches to **Unsubscribe** for followed creators.
+updates, images, polls and shared videos. Voting and comments open on YouTube.
 **Open on YouTube** uses your browser when a video requires sign-in.
 
 **Summarize video** and **Ask Gemini** analyze the actual public video on request.

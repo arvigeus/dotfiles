@@ -225,9 +225,10 @@ where upstream can replace it.** On theming work or Union/toolkit upgrades:
 3. Verify both palettes, custom colors, running-app mode changes, the appearance
    portal and affected native/sandboxed apps. Update tests to the new contract;
    current assertions about Breeze or plugin paths are not permanent requirements.
-4. Remove obsolete generated files and managed CSS imports without disturbing
-   unrelated user configuration. Apply leaves omitted assets/packages installed,
-   so include explicit cleanup and update this document's baseline/coverage.
+4. Remove superseded generated files and managed CSS imports from the live
+   system in the same change, preserving unrelated configuration. Apply
+   reconciles tracked files; package removals require its interactive review.
+   Remove one-off cleanup hooks afterward and update this baseline.
 
 Retirement points in `theme.py` (package owners: [qt](qt/config.json),
 [gtk](gtk/config.json); application selections live in their own modules):
@@ -251,25 +252,3 @@ References: [Union overview](https://api.kde.org/overview.html),
 [appearance portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Settings.html),
 [Kitty automatic themes](https://sw.kovidgoyal.net/kitty/kittens/themes/),
 [Zed themes](https://zed.dev/docs/extensions/themes).
-
-## Verification
-
-`python3 -m unittest discover -s tests -p test_desktop_theme.py` covers palette
-compilation, configuration preservation, idempotence, invalid input, symlink
-protection, concurrent mode ownership, native GTK 3/4 CSS parsers, GTK 4 queries
-switching in one provider, and isolated QML watching/production synchronization.
-It also checks that shell and compiler accept the same palettes and choose the
-same selection text, announcement gating and retries, failed preference saves,
-readable kitty ANSI foregrounds and that every interface icon is referenced.
-Icon tests cover accent shades, alias resolution, HiDPI metadata, inheritance,
-upstream changes, stale alias cleanup, preservation after a failed build, and
-user theme switching without icon generation.
-The native Qt probe checks Union selection in Qt 6, Breeze fallback in Qt 5,
-both palettes, rendered Papirus folder accents and inherited application icons,
-and actual Dolphin-style selected/hovered panel pixels, text roles
-and accent borders without a session bus. It requires the declared platform
-plugins, styles and development headers. Production tests replace notification
-commands and isolate HOME and all XDG paths. Generation and desktop interaction
-suites cover provisioning and the existing switch. Live Qt propagation, GTK
-assets, portals and sandbox behavior
-require the declared packages and a graphical session.

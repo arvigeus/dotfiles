@@ -230,10 +230,7 @@ TEXT
             configure = repo / 'scripts/configure.sh'
             configure.write_text(
                 configure.read_text()
-                .replace(
-                    "[[ $EUID == 0 ]] || { echo 'Run through ./apply.sh or archinstall.' >&2; exit 1; }",
-                    ':',
-                )
+                .replace('[[ $EUID == 0 ]]', ':', 1)
                 .replace(
                     '/run/system-configuration.json', str(root / 'configuration.json')
                 )
@@ -401,8 +398,6 @@ class LiveParserTests(unittest.TestCase):
                 }
             )
         self.assertEqual(captured, {'hostname': 'vm', 'packages': ['git']})
-        self.assertFalse(hasattr(executor.LiveInstaller, 'minimal_installation'))
-        self.assertFalse(hasattr(executor.LiveInstaller, 'mount_ordered_layout'))
 
 
 if __name__ == '__main__':

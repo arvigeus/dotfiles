@@ -10,24 +10,12 @@ Activation only starts `desktop-shell.service` (`SystemdService=`, `Exec=/bin/fa
 a bus without systemd activation fails rather than launching a shell outside the
 unit. The graphical session normally starts the unit already.
 
-`NotificationCard` is shared by popup and history. It consumes the live shell
-palette, fonts and radii; no copied theme file needs regeneration. Cards display
-app icons, plain text, optional images, urgency, progress and actual app-provided
-actions. Urgency uses a noninteractive header icon with a tooltip and accessible
-label: down arrow for low, info for normal, alert triangle for critical. Only
-critical urgency uses the danger color; card borders stay neutral and there is
-no decorative urgency stripe. Images resolve only from local paths or Quickshell's image provider;
-remote image URLs are ignored. Named theme images are resolved and checked as
-small header icons, not promoted to artwork; missing icons fall back to the Lucide
-bell without requesting the image provider's checkerboard placeholder. Attachment
-space appears only for a successfully decoded image. Common action identifiers
-and clear folder/playback/download labels receive optional Lucide icons alongside
-their text; ambiguous actions remain text-only. Markup, hyperlinks, protocol action
-icons and inline replies are not advertised, so bodies are literal text: only the
-specification's and Pango's tags are stripped and entities decoded, keeping text
-such as `Vec<String>`. App actions are invoked through NotificationAction, never
-reconstructed as commands. Closing an action makes its saved card inert; history
-never invents a launch target or restores a stale callback.
+`NotificationCard` serves popups and history using the live palette. Images must
+resolve locally or through Quickshell's provider; absent images reserve no space.
+Bodies are plain text: strip notification/Pango tags and decode entities without
+removing literal generic syntax such as `Vec<String>`. Markup, inline replies and
+remote images are not advertised. Actions invoke native NotificationAction objects;
+never reconstruct commands or restore dead callbacks from history.
 
 At most three popup cards appear on the output focused when they arrive, with a
 fallback if that output disappears. Layer surfaces take no keyboard focus and
@@ -58,11 +46,6 @@ closure preserves the latest acknowledged state rather than an older snapshot.
 `qs ipc -c desktop call notifications status` reports only quiet mode, whether
 the drawer is open, and history/popup/unseen counts, without notification content.
 
-The drawer has no explanatory banners or Show again action.
-Its trash icon uses the shared `HoldButton` with a 1.3-second hold, cancelled on
-early release or drawer dismissal; per-card X dismisses that item. Errors use a
-fixed-height line so storage status cannot move controls or cards.
-
 Replacements update the existing ID and popup in place, preserving its hover
 state, rather than duplicating history or rebuilding the visible card.
 The drawer's `KeyedModel` keeps card objects by ID.
@@ -88,10 +71,5 @@ its own record, even after a restart reuses the PID and server IDs restart. Save
 history remains readable across shell restarts, but only current live connections
 have actions. Errors never log notification content.
 
-Verification uses `tests/test_notification_history.py`: fixtures use temporary
-state roots; native receipt/action tests own a private bus (`support.private_bus`)
-that activates nothing, so no other daemon can answer and nothing reaches the
-user's session. Desktop interaction and configuration-generation fixtures cover
-drawer hosting and package ownership.
 Protocol/API references: [desktop notifications](https://specifications.freedesktop.org/notification-spec/latest/),
 [NotificationServer](https://quickshell.org/docs/v0.3.2/types/Quickshell.Services.Notifications/NotificationServer/).

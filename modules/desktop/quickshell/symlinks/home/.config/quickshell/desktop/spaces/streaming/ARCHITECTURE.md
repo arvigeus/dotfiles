@@ -194,18 +194,3 @@ The key, settings, library and resume directory use 0600 files with
 caches and media payloads stay outside source assets. Media payloads and caches
 require independent storage. Removing local files updates availability
 without changing Nextcloud.
-
-## Validation
-
-Run `python3 -m unittest discover -s tests -p 'test_streaming*.py' -v` with local
-socket access. Tests cover URL validation, feed/search paging and offline reads,
-serialized state, API redaction/cache behavior, explicit analysis, cancellation
-and partial cleanup, owned player IPC, real FFmpeg tags/cover, Music's tag reader,
-and the retained Quickshell page with both
-layouts, toolbar search, Posts parsing/pagination and avatars, automatic rail/grid/
-Posts loading, scroll retention, hidden/error/exhausted/repeated-page guards,
-canonical subscriptions,
-members-only filtering, metadata-independent playback, hidden-job
-completion and stale-detail protection. Fixtures keep real media, credentials
-and server uploads untouched. Live provider checks should use small temporary
-samples and never print keys or resolved media URLs.

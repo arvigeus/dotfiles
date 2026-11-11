@@ -17,5 +17,3 @@ key inspection and normal opening never import or change trust. The key lists
 refresh after an import.
 
 See the [shared runtime](../common/ARCHITECTURE.md) for cancellation/publication.
-Isolated GnuPG tests generate temporary keys and prove encryption/decryption,
-detached signature verification/tamper detection and unchanged import owner trust.

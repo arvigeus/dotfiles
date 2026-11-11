@@ -4,17 +4,9 @@ Open **Spaces → Games** for Steam/Epic/GOG libraries, IGDB discovery, favorite
 ProtonDB ratings, title artwork, playtime and HowLongToBeat estimates.
 Installed Steam games and public store descriptions work without API keys.
 
-**Filters → NSFW** in the header shows adult games while highlighted; it starts
-off and remembers your choice. It hides games that GOG tags NSFW or that Steam
-rates for adult or frequent sexual content. Steam games known to your Steam client
-are classified offline from its cache; other Steam titles share one request per
-100 games. GOG uses one weekly listing of every NSFW-tagged product; it omits
-GOG's unlisted ("secret") products, such as Agony, so those stay visible. A new
-title stays hidden only until its first lookup. Games without a store label (Epic, local files, or a store that is
-unreachable) stay visible. Hover the toggle for counts; Refresh retries
-unreachable stores.
-
-The ProtonDB badge shows **Native** when Steam offers a Linux build.
+The NSFW filter uses Steam/GOG labels. Unlabelled games and GOG's unlisted
+products can remain visible; the filter is not a complete content classification.
+See [classification details](ARCHITECTURE.md#native-content-filtering).
 
 Configure `~/.config/quickshell/desktop/spaces/games/games.json` using
 [games.example.json](games.example.json). A Twitch application's

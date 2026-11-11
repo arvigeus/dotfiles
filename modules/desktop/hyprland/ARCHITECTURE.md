@@ -87,17 +87,6 @@ Steam's `-steamos3` exposes the `steamos-session-select` hook, installed in
 `/usr/bin` and routed to `session-mode desktop`. See the
 [gaming launcher architecture](../../gaming/gamescope-session/ARCHITECTURE.md).
 
-`tests/test_session_modes.py` runs the production supervisor and Steam hook with
-isolated compositor and Steam executables, covering transitions, Reload, Steam
-exit, gaming failure/timeout, stops before readiness, requests made during a stop,
-failed stops, and the desktop default of a new login. With the real launcher and
-a fake Gamescope that follows 3.17's readiness, descriptor and lingering
-behavior, it also covers Steam exit reports. A pseudo-terminal test
-checks foreground handoff and inherited signal dispositions; other tests keep
-the supervisor off the terminal running them.
-`test_boot_and_session.py` checks autologin provisioning and the TTY1 profile
-gate. Neither replaces a real DRM/Steam round trip on the installed hardware.
-
 Native shutdown can still fail inside packaged compositors. Aquamarine 0.15.1's
 multi-output teardown can dereference a cleared connector in
 `flushAsyncCommitEvents()` ([upstream issue](https://github.com/hyprwm/aquamarine/issues/383)).
@@ -114,9 +103,7 @@ Shortcuts use the active monitor; bar buttons pass their output's numeric monito
 ID, resolved against `hl.get_monitors()`. Native monitor selectors, in
 `hl.get_monitor()` and dispatcher `monitor` fields, accept a bare number only
 below the active output count, while disabled or replugged outputs keep their IDs
-reserved, so dispatches name the output. Regression coverage lives in
-`tests/test_desktop_workspaces.py`, whose fake models these native lookup, monitor
-and timer contracts.
+reserved, so dispatches name the output.
 
 `bindings.lua` assigns descriptions to keybinds with `hl.bind`'s `description`
 flag. Hyprland exposes those labels in `hyprctl -j binds`, which feeds the
@@ -200,7 +187,7 @@ while panels were dark.
 
 `monitors.lua` registers the native `monitor.layout_changed` Lua callback and
 forwards it with `hl.dsp.event("desktop-displays-changed")`. Quickshell consumes
-that notification through its existing Hyprland IPC subscription to save display
-preferences without polling. This callback launches no process. Lua subscriptions
+that notification through its Hyprland IPC subscription to restore display
+layouts without polling. Only explicit settings edits save preferences. This callback launches no process. Lua subscriptions
 are rebuilt by Hyprland on config reload. Persistence and restoration belong to
 [the display service](../quickshell/ARCHITECTURE.md#displays).

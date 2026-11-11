@@ -118,11 +118,3 @@ only untracked local settings are protected. A branch change invalidates the
 preview. It never deletes local branches, expires reflogs, prunes Git objects or
 forces through an in-progress operation. Home/root repositories are rejected for
 cleanup/reset.
-
-`tests/test_project_tools.py` uses disposable Git repositories to exercise local
-settings, selection changes, nested repositories, reflog retention and selected
-task dispatch. `tests/test_project_overview.py` checks manifest/framework/tool
-inspection, bounded/external/malformed files, Git state, credential removal and
-absence of project-code execution. `tests/test_project_dashboard.py` drives the
-real offscreen dialog, task filtering/launch, panel visibility and refresh.
-No real project cleanup/reset is performed by deployment or validation.
