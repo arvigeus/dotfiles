@@ -1,0 +1,4 @@
+singleton AssistantService 1.0 AssistantService.qml
+AssistantInbox 1.0 AssistantInbox.qml
+ModelPicker 1.0 ModelPicker.qml
+AttachmentStrip 1.0 AttachmentStrip.qml

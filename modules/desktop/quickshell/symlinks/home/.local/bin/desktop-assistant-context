@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""Pass Dolphin's selected local files to the running desktop shell."""
+
+import html
+import json
+import os
+from pathlib import Path
+import socket
+import subprocess
+import sys
+
+
+def notify(message):
+    try:
+        subprocess.run(
+            [
+                'notify-send',
+                '--app-name=Assistant',
+                '--icon=mail-attachment',
+                'Assistant',
+                html.escape(message[:2000], quote=False),
+            ],
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def add_files(paths):
+    if not 1 <= len(paths) <= 6:
+        raise ValueError('Select between one and six files to add to Assistant.')
+    # qs interprets bracketed arguments as CLI arrays; use an object envelope.
+    payload = json.dumps(dict(files=[Path(path).absolute().as_uri() for path in paths]))
+    if len(payload) > 96 * 1024:
+        raise ValueError('These file paths are too long to add in one selection.')
+    config = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config'))
+    try:
+        result = subprocess.run(
+            [
+                'qs',
+                'ipc',
+                '--path',
+                str(config / 'quickshell/desktop/shell.qml'),
+                'call',
+                'assistant',
+                'addFiles',
+                payload,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(
+            'The desktop shell is unavailable. Try again when it is running.'
+        ) from exc
+    if result.returncode:
+        raise ValueError(
+            'The desktop shell is unavailable. Try again when it is running.'
+        )
+    if result.stdout.strip():
+        raise ValueError(result.stdout.strip())
+
+
+def share(server):
+    """KDE Purpose's scripted-provider protocol: framed CBOR in, JSON out."""
+    from PySide6.QtCore import QCborValue, QUrl
+
+    with socket.socket(socket.AF_UNIX) as channel:
+        channel.settimeout(5)
+        channel.connect(server)
+        try:
+            with channel.makefile('rb') as stream:
+                header = stream.readline(20)
+                if not header.endswith(b'\n') or not 0 < int(header) <= 96 * 1024:
+                    raise ValueError('Invalid Share request size.')
+                payload = stream.read(int(header))
+            if len(payload) != int(header):
+                raise ValueError('Incomplete Share request.')
+            value = QCborValue.fromCbor(payload).toVariant()
+            urls = value.get('urls') if isinstance(value, dict) else None
+            if not isinstance(urls, list) or not 1 <= len(urls) <= 6:
+                raise ValueError('Select between one and six local files.')
+            paths = []
+            for raw in urls:
+                url = QUrl(raw) if isinstance(raw, str) else QUrl()
+                if (
+                    not url.isValid()
+                    or not url.isLocalFile()
+                    or url.host() not in ('', 'localhost')
+                    or url.hasQuery()
+                    or url.hasFragment()
+                ):
+                    raise ValueError('Only local files can be added to Assistant.')
+                url.setHost('')
+                path = url.toLocalFile()
+                if not Path(path).is_file():
+                    raise ValueError(
+                        'Select files, rather than folders or special files.'
+                    )
+                paths.append(path)
+            add_files(paths)
+            result = dict(output={})
+        except (ValueError, OSError) as exc:
+            result = dict(error=1, errorText=str(exc))
+        channel.sendall((json.dumps(result) + '\n').encode())
+    return 0
+
+
+def main():
+    try:
+        if '--server' in sys.argv[1:]:
+            import argparse
+
+            parser = argparse.ArgumentParser()
+            parser.add_argument('--server', required=True)
+            parser.add_argument('--pluginType', choices=['Export'], required=True)
+            parser.add_argument('--pluginPath')
+            return share(parser.parse_args().server)
+        add_files(sys.argv[1:])
+    except (ValueError, OSError) as exc:
+        message = str(exc)
+        print(message, file=sys.stderr)
+        notify(message)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

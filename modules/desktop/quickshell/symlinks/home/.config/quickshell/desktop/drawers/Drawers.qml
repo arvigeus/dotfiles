@@ -28,6 +28,11 @@ DrawerHost {
             source: Qt.resolvedUrl("CaptureDrawer.qml")
         },
         DrawerDefinition {
+            key: "assistant"
+            title: qsTr("Assistant")
+            source: Qt.resolvedUrl("AssistantDrawer.qml")
+        },
+        DrawerDefinition {
             key: "wifi"
             title: qsTr("Wi-Fi")
             source: Qt.resolvedUrl("WifiDrawer.qml")

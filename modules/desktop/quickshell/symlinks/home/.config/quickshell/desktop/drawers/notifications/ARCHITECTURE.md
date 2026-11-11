@@ -59,7 +59,8 @@ closure preserves the latest acknowledged state rather than an older snapshot.
 the drawer is open, and history/popup/unseen counts, without notification content.
 
 The drawer has no explanatory banners or Show again action.
-Its trash icon clears immediately; per-card X dismisses that item. Errors use a
+Its trash icon uses the shared `HoldButton` with a 1.3-second hold, cancelled on
+early release or drawer dismissal; per-card X dismisses that item. Errors use a
 fixed-height line so storage status cannot move controls or cards.
 
 Replacements update the existing ID and popup in place, preserving its hover

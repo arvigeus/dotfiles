@@ -90,6 +90,47 @@ Clipboard history is local and limited to 50 items. Pause collection before
 copying sensitive data. Pausing survives shell reloads and resets at the next
 login. It does not remove existing history.
 
+## Assistant
+
+Opening Assistant checks Lemonade's status. Sending a message, opening the model
+chooser or opening the Lemonade app starts the server as needed. Closing the
+drawer keeps replies running; use Stop to shut down the shared server. Its model
+chooser combines installed models and Lemonade's download catalogue, with
+downloaded models first. The first message downloads the selected model if needed.
+Deleting a custom user model also removes its Lemonade registration.
+Automatic downloads show a waiting status; downloads started through Lemonade's
+app expose percentage progress and pause/resume. Downloads continue with the
+drawer closed. Native Lemonade aliases appear above model names in the
+same chooser. Create a named model shortcut with
+`lemonade alias add NAME MODEL_ID`; aliases do not add a system prompt.
+Model availability follows Lemonade's compatibility settings.
+
+Attach images, text/code files, PDFs, DOCX or ODT with the paperclip, drag-and-drop
+or Ctrl+V. Click an attachment to preview it. Images require a vision model; the
+chooser adapts when the conversation contains images. Documents contribute their
+text, not their layout. Scanned PDFs need OCR or page images. Limits are six files
+per message, 16 MB per file and 64,000 extracted characters per document.
+
+Dolphin's **Share → Add to Assistant** collects selected local files while the drawer
+stays closed. Further selections add to the same draft; a notification confirms
+which files were prepared. Later file edits do not change these attachments.
+Restart Dolphin if a newly installed Share action is not visible.
+
+Options offer reply length, response style and Thinking. Thinking → Off requests
+a direct answer on models that support it; Model default preserves Lemonade's
+settings. Reply length guides verbosity; output limits follow Lemonade. Thinking
+can be expanded in a reply. The last question can be restored for editing with
+its attachments when the current draft is empty.
+
+Messages render Markdown after sending, including typed line breaks. Editing
+restores the original Markdown.
+
+Chats and drafts last until New chat or shell restart; closing the drawer keeps
+them and lets a reply finish. Preferences persist. Options can release a model's
+memory while keeping it installed. The pencil opens the full Lemonade app,
+starting the server if needed.
+See [assistant integration](ARCHITECTURE.md#assistant) for service configuration.
+
 ## Audio, Bluetooth and power
 
 Sound/Microphone include per-app controls and tests. Boost is remembered per

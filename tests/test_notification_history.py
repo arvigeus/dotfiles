@@ -164,26 +164,30 @@ ShellRoot {
             setup,
         )
 
-    def test_simple_drawer_clear_is_immediate_and_cards_keep_their_identity(self):
+    def test_drawer_clear_requires_hold_and_cards_keep_their_identity(self):
         self.run_qml("""import QtQuick
+import QtTest
 import Quickshell
 import "drawers"
 ShellRoot {
+ TestCase {id:input;when:false;parent:window.contentItem}
  QtObject {
   id:mock
   property string error:""
   property var state:({items:[{id:"two",app:"Mail",summary:"New message",body:"A plain-text message.",timestamp:1792570000,urgency:1,appIcon:"",image:"",progress:-1,actions:[]}],paused:true})
   property string lastOp:""
   property string lastId:""
-  function request(op,id,value){lastOp=op;lastId=id??"";if(op==="clear")state=Object.assign({},state,{items:[]});}
+  property int clears:0
+  function request(op,id,value){lastOp=op;lastId=id??"";if(op==="clear"){clears++;state=Object.assign({},state,{items:[]});}}
   function invoke(key,identifier){}
  }
- FloatingWindow {implicitWidth:480;implicitHeight:820;NotificationsDrawer{id:drawer;anchors.fill:parent;active:true;service:mock}
+ FloatingWindow {id:window;implicitWidth:480;implicitHeight:820;NotificationsDrawer{id:drawer;anchors.fill:parent;active:true;service:mock}
   Loader {id:header;sourceComponent:drawer.headerActions}
  }
  function check(v,m){if(!v)throw Error(m);}
  function find(item,name){if(item.objectName===name)return item;for(let child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
  property var original:null
+ property var clear:null
  property int stage:0
  Timer {interval:180;repeat:true;running:true;onTriggered:{try{
   if(stage===0){original=find(drawer,"notificationDismiss:two");check(original,"card missing");drawer.width=268;mock.state=Object.assign({},mock.state,{paused:false});}
@@ -194,9 +198,23 @@ ShellRoot {
    let card=original;while(card&&card.record===undefined)card=card.parent;
    check(find(drawer,"notificationDismiss:two")===original&&card.record.summary==="Edited"&&find(drawer,"notificationDismiss:three"),"insert or edit rebuilt or staled a card");
    original.clicked();check(mock.lastOp==="remove"&&mock.lastId==="two","dismiss targeted the wrong record");
-   find(header.item,"notificationsClear").clicked();check(mock.lastOp==="clear"&&mock.state.items.length===0,"clear required confirmation");
+   clear=find(header.item,"notificationsClear");check(clear.holdDuration===1300,"wrong production hold duration");clear.holdDuration=400;
+   input.mouseClick(clear,clear.width/2,clear.height/2);check(mock.clears===0,"click cleared notifications");
+   input.mousePress(clear,clear.width/2,clear.height/2);
+  }else if(stage===3){
+   input.mouseRelease(clear,clear.width/2,clear.height/2);check(mock.clears===0&&clear.progress===0,"short hold cleared notifications");
+   input.mousePress(clear,clear.width/2,clear.height/2);
+  }else if(stage===4)drawer.active=false;
+  else if(stage===7){
+   check(mock.clears===0&&clear.progress===0,"dismissal cleared notifications");input.mouseRelease(clear,clear.width/2,clear.height/2);
+   drawer.active=true;clear.forceActiveFocus();input.keyPress(Qt.Key_Space);
+  }else if(stage===11){
+   check(mock.clears===1&&mock.lastOp==="clear"&&mock.state.items.length===0,"hold did not clear exactly once");
+   check(!clear.enabled&&clear.progress===0,"empty history left clear enabled or progressing");input.keyRelease(Qt.Key_Space);
+  }else if(stage===12){
+   console.log("DISPLAY_PASS");Qt.quit();
   }
-  else {console.log("DISPLAY_PASS");Qt.quit();}stage++;
+  stage++;
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
 }""")
 

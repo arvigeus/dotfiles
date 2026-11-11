@@ -1,0 +1,16 @@
+{
+    "KPlugin": {
+        "Id": "desktop-assistant-context",
+        "Name": "Assistant",
+        "Description": "Add local files to the desktop Assistant's draft context",
+        "Icon": "mail-attachment"
+    },
+    "X-Purpose-ActionDisplay": "Add to Assistant",
+    "X-Purpose-PluginTypes": [
+        "Export"
+    ],
+    "X-Purpose-Configuration": [],
+    "X-Purpose-Constraints": [
+        "exec:desktop-assistant-context"
+    ]
+}

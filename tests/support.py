@@ -204,11 +204,12 @@ def copy_theme_ui(root):
         )
 
 
-def run_qml(test, body, setup=None, *, isolate_bus=False):
+def run_qml(test, body, setup=None, *, isolate_bus=False, entrypoint='shell.qml'):
     """Run body as shell.qml over a copy of the shell with private config/runtime dirs.
 
     isolate_bus runs it on private_bus(), for pages that start session services
     such as the bar's tray.
+    entrypoint can match a client helper's expected config path inside root.
     """
     if isolate_bus and not shutil.which('dbus-run-session'):
         test.skipTest('Private D-Bus is required')
@@ -226,7 +227,8 @@ def run_qml(test, body, setup=None, *, isolate_bus=False):
         )
         if setup:
             setup(root)
-        (root / 'shell.qml').write_text(body)
+        shell_path = root / entrypoint
+        shell_path.write_text(body)
         env = {
             **os.environ,
             'QT_QPA_PLATFORM': os.environ.get('DISPLAY_PREVIEW_PLATFORM', 'offscreen'),
@@ -247,7 +249,7 @@ def run_qml(test, body, setup=None, *, isolate_bus=False):
             # Qt Multimedia's FFmpeg hardware probe opens $DISPLAY on the GUI thread.
             env.pop('WAYLAND_DISPLAY', None)
             env.pop('DISPLAY', None)
-        command = [QS, '--no-color', '-p', str(root / 'shell.qml')]
+        command = [QS, '--no-color', '-p', str(shell_path)]
         if isolate_bus:
             command = [*private_bus(root), *command]
         result = subprocess.run(

@@ -187,6 +187,266 @@ to wl-copy through stdin, never shell interpolation. Closing the drawer drops
 queued previews; rows request them again when it reopens. Clipboard collection
 is independent of the drawer.
 
+## Assistant
+
+`drawers/assistant/AssistantService.qml` is instantiated by the first Assistant
+drawer or external attachment request.
+It owns one in-memory conversation and draft across drawer destruction, plus a
+separate streaming process that continues while hidden. Shell exit/reload drops
+them and terminates the request; Lemonade remains independently managed by
+systemd. The bar entry contains metadata only and performs no background checks.
+Opening the drawer requests read-only Status; it never starts Lemonade. Connect
+is requested by opening the model picker, Send/Retry while offline, Open Lemonade
+or the power button. It reuses an existing listener or starts the packaged service.
+Offline drawers do not poll after that initial check. Status polls every five
+seconds while observed and online, or every second while a model download is
+active. Generation suspends polling once the selected
+model is downloaded; while awaiting a first-use download, polling continues even
+with the drawer closed. Control actions and attachment preparation suspend polling.
+Lemonade's `models_generation` avoids fetching an unchanged catalogue. The backend
+is an on-demand Python standard-library client.
+
+Start/Stop use the packaged `lemond.service` user unit without enabling it. An
+already-active system unit takes precedence and its controls use normal systemd
+authorization. No competing service or daemon launcher is installed. The endpoint
+is loopback on the port in `~/.config/lemonade/config.json` (or
+`/var/lib/lemonade/config.json` for the system unit), defaulting to 13305.
+Runtime port overrides must match that configuration. An optional
+`LEMONADE_API_KEY` must be available in the shell service environment. There is one
+Open action, in the header; it connects before launching the packaged
+`lemonade-web-app` via UWSM. The singleton owns this launch so dismissal during
+startup cannot lose it. Start/Stop is the header power button. It refuses active
+requests and running downloads, including work started by other clients. The
+`ai/lemonade` module owns the package.
+
+Closing the drawer does not stop the shared server. There is no atomic
+idle-and-shutdown operation or client lease; a health snapshot cannot prove that
+another client will not start work, and native chat auto-downloads are absent from
+the managed download-job list. The drawer does not maintain server ownership or
+schedule automatic shutdown based on its visibility.
+
+The backend uses `/v1/health`, `/v1/models?show_all=true` and streaming
+`/v1/chat/completions`. `ModelPicker` combines downloaded and available models in
+one list, downloaded first. It searches IDs/capabilities and shows catalogue sizes,
+loaded state and progress. Each entire row is a keyboard-accessible selection
+button with a metadata tooltip. The separate trash button deletes a downloaded
+model without selecting its row or dismissing the picker. Undownloaded entries
+have a passive download indicator; managed jobs retain pause/resume buttons.
+Selecting an undownloaded model saves the choice without starting a download.
+Send uses the native chat endpoint's download-and-load behavior, with the prompt,
+settings and attachment snapshots captured in the ordinary generation request.
+There is no separate client download/send queue. Its HTTP timeout is one hour
+for an undownloaded model, otherwise ten minutes. In Lemonade 2026.45.3,
+`ModelLoader::ensure_loaded` fetches missing models directly without a progress
+callback or request cancellation token. It creates no `/v1/downloads` job; the UI
+shows an indeterminate waiting status and polls to detect download completion.
+Stop terminates the chat request; the server can continue fetching/loading.
+`/v1/downloads` supplies progress for managed jobs started through the Web App or
+explicit Pull, restored after dismissal/reload. Pause uses
+`/v1/downloads/control`; resume uses `/v1/pull` with
+`stream: true, subscribe: false`. Closing/reloading never cancels a download.
+Explicit model deletion calls `/v1/delete`, with a 60-second timeout, and refreshes
+the full catalogue afterward. Both UI and backend refuse deletion of a busy or
+pinned model or one with a running download. Lemonade owns unloading and removing
+files; no filesystem deletion is performed by the client. Built-in catalogue
+entries become undownloaded and remain selectable; native `user.*` deletion also
+removes the registration. Existing chat and draft stay in memory. A deleted saved
+choice stays selected if still catalogued, otherwise normal model fallback applies.
+Failures leave the server-reported catalogue intact and appear inside the picker.
+
+Memory release calls `/v1/unload` for only the selected model. Both UI and backend
+check that it is loaded, idle and unpinned; other loaded models remain in place.
+Chat models must carry the `chat` label and use a standalone local recipe;
+availability is rechecked before each send. Cloud entries, collections/routers and
+non-chat deployment types are omitted. The drawer inherits the server catalogue;
+it performs no independent RAM/VRAM capacity calculation.
+Pending or historical images narrow the chooser to `vision` models; Send and
+retry refuse a non-vision model until the images are removed or a new chat starts.
+Installed models sort first, then aliases, Lemonade's `suggested` flag and names.
+Chat may download only the selected local catalogue model; configured cloud
+models are excluded. HTTP bypasses proxies and redirects.
+SSE handles Unicode, comments, multiline events, reasoning indicators,
+stream errors and premature EOF. Cancellation terminates only the request process
+and retains partial text. Retry replaces the last answer using the existing user
+turn. Reasoning text is retained separately in memory (at most 64,000 characters
+per reply), shown behind an expander and omitted from later request context.
+Reply length controls only the system instruction. The client omits token caps
+because they budget reasoning and the final answer together; Lemonade's model
+and context limits apply. A server-reported output limit is shown on the reply.
+Thinking-only replies preserve the separate reasoning text and offer guidance
+to turn thinking off or adjust Lemonade's limits.
+
+Preferences in `~/.config/quickshell/desktop/assistant.json` contain `model`,
+`length`, `style` and `thinking` (model/alias IDs mapped to `auto`/`on`/`off`).
+Thinking is offered for all selected chat models: catalogue labels are descriptive
+and can omit `reasoning` for models that support it.
+`auto` omits the request field; On/Off send Lemonade's `enable_thinking` extension.
+Style Default omits temperature; Precise/Creative send 0.2/0.9. Neither option
+changes Lemonade's saved model configuration. The model determines whether it
+supports thinking control. An undownloaded saved model stays
+selected while it remains in the catalogue. Missing/removed preferences fall
+back to a loaded/installed model. Chat content is never written by the drawer.
+Context is bounded to 80 messages, after which New chat is required. Sending
+while offline connects before submitting the frozen prompt. A saved model ID is
+usable before the first catalogue fetch; the refreshed catalogue must still
+contain that exact choice before Send or Retry proceeds. Missing choices report an
+error and keep the draft/files instead of sending to a fallback model. No catalogue
+is persisted on disk. Failed startup preserves the draft, and further typing
+during startup is kept separately.
+Both speakers render as selectable Qt Markdown with inline images disabled;
+HTTP(S) links open only on activation. `assistant/Markdown.js` adds presentation
+hard breaks to ordinary lines, preserving code line breaks. The existing media
+filter applies to the entire source before that transformation. History, request
+context and restored edits retain raw Markdown.
+Copy uses the native selection clipboard. Scrolling up stops following streamed
+text. The composer has a full-width, height-bounded editor above an action row;
+Enter sends and Shift+Enter inserts a newline.
+
+### Native model choices
+
+`/internal/aliases` supplies Lemonade's native alias-to-model mapping. The picker
+places aliases above concrete models within each download state, with a separator,
+and shows each alias's target. Alias changes are checked alongside health: they can change independently
+of `models_generation`, so either change refreshes the catalogue. If the optional
+administrative endpoint is unavailable (including separate admin authentication),
+the public catalogue and inference still work; aliases appear as ordinary model
+entries without grouping or concrete-target decoration.
+
+The server resolves the selected alias for inference. `chat_models` follows the
+reported mapping only to match concrete loaded-model state and download jobs,
+including canonical `builtin.`/`user.`/`extra.` targets and alias chains. Download,
+pause, memory-release and delete operations recheck that mapping before acting on
+its concrete target. The delete tooltip names that target and explains the shared
+effect for aliases. Alias rows inherit their target's capabilities and receive the
+same local-chat filtering as concrete rows. Retargeting refreshes the chooser and
+capabilities while preserving the selected alias, conversation and draft.
+
+Lemonade owns alias persistence and editing (`lemonade alias add NAME MODEL_ID`).
+There is no drawer task registry or persona prompt. The only client-supplied
+system instruction controls reply length; task-specific requests go in the chat.
+Collections remain outside this drawer's standalone-chat scope. Omni's native
+server orchestration buffers planner replies in the installed 2026.45.3 version,
+while this client preserves direct model streaming. See
+[model aliases](https://lemonade-server.ai/docs/guide/configuration/custom-models/#model-aliases-aliasesjson)
+and the [collection orchestrator](https://github.com/lemonade-sdk/lemonade/blob/v2026.45.3/src/cpp/server/collection_orchestrator.cpp).
+
+The drawer relies on Lemonade's device/memory compatibility filtering and does
+not maintain a separate suitability score or performance history. Filtering can
+be disabled in Lemonade; a listed model is not proof of comfortable speed or
+memory headroom at every context size. Its `suggested` flag is a general
+recommendation. Reliable performance comparisons would need model/quantization,
+backend, context, hardware and power-mode details. Lemonade's own app already
+shows request throughput and time to first token. Per-request final SSE `timings`
+and `usage`, when provided by the backend, belong to that request; `/v1/stats`
+describes the latest request globally and may belong to another client.
+See [compatibility guidance](https://lemonade-server.ai/docs/guide/faq/#3-how-do-i-know-what-size-model-will-work-with-my-setup)
+and [telemetry API](https://lemonade-server.ai/docs/api/lemonade/).
+
+### Attachments
+
+`attachments.py` prepares files in a separate process. The paperclip uses an
+embedded multi-file `FileDialog` (`DontUseNativeDialog`, `Popup.Item`) so the
+picker stays on the shell's input layer. The drawer also accepts local file URLs
+through `DropArea`. Ctrl+V requests clipboard MIME types through `wl-paste`,
+preferring file URLs and images before text. Plain text is inserted at the frozen
+selection; later typing is preserved. Shift+Ctrl+V keeps native plain-text paste.
+Requests are queued and preparations survive drawer dismissal.
+
+#### Dolphin context action
+
+This module supplies a scripted KDE Purpose `Export` provider in
+`~/.local/share/kpackage/Purpose/desktop-assistant-context` and the
+`~/.local/bin/desktop-assistant-context` helper. Dolphin's native Share plugin
+discovers the provider's metadata; its executable `contents/code/main.sh` forwards
+Purpose's arguments to the helper. There is no compiled plugin or resident
+sharing process. The provider requires the helper on PATH; the `purpose` package
+is an explicit dependency. Purpose caches provider discovery within each process,
+so already-running Dolphin instances may need restarting after installation.
+It belongs to this module so an installation without Assistant does not expose
+the action. The shell root registers `AssistantInbox` even while the drawer is
+closed; its handler accesses the singleton on demand.
+See KDE's [scripted provider protocol](https://github.com/KDE/purpose/blob/v6.31.0/README.md#separate-process)
+and [process job implementation](https://github.com/KDE/purpose/blob/v6.31.0/src/externalprocess/processjob.cpp).
+
+The helper's `--server` mode connects to Purpose's per-job local socket, reads
+its length-prefixed CBOR input using PySide6's `QCborValue`, then reports JSON
+output/error fields using the native protocol. The existing PySide6 dependency is
+imported only in Share mode. The payload is bounded to 96 KiB and six local regular
+files. Purpose's metadata constraints cannot filter URL protocols or mixed local
+file selections; the helper rejects remote URLs, folders and special files at
+invocation and returns errors through Dolphin. An empty output avoids opening a
+URL after success. The helper also remains callable directly with local paths.
+
+The helper converts paths to file URLs and calls the exact desktop shell config's
+`assistant.addFiles` IPC method. An object containing `files` keeps Quickshell's
+CLI from expanding a bracketed JSON array into separate arguments. Both sides
+bound the request to six local paths and 96 KiB; all filenames travel as data,
+never shell syntax or file contents. Unavailable shells and rejected requests
+report through `notify-send` for direct invocations or Purpose for Share requests.
+Accepted requests use the existing importer and
+attachment limits. Completion notifications report actual additions, duplicates
+and partial failures after preparation; file contents are frozen at that point.
+The action preserves draft/history, leaves the drawer closed and does not connect
+to Lemonade. Pending context has the same in-memory lifetime as other attachments.
+
+`tests/test_assistant_context.py` runs the real launcher and Quickshell IPC in a
+private config, with fake notifications and inference backend. It covers repeated
+selections, unusual filenames, snapshots, limits, errors, drawer opening and
+reload cleanup. The helper's error paths, Share protocol and argument encoding
+have isolated checks. A native KIO/Purpose menu fixture checks provider discovery
+and execution with unusual multi-file selections and a fake shell command; it
+requires the KDE development files and a C++ compiler.
+
+Snapshots have a content/name hash ID, basename, kind, size and either text or an
+image data URL. They live only in memory, including inside the message model's
+`filesJson` role. There are no attachment caches or persisted conversations.
+Send freezes these snapshots for streaming, retry and offline startup; later
+file edits do not affect the chat. Editing the last question restores its frozen
+files and removes that question/answer, and requires an empty draft. Changing
+models keeps unsent attachments. New chat and shell exit drop them.
+
+Inputs must be regular local files, at most 16 MiB each and six per message.
+Nonblocking open/fstat checks refuse pipes/devices. Image preparation uses
+PySide6/QImageReader with a 128 MiB allocation cap and 40 MP source bound. Images
+are auto-oriented, scaled to a 2048-pixel maximum edge and re-encoded as PNG (JPEG
+if needed to stay under 4 MiB). Animated inputs use their first frame. Previews
+and thumbnails use these data URLs, never the original mutable file.
+
+Text/code accepts UTF-8 or BOM-marked UTF-16 and rejects binary data. PDF text uses
+Poppler's `pdftotext` through stdin with a 15-second timeout and bounded temporary
+stdout. DOCX/ODT read bounded document XML from the ZIP container and extract
+paragraph text, refusing DTD/entities. Empty/scanned documents require explicit
+OCR or page images elsewhere. Extraction refuses more than 64,000 characters per
+document. The context has a 160,000-character text cap and 24 MiB encoded-message
+cap; oversized requests fail visibly rather than silently dropping file content.
+
+Text attachments become named text parts in chat-completion content arrays;
+images become inline `image_url` data URLs. The backend revalidates kinds, image
+URLs/size and model vision support. It never reads a path during chat generation
+or fetches a remote attachment URL. Standard chat messages stay strings. Document
+and reasoning previews are selectable plain text; generated answer Markdown keeps
+images disabled and follows HTTP(S) links only on activation.
+
+The drawer currently connects only to Lemonade. Subscription-provider adapters
+would need their own official authentication, capability and session lifetimes;
+they are not treated as another URL behind the local-model chooser.
+
+`tests/test_assistant_attachments.py` covers real image normalization, PDF/office
+extraction, frozen text, limits, special-file rejection and a stub clipboard.
+`tests/test_assistant_drawer.py` covers model filtering, service scope, configured
+ports, request validation, SSE completion/failure, retained conversation state,
+cancel/retry, model preferences, native alias grouping/retargeting and concrete
+operations, native first-send downloads with hidden status polling and stop/retry,
+unified downloaded-first model ordering, full-row pointer selection and tooltips,
+separate native deletion with busy/download guards and error readback,
+server-owned pause/resume, Markdown/newline rendering, composer keyboard
+input, thinking/style payloads, thinking-only cutoff feedback and unlabeled-model
+controls, multimodal content,
+previews, paste, image capability checks, last-message editing, scoped memory
+release, passive opening, demand-driven startup, cold Send/Retry and startup failure, and
+narrow layouts with a fake backend. `DISPLAY_PREVIEW_DIR` saves drawer previews; normal checks use offscreen
+surfaces and never contact Lemonade or download models.
+
 ## Capture
 
 Screenshots use `desktop-screenshot` (grim/slurp); see

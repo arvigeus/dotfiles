@@ -147,6 +147,9 @@ for line in sys.stdin:
             (root / 'drawers/system/backend.py').write_text(
                 'import json\nprint(json.dumps(' + repr(system_snapshot()) + '))\n'
             )
+            from test_assistant_drawer import FAKE_BACKEND
+
+            (root / 'drawers/assistant/backend.py').write_text(FAKE_BACKEND)
             # Power drawers use fixture inventory and never mutate host profiles.
             from test_power_drawers import snapshot as power_snapshot
 
@@ -293,7 +296,7 @@ ShellRoot {
             "badge updates shifted the bar: " + JSON.stringify(badgePositions()) + " vs " + JSON.stringify(badgeGeometry));
     }
     property int previewWaits: 0
-    property var previewKeys: ["tray", "clipboard", "capture",
+    property var previewKeys: ["tray", "clipboard", "capture", "assistant",
         "wifi", "bluetooth", "sound", "microphone", "keyboard", "displays", "disks", "battery", "performance", "system", "weather", "events", "notifications"]
     function snapshot(name, window) {
         window = window || bar;
@@ -479,6 +482,8 @@ ShellRoot {
                     }
                     else if (previewKeys[stage - 21] === "capture")
                         check(find(drawers.contentItem, "captureScreenshot") && find(drawers.contentItem, "captureScreenshotOptions"), "capture controls missing");
+                    else if (previewKeys[stage - 21] === "assistant")
+                        check(find(drawers.contentItem, "assistantComposer") && find(drawers.contentItem, "assistantEdit") && find(drawers.contentItem, "assistantOptions"), "assistant controls missing");
                     else if (previewKeys[stage - 21] === "sound")
                         check(find(drawers.contentItem, "audioOutputsEmpty") && find(drawers.contentItem, "audioScroll"), "playback controls missing");
                     else if (previewKeys[stage - 21] === "microphone")

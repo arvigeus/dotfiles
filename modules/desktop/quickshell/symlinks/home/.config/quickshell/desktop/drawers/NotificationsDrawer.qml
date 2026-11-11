@@ -9,12 +9,23 @@ DrawerPage {
     objectName: "notificationsDrawer"
     property var service: NotificationCenter
     readonly property var items: service.state.items
-    headerActions: IconButton {
+    headerActions: HoldButton {
+        id: clearButton
         objectName: "notificationsClear"
-        iconName: "trash"
-        text: qsTr("Clear notifications")
+        text: qsTr("Hold to clear notifications")
+        Accessible.name: text
+        implicitWidth: Theme.controlHeight
+        implicitHeight: Theme.controlHeight
+        horizontalPadding: 8
+        verticalPadding: 8
+        idleColor: "transparent"
         enabled: root.items.length > 0
-        onClicked: root.service.request("clear")
+        armed: root.active
+        contentItem: Icon {
+            name: "trash"
+            color: clearButton.hovered || clearButton.visualFocus ? Theme.accent : Theme.muted
+        }
+        onConfirmed: root.service.request("clear")
     }
     DrawerColumn {
         anchors.fill: parent

@@ -23,6 +23,11 @@ The standalone terminal preference remains owned by `base/terminal`.
 
 ## File tools integration
 
+The Quickshell module owns the **Share → Add to Assistant** KDE Purpose provider
+and its launcher.
+It passes local file selections to the running shell's attachment importer; see
+[Assistant context integration](../../desktop/quickshell/ARCHITECTURE.md#dolphin-context-action).
+
 PDF tools, File tools and Encryption tools register desktop application entries
 with `%F`, file MIME types and `inode/directory`. Open with can launch them for
 selected files or folders; MIME defaults are not changed. Audio/Video tools and

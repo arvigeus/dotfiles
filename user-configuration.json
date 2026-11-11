@@ -1756,6 +1756,10 @@
                 "target": "home/.config/quickshell/desktop/bar/WorkspaceList.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/AssistantDrawer.qml",
+                "target": "home/.config/quickshell/desktop/drawers/AssistantDrawer.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/BatteryDrawer.qml",
                 "target": "home/.config/quickshell/desktop/drawers/BatteryDrawer.qml"
             },
@@ -1826,6 +1830,38 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/WifiDrawer.qml",
                 "target": "home/.config/quickshell/desktop/drawers/WifiDrawer.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/AssistantInbox.qml",
+                "target": "home/.config/quickshell/desktop/drawers/assistant/AssistantInbox.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/AssistantService.qml",
+                "target": "home/.config/quickshell/desktop/drawers/assistant/AssistantService.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/AttachmentStrip.qml",
+                "target": "home/.config/quickshell/desktop/drawers/assistant/AttachmentStrip.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/Markdown.js",
+                "target": "home/.config/quickshell/desktop/drawers/assistant/Markdown.js"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/ModelPicker.qml",
+                "target": "home/.config/quickshell/desktop/drawers/assistant/ModelPicker.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/attachments.py",
+                "target": "home/.config/quickshell/desktop/drawers/assistant/attachments.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/backend.py",
+                "target": "home/.config/quickshell/desktop/drawers/assistant/backend.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/qmldir",
+                "target": "home/.config/quickshell/desktop/drawers/assistant/qmldir"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/audio/AudioService.qml",
@@ -2332,6 +2368,10 @@
                 "target": "home/.config/quickshell/desktop/icons/boom-box.svg"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/bot.svg",
+                "target": "home/.config/quickshell/desktop/icons/bot.svg"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/brush-cleaning.svg",
                 "target": "home/.config/quickshell/desktop/icons/brush-cleaning.svg"
             },
@@ -2558,6 +2598,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/panels-top-left.svg",
                 "target": "home/.config/quickshell/desktop/icons/panels-top-left.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/paperclip.svg",
+                "target": "home/.config/quickshell/desktop/icons/paperclip.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/pause.svg",
@@ -3680,6 +3724,18 @@
                 "target": "home/.config/quickshell/desktop/ui/theme.py"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.local/bin/desktop-assistant-context",
+                "target": "home/.local/bin/desktop-assistant-context"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.local/share/kpackage/Purpose/desktop-assistant-context/contents/code/main.sh",
+                "target": "home/.local/share/kpackage/Purpose/desktop-assistant-context/contents/code/main.sh"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.local/share/kpackage/Purpose/desktop-assistant-context/metadata.json",
+                "target": "home/.local/share/kpackage/Purpose/desktop-assistant-context/metadata.json"
+            },
+            {
                 "source": "modules/dev/editors/zed/symlinks/home/.config/zed/settings.json",
                 "target": "home/.config/zed/settings.json"
             },
@@ -3841,6 +3897,8 @@
         "v4l-utils",
         "cliphist",
         "pyside6",
+        "purpose",
+        "poppler",
         "python-gobject",
         "python-guessit",
         "mpvpaper",
@@ -3986,7 +4044,6 @@
         "ghostscript",
         "qpdf",
         "python-pikepdf",
-        "poppler",
         "qt6-webengine",
         "qt6-svg",
         "chaotic-aur/ocrmypdf",

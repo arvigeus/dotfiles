@@ -115,6 +115,12 @@ Item {
                         iconColor: DictationService.recording || CaptureService.sessionActive ? Theme.danger : DictationService.processing || DictationService.preparing || DictationService.starting || CaptureService.waiting ? Theme.accent : Theme.text
                         label: CaptureService.sessionActive ? CaptureService.recordingTime : CaptureService.waiting ? String(CaptureService.remaining) : ""
                         description: DictationService.active || DictationService.preparing || DictationService.starting ? DictationService.description : CaptureService.sessionActive ? (CaptureService.paused ? qsTr("Recording paused · %1") : qsTr("Recording · %1 · open to stop")).arg(CaptureService.recordingTime) : CaptureService.waiting ? qsTr("Screenshot in %1 s · open to cancel").arg(CaptureService.remaining) : qsTr("Capture · screenshots, recording, dictation and webcam")
+                    },
+                    BarEntry {
+                        key: "assistant"
+                        title: qsTr("Assistant")
+                        iconName: "bot"
+                        description: qsTr("Assistant · local chat with Lemonade")
                     }
                 ]
                 onDrawerRequested: key => root.drawerRequested(key)

@@ -45,4 +45,8 @@ on folders for project-local tasks and Git maintenance. Audio tools and Video
 tools are also normal Open with applications. Use **Open Folder With → Zed** to
 open a folder in Zed. Network discovery lives in the WiFi drawer.
 
+**Share → Add to Assistant** collects selected local files for the
+[Assistant drawer](../../desktop/quickshell/README.md#assistant) without opening
+it. You can add more files from other selections before writing your message.
+
 See [ARCHITECTURE.md](ARCHITECTURE.md) for integration details.

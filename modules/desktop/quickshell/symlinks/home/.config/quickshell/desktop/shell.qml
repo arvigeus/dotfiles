@@ -9,6 +9,7 @@ import "spaces/pictures"
 import "bar"
 import "launcher"
 import "drawers"
+import "drawers/assistant"
 import "drawers/clipboard"
 import "drawers/displays"
 import "drawers/power"
@@ -20,6 +21,8 @@ ShellRoot {
     id: root
     // Register the tray host for the session, including while its drawer is closed.
     readonly property var systemTray: SystemTray
+
+    AssistantInbox {}
 
     InteractionState {
         id: interactions
