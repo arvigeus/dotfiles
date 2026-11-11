@@ -1,5 +1,6 @@
 """On-demand Lemonade control and streaming chat; no conversation storage."""
 
+import http.client
 import json
 import os
 import shutil
@@ -12,6 +13,8 @@ from pathlib import Path
 import attachments as Files
 
 UNIT = 'lemond.service'
+# Set by service(): which instance's optional API keys apply to requests.
+SCOPE = ''
 LENGTHS = {
     'brief': 'Keep the answer concise unless the request needs more detail.',
     'balanced': 'Use enough detail to make the answer useful.',
@@ -47,35 +50,64 @@ def unit_state(user):
 
 
 def service():
+    global SCOPE
     user, system = unit_state(True), unit_state(False)
     # An already-running system instance owns its models and port. Never start
     # a competing user instance just because the user's unit is inactive.
     if system.get('ActiveState') in ('active', 'activating', 'deactivating'):
+        SCOPE = 'system'
         return 'system', system
+    SCOPE = 'user'
     return ('user', user) if user.get('LoadState') == 'loaded' else ('', {})
 
 
+def config_dir(scope):
+    # lemond keeps its files under its own XDG config directory. The system
+    # unit runs as the lemonade user, whose home is its private state directory.
+    if scope == 'system':
+        return Path('/var/lib/lemonade/.config/lemonade')
+    return Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'lemonade'
+
+
 def server_url(scope):
-    config_home = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config'))
-    path = (
-        Path('/var/lib/lemonade/config.json')
-        if scope == 'system'
-        else config_home / 'lemonade/config.json'
-    )
+    # config.json holds only non-default values, and the system instance's is
+    # usually unreadable from the session: anything missing means the default.
     try:
-        config = json.loads(path.read_text())
-    except FileNotFoundError:
-        config = {}
-    port = int(config.get('port', 13305))
-    if not 1 <= port <= 65535:
+        port = json.loads((config_dir(scope) / 'config.json').read_text())['port']
+    except (OSError, ValueError, KeyError, TypeError):
+        port = 13305
+    if type(port) is not int or not 1 <= port <= 65535:
         raise ValueError('Invalid Lemonade port.')
     # The drawer is a local client, even if Lemonade listens on all interfaces.
     return f'http://localhost:{port}'
 
 
+def api_keys(scope):
+    """The shell's environment, then the user unit's optional EnvironmentFile."""
+    names = ('LEMONADE_API_KEY', 'LEMONADE_ADMIN_API_KEY')
+    keys = {name: os.environ[name] for name in names if os.environ.get(name)}
+    if scope == 'user':
+        try:
+            lines = (config_dir(scope) / 'lemond.conf').read_text().splitlines()
+        except (OSError, ValueError):
+            lines = []
+        for line in lines:
+            name, _, value = line.strip().partition('=')
+            if len(value) > 1 and value[0] == value[-1] and value[0] in '"\'':
+                value = value[1:-1]
+            if name in names and value:
+                keys.setdefault(name, value)
+    return keys
+
+
 def request(url, payload=None, timeout=4):
     headers = {'Content-Type': 'application/json'}
-    if key := os.environ.get('LEMONADE_API_KEY'):
+    keys = api_keys(SCOPE)
+    # Internal routes want the admin key when one is set; it works elsewhere too.
+    key = keys.get('LEMONADE_API_KEY') or keys.get('LEMONADE_ADMIN_API_KEY')
+    if '/internal/' in url:
+        key = keys.get('LEMONADE_ADMIN_API_KEY') or key
+    if key:
         headers['Authorization'] = f'Bearer {key}'
     req = urllib.request.Request(
         url,
@@ -109,7 +141,7 @@ def model_aliases(url):
     except urllib.error.HTTPError as exc:
         exc.close()
         return {}
-    except (urllib.error.URLError, OSError, ValueError):
+    except (OSError, ValueError, TypeError, AttributeError, http.client.HTTPException):
         return {}
 
 
@@ -176,11 +208,17 @@ def status(known_generation=None, known_aliases=None):
     try:
         health = get_json(url + '/v1/health')
     except urllib.error.HTTPError as exc:
+        exc.close()
         result.update(
             online=True,
             error=f'Lemonade returned HTTP {exc.code}. Check its API key and settings.',
         )
-    except (urllib.error.URLError, TimeoutError, ConnectionError):
+    except (ValueError, http.client.HTTPException):
+        result['error'] = (
+            f'Port {url.rsplit(":", 1)[1]} did not answer as Lemonade. '
+            'Check its port setting.'
+        )
+    except OSError:
         if result['state'] == 'active':
             result['error'] = (
                 'Lemonade is running but is not responding. Check its port and service logs.'
@@ -218,8 +256,16 @@ def status(known_generation=None, known_aliases=None):
                 for job in get_json(url + '/v1/downloads')
                 if job.get('type') == 'model'
             ]
-        except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            AttributeError,
+            http.client.HTTPException,
+        ) as exc:
             result['error'] = f'Could not refresh Lemonade: {exc}'
+    # A server answering on the configured port is usable wherever it came from.
+    result['installed'] = result['installed'] or result['online']
     return result
 
 
@@ -302,8 +348,6 @@ def control(op, value=None):
         raise ValueError(
             'The Lemonade user service is unavailable. Install lemonade-server.'
         )
-    if op == 'start' and state.get('ActiveState') in ('active', 'activating'):
-        return status()
     if op == 'stop':
         snapshot = status()
         if any(row.get('busy') for row in snapshot.get('loaded', [])) or any(
@@ -323,10 +367,12 @@ def control(op, value=None):
                 'Lemonade was started outside systemd. Stop it in the app or terminal that started it.'
             )
         return snapshot
-    args = ['systemctl', *(['--user'] if scope == 'user' else []), op, UNIT]
-    result = run(args, timeout=45)
-    if result.returncode:
-        raise ValueError(result.stderr.strip() or f'Could not {op} Lemonade.')
+    # A unit that is already starting only needs its listener awaited.
+    if op == 'stop' or state.get('ActiveState') not in ('active', 'activating'):
+        args = ['systemctl', *(['--user'] if scope == 'user' else []), op, UNIT]
+        result = run(args, timeout=45)
+        if result.returncode:
+            raise ValueError(result.stderr.strip() or f'Could not {op} Lemonade.')
     # Type=simple reports started before its HTTP listener is ready.
     if op == 'start':
         deadline = time.monotonic() + 20
@@ -383,13 +429,19 @@ def chat(value):
         for row in messages
     ):
         raise ValueError('Invalid chat messages.')
-    converted = [
-        dict(
-            role=row['role'],
-            content=Files.message_content(row, 'vision' in entry['labels']),
-        )
-        for row in messages
-    ]
+    converted = []
+    for row in messages:
+        content = Files.message_content(row, 'vision' in entry['labels'])
+        # A failed reply leaves two user turns in a row; many chat templates
+        # reject roles that do not alternate.
+        if converted and converted[-1]['role'] == row['role']:
+            parts = [
+                [dict(type='text', text=value)] if isinstance(value, str) else value
+                for value in (converted[-1]['content'], content)
+            ]
+            converted[-1]['content'] = parts[0] + parts[1]
+        else:
+            converted.append(dict(role=row['role'], content=content))
     if (
         len(json.dumps(converted).encode()) > Files.MAX_CONTEXT_BYTES
         or sum(
@@ -426,50 +478,56 @@ def chat(value):
     if style != 'default':
         payload['temperature'] = 0.2 if style == 'precise' else 0.9
     done, finish, pending, reasoning, last = False, '', '', '', 0
+
+    def flush():
+        nonlocal pending, reasoning
+        if pending or reasoning:
+            emit(
+                dict(
+                    type='delta',
+                    text=pending,
+                    reasoning=reasoning,
+                    thinking=bool(reasoning),
+                )
+            )
+        pending, reasoning = '', ''
+
     # A first-use download can take longer than inference. Stop still terminates
     # this client request; Lemonade owns the download.
-    with request(
-        url + '/v1/chat/completions',
-        payload,
-        timeout=600 if entry['downloaded'] else 3600,
-    ) as response:
-        for event in events(response):
-            if event == '[DONE]':
-                done = True
-                break
-            chunk = json.loads(event)
-            if chunk.get('error'):
-                error = chunk['error']
-                raise ValueError(
-                    error.get('message', str(error))
-                    if isinstance(error, dict)
-                    else str(error)
-                )
-            for choice in chunk.get('choices', []):
-                delta = choice.get('delta', {})
-                pending += delta.get('content') or ''
-                reasoning += delta.get('reasoning_content') or ''
-                finish = choice.get('finish_reason') or finish
-            now = time.monotonic()
-            if now - last >= 0.04:
-                emit(
-                    dict(
-                        type='delta',
-                        text=pending,
-                        reasoning=reasoning,
-                        thinking=bool(reasoning),
+    try:
+        with request(
+            url + '/v1/chat/completions',
+            payload,
+            timeout=600 if entry['downloaded'] else 3600,
+        ) as response:
+            for event in events(response):
+                if event == '[DONE]':
+                    done = True
+                    break
+                chunk = json.loads(event)
+                if not isinstance(chunk, dict):
+                    continue
+                if error := chunk.get('error'):
+                    raise ValueError(
+                        error.get('message', str(error))
+                        if isinstance(error, dict)
+                        else str(error)
                     )
-                )
-                pending, reasoning, last = '', '', now
-    if pending or reasoning:
-        emit(
-            dict(
-                type='delta',
-                text=pending,
-                reasoning=reasoning,
-                thinking=bool(reasoning),
-            )
-        )
+                for choice in chunk.get('choices') or []:
+                    delta = choice.get('delta') or {}
+                    pending += delta.get('content') or ''
+                    reasoning += delta.get('reasoning_content') or ''
+                    finish = choice.get('finish_reason') or finish
+                now = time.monotonic()
+                if now - last >= 0.04:
+                    flush()
+                    last = now
+    except (http.client.HTTPException, ConnectionError):
+        # The server went away mid-stream: reported below as a disconnect.
+        pass
+    finally:
+        # Whatever ends the stream, the text received so far is kept.
+        flush()
     if not done and not finish:
         raise ValueError(
             'Lemonade disconnected before finishing. You can retry the reply.'
@@ -498,9 +556,11 @@ def main():
         ValueError,
         KeyError,
         TypeError,
+        AttributeError,
+        http.client.HTTPException,
         subprocess.SubprocessError,
     ) as exc:
-        emit(dict(type='error', error=str(exc)))
+        emit(dict(type='error', error=str(exc) or type(exc).__name__))
 
 
 if __name__ == '__main__':

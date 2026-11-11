@@ -52,8 +52,11 @@ pause survives shell reloads until the next login and leaves existing history.
 
 Assistant uses local Lemonade models and starts the server on demand for sending,
 model selection or opening its app. Closing the drawer keeps replies/downloads
-running. Chats and drafts last until New chat or shell restart; preferences persist.
-Native aliases can be created with `lemonade alias add NAME MODEL_ID`.
+running; a reply that finishes meanwhile sends a notification. Chats and drafts
+last until New chat or shell restart; preferences persist. Replies never load
+remote content: images appear as links and HTML as text. Copy gives the original
+Markdown. Native aliases can be created with `lemonade alias add NAME MODEL_ID`.
+An API key in `~/.config/lemonade/lemond.conf` is used automatically.
 
 Attach images, text/code, PDF, DOCX or ODT through the paperclip, paste or drop.
 Limits are six files/message, 16 MB/file and 64,000 extracted characters/document.

@@ -483,7 +483,7 @@ ShellRoot {
                     else if (previewKeys[stage - 21] === "capture")
                         check(find(drawers.contentItem, "captureScreenshot") && find(drawers.contentItem, "captureScreenshotOptions"), "capture controls missing");
                     else if (previewKeys[stage - 21] === "assistant")
-                        check(find(drawers.contentItem, "assistantComposer") && find(drawers.contentItem, "assistantEdit") && find(drawers.contentItem, "assistantOptions"), "assistant controls missing");
+                        check(find(drawers.contentItem, "assistantComposer") && find(drawers.contentItem, "assistantOpenApp") && find(drawers.contentItem, "assistantOptions"), "assistant controls missing");
                     else if (previewKeys[stage - 21] === "sound")
                         check(find(drawers.contentItem, "audioOutputsEmpty") && find(drawers.contentItem, "audioScroll"), "playback controls missing");
                     else if (previewKeys[stage - 21] === "microphone")

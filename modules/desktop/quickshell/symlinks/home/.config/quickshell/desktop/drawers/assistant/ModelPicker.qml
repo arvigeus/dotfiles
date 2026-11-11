@@ -9,6 +9,7 @@ Popup {
     required property Item button
     property bool active: false
     property real maximumWidth: 432
+    property int deleteHoldDuration: 1300
     readonly property var rows: {
         const query = search.text.trim().toLowerCase();
         return AssistantService.models.filter(row => (!AssistantService.needsVision || row.labels.includes("vision")) && (row.id + " " + (row.target || "") + " " + row.labels.join(" ")).toLowerCase().includes(query));
@@ -105,6 +106,8 @@ Popup {
                 readonly property var loadedModel: AssistantService.loaded.find(item => item.id === targetModel) ?? null
                 readonly property bool loaded: !!loadedModel
                 readonly property real fraction: root.progress(job)
+                // Lemonade keeps a stopped job listed; pulling again restarts it.
+                readonly property bool stalled: !!job && !job.running && ["paused", "error", "cancelled"].includes(job.status)
                 width: list.width
                 spacing: Theme.spacingMedium
                 Rectangle {
@@ -138,7 +141,7 @@ Popup {
                         objectName: "assistantModelToolTip:" + row.modelData.id
                         target: modelButton
                         maximumLineCount: 20
-                        text: action.hovered || action.visualFocus ? "" : [row.modelData.id, row.modelData.alias ? qsTr("Alias for %1").arg(row.targetModel) : "", row.modelData.downloaded ? qsTr("Downloaded") : qsTr("Downloads on first message"), row.loaded ? qsTr("Loaded in Lemonade") : "", row.loadedModel?.busy ? qsTr("In use · deletion unavailable") : "", row.loadedModel?.pinned ? qsTr("Pinned in Lemonade · deletion unavailable") : "", root.sizeText(row.modelData.size), ...root.capabilities(row.modelData), row.modelData.suggested ? qsTr("Suggested by Lemonade") : "", row.job?.error || ""].filter(Boolean).join("\n")
+                        text: action.hovered || action.visualFocus || remove.hovered || remove.visualFocus ? "" : [row.modelData.id, row.modelData.alias ? qsTr("Alias for %1").arg(row.targetModel) : "", row.modelData.downloaded ? qsTr("Downloaded") : qsTr("Downloads on first message"), row.loaded ? qsTr("Loaded in Lemonade") : "", row.loadedModel?.busy ? qsTr("In use · deletion unavailable") : "", row.loadedModel?.pinned ? qsTr("Pinned in Lemonade · deletion unavailable") : "", root.sizeText(row.modelData.size), ...root.capabilities(row.modelData), row.modelData.suggested ? qsTr("Suggested by Lemonade") : "", row.job?.error || ""].filter(Boolean).join("\n")
                     }
                     contentItem: ColumnLayout {
                         spacing: Theme.spacingSmall
@@ -174,27 +177,44 @@ Popup {
                                 objectName: "assistantModelIndicator:" + row.modelData.id
                                 name: "download"
                                 color: row.selected ? Theme.accent : Theme.muted
-                                visible: !action.visible
+                                visible: !action.visible && !remove.visible
                                 Layout.preferredWidth: Theme.controlHeight
                                 Layout.preferredHeight: Theme.iconSize
                             }
                             IconButton {
                                 id: action
                                 objectName: "assistantModelAction:" + row.modelData.id
-                                visible: row.modelData.downloaded || !!row.job?.running || row.job?.status === "paused"
-                                iconName: row.modelData.downloaded ? "trash" : row.job?.running ? "pause" : "download"
-                                text: row.modelData.downloaded ? qsTr("Delete %1 from disk").arg(row.targetModel) : row.job?.running ? qsTr("Pause download") : qsTr("Resume download")
-                                hint: [text, row.modelData.downloaded && row.modelData.alias ? qsTr("Removes the underlying model used by this alias.") : "", row.modelData.downloaded && row.targetModel.startsWith("user.") ? qsTr("Also removes its custom model registration in Lemonade.") : ""].filter(Boolean).join("\n")
-                                enabled: row.modelData.downloaded ? AssistantService.canDeleteModel(row.modelData.id) : !AssistantService.busy && AssistantService.online
+                                visible: !row.modelData.downloaded && (!!row.job?.running || row.stalled)
+                                iconName: row.job?.running ? "pause" : "download"
+                                text: row.job?.running ? qsTr("Pause download") : row.job?.status === "paused" ? qsTr("Resume download") : qsTr("Retry download")
+                                enabled: !AssistantService.busy && AssistantService.online
                                 onClicked: {
-                                    if (row.modelData.downloaded) {
-                                        AssistantService.deleteModel(row.modelData.id);
-                                    } else if (row.job?.running) {
+                                    if (row.job?.running)
                                         AssistantService.pauseDownload(row.modelData.id);
-                                    } else {
+                                    else
                                         AssistantService.downloadModel(row.modelData.id);
-                                    }
                                 }
+                            }
+                            HoldButton {
+                                id: remove
+                                objectName: "assistantModelDelete:" + row.modelData.id
+                                visible: row.modelData.downloaded
+                                text: qsTr("Hold to delete %1 from disk").arg(row.targetModel)
+                                hint: [row.modelData.alias ? qsTr("Removes the underlying model used by this alias.") : "", row.targetModel.startsWith("user.") ? qsTr("Also removes its custom model registration in Lemonade.") : ""].filter(Boolean).join("\n")
+                                Accessible.name: text
+                                implicitWidth: Theme.controlHeight
+                                implicitHeight: Theme.controlHeight
+                                horizontalPadding: 8
+                                verticalPadding: 8
+                                idleColor: "transparent"
+                                holdDuration: root.deleteHoldDuration
+                                enabled: AssistantService.canDeleteModel(row.modelData.id)
+                                armed: root.visible
+                                contentItem: Icon {
+                                    name: "trash"
+                                    color: remove.hovered || remove.visualFocus ? Theme.accent : Theme.muted
+                                }
+                                onConfirmed: AssistantService.deleteModel(row.modelData.id)
                             }
                         }
                         ProgressBar {

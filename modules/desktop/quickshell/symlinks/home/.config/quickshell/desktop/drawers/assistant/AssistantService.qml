@@ -66,6 +66,8 @@ Singleton {
     readonly property bool canRelease: !!selectedLoaded && !selectedLoaded.busy && !selectedLoaded.pinned && !busy
     readonly property bool canSend: checked && installed && !!selectedModel && (selectedEntry || !online) && !attachmentHint && !busy && (!!draft.trim() || attachments.length > 0) && history.count < 80
     readonly property alias messages: history
+    // A reply longer than the context limit could never be sent back.
+    readonly property int maximumReply: 160000
     signal appOpened
     signal pasted(int cursor)
 
@@ -103,25 +105,33 @@ Singleton {
         importer.current = attachmentQueue[0];
         attachmentQueue = attachmentQueue.slice(1);
         attachmentError = "";
+        importer.answered = false;
+        importer.added = 0;
+        importer.active = true;
         importer.running = true;
+    }
+    // Stored size of a snapshot, without serializing megabytes on the GUI thread.
+    function weight(item): int {
+        return (item.data || item.text || "").length + (item.name || "").length + 256;
     }
     function acceptFiles(items): void {
         const next = attachments.slice();
-        let bytes = 0;
+        let bytes = next.reduce((total, item) => total + weight(item), 0);
         for (let i = 0; i < history.count; i++)
             bytes += (history.get(i).filesJson || "").length;
         for (const item of items) {
             if (next.some(existing => existing.id === item.id))
                 continue;
-            if (next.length >= 6 || bytes + JSON.stringify(next.concat([item])).length > 24 * 1024 * 1024 - 200000) {
+            if (next.length >= 6 || bytes + weight(item) > 24 * 1024 * 1024 - 200000) {
                 attachmentError = qsTr("Attachment limit reached. Use up to six files or start a new chat.");
                 break;
             }
             next.push(item);
+            bytes += weight(item);
         }
         attachments = next;
     }
-    function notifyAttachments(message: string): void {
+    function notify(message: string): void {
         const escaped = message.slice(0, 2000).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         Quickshell.execDetached(["notify-send", "--app-name=Assistant", "--icon=mail-attachment", "Assistant", escaped]);
     }
@@ -182,6 +192,9 @@ Singleton {
         pendingOperation = value.op;
         if (value.op !== "status")
             error = "";
+        control.answered = false;
+        control.result = null;
+        control.active = true;
         control.running = true;
         return true;
     }
@@ -298,7 +311,7 @@ Singleton {
             hasImages: files.some(item => item.kind === "image"),
             reasoning: ""
         });
-        if (draft === prompt)
+        if (draft === prompt || !draft.trim())
             draft = "";
         attachments = attachments.filter(item => !files.some(sent => sent.id === item.id));
         beginReply();
@@ -354,6 +367,7 @@ Singleton {
         cancelling = false;
         completed = false;
         error = "";
+        generation.active = true;
         generation.running = true;
         if (!modelAvailable)
             Qt.callLater(refresh);
@@ -371,7 +385,15 @@ Singleton {
             const value = JSON.parse(line);
             const index = history.count - 1;
             if (value.type === "delta") {
-                history.setProperty(index, "body", history.get(index).body + (value.text || ""));
+                const body = history.get(index).body + (value.text || "");
+                history.setProperty(index, "body", body.slice(0, maximumReply));
+                if (body.length > maximumReply) {
+                    completed = true;
+                    history.setProperty(index, "state", "limited");
+                    cancelling = true;
+                    generation.signal(15);
+                    return;
+                }
                 if (value.reasoning)
                     history.setProperty(index, "reasoning", (history.get(index).reasoning + value.reasoning).slice(0, 64000));
                 thinking = !!value.thinking;
@@ -431,13 +453,23 @@ Singleton {
     Process {
         id: importer
         property var current: ({})
+        property bool active: false
         property bool answered: false
         property int added: 0
+        function finish(): void {
+            active = false;
+            stdinEnabled = true;
+            if (!answered)
+                root.attachmentError = qsTr("Could not prepare the attachments.");
+            if (current.notify) {
+                const summary = added === 1 ? qsTr("File added to Assistant.") : added > 1 ? qsTr("%1 files added to Assistant.").arg(added) : root.attachmentError ? "" : qsTr("Files are already attached to Assistant.");
+                root.notify([summary, root.attachmentError].filter(Boolean).join("\n"));
+            }
+            Qt.callLater(root.pumpImports);
+        }
         command: ["python3", Quickshell.shellPath("drawers/assistant/backend.py")]
         stdinEnabled: true
         onStarted: {
-            answered = false;
-            added = 0;
             write(JSON.stringify(current) + "\n");
             stdinEnabled = false;
         }
@@ -464,26 +496,45 @@ Singleton {
             }
         }
         stderr: StdioCollector {}
-        onExited: {
-            stdinEnabled = true;
-            if (!answered)
-                root.attachmentError = qsTr("Could not prepare the attachments.");
-            if (current.notify) {
-                const summary = added === 1 ? qsTr("File added to Assistant.") : added > 1 ? qsTr("%1 files added to Assistant.").arg(added) : root.attachmentError ? "" : qsTr("Files are already attached to Assistant.");
-                root.notifyAttachments([summary, root.attachmentError].filter(Boolean).join("\n"));
-            }
-            Qt.callLater(root.pumpImports);
-        }
+        onExited: finish()
+        // A helper that cannot start emits no exited signal.
+        onRunningChanged: if (!running && active)
+            finish()
     }
     Process {
         id: control
+        property bool active: false
         property bool answered: false
         property var result: null
+        function finish(): void {
+            active = false;
+            stdinEnabled = true;
+            // An unanswered first check must not leave the page waiting forever.
+            root.checked = true;
+            if (!answered)
+                root.error = qsTr("Could not check the Lemonade service.");
+            const action = root.pendingRequest;
+            const succeeded = result && result.type !== "error" && result.online;
+            const queued = root.queuedRequest;
+            root.queuedRequest = null;
+            if (!succeeded && action.op === "connect" && !root.error)
+                root.error = qsTr("Lemonade did not start. Check its service logs and try again.");
+            if (queued)
+                Qt.callLater(() => root.request(queued));
+            else if (succeeded && action.intent === "open")
+                root.launchApp();
+            else if (succeeded && ["send", "retry"].includes(action.intent)) {
+                if (root.selectedModel !== action.model || !root.selectedEntry)
+                    root.error = qsTr("The selected model is no longer available. Choose a model to send your message.");
+                else if (action.intent === "retry")
+                    root.retry();
+                else
+                    root.sendText(action.prompt, action.files || []);
+            }
+        }
         command: ["python3", Quickshell.shellPath("drawers/assistant/backend.py")]
         stdinEnabled: true
         onStarted: {
-            answered = false;
-            result = null;
             write(JSON.stringify({
                 op: root.pendingRequest.op,
                 generation: root.pendingRequest.generation,
@@ -523,31 +574,27 @@ Singleton {
             }
         }
         stderr: StdioCollector {}
-        onExited: {
-            stdinEnabled = true;
-            if (!answered)
-                root.error = qsTr("Could not check the Lemonade service.");
-            const action = root.pendingRequest;
-            const succeeded = result && result.type !== "error" && result.online;
-            const queued = root.queuedRequest;
-            root.queuedRequest = null;
-            if (queued)
-                Qt.callLater(() => root.request(queued));
-            else if (succeeded && action.intent === "open")
-                root.launchApp();
-            else if (succeeded && ["send", "retry"].includes(action.intent)) {
-                if (root.selectedModel !== action.model || !root.selectedEntry)
-                    root.error = qsTr("The selected model is no longer available. Choose a model to send your message.");
-                else if (action.intent === "retry")
-                    root.retry();
-                else
-                    root.sendText(action.prompt, action.files || []);
-            }
-        }
+        onExited: finish()
+        onRunningChanged: if (!running && active)
+            finish()
     }
     Process {
         id: generation
         property var payload: ({})
+        property bool active: false
+        function finish(): void {
+            active = false;
+            stdinEnabled = true;
+            root.thinking = false;
+            if (history.count && !root.completed)
+                history.setProperty(history.count - 1, "state", root.cancelling ? "stopped" : "error");
+            if (!root.completed && !root.cancelling && !root.error)
+                root.error = qsTr("Lemonade disconnected. Try the reply again.");
+            // Nobody is watching a reply that outlived the drawer.
+            if (!root.observed && !root.cancelling && history.count)
+                root.notify(root.completed && !root.error ? qsTr("%1 finished replying.").arg(history.get(history.count - 1).modelName) : qsTr("The reply failed: %1").arg(root.error));
+            root.cancelling = false;
+        }
         command: ["python3", Quickshell.shellPath("drawers/assistant/backend.py")]
         stdinEnabled: true
         onStarted: {
@@ -558,14 +605,8 @@ Singleton {
             onRead: line => root.receive(line)
         }
         stderr: StdioCollector {}
-        onExited: {
-            stdinEnabled = true;
-            root.thinking = false;
-            if (history.count && !root.completed)
-                history.setProperty(history.count - 1, "state", root.cancelling ? "stopped" : "error");
-            if (!root.completed && !root.cancelling && !root.error)
-                root.error = qsTr("Lemonade disconnected. Try the reply again.");
-            root.cancelling = false;
-        }
+        onExited: finish()
+        onRunningChanged: if (!running && active)
+            finish()
     }
 }

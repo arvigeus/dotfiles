@@ -5,6 +5,7 @@ import hashlib
 import io
 import os
 from pathlib import Path
+import re
 import resource
 import stat
 import subprocess
@@ -133,15 +134,18 @@ def pdf_output_limit():
 
 def pdf_text(data):
     with tempfile.TemporaryFile() as output:
-        result = subprocess.run(
-            ['pdftotext', '-layout', '-enc', 'UTF-8', '-', '-'],
-            input=data,
-            stdout=output,
-            stderr=subprocess.PIPE,
-            timeout=15,
-            preexec_fn=pdf_output_limit,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                ['pdftotext', '-layout', '-enc', 'UTF-8', '-', '-'],
+                input=data,
+                stdout=output,
+                stderr=subprocess.PIPE,
+                timeout=15,
+                preexec_fn=pdf_output_limit,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise ValueError('Reading PDF files requires pdftotext (poppler).') from exc
         if result.returncode:
             raise ValueError(
                 'Could not read this PDF; it may be encrypted, damaged or too large.'
@@ -156,7 +160,14 @@ def office_text(data, suffix):
         if archive.getinfo(part).file_size > 1024 * 1024:
             raise ValueError('This document is too large for the drawer.')
         xml = archive.read(part)
-    if b'<!DOCTYPE' in xml or b'<!ENTITY' in xml:
+    # The byte search below only sees declarations in ASCII-compatible XML.
+    encoding = re.match(rb'<\?xml[^>]*?encoding=["\']([A-Za-z0-9._-]+)', xml)
+    if (
+        b'\0' in xml[:64]
+        or (encoding and encoding[1].lower() not in (b'utf-8', b'us-ascii'))
+        or b'<!DOCTYPE' in xml
+        or b'<!ENTITY' in xml
+    ):
         raise ValueError('Unsupported document XML.')
     document = ET.fromstring(xml)
     if suffix == '.docx':
@@ -291,7 +302,12 @@ def clipboard():
         )
     if chosen.startswith('image/'):
         return dict(items=[snapshot('Clipboard image', data)], error='')
-    return dict(items=[], text=data.decode('utf-8'), error='')
+    # Larger text belongs in a file attachment, not in the message editor.
+    if len(data) > 4 * MAX_TEXT or len(text := data.decode('utf-8')) > MAX_TEXT:
+        raise ValueError(
+            'Clipboard text exceeds 64,000 characters. Save it to a file and attach that.'
+        )
+    return dict(items=[], text=text, error='')
 
 
 def message_content(message, vision):

@@ -107,12 +107,18 @@ exit drops them. Lemonade is independent. Opening requests read-only Status;
 Send/Retry, model selection and Open Lemonade connect on demand. Status polls only
 while observed/online or awaiting a model download; generation and control work
 suspend redundant polling. `models_generation` and native alias changes refresh
-the catalogue independently.
+the catalogue independently. A helper that cannot start, or exits unanswered,
+ends its request with an error; `Process` emits no `exited` for a failed start.
 
 Start/Stop use the packaged user `lemond.service`, without enabling it; an active
-system unit takes precedence. The loopback port comes from the appropriate
-Lemonade config (default 13305), and optional `LEMONADE_API_KEY` comes from the
-service environment. HTTP bypasses proxies/redirects. Stop refuses known active
+system unit takes precedence. Start awaits the HTTP listener, also for a unit that
+is already starting. The loopback port comes from the instance's `config.json`
+under its XDG config directory (default 13305); the system instance's is private
+to its user, so an unreadable file means the default. Optional `LEMONADE_API_KEY`
+and `LEMONADE_ADMIN_API_KEY` (preferred for `/internal/`) come from the shell's
+environment, then from the user unit's `lemonade/lemond.conf`. The system unit's
+`/etc/default/lemond` is root-only: its key must reach the shell's environment.
+HTTP bypasses proxies/redirects. Stop refuses known active
 requests and downloads. There is no server ownership lease or
 atomic idle shutdown: drawer visibility must never drive automatic server stop.
 The singleton completes Open Lemonade even after dismissal, then launches the
@@ -128,37 +134,57 @@ First Send uses Lemonade's native download/load behavior, not a client download
 queue. In 2026.45.3 that path creates no managed download job and cannot cancel
 its server-side fetch: the client shows indeterminate status and detects completion
 by polling. Managed jobs from the Web App expose progress and pause/resume through
-`/v1/downloads`, `/v1/downloads/control` and `/v1/pull`. Deletion/unload recheck
+`/v1/downloads`, `/v1/downloads/control` and `/v1/pull`; a stopped job (paused,
+failed or cancelled) stays listed and restarts with another pull. Deletion/unload recheck
 busy/pinned/download state and let Lemonade own files. Deleting `user.*` also
 removes its registration. Alias operations affect their concrete target.
+Deletion is a `HoldButton`, like the shell's other destructive actions.
 
-SSE parsing handles Unicode, multiline events, errors and premature EOF. Cancel
-terminates the request and retains partial text; retry replaces the last answer.
-Reasoning is bounded separately to 64,000 characters and excluded from future
-context. Reply length changes the system instruction, not token caps that would
-also consume the reasoning budget. `thinking` sends Lemonade's `enable_thinking`
-only for explicit on/off; style sets temperature only for Precise/Creative.
+SSE parsing handles Unicode, multiline events, errors and premature EOF; text
+received before a failure is kept. Cancel terminates the request and retains
+partial text; retry replaces the last answer. A reply is cut at 160,000
+characters, the context limit it could never be sent back under. Consecutive
+turns of one role, left by a failed reply, are sent as one turn because many chat
+templates require alternation. Reasoning is bounded separately to 64,000
+characters and excluded from future context. Reply length changes the system
+instruction, not token caps that would also consume the reasoning budget.
+`thinking` sends Lemonade's `enable_thinking` only for explicit on/off; style sets
+temperature only for Precise/Creative. A reply that ends while no drawer observes
+the service sends a notification.
 
 `assistant.json` stores `model`, `length`, `style` and per-model/alias `thinking`.
 Chat stays in memory, bounded to 80 messages. Offline Send freezes prompt/settings/
 attachments; after connecting, that exact model must still exist. A missing model
-or failed startup preserves the draft, including later typing. Markdown keeps raw
-source for history/editing and disables inline images; `Markdown.js` adds display
-hard breaks outside code. Links open only on activation.
+or failed startup preserves the draft, including later typing.
+
+History, requests, editing and Copy keep the raw Markdown; `Markdown.js` is
+presentation only. Qt's Markdown renderer fetches images and raw-HTML
+backgrounds (`background=`, CSS `background-image`) from any URL, so a reply
+could otherwise make the shell contact a host of its choosing. Top-level fenced
+blocks therefore become exact plain-text segments with sideways scrolling. The
+rest is prose: image syntax becomes a link, every raw HTML tag is escaped
+(`<br>` becomes a space), and only single-line code spans are left untouched.
+That pass is per line and ignores block structure, because a block this file
+read as code but the renderer read as HTML would load its URL. The cost is that
+HTML inside multi-line spans and quoted or nested fences shows as `&lt;`.
+`tests/test_assistant_drawer.py` renders the known vectors against a loopback
+canary; extend `REMOTE_CONTENT` when changing the pass. Segment delegates are
+keyed by count, so a streaming reply re-renders only its last segment. Display
+hard breaks are added outside code. Links open only on activation.
 
 ### Attachments and Dolphin sharing
 
 `attachments.py` prepares immutable in-memory snapshots in a separate process.
 The embedded file dialog, DropArea and clipboard all use this importer. Clipboard
 requests freeze the selection and preserve later typing; preparations queue and
-survive dismissal. Send/retry/edit use frozen snapshots rather than rereading paths.
+survive dismissal. Pasted text above 64,000 characters is refused, not inserted. Send/retry/edit use frozen snapshots rather than rereading paths.
 New chat/shell exit drops them; there is no disk attachment cache.
 
 Inputs must be regular local files: six per message, 16 MiB each. Nonblocking
 open/fstat rejects special files. QImageReader bounds source images to 40 MP /
 128 MiB allocation, auto-orients, scales to 2048 pixels and re-encodes within
 4 MiB. Text accepts UTF-8/BOM UTF-16. PDF uses bounded, timed `pdftotext` via stdin;
-DOCX/ODT use bounded XML extraction without DTD/entities. Extraction refuses more
+DOCX/ODT use bounded UTF-8 XML extraction without DTD/entities. Extraction refuses more
 than 64,000 characters/document; context caps are 160,000 text characters and
 24 MiB encoded. Oversize input fails visibly. Generation revalidates snapshots
 and vision support; it never reads paths or fetches attachment URLs.

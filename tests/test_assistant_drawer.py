@@ -1,11 +1,14 @@
 """Local assistant service boundaries, SSE failures and the compact drawer."""
 
+import contextlib
+import http.server
 import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -20,6 +23,43 @@ backend = support.load(
 
 def model(name='local', **values):
     return dict(id=name, downloaded=True, labels=['chat'], recipe='llamacpp', **values)
+
+
+@contextlib.contextmanager
+def loopback(respond):
+    """Serve respond(handler) on 127.0.0.1 and record (path, Authorization)."""
+    seen = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        protocol_version = 'HTTP/1.1'
+
+        def answer(self):
+            seen.append((self.path, self.headers.get('Authorization')))
+            self.rfile.read(int(self.headers.get('Content-Length') or 0))
+            respond(self)
+
+        do_GET = do_POST = answer
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield f'http://127.0.0.1:{server.server_address[1]}', seen
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def reply(handler, body, status=200, **headers):
+    data = body if isinstance(body, bytes) else json.dumps(body).encode()
+    handler.send_response(status)
+    for name, value in headers.items():
+        handler.send_header(name, value)
+    handler.send_header('Content-Length', str(len(data)))
+    handler.end_headers()
+    handler.wfile.write(data)
 
 
 class AssistantBackendTests(unittest.TestCase):
@@ -124,6 +164,194 @@ class AssistantBackendTests(unittest.TestCase):
                 json.dumps(dict(port=12345, host='remote.example'))
             )
             self.assertEqual(backend.server_url('user'), 'http://localhost:12345')
+
+    def test_unreadable_or_damaged_server_settings_fall_back_to_the_default_port(self):
+        # The system instance keeps its settings in a directory private to its user.
+        with patch.object(Path, 'read_text', side_effect=PermissionError):
+            self.assertEqual(backend.server_url('system'), 'http://localhost:13305')
+        self.assertEqual(
+            backend.config_dir('system'), Path('/var/lib/lemonade/.config/lemonade')
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'config.json'
+            with patch.object(backend, 'config_dir', return_value=Path(directory)):
+                for content in ('{broken', '[]', '{}'):
+                    config.write_text(content)
+                    self.assertEqual(
+                        backend.server_url('user'), 'http://localhost:13305'
+                    )
+                for port in ('"80"', '70000', '0', 'true'):
+                    config.write_text('{"port": %s}' % port)
+                    with self.assertRaisesRegex(ValueError, 'port'):
+                        backend.server_url('user')
+
+    def test_api_keys_come_from_the_environment_then_the_user_unit_file(self):
+        def respond(handler):
+            reply(handler, {})
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(os.environ, XDG_CONFIG_HOME=directory),
+            loopback(respond) as (url, seen),
+        ):
+            for name in ('LEMONADE_API_KEY', 'LEMONADE_ADMIN_API_KEY'):
+                os.environ.pop(name, None)
+            (Path(directory) / 'lemonade').mkdir()
+            (Path(directory) / 'lemonade/lemond.conf').write_text(
+                '# optional keys\nHF_TOKEN=unrelated\n'
+                'LEMONADE_API_KEY="file key"\nLEMONADE_ADMIN_API_KEY=admin\n'
+            )
+            with patch.object(backend, 'SCOPE', 'user'):
+                backend.get_json(url + '/v1/health')
+                backend.get_json(url + '/internal/aliases')
+                with patch.dict(os.environ, LEMONADE_API_KEY='shell'):
+                    backend.get_json(url + '/v1/models')
+            # /etc/default/lemond is root-only; never borrow the user's file.
+            with patch.object(backend, 'SCOPE', 'system'):
+                backend.get_json(url + '/v1/downloads')
+        self.assertEqual(
+            seen,
+            [
+                ('/v1/health', 'Bearer file key'),
+                ('/internal/aliases', 'Bearer admin'),
+                ('/v1/models', 'Bearer shell'),
+                ('/v1/downloads', None),
+            ],
+        )
+
+    def test_requests_bypass_proxies_and_never_follow_redirects(self):
+        def respond(handler):
+            if handler.path == '/v1/health':
+                reply(handler, dict(status='ok'))
+            else:
+                reply(handler, {}, 302, Location='/v1/health')
+
+        with (
+            loopback(respond) as (url, seen),
+            patch.dict(
+                os.environ,
+                http_proxy='http://127.0.0.1:9',
+                HTTP_PROXY='http://127.0.0.1:9',
+                no_proxy='',
+                NO_PROXY='',
+            ),
+        ):
+            self.assertEqual(backend.get_json(url + '/v1/health'), dict(status='ok'))
+            with self.assertRaises(backend.urllib.error.HTTPError) as caught:
+                backend.get_json(url + '/moved')
+            caught.exception.close()
+        self.assertEqual([path for path, _ in seen], ['/v1/health', '/moved'])
+
+    def test_a_stream_cut_by_the_server_keeps_its_text_and_reports_a_disconnect(self):
+        event = b'data: {"choices":[{"delta":{"content":"partial \xe2\x9c\x93"}}]}\n\n'
+
+        def respond(handler):
+            if handler.path.startswith('/v1/models'):
+                return reply(handler, dict(data=[model()]))
+            handler.send_response(200)
+            handler.send_header('Content-Type', 'text/event-stream')
+            handler.send_header('Transfer-Encoding', 'chunked')
+            handler.end_headers()
+            handler.wfile.write(b'%x\r\n%s\r\n' % (len(event), event))
+            handler.wfile.flush()
+            # No terminating chunk: the backend process died mid-reply.
+            handler.close_connection = True
+
+        replies = []
+        with (
+            loopback(respond) as (url, _),
+            patch.object(backend, 'service', return_value=('user', {})),
+            patch.object(backend, 'server_url', return_value=url),
+            patch.object(backend, 'emit', side_effect=replies.append),
+        ):
+            with self.assertRaisesRegex(ValueError, 'disconnected'):
+                backend.chat(
+                    dict(model='local', messages=[dict(role='user', content='hi')])
+                )
+        self.assertEqual(''.join(row['text'] for row in replies), 'partial ✓')
+
+    def test_text_received_before_a_stream_error_is_not_lost(self):
+        replies = []
+        stream = (
+            b'data: {"choices":[{"delta":{"content":"kept"}}]}\n\n'
+            b'data: 7\n\n'
+            b'data: {"choices":[{"delta":null}]}\n\n'
+            b'data: {"error":"backend crashed"}\n\n'
+        )
+        with (
+            patch.object(backend, 'service', return_value=('user', {})),
+            patch.object(backend, 'server_url', return_value='http://localhost:13305'),
+            patch.object(backend, 'get_json', return_value=dict(data=[model()])),
+            patch.object(backend, 'request', return_value=io.BytesIO(stream)),
+            patch.object(backend, 'emit', side_effect=replies.append),
+            patch.object(backend.time, 'monotonic', return_value=0),
+        ):
+            with self.assertRaisesRegex(ValueError, 'backend crashed'):
+                backend.chat(
+                    dict(model='local', messages=[dict(role='user', content='hi')])
+                )
+        self.assertEqual([row['text'] for row in replies], ['kept'])
+
+    def test_user_turns_left_by_a_failed_reply_are_sent_as_one_turn(self):
+        note = dict(name='notes.txt', kind='text', text='Reference')
+        sent, _ = self.chat(
+            b'data: [DONE]\n\n',
+            messages=[
+                dict(role='user', content='first'),
+                dict(role='user', content='second', attachments=[note]),
+                dict(role='assistant', content='answer'),
+                dict(role='user', content='third'),
+            ],
+        )
+        messages = sent[0][1]['messages'][1:]
+        self.assertEqual(
+            [row['role'] for row in messages], ['user', 'assistant', 'user']
+        )
+        self.assertEqual(
+            [part['text'] for part in messages[0]['content']],
+            ['first', 'second', 'Attached file: notes.txt\n\nReference'],
+        )
+        self.assertEqual(messages[2]['content'], 'third')
+
+    def test_start_waits_for_a_unit_that_is_already_starting(self):
+        with (
+            patch.object(
+                backend,
+                'service',
+                return_value=('user', dict(ActiveState='activating')),
+            ),
+            patch.object(backend, 'run') as run,
+            patch.object(backend.time, 'sleep'),
+            patch.object(
+                backend,
+                'status',
+                side_effect=[dict(online=False, state='activating'), dict(online=True)],
+            ) as status,
+        ):
+            self.assertTrue(backend.control('start')['online'])
+        run.assert_not_called()
+        self.assertEqual(status.call_count, 2)
+
+    def test_status_names_a_foreign_listener_and_accepts_any_running_server(self):
+        def health(url):
+            if url.endswith('/health'):
+                return dict(models_generation=1)
+            return dict(data=[]) if '/models' in url else []
+
+        for answer, online in ((ValueError('not JSON'), False), (health, True)):
+            with (
+                self.subTest(online=online),
+                patch.object(backend, 'service', return_value=('', {})),
+                patch.object(
+                    backend, 'server_url', return_value='http://localhost:13305'
+                ),
+                patch.object(backend.shutil, 'which', return_value=None),
+                patch.object(backend, 'get_json', side_effect=answer),
+            ):
+                result = backend.status()
+            self.assertEqual(result['online'], online)
+            self.assertEqual(result['installed'], online)
+            self.assertEqual('Port 13305' in result['error'], not online)
 
     def chat(self, stream, **values):
         sent, replies = [], []
@@ -528,6 +756,9 @@ if value['op']=='chat':
     limited=value['messages'][-1]['content']=='reasoning only' and value.get('thinking')!='off'
     if not limited:print(json.dumps(dict(type='delta',text='A compact **answer**.\\n\\n```python\\nprint("hello")\\n```')),flush=True)
     if value['messages'][-1]['content']=='wait': time.sleep(8)
+    if value['messages'][-1]['content']=='pause': time.sleep(.6)
+    if value['messages'][-1]['content']=='flood':
+        print(json.dumps(dict(type='delta',text='x'*170000)),flush=True);time.sleep(8)
     print(json.dumps(dict(type='done',limited=limited)),flush=True)
 else:
     path=pathlib.Path(os.environ['XDG_STATE_HOME'])/'fixture.json'
@@ -540,7 +771,7 @@ else:
     if op in ('connect','start'):
         if state.get('connectError'):
             print(json.dumps(dict(type='error',error=state['connectError'])),flush=True);sys.exit(0)
-        state['online']=True
+        state['online']=not state.get('connectOffline')
     if op=='stop':state['online']=False
     if op=='unload':state['loaded']=False
     if op=='delete':
@@ -574,7 +805,9 @@ else:
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
 class AssistantDrawerTests(unittest.TestCase):
-    run_qml = support.run_qml
+    def run_qml(self, body, setup=None, **options):
+        # A reply that outlives its page notifies; never on the session bus.
+        return support.run_qml(self, body, setup, **{'isolate_bus': True, **options})
 
     def test_opening_drawer_is_passive_and_model_picker_starts_on_demand(self):
         def setup(root):
@@ -757,6 +990,7 @@ ShellRoot {
  function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
  function model(name){return find(drawer.modelPopup.contentItem,"assistantModelRow:"+name);}
  function action(name){return find(drawer.modelPopup.contentItem,"assistantModelAction:"+name);}
+ function remove(name){return find(drawer.modelPopup.contentItem,"assistantModelDelete:"+name);}
  function tip(name){return model(name).data.find(item=>item.objectName==="assistantModelToolTip:"+name);}
  Timer {interval:100;repeat:true;running:true;onTriggered:{try{
   if(++tries>90)throw new Error("timeout "+stage+" "+AssistantService.error);
@@ -768,7 +1002,8 @@ ShellRoot {
    AssistantService.draft="keep this draft";drawer.modelPopup.open();
   }else if(stage===2){
    check(drawer.modelPopup.rows.map(row=>row.id).join(",")==="code,local,new"&&!find(drawer.modelPopup.contentItem,"assistantModelFilter"),"downloaded and available models are not in one ordered list");
-   check(action("code").iconName==="trash"&&action("local").iconName==="trash"&&!action("new").visible,"delete action replaces selection button incorrectly");
+   check(remove("code").visible&&remove("local").visible&&!remove("new").visible&&!action("code").visible&&!action("new").visible,"delete action replaces selection button incorrectly");
+   check(remove("local").holdDuration===1300&&remove("local").armed,"deleting a model is not a deliberate hold");
    input.mouseClick(model("code"),2,model("code").height-2);
   }else if(stage===3){
    check(AssistantService.selectedModel==="code"&&!drawer.modelPopup.visible,"row padding cannot select model");
@@ -781,11 +1016,13 @@ ShellRoot {
    const idle=AssistantService.loaded;
    for(const flags of [{busy:true},{pinned:true}]){
     AssistantService.loaded=[Object.assign({id:"local",busy:false,pinned:false},flags)];
-    check(!AssistantService.canDeleteModel("local")&&!action("local").enabled,"busy or pinned model is deletable");
+    check(!AssistantService.canDeleteModel("local")&&!remove("local").enabled,"busy or pinned model is deletable");
     AssistantService.deleteModel("local");check(!AssistantService.working,"guard sent unsafe deletion");
    }
    AssistantService.loaded=idle;
-   input.mouseClick(action("local"));
+   input.mouseClick(remove("local"));
+   check(!AssistantService.working&&drawer.modelPopup.visible&&AssistantService.selectedModel==="code","a click without holding deleted or selected a model");
+   remove("local").confirmed();
   }else if(stage===6){
    if(AssistantService.checking)return;
    check(AssistantService.error==="Disk is read-only"&&find(drawer.modelPopup.contentItem,"assistantModelError").text===AssistantService.error&&AssistantService.models.find(row=>row.id==="local").downloaded,"failed delete changed model state or hid error");
@@ -793,13 +1030,13 @@ ShellRoot {
    allowDelete.running=true;
   }else if(stage===7){
    if(allowDelete.running)return;
-   input.mouseClick(action("local"));
+   remove("local").confirmed();
   }else if(stage===8){
    if(AssistantService.checking)return;
    check(!AssistantService.error&&!AssistantService.models.find(row=>row.id==="local").downloaded&&!AssistantService.selectedLoaded,"native deletion did not refresh installed/loaded state");
    check(drawer.modelPopup.visible&&AssistantService.selectedModel==="code"&&AssistantService.messages.count===2&&AssistantService.draft==="keep this draft","deletion changed selection, conversation or draft");
    fixture.reload();fixture.waitForJob();const state=JSON.parse(fixture.text());check(state.deleted.join(",")==="local"&&!state.loaded,"delete did not unload and target exactly one model");
-   check(action("local").visible===false&&find(drawer.modelPopup.contentItem,"assistantModelIndicator:local").visible,"deleted model still has a delete action");
+   check(remove("local").visible===false&&find(drawer.modelPopup.contentItem,"assistantModelIndicator:local").visible,"deleted model still has a delete action");
   }else if(stage===9){
    input.mouseClick(find(drawer.modelPopup.contentItem,"assistantModelIndicator:local"));
   }else if(stage===10){
@@ -1080,7 +1317,8 @@ ShellRoot {
  TestCase {id:input;name:"Assistant input";when:false;parent:window.contentItem}
  function check(value,message){if(!value)throw new Error(message);}
  function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
- function plain(item){return item.getText(0,item.length).replace(/[\u2028\u2029]/g,"\n");}
+ function rendered(page,message){const out=[];for(let i=0;;i++){const part=find(page,"assistantSegment:"+message+":"+i);if(!part)break;const item=part.item;out.push(item.code?item.segmentText:item.getText(0,item.length).replace(/[\u2028\u2029]/g,"\n"));}return out.join("\n");}
+ function prose(page,message){const out=[];for(let i=0;;i++){const part=find(page,"assistantSegment:"+message+":"+i);if(!part)break;if(!part.item.code)out.push(part.item.segmentText);}return out.join("\n");}
  Timer {interval:100;repeat:true;running:true;onTriggered:{try{
   if(++tries>80)throw new Error("timeout "+stage+" "+AssistantService.error);
   const composer=find(drawer,"assistantComposer");
@@ -1102,22 +1340,21 @@ ShellRoot {
   }else if(stage===2){
    if(AssistantService.generating||AssistantService.messages.count!==2)return;
    check(AssistantService.messages.get(0).body===root.source+"\n"&&!AssistantService.draft,"send modified Markdown source or retained draft");
-   const user=find(drawer,"assistantMessage:0"),answer=find(drawer,"assistantMessage:1");
-   if(!user||!answer)return;
-   const rendered=plain(user);
+   if(!find(drawer,"assistantSegment:0:0")||!find(drawer,"assistantSegment:1:0"))return;
+   const rendered=root.rendered(drawer,0);
    check(rendered.includes("First bold line\nSecond italic line"),"Markdown or typed newlines not rendered: "+JSON.stringify(rendered));
    check(!rendered.includes("**bold**")&&!rendered.includes("*italic*")&&!rendered.includes("```")&&!rendered.includes("~~~"),"Markdown delimiters visible");
    check(rendered.includes('literal **code**'),"inline code was altered");
    check(rendered.includes("code span")&&rendered.includes("Unclosed `backtick\nkeeps a newline."),"inline code broke chat newlines");
-   check(rendered.includes('print("hello")\n\nprint("goodbye")'),"fenced code changed: "+JSON.stringify({rendered,source:root.source,text:user.text}));
+   check(rendered.includes('print("hello")\n\nprint("goodbye")'),"fenced code changed: "+JSON.stringify({rendered,source:root.source}));
    check(rendered.includes("fenced\nlines")&&rendered.includes("quoted first\nquoted second"),"fences or quote breaks lost");
    check(rendered.includes("first item")&&rendered.includes("Left")&&rendered.includes("Image label"),"list/table/image labels missing");
-   check(!user.text.includes('![')&&!user.text.includes('<img'),"inline media still enabled");
-   check(plain(answer).includes("A compact answer.")&&!plain(answer).includes("**"),"assistant Markdown not rendered");
+   check(!prose(drawer,0).includes('![')&&!prose(drawer,0).includes('<img'),"inline media still enabled");
+   check(root.rendered(drawer,1).includes("A compact answer.")&&!root.rendered(drawer,1).includes("**"),"assistant Markdown not rendered");
    AssistantService.messages.setProperty(1,"body","Streaming **bold**\nnext line\n\n```text\npartial");
   }else if(stage===3){
-   const answer=find(drawer,"assistantMessage:1");
-   check(plain(answer).includes("Streaming bold\nnext line")&&plain(answer).includes("partial"),"partial Markdown cannot render");
+   const answer=root.rendered(drawer,1);
+   check(answer.includes("Streaming bold\nnext line")&&answer.includes("partial"),"partial Markdown cannot render");
    AssistantService.messages.setProperty(1,"body",AssistantService.messages.get(1).body+"\nfinished\n```");
    AssistantService.draft="";check(AssistantService.editLast(),"cannot restore Markdown for editing");
    drawer.width=308;drawer.height=408;
@@ -1370,7 +1607,7 @@ ShellRoot {
   if(stage===0){
    if(!AssistantService.checked||AssistantService.checking)return;
    check(AssistantService.online&&AssistantService.models.length===3,"existing server status missing");
-   check(find(header.item,"assistantEdit").enabled&&find(header.item,"assistantServer").text==="Stop Lemonade","header service control missing");
+   check(find(header.item,"assistantOpenApp").enabled&&find(header.item,"assistantServer").text==="Stop Lemonade","header service control missing");
    check(!find(page.item.optionsPopup.contentItem,"assistantServer"),"options duplicates service control");
    check(!find(page.item,"assistantStart")&&!find(page.item,"assistantManageModels"),"duplicate empty-state actions");
    check(AssistantService.selectedModel==="local","loaded model not selected");
@@ -1394,7 +1631,7 @@ ShellRoot {
   }else if(stage===4){
    if(AssistantService.generating)return;
    check(!AssistantService.error&&AssistantService.messages.count===2&&AssistantService.messages.get(1).state==="done","retry failed "+AssistantService.error);
-   check(find(page.item,"assistantMessage:1").text.includes("answer"),"answer not rendered");
+   check(find(page.item,"assistantSegment:1:0").item.segmentText.includes("answer"),"answer not rendered");
    const folder=Quickshell.env("DISPLAY_PREVIEW_DIR");
    if(folder)page.item.grabToImage(result=>result.saveToFile(folder+"/assistant-chat.png"));
    find(page.item,"assistantOptions").clicked();
@@ -1428,3 +1665,512 @@ ShellRoot {
 }""",
             setup,
         )
+
+
+HARNESS = """
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ function say(speaker,body){AssistantService.messages.append({speaker,body,modelName:"local",state:"done",filesJson:"[]",hasImages:false,reasoning:""});}
+ function rendered(page,message){const out=[];for(let i=0;;i++){const part=find(page,"assistantSegment:"+message+":"+i);if(!part)break;const item=part.item;out.push(item.code?item.segmentText:item.getText(0,item.length).replace(/[\\u2028\\u2029]/g,"\\n"));}return out.join("\\n");}
+"""
+
+# Everything a reply could use to make Qt's Markdown renderer load a URL. @U@ is
+# the loopback canary; each case is rendered on its own.
+REMOTE_CONTENT = {
+    'image': '![a](@U@image.png)',
+    'doubled': '!![a](@U@doubled.png)',
+    'tripled': '!!![a](@U@tripled.png)',
+    'reference': '![a][r]\n\n[r]: @U@reference.png',
+    'collapsed': '![r][]\n\n[r]: @U@collapsed.png',
+    'shortcut': '![r]\n\n[r]: @U@shortcut.png',
+    'linked': '[![a](@U@linked.png)](https://example.invalid)',
+    'tag': '<img src="@U@tag.png">',
+    'table': '<table background="@U@table.png"><tr><td>x</td></tr></table>',
+    'cell': '<table><tr><td background="@U@cell.png">x</td></tr></table>',
+    'block': '<div style="background-image:url(@U@block.png)">x</div>',
+    'inline': 'text <span style="background-image:url(@U@inline.png)">x</span>',
+    'body': '<body background="@U@body.png">x</body>',
+    'upper': '<TABLE BACKGROUND="@U@upper.png"><TR><TD>x</TD></TR></TABLE>',
+    'closing': '</p><body background="@U@closing.png">',
+    'comment': '<!-- x -->\n<table background="@U@comment.png"><tr><td>x</td></tr></table>',
+    'wrapped': '<body\r\nbackground="@U@wrapped.png">x</body>',
+    'span in block': '<div>\n`<table background="@U@spanblock.png"><tr><td>x</td></tr></table>`\n</div>',
+    'span after break': '<br>\n`<table background="@U@spanbreak.png"><tr><td>x</td></tr></table>`',
+    'span across blocks': '`a\n\n<table background="@U@spanblocks.png"><tr><td>x</td></tr></table>\n\n`',
+    'escaped span': '\\`<span style="background-image:url(@U@escaped.png)">x</span>`',
+    'between spans': '`a` <span style="background-image:url(@U@between.png)">x</span> `b`',
+    'quoted fence': '> ```\n<table background="@U@quoted.png"><tr><td>x</td></tr></table>\n> ```',
+    'nested fence': '- item\n\n      ```\n      x\n<table background="@U@nested.png"><tr><td>x</td></tr></table>',
+    'indented': 'text\n\n    code\n\n<table background="@U@indented.png"><tr><td>x</td></tr></table>',
+    'table row': '| a | b |\n|---|---|\n| `x | <b style="background-image:url(@U@row.png)">y</b> ` | z |',
+}
+
+
+@unittest.skipUnless(support.QS, 'Quickshell is required')
+class AssistantPresentationTests(unittest.TestCase):
+    def run_qml(self, body, setup=None, **options):
+        def prepare(root):
+            (root / 'drawers/assistant/backend.py').write_text(FAKE_BACKEND)
+            if setup:
+                setup(root)
+
+        return support.run_qml(
+            self,
+            body.replace('HARNESS', HARNESS),
+            prepare,
+            **{'isolate_bus': True, **options},
+        )
+
+    def test_replies_cannot_make_the_renderer_fetch_anything(self):
+        def respond(handler):
+            reply(handler, b'', 404)
+
+        with loopback(respond) as (url, seen):
+            cases = {
+                name: text.replace('@U@', url + '/')
+                for name, text in REMOTE_CONTENT.items()
+            }
+            self.run_qml(
+                """import QtQuick
+import QtQuick.Controls
+import Quickshell
+import "ui"
+import "drawers"
+import "drawers/assistant"
+import "drawers/assistant/Markdown.js" as Markdown
+ShellRoot {
+ property int stage:0
+ property int tries:0
+ readonly property var cases:(CASES)
+ FloatingWindow {implicitWidth:900;implicitHeight:760;visible:true;color:Theme.background
+  AssistantDrawer {id:drawer;x:16;y:16;width:448;height:728;active:true}
+  Column {x:480;width:400
+   // The harness must notice a fetch, or an empty log proves nothing.
+   TextArea {width:400;readOnly:true;textFormat:TextEdit.MarkdownText;text:"![control](CONTROL)"}
+   Repeater {model:Object.keys(cases)
+    delegate:Column {id:sample;required property string modelData
+     Repeater {model:Markdown.segments(cases[sample.modelData])
+      delegate:TextArea {required property var modelData;width:400;readOnly:true
+       textFormat:modelData.kind==="code"?TextEdit.PlainText:TextEdit.MarkdownText;text:modelData.text}
+     }
+    }
+   }
+  }
+ }
+HARNESS
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>80)throw new Error("timeout "+stage+" "+AssistantService.error);
+  if(stage===0){
+   if(!AssistantService.online||AssistantService.checking)return;
+   say("user",[cases.image,cases.table,cases.doubled].join("\\n\\n"));
+   say("assistant",[cases.inline,cases.reference,cases.body].join("\\n\\n"));
+  }else if(stage===1){
+   if(!find(drawer,"assistantSegment:1:0"))return;
+   check(rendered(drawer,0).includes("<table")&&rendered(drawer,1).includes("<span"),"raw HTML is not shown as text");
+  }else if(stage===16){
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}""".replace('CASES', json.dumps(cases)).replace('CONTROL', url + '/control.png')
+            )
+        self.assertEqual(sorted({path for path, _ in seen}), ['/control.png'])
+
+    def test_code_is_exact_and_streaming_keeps_earlier_segments(self):
+        body = (
+            'Use `vec![1]` and `<div>` inline, or <https://example.invalid/docs>.\n\n'
+            '1. First\n    - nested item\n2. Second<br>line\n\n'
+            '   ```rust\n   let v = vec![1, 2];\n     <img src="x.png"> '
+            + 'wide ' * 60
+            + '\n   ```\n\nAfter'
+        )
+        code = 'let v = vec![1, 2];\n  <img src="x.png"> ' + 'wide ' * 60
+        self.run_qml(
+            """import QtQuick
+import QtQuick.Controls
+import QtTest
+import Quickshell
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ id:root
+ property int stage:0
+ property int tries:0
+ property var first:null
+ property real position:0
+ readonly property string body:BODY
+ readonly property string code:CODE
+ FloatingWindow {id:window;implicitWidth:480;implicitHeight:500;visible:true;color:Theme.background
+  AssistantDrawer {id:drawer;x:16;y:16;width:448;height:468;active:true}
+  TextEdit {id:sink;visible:false;textFormat:TextEdit.PlainText}
+ }
+ TestCase {id:input;name:"Assistant reply";when:false;parent:window.contentItem}
+HARNESS
+ function part(index){return find(drawer,"assistantSegment:1:"+index);}
+ function pasted(){sink.clear();sink.paste();return sink.text;}
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>80)throw new Error("timeout "+stage+" "+AssistantService.error);
+  const view=find(drawer,"assistantConversation");
+  if(stage===0){
+   if(!AssistantService.online||AssistantService.checking)return;
+   say("user","Question\\n\\n".repeat(12));say("assistant",root.body);
+  }else if(stage===1){
+   if(!part(2)||!part(2).item||!view.atYEnd)return;
+   check(!part(0).item.code&&part(1).item.code&&!part(2).item.code&&!part(3),"reply is not prose, code, prose");
+   check(part(1).item.segmentText===root.code,"fenced code is not shown exactly: "+JSON.stringify(part(1).item.segmentText));
+   const prose=rendered(drawer,1);
+   check(prose.includes("vec![1]")&&prose.includes("<div>"),"inline code was altered: "+JSON.stringify(prose));
+   check(prose.includes("nested item")&&prose.includes("Second line")&&prose.includes("https://example.invalid/docs"),"list, break or link lost: "+JSON.stringify(prose));
+   const box=part(1).item;
+   check(box.view.contentWidth>box.view.width&&box.width<=view.width&&box.mapToItem(drawer,box.width,0).x<=drawer.width,"long code line widens the page instead of scrolling");
+   root.first=part(0).item;root.first.select(4,9);
+   AssistantService.messages.setProperty(1,"body",root.body+" the reply\\n\\nand more");
+  }else if(stage===2){
+   check(part(0).item===root.first&&root.first.selectedText==="vec![","streaming rebuilt earlier text and dropped its selection");
+   check(!part(3)&&rendered(drawer,1).includes("After the reply\\nand more"),"streamed text is missing");
+   find(drawer,"assistantCopy:1").clicked();
+   check(pasted()===AssistantService.messages.get(1).body,"Copy message is not the original Markdown: "+JSON.stringify(pasted()));
+   find(part(1).item,"assistantCodeCopy").clicked();
+   check(pasted()===root.code,"Copy code is not the exact block");
+   input.mouseWheel(part(1).item,20,20,-120,0);
+  }else if(stage===3){
+   check(part(1).item.view.contentX>0,"a long code line cannot be scrolled sideways");
+   root.position=view.contentY;
+   input.mouseWheel(part(1).item,20,20,0,120);
+  }else if(stage===4){
+   check(view.contentY<root.position,"a code block swallows vertical scrolling");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}""".replace('BODY', json.dumps(body)).replace('CODE', json.dumps(code))
+        )
+
+    def test_growing_reply_follows_the_tail_until_the_reader_scrolls_away(self):
+        self.run_qml(
+            """import QtQuick
+import QtTest
+import Quickshell
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ property int stage:0
+ property int tries:0
+ property real position:0
+ FloatingWindow {id:window;implicitWidth:480;implicitHeight:500;visible:true;color:Theme.background
+  AssistantDrawer {id:drawer;x:16;y:16;width:448;height:468;active:true}
+ }
+ TestCase {id:input;name:"Assistant scroll";when:false;parent:window.contentItem}
+HARNESS
+ function grow(){const row=AssistantService.messages.get(1);AssistantService.messages.setProperty(1,"body",row.body+"More prose for the reply.\\n\\n```sh\\necho step\\n```\\n\\n");}
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>80)throw new Error("timeout "+stage+" "+AssistantService.error);
+  const view=find(drawer,"assistantConversation"),latest=find(drawer,"assistantLatest");
+  if(stage===0){
+   if(!AssistantService.online||AssistantService.checking)return;
+   say("user","Question");say("assistant","Start\\n\\n");
+  }else if(stage<8){
+   check(view.atYEnd&&!latest.visible,"growing reply left the tail at step "+stage);
+   grow();
+  }else if(stage===8){
+   check(view.atYEnd&&view.contentHeight>view.height*2,"reply did not outgrow the view while following");
+   input.mouseWheel(view,40,40,0,240);
+  }else if(stage===9){
+   check(!view.atYEnd&&latest.visible,"scrolling up did not leave the tail");
+   position=view.contentY;grow();
+  }else if(stage===10){
+   check(view.contentY===position&&latest.visible,"new text pulled the reader back to the tail");
+   latest.clicked();
+  }else if(stage===11){
+   check(view.atYEnd&&!latest.visible,"Latest reply did not return to the tail");
+   grow();
+  }else if(stage===12){
+   check(view.atYEnd,"following did not resume");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}"""
+        )
+
+    def test_status_returns_after_hiding_and_starters_keep_the_composer_bound(self):
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ property int stage:0
+ property int tries:0
+ FloatingWindow {implicitWidth:480;implicitHeight:760;visible:true;color:Theme.background
+  AssistantDrawer {id:drawer;x:16;y:16;width:448;height:728;active:true}
+ }
+HARNESS
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>80)throw new Error("timeout "+stage+" "+AssistantService.error);
+  const status=find(drawer,"assistantStatus"),composer=find(drawer,"assistantComposer");
+  if(stage===0){
+   if(!AssistantService.online||AssistantService.checking)return;
+   check(!status.visible&&!status.text,"a ready model still shows a status line");
+   const starters=find(drawer,"assistantStarters"),input=find(drawer,"assistantInput");
+   check(starters.visible&&starters.mapToItem(drawer,0,0).x>=0&&starters.mapToItem(drawer,starters.width,0).x<=drawer.width,"prompt starters overflow the drawer");
+   check(starters.mapToItem(drawer,0,starters.height).y<=input.mapToItem(drawer,0,0).y,"empty state overlaps the composer");
+   find(drawer,"assistantStarter:Explain a topic").clicked();
+   check(composer.text==="Explain this topic: "&&AssistantService.draft===composer.text&&composer.cursorPosition===composer.length&&composer.activeFocus,"starter did not fill the draft");
+   composer.insert(composer.length,"QML");
+   check(AssistantService.draft==="Explain this topic: QML"&&AssistantService.send(),"typing after a starter is not the draft");
+  }else if(stage===1){
+   if(AssistantService.generating)return;
+   check(AssistantService.messages.count===2&&composer.text===""&&AssistantService.draft==="","a starter detached the composer from the draft: "+JSON.stringify(composer.text));
+   AssistantService.setServer(false);
+  }else if(stage===2){
+   if(AssistantService.checking||AssistantService.online)return;
+   check(status.visible&&status.text.includes("stopped"),"status line never returns once hidden");
+   drawer.width=300;drawer.height=400;
+  }else if(stage===3){
+   AssistantService.newChat();AssistantService.attachmentError="A long attachment problem that wraps over several lines in a narrow drawer.";
+  }else if(stage===4){
+   check(!find(drawer,"assistantStarters").visible,"starters that cannot fit are still shown");
+   const empty=find(drawer,"assistantEmpty");
+   check(empty.visible&&empty.height<=empty.parent.height,"empty state overflows a short drawer: "+empty.height+" > "+empty.parent.height);
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}"""
+        )
+
+    def test_runaway_reply_is_cut_at_the_context_limit(self):
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ property int stage:0
+ property int tries:0
+ FloatingWindow {implicitWidth:480;implicitHeight:760;visible:true;color:Theme.background
+  AssistantDrawer {id:drawer;x:16;y:16;width:448;height:728;active:false}
+ }
+HARNESS
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>80)throw new Error("timeout "+stage+" "+AssistantService.error);
+  if(stage===0){
+   AssistantService.refresh();
+  }else if(stage===1){
+   if(!AssistantService.online||AssistantService.checking)return;
+   AssistantService.draft="flood";check(AssistantService.send(),"send refused");
+  }else if(stage===2){
+   if(AssistantService.generating)return;
+   const row=AssistantService.messages.get(1);
+   check(row.state==="limited"&&row.body.length===AssistantService.maximumReply&&!AssistantService.error&&!AssistantService.cancelling,"runaway reply was not cut: "+row.state+" "+row.body.length+" "+AssistantService.error);
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}"""
+        )
+
+    def test_reply_finishing_after_dismissal_notifies_once(self):
+        def setup(root):
+            (root / 'bin').mkdir()
+            tool = root / 'bin/notify-send'
+            tool.write_text(
+                '#!/bin/sh\nprintf \'%s|\' "$@" >> "$XDG_STATE_HOME/notifications.log"\n'
+                'echo >> "$XDG_STATE_HOME/notifications.log"\n'
+            )
+            tool.chmod(0o755)
+            (root / 'state').mkdir()
+            (root / 'state/notifications.log').write_text('')
+            os.environ['PATH'] = f'{root / "bin"}{os.pathsep}{os.environ["PATH"]}'
+
+        with patch.dict(os.environ):
+            self.run_qml(
+                """import QtQuick
+import Quickshell
+import Quickshell.Io
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ property int stage:0
+ property int tries:0
+ FloatingWindow {implicitWidth:480;implicitHeight:760;visible:true;color:Theme.background
+  AssistantDrawer {id:drawer;x:16;y:16;width:448;height:728;active:true}
+ }
+ FileView {id:notes;path:Quickshell.env("XDG_STATE_HOME")+"/notifications.log";blockLoading:true;printErrors:false}
+HARNESS
+ function sent(){notes.reload();notes.waitForJob();return notes.text().trim().split("\\n").filter(Boolean);}
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>80)throw new Error("timeout "+stage+" "+AssistantService.error);
+  if(stage===0){
+   if(!AssistantService.online||AssistantService.checking)return;
+   AssistantService.draft="hello";check(AssistantService.send(),"send refused");
+  }else if(stage===1){
+   if(AssistantService.generating)return;
+   AssistantService.draft="pause";check(AssistantService.send(),"second send refused");drawer.active=false;
+  }else if(stage===2){
+   if(AssistantService.generating||!sent().length)return;
+   AssistantService.draft="pause";check(AssistantService.send(),"third send refused");
+  }else if(stage===3){
+   if(!AssistantService.messages.get(5).body)return;
+   AssistantService.cancel();
+  }else if(stage===4){
+   if(AssistantService.generating)return;
+  }else if(stage===6){
+   const log=sent();
+   check(log.length===1&&log[0].includes("|Assistant|local finished replying.|")&&log[0].includes("--app-name=Assistant"),"expected one notification for the unobserved reply only: "+JSON.stringify(log));
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}""",
+                setup,
+            )
+
+    def test_failed_model_download_can_be_retried_from_the_picker(self):
+        def setup(root):
+            (root / 'state').mkdir()
+            (root / 'state/fixture.json').write_text(
+                json.dumps(
+                    dict(
+                        online=True,
+                        loaded=True,
+                        new=False,
+                        downloads=[
+                            dict(
+                                id='model:new',
+                                type='model',
+                                model_name='new',
+                                status='error',
+                                running=False,
+                                error='Network unreachable',
+                            )
+                        ],
+                    )
+                )
+            )
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ property int stage:0
+ property int tries:0
+ FloatingWindow {implicitWidth:480;implicitHeight:760;visible:true;color:Theme.background
+  AssistantDrawer {id:drawer;x:16;y:16;width:448;height:728;active:true}
+ }
+HARNESS
+ function action(){return find(drawer.modelPopup.contentItem,"assistantModelAction:new");}
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>80)throw new Error("timeout "+stage+" "+AssistantService.error);
+  if(stage===0){
+   if(!AssistantService.online||AssistantService.checking)return;
+   drawer.modelPopup.open();
+  }else if(stage===1){
+   if(!action()||AssistantService.checking)return;
+   check(action().visible&&action().enabled&&action().text==="Retry download"&&action().iconName==="download","a failed download offers no retry");
+   action().clicked();
+  }else if(stage===2){
+   if(AssistantService.checking)return;
+   check(!AssistantService.error&&AssistantService.models.find(row=>row.id==="new").downloaded&&!AssistantService.downloads.length,"retry did not restart the download: "+AssistantService.error);
+   check(!action().visible&&find(drawer.modelPopup.contentItem,"assistantModelDelete:new").visible,"finished download still offers retry");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}""",
+            setup,
+        )
+
+    def test_server_that_never_answers_keeps_the_draft_and_says_so(self):
+        def setup(root):
+            (root / 'state').mkdir()
+            (root / 'state/fixture.json').write_text(
+                json.dumps(
+                    dict(
+                        online=False,
+                        loaded=False,
+                        new=False,
+                        downloads=[],
+                        connectOffline=True,
+                    )
+                )
+            )
+            (root / 'config/quickshell/desktop/assistant.json').write_text(
+                json.dumps(dict(model='local'))
+            )
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ property int stage:0
+ property int tries:0
+ FloatingWindow {implicitWidth:480;implicitHeight:760;visible:true;color:Theme.background
+  AssistantDrawer {id:drawer;x:16;y:16;width:448;height:728;active:true}
+ }
+HARNESS
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>80)throw new Error("timeout "+stage+" "+AssistantService.error);
+  if(stage===0){
+   if(!AssistantService.checked||AssistantService.checking)return;
+   AssistantService.draft="  ";check(!AssistantService.canSend,"blank draft can be sent");
+   AssistantService.draft="hello";check(AssistantService.send(),"cold send refused");
+  }else if(stage===1){
+   if(AssistantService.checking)return;
+   check(AssistantService.error.includes("did not start")&&find(drawer,"assistantError").text===AssistantService.error,"a start that never answers is silent: "+AssistantService.error);
+   check(AssistantService.draft==="hello"&&!AssistantService.messages.count&&AssistantService.canSend,"failed start lost the draft");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}""",
+            setup,
+        )
+
+    def test_helpers_that_cannot_start_report_instead_of_waiting(self):
+        # dbus-run-session could not start either; nothing here notifies.
+        with (
+            tempfile.TemporaryDirectory() as empty,
+            patch.dict(os.environ, PATH=empty),
+        ):
+            self.run_qml(
+                """import QtQuick
+import Quickshell
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ property int stage:0
+ property int tries:0
+ FloatingWindow {implicitWidth:480;implicitHeight:760;visible:true;color:Theme.background
+  AssistantDrawer {id:drawer;x:16;y:16;width:448;height:728;active:true}
+ }
+HARNESS
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>60)throw new Error("timeout "+stage+" checked "+AssistantService.checked+" "+AssistantService.error+" "+AssistantService.attachmentError);
+  if(stage===0){
+   if(!AssistantService.checked)return;
+   check(!AssistantService.checking&&AssistantService.error.includes("Could not check")&&!find(drawer,"assistantStatus").text.includes("Checking"),"a status helper that cannot start waits forever");
+   AssistantService.attachUrls(["file:///nonexistent"]);AssistantService.attachUrls(["file:///other"]);
+  }else if(stage===1){
+   if(AssistantService.preparing)return;
+   check(AssistantService.attachmentError.includes("Could not prepare")&&find(drawer,"assistantAttach").enabled,"an importer that cannot start blocks its queue");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}""",
+                isolate_bus=False,
+            )

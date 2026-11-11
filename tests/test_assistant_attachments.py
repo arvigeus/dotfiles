@@ -153,6 +153,51 @@ class AssistantAttachmentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '64,000'):
             files.snapshot('large.txt', b'a' * 64001)
 
+    def test_document_xml_cannot_hide_declarations_in_another_encoding(self):
+        document = (
+            '<?xml version="1.0" encoding="{}"?><!DOCTYPE w [<!ENTITY a "aaaa">]>'
+            '<w:document xmlns:w="urn:word"><w:p>&a;</w:p></w:document>'
+        )
+        for content in (
+            document.format('UTF-16').encode('utf-16'),
+            document.format('UTF-16').encode('utf-16-be'),
+            document.format('UTF-8').encode(),
+        ):
+            with self.subTest(content=content[:12]):
+                with self.assertRaisesRegex(ValueError, 'Unsupported document XML'):
+                    files.snapshot('notes.docx', office('word/document.xml', content))
+        plain = '<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="urn:word"><w:p>Fine</w:p></w:document>'
+        self.assertEqual(
+            files.snapshot('notes.docx', office('word/document.xml', plain))['text'],
+            'Fine',
+        )
+
+    def test_missing_pdf_reader_is_named(self):
+        with patch.object(files.subprocess, 'run', side_effect=FileNotFoundError):
+            result = files.prepare(['/dev/null'])
+            with self.assertRaisesRegex(ValueError, 'pdftotext'):
+                files.snapshot('document.pdf', b'%PDF-1.4')
+        self.assertFalse(result['items'])
+
+    def test_clipboard_text_is_bounded_before_it_reaches_the_editor(self):
+        for text, accepted in (('é' * 64000, True), ('a' * 64001, False)):
+
+            def fake(args, text=text, **kwargs):
+                if '--list-types' in args:
+                    return subprocess.CompletedProcess(args, 0, 'text/plain\n', '')
+                kwargs['stdout'].write(text.encode())
+                return subprocess.CompletedProcess(args, 0, b'', b'')
+
+            with (
+                self.subTest(accepted=accepted),
+                patch.object(files.subprocess, 'run', side_effect=fake),
+            ):
+                if accepted:
+                    self.assertEqual(files.clipboard()['text'], text)
+                else:
+                    with self.assertRaisesRegex(ValueError, '64,000'):
+                        files.clipboard()
+
     def test_clipboard_prefers_images_and_never_pastes_text_instead(self):
         def fake(args, **kwargs):
             if '--list-types' in args:

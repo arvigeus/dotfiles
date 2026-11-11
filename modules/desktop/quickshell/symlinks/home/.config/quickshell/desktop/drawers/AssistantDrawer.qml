@@ -29,6 +29,43 @@ DrawerPage {
             label: qsTr("Detailed")
         }
     ]
+    readonly property var promptStarters: [
+        {
+            label: qsTr("Explain a topic"),
+            prompt: qsTr("Explain this topic: ")
+        },
+        {
+            label: qsTr("Debug an error"),
+            prompt: qsTr("Help me debug this error:\n")
+        },
+        {
+            label: qsTr("Summarize text"),
+            prompt: qsTr("Summarize this text:\n")
+        }
+    ]
+    // Kept outside the status row: an item inside a hidden container reports
+    // itself hidden, so the row could never show again.
+    readonly property string statusText: {
+        const service = AssistantService;
+        if (!service.checked)
+            return qsTr("Checking Lemonade…");
+        if (service.changingServer)
+            return service.pendingOperation === "stop" ? qsTr("Stopping Lemonade…") : qsTr("Starting Lemonade…");
+        if (!service.online)
+            return qsTr("Lemonade is stopped · starts when needed");
+        const job = service.selectedDownload;
+        if (job?.running) {
+            const fraction = modelPicker.progress(job);
+            return fraction >= 0 ? qsTr("Downloading %1 · %2%").arg(service.selectedModel).arg(Math.floor(fraction * 100)) : qsTr("Downloading %1…").arg(service.selectedModel);
+        }
+        if (job?.status === "paused")
+            return qsTr("Model download paused");
+        if (job?.error)
+            return job.error;
+        if (service.selectedEntry && !service.modelAvailable)
+            return service.generating ? qsTr("Downloading %1…").arg(service.selectedModel) : qsTr("%1 will download on first message").arg(service.selectedModel);
+        return "";
+    }
     escapeHandler: options.visible || modelPicker.visible || fileChooser.visible || filePreview.visible ? () => {
         if (fileChooser.visible)
             fileChooser.reject();
@@ -76,6 +113,21 @@ DrawerPage {
         }
     }
 
+    // Assigning composer.text would end its binding to the draft.
+    function usePrompt(prompt: string): void {
+        AssistantService.draft = prompt;
+        composer.cursorPosition = composer.length;
+        composer.forceActiveFocus();
+    }
+
+    // The toolkit's own clipboard path: no helper process and no argv.
+    function copyText(value: string): void {
+        clipboardProxy.text = value;
+        clipboardProxy.selectAll();
+        clipboardProxy.copy();
+        clipboardProxy.text = "";
+    }
+
     headerActions: RowLayout {
         spacing: 4
         IconButton {
@@ -90,8 +142,8 @@ DrawerPage {
             }
         }
         IconButton {
-            objectName: "assistantEdit"
-            iconName: "pencil"
+            objectName: "assistantOpenApp"
+            iconName: "panels-top-left"
             text: qsTr("Open Lemonade")
             hint: qsTr("Open the full Lemonade app · starts the server if needed")
             enabled: AssistantService.installed && (AssistantService.online || !AssistantService.busy)
@@ -114,19 +166,64 @@ DrawerPage {
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: Theme.spacingMedium
+            spacing: Theme.spacingSmall
             ShellButton {
                 id: modelChoice
                 objectName: "assistantModel"
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
+                Layout.preferredHeight: 50
                 text: AssistantService.selectedEntry?.label || AssistantService.selectedModel || qsTr("Choose a model")
                 iconName: AssistantService.selectedLoaded ? "circle-dot" : "chevron-down"
                 enabled: AssistantService.installed && !AssistantService.working && !AssistantService.preparing
-                Accessible.name: qsTr("Local chat model")
+                Accessible.name: qsTr("Local chat model: %1").arg(text)
                 onClicked: {
                     options.close();
                     modelPicker.visible ? modelPicker.close() : modelPicker.open();
+                }
+                contentItem: RowLayout {
+                    spacing: Theme.spacingMedium
+                    Rectangle {
+                        Layout.preferredWidth: 34
+                        Layout.preferredHeight: 34
+                        radius: 10
+                        color: Theme.accentSurface
+                        Icon {
+                            anchors.centerIn: parent
+                            width: 18
+                            height: 18
+                            name: "cpu"
+                            color: Theme.accent
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        spacing: 1
+                        ShellText {
+                            text: qsTr("LOCAL MODEL")
+                            font.pixelSize: Theme.smallFontSize
+                            font.weight: Font.DemiBold
+                            color: Theme.muted
+                        }
+                        ShellText {
+                            Layout.fillWidth: true
+                            text: modelChoice.text
+                            font.weight: Font.DemiBold
+                            elide: Text.ElideRight
+                        }
+                    }
+                    Icon {
+                        name: "chevron-down"
+                        width: 18
+                        height: 18
+                        color: modelChoice.highlighted ? Theme.accent : Theme.muted
+                    }
+                }
+                background: Rectangle {
+                    radius: 12
+                    color: modelChoice.down ? Theme.accentSurface : Theme.surface
+                    border.color: modelChoice.highlighted ? Theme.accent : Theme.border
                 }
                 PassiveToolTip {
                     target: modelChoice
@@ -136,9 +233,17 @@ DrawerPage {
             IconButton {
                 id: optionsButton
                 objectName: "assistantOptions"
+                implicitWidth: 46
+                implicitHeight: 46
+                padding: 12
                 iconName: "sliders-horizontal"
                 text: qsTr("Assistant options")
                 hint: qsTr("Thinking, reply length, style and model memory")
+                background: Rectangle {
+                    radius: 12
+                    color: optionsButton.down ? Theme.accentSurface : optionsButton.hovered ? Theme.surface : Theme.raised
+                    border.color: optionsButton.visualFocus ? Theme.accent : Theme.border
+                }
                 onClicked: {
                     modelPicker.close();
                     options.visible ? options.close() : options.open();
@@ -146,27 +251,68 @@ DrawerPage {
             }
         }
 
-        ShellText {
-            objectName: "assistantStatus"
+        Rectangle {
             Layout.fillWidth: true
-            visible: !AssistantService.checked || AssistantService.changingServer || !AssistantService.online || !!AssistantService.selectedDownload || (!!AssistantService.selectedEntry && !AssistantService.modelAvailable)
-            text: !AssistantService.checked ? qsTr("Checking Lemonade…") : AssistantService.changingServer ? (AssistantService.pendingOperation === "stop" ? qsTr("Stopping Lemonade…") : qsTr("Starting Lemonade…")) : !AssistantService.online ? qsTr("Lemonade is stopped · starts when needed") : AssistantService.selectedDownload?.running ? (modelPicker.progress(AssistantService.selectedDownload) >= 0 ? qsTr("Downloading %1 · %2%").arg(AssistantService.selectedModel).arg(Math.floor(modelPicker.progress(AssistantService.selectedDownload) * 100)) : qsTr("Downloading %1…").arg(AssistantService.selectedModel)) : AssistantService.selectedDownload?.status === "paused" ? qsTr("Model download paused") : AssistantService.selectedDownload?.error || (!AssistantService.modelAvailable && AssistantService.selectedEntry ? AssistantService.generating ? qsTr("Downloading %1…").arg(AssistantService.selectedModel) : qsTr("%1 will download on first message").arg(AssistantService.selectedModel) : "")
-            color: Theme.muted
-            elide: Text.ElideRight
-            font.pixelSize: Theme.smallFontSize
+            implicitHeight: statusRow.implicitHeight + 12
+            visible: !!root.statusText
+            radius: 9
+            color: Theme.raised
+            RowLayout {
+                id: statusRow
+                anchors.fill: parent
+                anchors.leftMargin: Theme.spacingMedium
+                anchors.rightMargin: Theme.spacingMedium
+                spacing: Theme.spacingSmall
+                Rectangle {
+                    Layout.preferredWidth: 7
+                    Layout.preferredHeight: 7
+                    radius: width / 2
+                    color: AssistantService.changingServer ? Theme.warning : AssistantService.online ? Theme.success : Theme.muted
+                }
+                ShellText {
+                    id: assistantStatus
+                    objectName: "assistantStatus"
+                    Layout.fillWidth: true
+                    text: root.statusText
+                    color: Theme.muted
+                    elide: Text.ElideRight
+                    font.pixelSize: Theme.smallFontSize
+                }
+            }
         }
 
-        ShellText {
-            objectName: "assistantError"
+        Rectangle {
             Layout.fillWidth: true
-            visible: !!text
-            text: [AssistantService.error, AssistantService.saveError, AssistantService.attachmentError, AssistantService.attachmentHint].filter(Boolean).join("\n")
-            color: Theme.danger
-            wrapMode: Text.Wrap
-            font.pixelSize: Theme.smallFontSize
+            visible: !!assistantError.text
+            implicitHeight: errorRow.implicitHeight + Theme.spacingMedium * 2
+            radius: Theme.controlRadius
+            color: Qt.tint(Theme.surface, Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.12))
+            border.color: Qt.rgba(Theme.danger.r, Theme.danger.g, Theme.danger.b, 0.35)
+            RowLayout {
+                id: errorRow
+                anchors.fill: parent
+                anchors.margins: Theme.spacingMedium
+                spacing: Theme.spacingSmall
+                Icon {
+                    Layout.preferredWidth: 16
+                    Layout.preferredHeight: 16
+                    name: "triangle-alert"
+                    color: Theme.danger
+                }
+                ShellText {
+                    id: assistantError
+                    objectName: "assistantError"
+                    Layout.fillWidth: true
+                    text: [AssistantService.error, AssistantService.saveError, AssistantService.attachmentError, AssistantService.attachmentHint].filter(Boolean).join("\n")
+                    color: Theme.danger
+                    wrapMode: Text.Wrap
+                    font.pixelSize: Theme.smallFontSize
+                }
+            }
         }
 
         Item {
+            id: chatArea
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumHeight: 50
@@ -206,23 +352,49 @@ DrawerPage {
                     implicitHeight: bubble.implicitHeight
                     Card {
                         id: bubble
-                        x: message.assistant ? 0 : Theme.paddingLarge
-                        width: parent.width - (message.assistant ? 0 : Theme.paddingLarge)
-                        implicitHeight: messageContent.implicitHeight + Theme.gap * 2
+                        x: message.assistant ? 0 : parent.width - width
+                        width: parent.width * (message.assistant ? 1 : 0.86)
+                        radius: Theme.radius + 3
+                        implicitHeight: messageContent.implicitHeight + Theme.spacingMedium * 3
                         color: message.assistant ? Theme.surface : Theme.accentSurface
+                        border.color: message.assistant ? Theme.border : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.35)
                         ColumnLayout {
                             id: messageContent
                             anchors.fill: parent
-                            anchors.margins: Theme.gap
-                            spacing: Theme.spacingSmall
+                            anchors.margins: Theme.spacingMedium + 2
+                            spacing: Theme.spacingMedium
                             RowLayout {
                                 Layout.fillWidth: true
-                                ShellText {
+                                spacing: Theme.spacingSmall
+                                Rectangle {
+                                    Layout.preferredWidth: 30
+                                    Layout.preferredHeight: 30
+                                    radius: 10
+                                    color: message.assistant ? Theme.accentSurface : Theme.raised
+                                    Icon {
+                                        anchors.centerIn: parent
+                                        width: 17
+                                        height: 17
+                                        name: message.assistant ? "bot" : "user-round"
+                                        color: message.assistant ? Theme.accent : Theme.muted
+                                    }
+                                }
+                                ColumnLayout {
                                     Layout.fillWidth: true
-                                    text: message.assistant ? message.modelName : qsTr("You")
-                                    font.pixelSize: Theme.smallFontSize
-                                    color: Theme.muted
-                                    elide: Text.ElideRight
+                                    Layout.minimumWidth: 0
+                                    spacing: 0
+                                    ShellText {
+                                        Layout.fillWidth: true
+                                        text: message.assistant ? message.modelName : qsTr("You")
+                                        font.weight: Font.DemiBold
+                                        elide: Text.ElideRight
+                                    }
+                                    ShellText {
+                                        visible: message.assistant
+                                        text: qsTr("LOCAL ASSISTANT")
+                                        font.pixelSize: Theme.smallFontSize
+                                        color: Theme.muted
+                                    }
                                 }
                                 IconButton {
                                     objectName: "assistantEditMessage:" + message.index
@@ -248,10 +420,7 @@ DrawerPage {
                                     text: copied.running ? qsTr("Copied") : qsTr("Copy message")
                                     enabled: !!message.body
                                     onClicked: {
-                                        // Use the native text selection clipboard path, never argv.
-                                        answer.selectAll();
-                                        answer.copy();
-                                        answer.deselect();
+                                        root.copyText(message.body);
                                         copied.restart();
                                     }
                                     Timer {
@@ -306,28 +475,34 @@ DrawerPage {
                                     background: null
                                 }
                             }
-                            TextArea {
-                                id: answer
-                                objectName: "assistantMessage:" + message.index
+                            ColumnLayout {
+                                id: content
+                                readonly property var parts: Markdown.segments(message.body)
                                 Layout.fillWidth: true
                                 Layout.minimumWidth: 0
-                                padding: 0
-                                readOnly: true
-                                selectByMouse: true
-                                activeFocusOnTab: true
-                                color: Theme.text
-                                selectionColor: Theme.accent
-                                selectedTextColor: Theme.accentText
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSize
-                                wrapMode: TextEdit.Wrap
-                                text: Markdown.prepare(message.body)
-                                textFormat: TextEdit.MarkdownText
-                                visible: !!message.body
-                                background: null
-                                onLinkActivated: link => {
-                                    if (/^https?:\/\//i.test(link))
-                                        Apps.launch(["xdg-open", link]);
+                                spacing: Theme.spacingMedium
+                                visible: parts.length > 0
+                                Repeater {
+                                    // Count only: a streaming reply grows its last
+                                    // segment and leaves the earlier ones in place.
+                                    model: content.parts.length
+                                    delegate: Loader {
+                                        id: part
+                                        required property int index
+                                        readonly property var entry: content.parts[index] ?? null
+                                        readonly property string segmentText: entry?.text ?? ""
+                                        objectName: "assistantSegment:" + message.index + ":" + index
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        Layout.preferredHeight: item?.implicitHeight ?? 0
+                                        sourceComponent: entry?.kind === "code" ? codeBlock : proseBlock
+                                        Binding {
+                                            target: part.item
+                                            property: "segmentText"
+                                            value: part.segmentText
+                                            when: part.status === Loader.Ready
+                                        }
+                                    }
                                 }
                             }
                             RowLayout {
@@ -351,23 +526,74 @@ DrawerPage {
             }
 
             ColumnLayout {
+                objectName: "assistantEmpty"
                 anchors.centerIn: parent
                 width: Math.max(0, parent.width - Theme.paddingLarge * 2)
                 visible: AssistantService.messages.count === 0
-                spacing: Theme.gap
-                Icon {
-                    name: "bot"
-                    color: Theme.muted
-                    Layout.preferredWidth: 40
-                    Layout.preferredHeight: 40
+                spacing: Theme.spacingMedium
+                Rectangle {
+                    // Decoration only: the text needs a short drawer's space.
+                    visible: chatArea.height >= 240
+                    Layout.preferredWidth: 60
+                    Layout.preferredHeight: 60
                     Layout.alignment: Qt.AlignHCenter
+                    radius: 20
+                    color: Theme.accentSurface
+                    border.color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.25)
+                    Icon {
+                        anchors.centerIn: parent
+                        width: 32
+                        height: 32
+                        name: "bot"
+                        color: Theme.accent
+                    }
                 }
                 ShellText {
                     Layout.fillWidth: true
-                    text: !AssistantService.installed ? qsTr("Lemonade is not installed") : AssistantService.checked && AssistantService.online && !AssistantService.selectedEntry ? qsTr("Choose a model to get started") : qsTr("What’s on your mind?")
+                    text: !AssistantService.installed ? qsTr("Your local assistant") : AssistantService.checked && AssistantService.online && !AssistantService.selectedEntry ? qsTr("Choose a model to get started") : qsTr("What’s on your mind?")
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
+                    font.pixelSize: Theme.titleFontSize
+                    font.weight: Font.DemiBold
+                }
+                ShellText {
+                    Layout.fillWidth: true
+                    text: !AssistantService.installed ? qsTr("Install Lemonade to start a private conversation on this device.") : !AssistantService.selectedEntry ? qsTr("Choose a local model above. Your conversations stay on this device.") : qsTr("Start with a prompt, paste some code, or attach a file for context.")
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.Wrap
                     color: Theme.muted
+                }
+                RowLayout {
+                    objectName: "assistantStarters"
+                    Layout.alignment: Qt.AlignHCenter
+                    visible: AssistantService.installed && implicitWidth <= parent.width
+                    spacing: Theme.spacingSmall
+                    Repeater {
+                        model: root.promptStarters
+                        delegate: Button {
+                            id: starter
+                            required property var modelData
+                            implicitHeight: 34
+                            leftPadding: Theme.spacingMedium
+                            rightPadding: Theme.spacingMedium
+                            text: modelData.label
+                            hoverEnabled: true
+                            readonly property bool emphasized: hovered || visualFocus
+                            objectName: "assistantStarter:" + modelData.label
+                            onClicked: root.usePrompt(modelData.prompt)
+                            contentItem: ShellText {
+                                text: starter.text
+                                color: starter.emphasized ? Theme.accent : Theme.text
+                                font.pixelSize: Theme.smallFontSize
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            background: Rectangle {
+                                radius: 17
+                                color: starter.emphasized ? Theme.accentSurface : Theme.raised
+                                border.color: starter.emphasized ? Theme.accent : Theme.border
+                            }
+                        }
+                    }
                 }
             }
 
@@ -412,6 +638,8 @@ DrawerPage {
             Layout.fillWidth: true
             implicitHeight: composerLayout.implicitHeight + Theme.spacingMedium * 2
             border.color: composer.activeFocus ? Theme.accent : Theme.border
+            border.width: composer.activeFocus ? 2 : 1
+            radius: Theme.radius + 3
             ColumnLayout {
                 id: composerLayout
                 anchors.fill: parent
@@ -429,7 +657,7 @@ DrawerPage {
                         text: AssistantService.draft
                         onTextChanged: AssistantService.draft = text
                         enabled: AssistantService.installed
-                        placeholderText: qsTr("Ask anything…")
+                        placeholderText: qsTr("Ask your local assistant…")
                         placeholderTextColor: Theme.muted
                         color: Theme.text
                         font.family: Theme.fontFamily
@@ -464,24 +692,29 @@ DrawerPage {
                     spacing: Theme.spacingSmall
                     IconButton {
                         objectName: "assistantAttach"
-                        implicitWidth: 32
-                        implicitHeight: 32
-                        padding: 7
+                        implicitWidth: 36
+                        implicitHeight: 36
+                        padding: 9
                         iconName: "paperclip"
                         text: qsTr("Attach files")
                         hint: qsTr("Attach images, documents or text/code files\nDrop files here, or paste with Ctrl+V")
                         enabled: !AssistantService.preparing
                         onClicked: fileChooser.open()
                     }
-                    Item {
+                    ShellText {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        font.pixelSize: Theme.smallFontSize
+                        color: Theme.muted
+                        elide: Text.ElideRight
+                        text: qsTr("Enter to send · Shift+Enter for a new line")
                     }
                     IconButton {
                         id: sendButton
                         objectName: "assistantSend"
-                        implicitWidth: 32
-                        implicitHeight: 32
-                        padding: 7
+                        implicitWidth: 36
+                        implicitHeight: 36
+                        padding: 9
                         iconName: AssistantService.generating ? "square" : "arrow-up"
                         iconColor: AssistantService.generating ? Theme.danger : enabled ? Theme.accentText : Theme.muted
                         text: AssistantService.generating ? qsTr("Stop reply") : qsTr("Send message")
@@ -492,8 +725,8 @@ DrawerPage {
                             color: sendButton.iconColor
                         }
                         background: Rectangle {
-                            radius: Theme.controlRadius
-                            color: sendButton.enabled && !AssistantService.generating ? (sendButton.down ? Theme.accentSurface : Theme.accent) : (sendButton.hovered ? Theme.surface : "transparent")
+                            radius: height / 2
+                            color: sendButton.enabled && !AssistantService.generating ? (sendButton.down ? Theme.accentSurface : Theme.accent) : sendButton.hovered ? Theme.surface : Theme.raised
                             border.color: sendButton.visualFocus ? Theme.accent : "transparent"
                         }
                         onClicked: AssistantService.generating ? AssistantService.cancel() : root.submit()
@@ -583,6 +816,110 @@ DrawerPage {
             PassiveToolTip {
                 target: releaseButton
                 text: qsTr("Unload the selected idle model; keep it installed")
+            }
+        }
+    }
+    TextEdit {
+        id: clipboardProxy
+        visible: false
+        textFormat: TextEdit.PlainText
+    }
+    Component {
+        id: proseBlock
+        TextArea {
+            property string segmentText: ""
+            readonly property bool code: false
+            readOnly: true
+            selectByMouse: true
+            activeFocusOnTab: true
+            color: Theme.text
+            selectionColor: Theme.accent
+            selectedTextColor: Theme.accentText
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSize
+            padding: 0
+            wrapMode: TextEdit.Wrap
+            text: segmentText
+            textFormat: TextEdit.MarkdownText
+            implicitHeight: contentHeight + topPadding + bottomPadding
+            background: null
+            Accessible.name: qsTr("Message text")
+            onLinkActivated: link => {
+                if (/^https?:\/\//i.test(link))
+                    Apps.launch(["xdg-open", link]);
+            }
+        }
+    }
+    Component {
+        id: codeBlock
+        Rectangle {
+            id: codeBox
+            property string segmentText: ""
+            readonly property bool code: true
+            readonly property alias view: codeView
+            implicitHeight: codeText.implicitHeight + (codeView.overflows ? Theme.spacingMedium : 0)
+            color: Theme.raised
+            radius: Theme.controlRadius
+            // Long lines scroll sideways; vertical scrolling stays with the chat.
+            Flickable {
+                id: codeView
+                readonly property bool overflows: contentWidth > width + 1
+                anchors.fill: parent
+                contentWidth: Math.max(width, codeText.contentWidth + codeText.leftPadding + codeText.rightPadding)
+                contentHeight: height
+                flickableDirection: Flickable.HorizontalFlick
+                boundsBehavior: Flickable.StopAtBounds
+                interactive: overflows
+                clip: true
+                ScrollBar.horizontal: ScrollBar {
+                    policy: codeView.overflows ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                }
+                WheelScroll {
+                    view: codeView
+                    orientation: Qt.Horizontal
+                }
+                TextArea {
+                    id: codeText
+                    objectName: "assistantCode"
+                    width: codeView.contentWidth
+                    height: implicitHeight
+                    readOnly: true
+                    selectByMouse: true
+                    activeFocusOnTab: true
+                    color: Theme.text
+                    selectionColor: Theme.accent
+                    selectedTextColor: Theme.accentText
+                    font.family: Theme.monospaceFamily
+                    font.pixelSize: Theme.smallFontSize
+                    padding: Theme.spacingMedium
+                    rightPadding: copyCode.width + Theme.spacingMedium
+                    wrapMode: TextEdit.NoWrap
+                    text: codeBox.segmentText
+                    textFormat: TextEdit.PlainText
+                    implicitHeight: contentHeight + topPadding + bottomPadding
+                    background: null
+                    Accessible.name: qsTr("Code")
+                }
+            }
+            IconButton {
+                id: copyCode
+                objectName: "assistantCodeCopy"
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.margins: 3
+                implicitWidth: 26
+                implicitHeight: 26
+                padding: 5
+                iconName: codeCopied.running ? "check" : "copy"
+                text: codeCopied.running ? qsTr("Copied") : qsTr("Copy code")
+                onClicked: {
+                    root.copyText(codeBox.segmentText);
+                    codeCopied.restart();
+                }
+                Timer {
+                    id: codeCopied
+                    interval: 1500
+                }
             }
         }
     }
