@@ -107,6 +107,15 @@ with `success: true` or `success: false, error`. Browse returns `items`, optiona
 opaque `next` and `total`; resolve returns a temporary `url` and optional HTTP
 headers. Image/video IDs and opaque refs persist; resolver URLs/headers do not.
 Configured commands are trusted user code and are never executed by discovery.
+`storage.read_settings()` reads `pictures.json` (following a link into a private
+checkout) and reports whether only its owner can access it, the rule Movies and
+Books apply to files that run commands or hold credentials. Providers are refused
+from a non-private file. The `wallpaper_engine` object (library paths and
+`proton_bin` choose what runs; `steam_api_key`) is ignored instead, so restore
+keeps Steam's defaults and `installation_status` says why. Workshop search uses
+the Steam key from `pictures.json`, then the Games `games.json`, each only from a
+private file, and names the file whose key it ignored rather than reporting a
+missing one.
 Selecting a provider clears the previous provider's catalogue/selection before
 requesting its first page. A named loading state and errors prevent an unreachable
 provider from appearing to keep the old selection. All custom discovery and

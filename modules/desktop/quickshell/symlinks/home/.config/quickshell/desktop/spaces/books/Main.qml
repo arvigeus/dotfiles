@@ -21,6 +21,7 @@ Item {
     property bool initialized: false
     property bool needsBrowse: false
     property bool needsLocalRefresh: false
+    property bool needsDetails: false
     function fontSize(value) {
         return Math.round(value * MovieStyle.fontSize / 14);
     }
@@ -30,6 +31,8 @@ Item {
     property var filters: ({})
     property string nextPage: ""
     property string error: ""
+    // books.json problems outlive catalogue errors until Retry rereads it.
+    property string setupError: ""
     property string detailError: ""
     property bool loading: true
     property bool detailLoading: false
@@ -38,9 +41,16 @@ Item {
     property var localFiles: []
     property bool searchOpen: false
     property bool filtersOpen: false
+    readonly property bool scanOpen: scanDialog.opened
+    property alias localScan: scanPanel
+    property alias scanPopup: scanDialog
+    // A review that arrives while hidden or outside My Library waits for it.
+    property bool reviewPending: false
     property bool gridMode: false
     property int browseGeneration: 0
     property int selectionGeneration: 0
+    // Refresh supersedes only metadata hydration, not favorite or file requests.
+    property int detailGeneration: 0
     property int authorGeneration: 0
     property int editionsGeneration: 0
     property string tab: "overview"
@@ -69,10 +79,8 @@ Item {
     property int findGeneration: 0
     property bool updatingCatalogue: false
     readonly property bool workSelected: !!selected.id && selected.source !== "provider" && /^OL\d+W$/.test(String(selected.id))
-    readonly property var downloadJobs: service.jobs
-    readonly property bool titleLoading: detailLoading
     readonly property bool findLoading: tab === "torrent" && (torrentFind.connectionLoading || torrentFind.searching || torrentFind.extraSearching || torrentFind.reviewLoading || torrentFind.moreLoading || torrentFind.startLoading || torrentFind.launchPending)
-    readonly property bool busy: loading || detailLoading || offersLoading || providerResolving || findOffersLoading || (tab === "author" && authorLoading) || (tab === "editions" && editionsLoading) || findLoading || localService.pendingDownloads > 0 || localService.pendingChanges > 0 || service.activeJobCount > 0 || (tab === "scan" && (scanPanel.scanning || scanPanel.matching))
+    readonly property bool busy: loading || detailLoading || offersLoading || providerResolving || findOffersLoading || (tab === "author" && authorLoading) || (tab === "editions" && editionsLoading) || findLoading || localService.pendingDownloads > 0 || localService.pendingChanges > 0 || service.activeJobCount > 0 || scanPanel.scanning || scanPanel.matching || scanPanel.importing
     readonly property string readingAction: selected.ebookAccess === "public" ? "Read on Open Library" : selected.ebookAccess === "borrowable" ? "Borrow on Open Library" : selected.ebookAccess === "printdisabled" ? "Preview on Open Library" : ""
 
     ListModel {
@@ -143,6 +151,80 @@ Item {
         id: bookArt
         spaceId: "books"
     }
+    // My Library → Refresh scans Documents/Books at once; only files it cannot
+    // identify open this modeless review above the catalogue (Movies' contract).
+    Popup {
+        id: scanDialog
+        objectName: "libraryReview"
+        parent: root
+        width: Math.min(1100, parent.width)
+        height: Math.min(700, parent.height)
+        x: (parent.width - width) / 2
+        y: (parent.height - height) / 2
+        modal: false
+        dim: true
+        focus: true
+        popupType: Popup.Item
+        padding: 14
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onOpened: contentItem.forceActiveFocus()
+        onClosed: root.initialFocus.forceActiveFocus()
+        Overlay.modeless: Rectangle {
+            color: "#b3000000"
+        }
+        background: Rectangle {
+            color: MovieStyle.background
+            border.color: MovieStyle.border
+            radius: MovieStyle.radius
+        }
+        contentItem: ColumnLayout {
+            spacing: 12
+            RowLayout {
+                Layout.fillWidth: true
+                MovieText {
+                    text: "Unidentified books"
+                    font.bold: true
+                    Layout.fillWidth: true
+                }
+                MovieIconButton {
+                    objectName: "closeLibraryReview"
+                    iconName: "x"
+                    text: "Close library review"
+                    onClicked: scanDialog.close()
+                }
+            }
+            LocalScan {
+                id: scanPanel
+                objectName: "booksScan"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                showStatus: false
+                showLoading: false
+                showScanControls: false
+                service: localService
+                kind: "book"
+                onImported: fromScan => {
+                    if (!fromScan)
+                        root.refreshLocalLibrary();
+                    if (!scanPanel.review.length)
+                        scanDialog.close();
+                }
+                onScanFinished: {
+                    root.refreshLocalLibrary();
+                    if (scanPanel.error) {
+                        root.error = scanPanel.error;
+                    } else if (scanPanel.review.length) {
+                        if (root.active && root.localMode)
+                            scanDialog.open();
+                        else
+                            root.reviewPending = true;
+                    } else {
+                        scanDialog.close();
+                    }
+                }
+            }
+        }
+    }
     Rectangle {
         objectName: "booksBackground"
         parent: root.backdropTarget || root
@@ -186,9 +268,11 @@ Item {
     }
     function clearSelection() {
         ++selectionGeneration;
+        ++detailGeneration;
         resetOffers();
         resetFindOffers();
         detailDelay.stop();
+        needsDetails = false;
         selected = ({});
         personal = ({
                 favorite: false
@@ -283,11 +367,13 @@ Item {
             return;
         }
         const generation = ++selectionGeneration;
+        ++detailGeneration;
         resetOffers();
         resetFindOffers();
         ++authorGeneration;
         ++editionsGeneration;
         detailDelay.stop();
+        needsDetails = false;
         selected = book;
         personal = ({
                 favorite: !!book.favorite
@@ -322,56 +408,52 @@ Item {
             if (generation === selectionGeneration && !failure)
                 localFiles = result;
         });
-        if (workSelected && active)
-            detailDelay.restart();
+        if (workSelected) {
+            if (active)
+                detailDelay.restart();
+            else
+                needsDetails = true;
+        }
     }
     Timer {
         id: detailDelay
         interval: 170
-        onTriggered: {
-            if (!root.active || !root.workSelected)
-                return;
-            const generation = root.selectionGeneration;
-            service.request("details", {
-                book: root.selected
-            }, (result, failure) => {
-                if (generation !== root.selectionGeneration)
-                    return;
-                root.detailLoading = false;
-                if (failure)
-                    root.detailError = failure;
-                else if (result) {
-                    root.selected = Object.assign({}, root.selected, result);
-                    root.updateBook(root.selected);
-                    if (result.warning)
-                        root.detailError = result.warning;
-                }
-            });
-        }
+        onTriggered: root.loadDetails(false)
     }
-    function refreshBook() {
+    function loadDetails(refresh) {
         if (!workSelected)
             return;
-        const generation = ++selectionGeneration;
-        resetOffers();
+        const generation = ++detailGeneration;
+        needsDetails = false;
         detailLoading = true;
         detailError = "";
         service.request("details", {
             book: selected,
-            refresh: true
+            refresh: !!refresh
         }, (result, failure) => {
-            if (generation !== selectionGeneration)
+            if (generation !== detailGeneration)
                 return;
             detailLoading = false;
-            if (failure)
+            if (failure) {
                 detailError = failure;
-            else if (result) {
-                selected = Object.assign({}, selected, result);
-                updateBook(selected);
-                if (result.warning)
-                    detailError = result.warning;
+                return;
             }
+            if (!result)
+                return;
+            const details = Object.assign({}, result);
+            // A stale-copy notice belongs to this reply, not to the book record.
+            delete details.warning;
+            selected = Object.assign({}, selected, details);
+            updateBook(selected);
+            detailError = result.warning || "";
         });
+    }
+    function refreshBook() {
+        if (!workSelected)
+            return;
+        resetOffers();
+        detailDelay.stop();
+        loadDetails(true);
     }
     function saveFavorite(value) {
         if (!workSelected)
@@ -493,6 +575,18 @@ Item {
         if (nearEnd)
             browse(true, false);
     }
+    function filterBySubject(subject) {
+        // Subjects filter the Open Library catalogue, not saved or local lists.
+        localMode = false;
+        favorites = false;
+        tab = "overview";
+        scanDialog.close();
+        filters = Object.assign({}, filters, {
+            subject: subject
+        });
+        subjectFilter.text = subject;
+        browse(false, false);
+    }
     function languageLabel(code) {
         const known = {
             eng: "English",
@@ -526,7 +620,7 @@ Item {
             grc: "Ancient Greek",
             gre: "Greek"
         };
-        return known[code] || code.toUpperCase();
+        return known[code] || String(code).toUpperCase();
     }
     function effectiveSortIndex() {
         const sorts = ["trending", "relevance", "newest", "oldest"];
@@ -657,6 +751,10 @@ Item {
             sortFilter.popup.close();
             return true;
         }
+        if (scanOpen) {
+            scanDialog.close();
+            return true;
+        }
         if (torrentFind.dismissTransient())
             return true;
         if (filtersOpen) {
@@ -682,30 +780,38 @@ Item {
         if (!active) {
             if (searchDelay.running)
                 needsBrowse = true;
+            if (detailDelay.running)
+                needsDetails = true;
             pagination.stop();
             searchDelay.stop();
             detailDelay.stop();
             activity.close();
             onlineButton.popup.close();
             sortFilter.popup.close();
+            scanDialog.close();
         } else if (initialized) {
+            if (reviewPending && localMode) {
+                reviewPending = false;
+                scanDialog.open();
+            }
             if (needsLocalRefresh)
                 refreshLocalLibrary();
             if (needsBrowse)
                 browse(false, false);
-            if (detailLoading)
+            if (needsDetails)
                 detailDelay.restart();
             pagination.restart();
             Qt.callLater(activate);
         }
     }
-    Component.onCompleted: {
+    function initialize() {
         service.request("init", {}, (result, failure) => {
-            if (failure)
-                error = failure;
-            else
-                providerNames = result.providers || [];
+            setupError = failure || "";
+            providerNames = !failure && result && result.providers || [];
         });
+    }
+    Component.onCompleted: {
+        initialize();
         // INI storage returns "true"/"false" strings once read from disk.
         gridMode = String(preferences.value("catalogue/grid", false)) === "true";
         service.request("local_list", {
@@ -748,7 +854,12 @@ Item {
                 root.localMode = true;
                 root.favorites = false;
                 root.tab = "overview";
+                scanDialog.close();
                 root.browse(false, false);
+                if (root.reviewPending) {
+                    root.reviewPending = false;
+                    scanDialog.open();
+                }
             }
         }
         MovieTab {
@@ -760,6 +871,7 @@ Item {
                 root.localMode = false;
                 root.favorites = false;
                 root.tab = "overview";
+                scanDialog.close();
                 root.browse(false, false);
             }
         }
@@ -772,6 +884,7 @@ Item {
                 root.localMode = false;
                 root.favorites = true;
                 root.tab = "overview";
+                scanDialog.close();
                 root.browse(false, false);
             }
         }
@@ -904,7 +1017,7 @@ Item {
                 active: root.active
                 spinnerName: "booksLoadingIndicator"
                 jobs: service.jobs.concat(localService.jobs)
-                tasks: [task(root.loading, "browse", "Loading books…"), task(root.detailLoading, "details", "Loading book details…"), task(root.offersLoading || root.findOffersLoading, "offers", "Finding book offers…"), task(root.providerResolving, "provider", "Opening book provider…"), task(root.tab === "author" && root.authorLoading, "author", "Loading author…"), task(root.tab === "editions" && root.editionsLoading, "editions", "Loading editions…"), task(root.findLoading, "find", "Searching downloads…"), task(localService.pendingDownloads > 0, "download", "Downloading book…"), task(localService.pendingChanges > 0, "library", "Updating local library…"), task(service.startingJobs > 0, "queue", "Queuing download…"), task(root.tab === "scan" && (scanPanel.scanning || scanPanel.matching), "scan", "Scanning local books…")]
+                tasks: [task(root.loading, "browse", "Loading books…"), task(root.detailLoading, "details", "Loading book details…"), task(root.offersLoading || root.findOffersLoading, "offers", "Finding book offers…"), task(root.providerResolving, "provider", "Opening book provider…"), task(root.tab === "author" && root.authorLoading, "author", "Loading author…"), task(root.tab === "editions" && root.editionsLoading, "editions", "Loading editions…"), task(root.findLoading, "find", "Searching downloads…"), task(localService.pendingDownloads > 0, "download", "Downloading book…"), task(localService.pendingChanges > 0, "library", "Updating local library…"), task(service.startingJobs > 0, "queue", "Queuing download…"), task(scanPanel.scanning || scanPanel.matching || scanPanel.importing, "scan", "Scanning local books…")]
             }
         }
         MovieIconButton {
@@ -942,12 +1055,13 @@ Item {
             Layout.maximumWidth: 42
             iconName: "refresh-cw"
             text: root.localMode ? "Refresh library" : "Refresh catalogue"
-            highlighted: root.localMode && root.tab === "scan"
-            enabled: root.localMode || !root.loading
+            enabled: root.localMode ? !scanPanel.scanning && !scanPanel.importing : !root.loading
             onClicked: {
-                if (root.localMode)
-                    root.tab = root.tab === "scan" ? "overview" : "scan";
-                else {
+                if (root.localMode) {
+                    root.reviewPending = false;
+                    root.error = "";
+                    scanPanel.scan();
+                } else {
                     searchDelay.stop();
                     root.browse(false, true);
                 }
@@ -977,10 +1091,11 @@ Item {
         anchors.fill: parent
         spacing: 12
         RowLayout {
-            visible: !!root.error
+            visible: !!(root.error || root.setupError)
             Layout.fillWidth: true
             MovieText {
-                text: root.error
+                objectName: "booksError"
+                text: root.error || root.setupError
                 color: MovieStyle.danger
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
@@ -988,7 +1103,11 @@ Item {
             }
             MovieButton {
                 text: "Retry"
-                onClicked: root.browse(false, true)
+                onClicked: {
+                    if (root.setupError)
+                        root.initialize();
+                    root.browse(false, true);
+                }
             }
         }
         Item {
@@ -998,7 +1117,7 @@ Item {
             GridView {
                 id: grid
                 objectName: "catalogueGrid"
-                visible: root.gridMode && root.tab !== "scan"
+                visible: root.gridMode
                 x: 0
                 y: 0
                 width: parent.width * 0.51
@@ -1045,7 +1164,7 @@ Item {
                 y: 0
                 width: root.gridMode ? parent.width * 0.45 : Math.min(parent.width * 0.7, 1000)
                 height: root.gridMode ? parent.height : parent.height - Math.min(300, parent.height * 0.34) - 16
-                visible: !!root.selected.id && root.tab !== "author" && root.tab !== "scan"
+                visible: !!root.selected.id && root.tab !== "author"
                 spacing: 8
                 ColumnLayout {
                     id: detailText
@@ -1216,15 +1335,10 @@ Item {
                                 model: (root.selected.subjects || []).slice(0, 10)
                                 MovieButton {
                                     required property string modelData
+                                    objectName: "bookSubject"
                                     text: modelData
                                     Accessible.name: "Filter by subject " + modelData
-                                    onClicked: {
-                                        root.filters = Object.assign({}, root.filters, {
-                                            subject: modelData
-                                        });
-                                        subjectFilter.text = modelData;
-                                        root.browse(false, false);
-                                    }
+                                    onClicked: root.filterBySubject(modelData)
                                 }
                             }
                             MovieText {
@@ -1500,25 +1614,10 @@ Item {
                     }
                 }
             }
-            ScrollArea {
-                objectName: "booksScan"
-                anchors.fill: parent
-                visible: root.active && root.tab === "scan"
-                contentWidth: availableWidth
-                LocalScan {
-                    id: scanPanel
-                    showStatus: false
-                    width: parent.width
-                    kind: "book"
-                    service: localService
-                    showLoading: false
-                    onImported: root.refreshLocalLibrary()
-                }
-            }
             ListView {
                 id: rail
                 objectName: "catalogueRail"
-                visible: !root.gridMode && root.tab !== "author" && root.tab !== "scan"
+                visible: !root.gridMode && root.tab !== "author"
                 anchors.bottom: parent.bottom
                 width: parent.width
                 height: Math.min(300, parent.height * 0.34)
@@ -1564,7 +1663,7 @@ Item {
                 width: Math.min(420, parent.width - 56)
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
-                visible: !root.books.length && root.tab !== "scan"
+                visible: !root.books.length
                 text: root.loading || root.error ? "" : root.localMode ? "No local books yet." : root.favorites ? "No saved favorites yet." : "No books match this search."
                 color: MovieStyle.muted
             }

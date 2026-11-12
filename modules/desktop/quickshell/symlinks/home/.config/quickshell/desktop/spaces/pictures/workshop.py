@@ -5,6 +5,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
+from spaces.pictures.storage import read_settings
+
 APP_ID = 431960
 SORTS = {'popular': 0, 'newest': 1, 'trending': 3, 'relevance': 12}
 TAGS = [
@@ -23,21 +25,33 @@ TAGS = [
 ]
 
 
-def api_key(folder):
-    # Share the existing credential, without importing or starting Games.
-    for path, nested in (
+def _key_sources(folder):
+    # Share the existing Games credential, without importing or starting Games.
+    return (
         (folder / 'pictures.json', True),
         (folder.parent / 'games/games.json', False),
-    ):
-        try:
-            config = json.loads(path.read_text())
-            if nested:
-                config = config.get('wallpaper_engine', {})
-            value = config.get('steam_api_key', '')
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        except (OSError, ValueError, AttributeError):
-            continue
+    )
+
+
+def _stored_key(path, nested):
+    """(key, ignored): a key in a settings file others can access is not used."""
+    try:
+        config, owner_only = read_settings(path)
+        if nested:
+            config = config.get('wallpaper_engine', {})
+        value = config.get('steam_api_key', '')
+    except (ValueError, AttributeError):
+        return '', False
+    if not isinstance(value, str) or not value.strip():
+        return '', False
+    return (value.strip(), False) if owner_only else ('', True)
+
+
+def api_key(folder):
+    for path, nested in _key_sources(folder):
+        key, _ = _stored_key(path, nested)
+        if key:
+            return key
     return ''
 
 
@@ -108,6 +122,15 @@ def full_preview(row):
 
 def query(folder, args):
     key = api_key(folder)
+    ignored = [
+        path.name
+        for path, nested in _key_sources(folder)
+        if not key and _stored_key(path, nested)[1]
+    ]
+    if ignored:
+        raise ValueError(
+            f'{ignored[0]} holds a Steam API key, so it must be private: run chmod 600 on it.'
+        )
     if not key:
         raise ValueError(
             'Workshop search needs steam_api_key in games.json or wallpaper_engine.steam_api_key in pictures.json.'

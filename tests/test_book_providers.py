@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import uuid
@@ -23,6 +24,7 @@ from spaces.books.backend import (
     normalize_work,
     normalized_isbns,
 )
+from spaces.books.providers import normalize_result
 from spaces.movies.local import destination
 from spaces.movies.paths import SPACE
 
@@ -64,8 +66,9 @@ class BookProviderTests(unittest.TestCase):
         self.backend = BooksBackend(
             self.root / 'books.json', self.root / 'data', self.root / 'cache'
         )
-        self.addCleanup(self.backend.commands.close)
-        self.addCleanup(self.backend.downloads.stop)
+        self.addCleanup(self.backend.close)
+        # Provider commands require an owner-only books.json; rewrites keep the mode.
+        self.backend.config_path.touch(mode=0o600)
         self.documents = self.root / 'documents'
         env = patch.dict(os.environ, {'XDG_DOCUMENTS_DIR': str(self.documents)})
         env.start()
@@ -560,6 +563,118 @@ class BookProviderTests(unittest.TestCase):
         self.assertEqual(self.backend.local.files(self.book | {'kind': 'book'}), [])
         self.assertIsNone(normalize_work(record))
 
+    def test_download_matches_the_work_without_previously_cached_editions(self):
+        """Identity must not depend on whether Editions or Read online was opened."""
+        with self.backend.db(self.backend.cache_db) as db:
+            db.execute("DELETE FROM cache WHERE key LIKE 'editions:%'")
+        threads = []
+
+        def catalogue(path, params):
+            threads.append(threading.current_thread().name)
+            self.assertEqual(path, '/works/OL100W/editions.json')
+            return {
+                'entries': [{'key': '/books/OL100M', 'isbn_13': ['9780000000001']}],
+                'size': 1,
+            }
+
+        offer = self.search()['items'][1] | {'title': 'The Example Book (Reissue)'}
+        with (
+            patch.object(self.backend, 'request', side_effect=catalogue),
+            patch.object(
+                books_urllib_request(), 'urlopen', return_value=BookResponse()
+            ),
+        ):
+            job = self.finish_download(self.download(offer))
+        self.assertEqual(job['state'], 'finished', job)
+        self.assertEqual(job['result']['titleId'], 'OL100W')
+        self.assertEqual(job['title'], 'The Example Book (Reissue)')
+        self.assertEqual(len(self.backend.local.files(self.book | {'kind': 'book'})), 1)
+        # Matching runs in the transfer, never in the ordered control lane.
+        self.assertTrue(
+            threads and all(name.startswith('transfer') for name in threads)
+        )
+
+    def test_download_without_catalogue_evidence_keeps_the_offer_identity(self):
+        with self.backend.db(self.backend.cache_db) as db:
+            db.execute('DELETE FROM cache')
+        with (
+            patch.object(
+                self.backend, 'request', side_effect=BooksError('Cannot reach')
+            ),
+            patch.object(
+                books_urllib_request(), 'urlopen', return_value=BookResponse()
+            ),
+        ):
+            job = self.finish_download(self.download())
+        self.assertEqual(job['state'], 'finished', job)
+        self.assertTrue(job['result']['titleId'].startswith('book-command:'))
+        self.assertEqual(self.backend.local.files(self.book | {'kind': 'book'}), [])
+
+    def test_offer_fields_are_typed_for_display_and_identity_stays_opaque(self):
+        provider = {'name': 'Personal provider'}
+        offer = normalize_result(
+            {
+                'id': {'opaque': [1]},
+                'ref': None,
+                'title': 'Book',
+                'authors': ['Writer'],
+                'format': ' EPUB ',
+                'language': ['eng', 'fre'],
+                'publisher': 5,
+                'description': '',
+                'size': '2 MB',
+                'year': '2001',
+                'pages': True,
+                'size_bytes': 2048.0,
+                'identifiers': {'isbn_13': ['9780000000001']},
+                'cover_url': 'file:///etc/passwd',
+                'unknown': 'dropped',
+            },
+            provider,
+        )
+        self.assertEqual(
+            offer,
+            {
+                'id': {'opaque': [1]},
+                'identifiers': {'isbn_13': ['9780000000001']},
+                'ref': None,
+                'format': 'EPUB',
+                'size': '2 MB',
+                'year': 2001,
+                'size_bytes': 2048,
+                'source': 'provider',
+                'provider': 'Personal provider',
+                'title': 'Book',
+                'authors': ['Writer'],
+                'cover_url': '',
+                'page_url': '',
+            },
+        )
+        for value in (-1, '-1', '²', 1.5, float('inf')):
+            self.assertNotIn(
+                'year',
+                normalize_result({'title': 'B', 'ref': 0, 'year': value}, provider),
+            )
+
+    def test_provider_commands_require_an_owner_only_books_json(self):
+        self.backend.config_path.chmod(0o640)
+        for op in ('init', 'providerSearch'):
+            with self.assertRaisesRegex(BooksError, 'mode 0600'):
+                self.backend.handle({'op': op, 'query': 'Example'})
+        # Open Library itself only needs the optional contact.
+        self.assertEqual(self.backend.contact(), 'reader@example.org')
+        with patch.object(
+            self.backend, 'request', return_value={'num_found': 0, 'docs': []}
+        ):
+            self.assertEqual(self.backend.browse({})['items'], [])
+        self.backend.config_path.write_text('{"contact":"reader@example.org"}')
+        self.assertEqual(self.backend.handle({'op': 'init'})['providers'], [])
+        self.backend.config_path.chmod(0o600)
+        self.configure()
+        self.assertEqual(
+            self.backend.handle({'op': 'init'})['providers'], ['Personal provider']
+        )
+
     def test_download_refuses_web_pages_empty_incomplete_files_and_does_not_leave_partials(
         self,
     ):
@@ -683,6 +798,7 @@ class BookProviderTests(unittest.TestCase):
         }
         config_root = self.root / 'config/quickshell/desktop/spaces/books'
         config_root.mkdir(parents=True)
+        (config_root / 'books.json').touch(mode=0o600)
         (config_root / 'books.json').write_text(
             json.dumps({'providers': [self.provider]})
         )

@@ -1,5 +1,6 @@
 {
-    "packages": ["okular", "ebook-tools"],
+    // ebook-tools reads EPUB; Okular's MOBI generator links kdegraphics-mobipocket.
+    "packages": ["okular", "ebook-tools", "kdegraphics-mobipocket"],
     "extra": {
         // Foliate alternative: remove the native ebook packages and uncomment.
         /*

@@ -58,7 +58,6 @@ Item {
     property bool setupRequired: false
     property string error: ""
     property string detailError: ""
-    property string notice: ""
     property var filters: ({
             genre: "",
             platform: "",
@@ -352,7 +351,6 @@ Item {
         const offset = append ? nextOffset : 0;
         loading = true;
         error = "";
-        notice = "";
         if (!append) {
             nextOffset = 0;
             contentQueue = [];
@@ -373,7 +371,13 @@ Item {
                 return;
             }
             setupRequired = !!result.setupRequired;
-            notice = result.warning || "";
+            if (result.catalog)
+                catalogState = result.catalog;
+            // Saved catalogue results shown offline or without credentials are
+            // flagged inline, as in Movies and Books. Store problems already show
+            // on each store's status and setup has its own empty state.
+            if (mode !== "library" && !setupRequired && result.warning)
+                error = result.warning;
             updateCatalogue(result.items || [], append);
             queueContent(result.items, refresh);
             contentDelay.restart();
@@ -565,7 +569,6 @@ Item {
                 installJobs = [result.job].concat(installJobs.filter(job => job.id !== result.job.id));
                 pollInstalls();
             }
-            notice = result.message || "";
             if (action.type === "play" || result.handoff)
                 host?.hide();
             else if (action.type === "uninstall") {
@@ -1354,7 +1357,7 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.Wrap
                     color: MovieStyle.muted
-                    text: root.setupRequired ? "Add igdb_client_id and igdb_client_secret to " + (root.catalogState.configPath || "games.json") + ". My library works without catalogue credentials." : root.hideNsfw && root.allTitles.length ? "Games labelled NSFW, or still being classified, are hidden. Enable NSFW in Filters to show them." : root.mode === "library" ? "Install a Steam game, sign in with legendary auth for Epic, or sign into GOG in Heroic, then refresh your libraries." : root.mode === "favorites" ? "Save games with the Favorite button." : "Try another search or change the filters."
+                    text: root.setupRequired ? root.catalogState.configError ? root.catalogState.configError + " My library still works." : "Add igdb_client_id and igdb_client_secret to " + (root.catalogState.configPath || "games.json") + ". My library works without catalogue credentials." : root.hideNsfw && root.allTitles.length ? "Games labelled NSFW, or still being classified, are hidden. Enable NSFW in Filters to show them." : root.mode === "library" ? "Install a Steam game, sign in with legendary auth for Epic, or sign into GOG in Heroic, then refresh your libraries." : root.mode === "favorites" ? "Save games with the Favorite button." : "Try another search or change the filters."
                 }
                 MovieButton {
                     Layout.alignment: Qt.AlignHCenter

@@ -153,6 +153,66 @@ ShellRoot {
             setup=setup,
         )
 
+    def test_saved_view_and_library_warnings_are_inline_without_stopping_paging(self):
+        def setup_warnings(root):
+            setup(root)
+            cloud = root / 'spaces/music/cloud_fixture.py'
+            source = cloud.read_text()
+            browse = 'result=dict(items=items,limit=r.get("offset",0)+50,hasMore=not r.get("query") and r.get("offset",0)<50)'
+            local = 'elif op=="local-refresh":result=dict(version="fixture")'
+            self.assertEqual((source.count(browse), source.count(local)), (1, 1))
+            cloud.write_text(
+                source.replace(
+                    browse,
+                    browse[:-1]
+                    + ',warning="Nextcloud is unavailable. Showing the saved library view.")',
+                ).replace(
+                    local,
+                    local[:-1] + ',warning="2 local audio file(s) could not be read.")',
+                )
+            )
+
+        self.run_qml(
+            """import QtQuick
+import QtTest
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState {id:interactions}
+ SpaceHost {id:host;interactionState:interactions}
+ TestCase {id:input;when:false;parent:host.contentItem}
+ property int step:0
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ Timer {id:driver;interval:100;repeat:false;running:true;onTriggered:{try{
+  if(root.step===0){check(SpaceState.open("music",Quickshell.screens[0]),"Music missing");root.step++;return;}
+  const page=host.currentPage;
+  if(!page||!page.initialized||page.loading)return;
+  const message=find(page,"musicMessage");
+  if(root.step===1){
+   if(page.rows.length!==50||!page.libraryWarning)return;
+   check(page.error===""&&message.visible,"warnings hidden or treated as errors");
+   check(message.text.includes("saved library view")&&message.text.includes("could not be read"),"warning text missing: "+message.text);
+   find(page,"musicList").positionViewAtEnd();root.step++;return;
+  }
+  if(root.step===2){
+   // A persistent library warning must not stop infinite loading.
+   if(page.rows.length<100)return;
+   input.mouseClick(find(host.contentItem,"musicDiscoverTab"));root.step++;return;
+  }
+  if(root.step===3){
+   if(page.section!=="discover")return;
+   check(!message.text.includes("could not be read"),"library warning shown outside My Library");
+   SpaceState.close("music");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(error){console.error("DISPLAY_FAIL",error.message);Qt.quit();}finally{driver.restart();}}}
+ Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",root.step);Qt.quit();}}
+}
+""",
+            setup=setup_warnings,
+        )
+
     def test_information_view_edit_cover_save_and_move_are_separate(self):
         def info_setup(root):
             setup(root)

@@ -46,6 +46,8 @@ class ProviderTests(unittest.TestCase):
         self.addCleanup(network.stop)
         self.config = providers.configuration_file()
         self.config.parent.mkdir(parents=True)
+        # Provider commands require an owner-only pictures.json; rewrites keep the mode.
+        self.config.touch(mode=0o600)
         self.package = self.config.parent / 'plugin with spaces'
         self.package.mkdir()
         (self.package / 'provider.py').write_text(
@@ -88,6 +90,16 @@ class ProviderTests(unittest.TestCase):
             json.loads(line)
             for line in (self.root / 'provider-requests.jsonl').read_text().splitlines()
         ]
+
+    def test_provider_commands_require_an_owner_only_pictures_json(self):
+        self.config.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, 'mode 0600'):
+            providers.configured()
+        self.config.write_text('{}')
+        self.assertEqual(providers.configured(), {})
+        self.config.chmod(0o600)
+        self.configure([self.row])
+        self.assertEqual(list(providers.configured()), ['personal'])
 
     def test_manifest_is_lazy_and_substitution_handles_spaces(self):
         catalog = backend.provider_catalog()

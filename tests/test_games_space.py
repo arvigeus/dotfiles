@@ -704,3 +704,49 @@ ShellRoot {
 }""",
             setup=setup,
         )
+
+    def test_catalogue_warnings_are_inline_and_store_messages_stay_on_stores(self):
+        def setup_warnings(root):
+            setup(root)
+            worker = root / 'spaces/games/backend.py'
+            fixture = """    original_library = GamesBackend.library_games
+    GamesBackend.library_games = lambda self, request: dict(original_library(self, request), warning="Steam: Fixture store message.")
+    GamesBackend.browse = lambda self, request: dict(items=[], next=None, setupRequired=False, warning="Fixture catalogue is offline. Showing saved results.")
+"""
+            source = worker.read_text()
+            marker = '    backend = GamesBackend()\n'
+            self.assertEqual(source.count(marker), 1)
+            worker.write_text(source.replace(marker, fixture + marker))
+
+        self.run_qml(
+            """import QtQuick
+import QtTest
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState {id:interactions}
+ SpaceHost {id:host;interactionState:interactions}
+ TestCase {id:input;when:false;parent:host.contentItem}
+ property int step:0
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ Timer {id:driver;interval:80;running:true;repeat:false;onTriggered:{try{
+  if(root.step===0){check(SpaceState.open("games",Quickshell.screens[0]),"cannot open Games");root.step++;return;}
+  const page=host.currentPage;if(!page||page.loading||page.initializing)return;
+  if(root.step===1){
+   if(!page.titles.length)return;
+   check(page.mode==="library"&&page.error==="","store message took a content row");
+   input.mouseClick(find(host.contentItem,"discoverTab"));root.step++;return;
+  }
+  if(root.step===2){
+   if(page.mode!=="discover")return;
+   check(page.error.includes("Showing saved results"),"offline catalogue was not flagged: "+page.error);
+   SpaceState.close("games");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(error){console.error("DISPLAY_FAIL",error.message);Qt.quit();}finally{driver.restart();}}}
+ Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",root.step);Qt.quit();}}
+}
+""",
+            setup=setup_warnings,
+        )

@@ -231,6 +231,11 @@ the newest responses apply. Saving a store match keeps the selection, and a
 refreshed listing keeps a retained selection in view instead of scrolling back to
 the start.
 
+Following the shared header contract, a Browse/Favorites warning (saved results
+shown offline or without credentials) appears inline as in Movies and Books.
+My Library store problems stay on each store's status tooltip, the setup hint has
+its own empty state, and launcher confirmations are routine and not shown.
+
 Hidden pages stop selection debounce, pagination, search and content
 classification. In-flight bounded reads may finish without activating the page.
 Backdrops/logos stop presenting; popups close. Active torrent imports keep their
@@ -251,7 +256,12 @@ User configuration and state:
 - `~/.local/share/quickshell/desktop/spaces/games/library.sqlite`
 
 The JSON game's keys are `igdb_client_id`, `igdb_client_secret`, optional
-`steam_api_key`, `steam_id` and `proton_path`. qBittorrent connection settings
+`steam_api_key`, `steam_id` and `proton_path`. With any credential or
+`proton_path` set, the file (or the private-checkout file it links to) must be
+owned by the user with mode 0600, as Movies requires for `media.json`;
+otherwise the whole file is unused and `configError` replaces the setup hint.
+The reader keys its cache on mode and owner as well as mtime, so `chmod` takes
+effect at once. qBittorrent connection settings
 are shared by all Spaces at `~/.config/quickshell/desktop/integrations/torrents.json`
 ; see [integration ownership](../../integrations/ARCHITECTURE.md#qbittorrent).
 Missing keys disable only the

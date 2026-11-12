@@ -1605,8 +1605,7 @@ class TorrentBackend:
             except BooksError as error:
                 raise TorrentError(str(error)) from None
             finally:
-                catalogue.downloads.stop()
-                catalogue.commands.close()
+                catalogue.close()
         if item['kind'] not in ('movie', 'tv'):
             return []
         from spaces.movies.backend import Backend

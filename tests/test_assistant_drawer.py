@@ -1607,7 +1607,7 @@ ShellRoot {
   if(stage===0){
    if(!AssistantService.checked||AssistantService.checking)return;
    check(AssistantService.online&&AssistantService.models.length===3,"existing server status missing");
-   check(find(header.item,"assistantOpenApp").enabled&&find(header.item,"assistantServer").text==="Stop Lemonade","header service control missing");
+   check(find(header.item,"assistantOpenApp").enabled&&find(header.item,"assistantOpenApp").iconName==="citrus"&&find(header.item,"assistantServer").text==="Stop Lemonade","header service control missing");
    check(!find(page.item.optionsPopup.contentItem,"assistantServer"),"options duplicates service control");
    check(!find(page.item,"assistantStart")&&!find(page.item,"assistantManageModels"),"duplicate empty-state actions");
    check(AssistantService.selectedModel==="local","loaded model not selected");

@@ -23,6 +23,7 @@ from functools import cached_property
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from integrations import private
 from spaces.games import store_metadata
 from spaces.games.igdb import Client as IGDBClient
 from spaces.games.igdb import normalize as normalize_igdb_game
@@ -37,6 +38,13 @@ CONFIG = (
 DATA = (
     Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share'))
     / 'quickshell/desktop/spaces/games'
+)
+# Credentials and the Proton that runs games need a private games.json.
+SENSITIVE_SETTINGS = (
+    'igdb_client_id',
+    'igdb_client_secret',
+    'steam_api_key',
+    'proton_path',
 )
 PROTONDB_SUMMARY = 'https://www.protondb.com/api/v1/reports/summaries/{}.json'
 PROTONDB_PAGE = 'https://www.protondb.com/app/{}'
@@ -784,7 +792,7 @@ class GamesBackend:
         self._config_lock = threading.Lock()
         self._config = {}
         self._config_error = ''
-        self._config_mtime = None
+        self._config_version = None
         self._library_lock = threading.Lock()
         self._library_snapshot = None
         self._library_updated = 0.0
@@ -831,29 +839,51 @@ class GamesBackend:
             connection.close()
 
     def config(self, force=False):
+        """games.json, which may link into a private checkout; reread on change.
+
+        Credentials and proton_path make the whole file owner-only (0600), like
+        Movies' media.json; a file others can access is not used.
+        """
         with self._config_lock:
             try:
-                mtime = self.config_path.stat().st_mtime_ns
+                info = self.config_path.stat()
+                # chmod changes neither mtime nor size, so mode and owner count too.
+                version = (
+                    info.st_ino,
+                    info.st_size,
+                    info.st_mtime_ns,
+                    info.st_mode,
+                    info.st_uid,
+                )
             except OSError:
-                mtime = None
-            if force or mtime != self._config_mtime:
+                version = None
+            if force or version != self._config_version:
                 try:
-                    raw = (
-                        self.config_path.read_text(encoding='utf-8')
-                        if mtime is not None
-                        else '{}'
-                    )
-                    if len(raw) > 65536:
-                        raise ValueError('configuration file is too large')
-                    loaded = json.loads(raw)
+                    loaded, opened = {}, None
+                    if version is not None:
+                        text, opened = private.read(
+                            self.config_path, follow_symlinks=True
+                        )
+                        loaded = json.loads(text)
                     if not isinstance(loaded, dict):
                         raise ValueError('configuration root must be an object')
+                    if (
+                        opened is not None
+                        and any(loaded.get(key) for key in SENSITIVE_SETTINGS)
+                        and not private.owner_only(opened)
+                    ):
+                        raise ValueError(
+                            'games.json holds credentials or a Proton path: '
+                            'it must be owned by you with mode 0600.'
+                        )
                     self._config = loaded
                     self._config_error = ''
+                except FileNotFoundError:
+                    self._config, self._config_error = {}, ''
                 except (OSError, UnicodeError, ValueError) as error:
                     self._config = {}
                     self._config_error = str(error)
-                self._config_mtime = mtime
+                self._config_version = version
             return self._config
 
     def config_state(self):
@@ -865,7 +895,8 @@ class GamesBackend:
             'configError': self._config_error,
             'message': ''
             if valid
-            else 'Add igdb_client_id and igdb_client_secret to games.json to browse games.',
+            else self._config_error
+            or 'Add igdb_client_id and igdb_client_secret to games.json to browse games.',
         }
 
     @staticmethod
@@ -1822,6 +1853,7 @@ class GamesBackend:
                 'next': None,
                 'setupRequired': True,
                 'warning': catalog['message'],
+                'catalog': catalog,
             }
         try:
             raw_games = self.catalogue.browse(query, filter_params, offset, PAGE_SIZE)

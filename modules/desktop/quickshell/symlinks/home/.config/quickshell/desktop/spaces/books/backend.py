@@ -9,6 +9,7 @@ import re
 import signal
 import shutil
 import sqlite3
+import stat
 import sys
 import tempfile
 import threading
@@ -23,8 +24,14 @@ from functools import cached_property
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from integrations import private
 from spaces.books.providers import CommandProviders, normalize_result
-from spaces.movies.local import BOOK_EXTENSIONS, LocalLibrary, destination
+from spaces.movies.local import (
+    BOOK_EXTENSIONS,
+    LocalLibrary,
+    cleanup_transfers,
+    destination,
+)
 from spaces.books.jobs import Jobs, check_cancelled, progress
 from spaces.pictures.provider_plugins import ProviderError, configured_providers
 from spaces.movies.worker import serve
@@ -50,6 +57,11 @@ SEARCH_TTL = 24 * 60 * 60
 DETAIL_TTL = 30 * 24 * 60 * 60
 CACHE_RETENTION = 90 * 24 * 60 * 60
 TRANSFER_DEADLINE = 30 * 60
+# Directories older than any live transfer were left by a killed worker.
+STAGING_GRACE = 10 * 60
+EDITION_MATCH_PAGES = 3
+ANONYMOUS_INTERVAL = 1.02
+IDENTIFIED_INTERVAL = 0.36
 FIELDS = ','.join(
     (
         'key',
@@ -70,6 +82,9 @@ FIELDS = ','.join(
 )
 WORK_ID = re.compile(r'^(?:/works/)?(OL\d+W)$')
 AUTHOR_ID = re.compile(r'^(?:/authors/)?(OL\d+A)$')
+# Pacing is per process: the torrent worker builds a backend for each scan lookup.
+_pace_lock = threading.Lock()
+_last_request = 0.0
 
 
 class BooksError(Exception):
@@ -86,6 +101,29 @@ def _text(value):
 
 def _items(value):
     return value if isinstance(value, list) else []
+
+
+def _image_id(*values):
+    """The first real Open Library image ID; the API marks removed images -1."""
+    for value in values:
+        if isinstance(value, bool):
+            continue
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            continue
+        if number > 0:
+            return str(number)
+    return ''
+
+
+def _pace(interval):
+    global _last_request
+    with _pace_lock:
+        wait = _last_request + interval - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        _last_request = time.monotonic()
 
 
 def _merge_authors(*groups):
@@ -151,8 +189,8 @@ def author_id(value):
     return match.group(1)
 
 
-def cover_urls(cover_id=None, edition_id=''):
-    if cover_id not in (None, ''):
+def cover_urls(cover_id='', edition_id=''):
+    if cover_id:
         key, value = 'id', str(cover_id)
     elif edition_id:
         key, value = 'olid', str(edition_id)
@@ -188,10 +226,9 @@ def normalize_work(doc):
         if isinstance(author, dict):
             authors = _merge_authors(authors, [author])
 
-    cover_id = doc.get('cover_i', doc.get('coverId'))
-    if cover_id in (None, ''):
-        covers = _items(doc.get('covers'))
-        cover_id = next((cover for cover in covers if cover not in (None, '')), None)
+    cover_id = _image_id(
+        doc.get('cover_i'), doc.get('coverId'), *_items(doc.get('covers'))
+    )
     cover_edition = doc.get('cover_edition_key') or doc.get('coverEditionKey') or ''
     small, large = cover_urls(cover_id, cover_edition)
     subjects = [
@@ -237,10 +274,8 @@ def normalize_work(doc):
         'title': _text(doc.get('title')) or 'Untitled work',
         'authors': authors[:12],
         'firstPublishYear': first_year,
-        'coverId': str(cover_id) if cover_id not in (None, '') else '',
-        'coverEditionKey': str(cover_edition)
-        if cover_edition
-        else str(doc.get('coverEditionKey') or ''),
+        'coverId': cover_id,
+        'coverEditionKey': str(cover_edition),
         'coverSmall': small or str(doc.get('coverSmall') or ''),
         'coverLarge': large or str(doc.get('coverLarge') or ''),
         'subjects': subjects[:12],
@@ -264,10 +299,7 @@ def normalize_edition(doc):
     match = re.fullmatch(r'(?:/books/)?(OL\d+M)', key)
     if not match:
         return None
-    cover_id = next(
-        (cover for cover in _items(doc.get('covers')) if cover not in (None, '')), None
-    )
-    cover, _ = cover_urls(cover_id)
+    cover, _ = cover_urls(_image_id(*_items(doc.get('covers'))))
     languages = []
     for language in _items(doc.get('languages')):
         code = language.get('key', '') if isinstance(language, dict) else language
@@ -308,10 +340,12 @@ def normalize_edition(doc):
 def normalize_author(doc, requested_id):
     doc = doc if isinstance(doc, dict) else {}
     identifier = author_id(requested_id)
-    photos = _items(doc.get('photos'))
-    image = ''
-    if photos:
-        image = f'https://covers.openlibrary.org/a/id/{urllib.parse.quote(str(photos[0]), safe="")}-M.jpg?default=false'
+    photo = _image_id(*_items(doc.get('photos')))
+    image = (
+        f'https://covers.openlibrary.org/a/id/{photo}-M.jpg?default=false'
+        if photo
+        else ''
+    )
     return {
         'id': identifier,
         'name': _text(doc.get('name')) or 'Unknown author',
@@ -335,8 +369,6 @@ class BooksBackend:
         self._staging_lock = threading.Lock()
         self._staging = set()
         self._write_lock = threading.RLock()
-        self._rate_lock = threading.Lock()
-        self._last_request = 0.0
         self._request_override = request
         self.commands = CommandProviders()
         self.downloads = Jobs(errors=(BooksError, ValueError, OSError))
@@ -363,20 +395,34 @@ class BooksBackend:
         finally:
             connection.close()
 
-    def config(self):
-        if not self.config_path.exists():
-            return {}
+    def _settings(self):
+        """books.json and the stat of the opened file; it may link elsewhere."""
         try:
-            config = json.loads(self.config_path.read_text())
-        except (OSError, ValueError):
+            text, info = private.read(self.config_path, follow_symlinks=True)
+        except FileNotFoundError:
+            return {}, None
+        except private.UnreadableFile as error:
+            raise BooksError(str(error)) from None
+        try:
+            config = json.loads(text)
+        except ValueError:
             raise BooksError('Cannot read books.json. Check the JSON syntax.') from None
         if not isinstance(config, dict):
             raise BooksError('books.json must contain a JSON object.')
-        return config
+        return config, info
+
+    def config(self):
+        return self._settings()[0]
 
     def providers(self):
+        config, info = self._settings()
+        # Provider entries execute commands and may carry their secrets.
+        if config.get('providers') and not private.owner_only(info):
+            raise BooksError(
+                'books.json runs provider commands: it must be owned by you with mode 0600.'
+            )
         try:
-            return configured_providers(self.config(), self.config_path.parent)
+            return configured_providers(config, self.config_path.parent)
         except ProviderError as error:
             raise BooksError(str(error)) from None
 
@@ -389,25 +435,21 @@ class BooksBackend:
             )
         return contact.strip()
 
-    def _request_interval(self):
-        return 0.36 if self.contact() else 1.02
+    def _request_interval(self, contact=None):
+        contact = self.contact() if contact is None else contact
+        return IDENTIFIED_INTERVAL if contact else ANONYMOUS_INTERVAL
 
     def request(self, path, params=None):
         if self._request_override:
             return self._request_override(path, params or {})
-        interval = self._request_interval()
-        with self._rate_lock:
-            wait = self._last_request + interval - time.monotonic()
-            if wait > 0:
-                time.sleep(wait)
-            self._last_request = time.monotonic()
+        contact = self.contact()
+        _pace(self._request_interval(contact))
         url = BASE + path
         if params:
             url += '?' + urllib.parse.urlencode(
                 {key: value for key, value in params.items() if value is not None},
                 doseq=True,
             )
-        contact = self.contact()
         user_agent = 'Desktop Books/1.0' + (f' ({contact})' if contact else '')
         request = urllib.request.Request(
             url,
@@ -465,10 +507,13 @@ class BooksBackend:
         return value
 
     def _stored_favorites(self):
+        # updated is when a Work was added; hydration keeps it and the row.
         with self.db(self.data_db) as db:
-            rows = db.execute('SELECT work_id,value FROM favorites').fetchall()
+            rows = db.execute(
+                'SELECT value FROM favorites ORDER BY updated, rowid'
+            ).fetchall()
         records = []
-        for _identifier, payload in rows:
+        for (payload,) in rows:
             try:
                 book = json.loads(payload)
             except ValueError:
@@ -485,7 +530,24 @@ class BooksBackend:
             ).fetchone()
         return bool(row)
 
-    def _save_favorite(self, book, favorite):
+    def _favorite_ids(self):
+        with self.db(self.data_db) as db:
+            return {row[0] for row in db.execute('SELECT work_id FROM favorites')}
+
+    def _mark_favorites(self, items):
+        """Markers follow saved favorites, never cached pages or imported copies."""
+        favorites = self._favorite_ids()
+        return [
+            book | {'favorite': book.get('id') in favorites}
+            for book in items
+            if isinstance(book, dict)
+        ]
+
+    def _marked(self, result):
+        return result | {'items': self._mark_favorites(result.get('items', []))}
+
+    def _save_favorite(self, book, favorite, *, refresh=False):
+        """Save or remove a favorite; refresh updates only one that still exists."""
         normalized = normalize_work(book)
         if not normalized:
             raise BooksError(
@@ -499,6 +561,8 @@ class BooksBackend:
             row = db.execute(
                 'SELECT value FROM favorites WHERE work_id=?', (identifier,)
             ).fetchone()
+            if refresh and not row:
+                return {'favorite': False}
             if row:
                 try:
                     normalized = merge_book(json.loads(row[0]), normalized)
@@ -507,7 +571,8 @@ class BooksBackend:
             if favorite:
                 normalized['favorite'] = True
                 db.execute(
-                    'INSERT OR REPLACE INTO favorites VALUES (?,?,?)',
+                    'INSERT INTO favorites VALUES (?,?,?) '
+                    'ON CONFLICT(work_id) DO UPDATE SET value=excluded.value',
                     (
                         identifier,
                         json.dumps(normalized, ensure_ascii=False),
@@ -542,21 +607,20 @@ class BooksBackend:
             return {'items': items, 'next': '', 'total': len(items)}
 
         key = browse_cache_key(query, filters, offset)
-        ttl = (
-            SEARCH_TTL
-            if query or any(value for value in filters.values())
-            else CATALOGUE_TTL
+        # Sort orders alone are still the changing discovery catalogue.
+        searching = query or any(
+            value for name, value in filters.items() if name != 'sort'
         )
-        cached = self.get_cache(key, ttl)
+        cached = self.get_cache(key, SEARCH_TTL if searching else CATALOGUE_TTL)
         if cached and not request.get('refresh'):
-            return cached
+            return self._marked(cached)
         stale = self.get_cache(key)
         try:
             result = self._fetch_browse(query, filters, offset)
-            return self.put_cache(key, result)
+            return self._marked(self.put_cache(key, result))
         except BooksError:
             if stale:
-                return stale | {
+                return self._marked(stale) | {
                     'warning': 'Open Library is temporarily unavailable. Showing saved results.'
                 }
             raise
@@ -632,7 +696,8 @@ class BooksBackend:
             request.get('filters') if isinstance(request.get('filters'), dict) else {}
         )
         offset = max(0, int(request.get('offset') or 0))
-        return self.get_cache(browse_cache_key(query, filters, offset))
+        cached = self.get_cache(browse_cache_key(query, filters, offset))
+        return self._marked(cached) if isinstance(cached, dict) else None
 
     def details(self, request):
         selected = request.get('book') or {}
@@ -647,13 +712,9 @@ class BooksBackend:
             details = normalize_work(payload | {'key': identifier}) or {}
             details['description'] = _text(payload.get('description'))
             details['first_sentence'] = _text(payload.get('first_sentence'))
-            details['workType'] = _text(
-                (payload.get('type') or {}).get('key', '')
-            ).rsplit('/', 1)[-1]
             details = merge_book(normalize_work(selected) or {}, details)
             result = self.put_cache(key, details)
-            if self._is_favorite(identifier):
-                self._save_favorite(result, True)
+            self._save_favorite(result, True, refresh=True)
             return result
         except BooksError:
             if stale:
@@ -694,10 +755,12 @@ class BooksBackend:
             name = _text(known.get('name')) or _text(person.get('name'))
             context = [{'id': identifier, 'name': name}]
             return result | {
-                'items': [
-                    book | {'authors': _merge_authors(book.get('authors'), context)}
-                    for book in result.get('items', [])
-                ]
+                'items': self._mark_favorites(
+                    [
+                        book | {'authors': _merge_authors(book.get('authors'), context)}
+                        for book in result.get('items', [])
+                    ]
+                )
             }
 
         key = f'author-works:{identifier}:{offset}'
@@ -723,15 +786,15 @@ class BooksBackend:
             count = len(rows) if isinstance(rows, list) else 0
             has_more = offset + count < size if size else count >= PAGE_SIZE
             next_offset = offset + count if count and has_more else None
-            return self.put_cache(
-                key,
-                with_author(
+            return with_author(
+                self.put_cache(
+                    key,
                     {
                         'items': items,
                         'next': str(next_offset) if next_offset is not None else '',
                         'total': size,
-                    }
-                ),
+                    },
+                )
             )
         except BooksError:
             if stale:
@@ -831,17 +894,19 @@ class BooksBackend:
             'warning': ' '.join(error for _, errors in results for error in errors),
         }
 
-    def provider_offers(self, request):
-        """Match only the selected Work, never discovery pages or provider IDs."""
-        identifier = selected_work_id(request)
-        providers = self.providers()
-        if not providers:
-            return {'items': [], 'warning': ''}
-        book = self.details({'book': request['book']})
+    def _offer_matcher(self, selected):
+        """The selected Work's details and a strict matcher for provider offers.
+
+        Edition ISBNs decide whenever any are known; otherwise an offer needs the
+        exact normalized title and a shared author. Read online and downloads use
+        the same check. Lookup reads a bounded number of edition pages so Works
+        with thousands of editions stay interactive.
+        """
+        identifier = selected_work_id({'book': selected})
+        book = self.details({'book': selected})
         isbns, warnings = set(), []
         offset = 0
-        # Bound interactive edition lookup for Works with thousands of editions.
-        for _ in range(3):
+        for _ in range(EDITION_MATCH_PAGES):
             editions = self.editions({'book': {'id': identifier}, 'offset': offset})
             for edition in editions['items']:
                 isbns.update(normalized_isbns(edition.get('isbn')))
@@ -852,7 +917,10 @@ class BooksBackend:
                 break
             offset = int(next_offset)
         else:
-            warnings.append('Matching is limited to the first 72 editions.')
+            warnings.append(
+                'Matching is limited to the first '
+                f'{EDITION_MATCH_PAGES * EDITION_PAGE_SIZE} editions.'
+            )
 
         title = normalized_name(book.get('title'))
         authors = {
@@ -873,6 +941,15 @@ class BooksBackend:
                 return 'title-author' if authors.intersection(names) else ''
             return ''
 
+        return book, isbns, match, warnings
+
+    def provider_offers(self, request):
+        """Match only the selected Work, never discovery pages or provider IDs."""
+        selected_work_id(request)
+        providers = self.providers()
+        if not providers:
+            return {'items': [], 'warning': ''}
+        book, isbns, match, warnings = self._offer_matcher(request['book'])
         query = ' '.join(
             [
                 book['title'],
@@ -908,48 +985,22 @@ class BooksBackend:
             raise BooksError(f'{provider["name"]}: {error}') from None
 
     def download_title(self, offer, selected):
-        """Only verified matches inherit a Work's identity and library path."""
-        if isinstance(selected, dict) and selected.get('source') != 'provider':
-            work = normalize_work(selected)
-            if work:
-                with self.db(self.cache_db) as db:
-                    pages = db.execute(
-                        'SELECT value FROM cache WHERE key LIKE ?',
-                        ('editions:' + work['id'] + ':%',),
-                    ).fetchall()
-                known_isbns, complete = set(), False
-                for (value,) in pages:
-                    page = json.loads(value)
-                    known_isbns.update(
-                        isbn
-                        for edition in page.get('items', [])
-                        for isbn in normalized_isbns(edition.get('isbn'))
-                    )
-                    complete = complete or not page.get('next')
-                isbn_match = bool(
-                    known_isbns.intersection(normalized_isbns(offer.get('identifiers')))
-                )
-                name_match = (
-                    complete
-                    and not known_isbns
-                    and normalized_name(work['title'])
-                    == normalized_name(offer['title'])
-                    and bool(
-                        {
-                            normalized_name(a['name'])
-                            for a in work['authors']
-                            if a.get('name')
-                        }.intersection(normalized_name(a) for a in offer['authors'])
-                    )
-                )
-                if isbn_match or name_match:
-                    return work | {
-                        'kind': 'book',
-                        'year': work.get('firstPublishYear'),
-                        'author': next(
-                            (a['name'] for a in work['authors'] if a.get('name')), ''
-                        ),
-                    }
+        """Only an offer matching the selected Work inherits its identity and path."""
+        work = normalize_work(selected) if isinstance(selected, dict) else None
+        if work:
+            try:
+                match = self._offer_matcher(work)[2]
+            except BooksError:
+                # Without catalogue evidence the offer keeps its own identity.
+                match = None
+            if match and match(offer):
+                return work | {
+                    'kind': 'book',
+                    'year': work.get('firstPublishYear'),
+                    'author': next(
+                        (a['name'] for a in work['authors'] if a.get('name')), ''
+                    ),
+                }
 
         # Store a separate local identity, never an external ID in the Work namespace.
         key = json.dumps(
@@ -985,9 +1036,11 @@ class BooksBackend:
             offer = normalize_result(row, provider)
         except ProviderError as error:
             raise BooksError(str(error)) from None
-        title = self.download_title(offer, request.get('book'))
+        selected = request.get('book')
+        # Matching may read Open Library, so it runs in the transfer, not the control lane.
         return self.downloads.start(
-            title['title'], lambda: self.download_provider_book(provider, offer, title)
+            offer['title'],
+            lambda: self.download_provider_book(provider, offer, selected),
         )
 
     @contextmanager
@@ -1005,16 +1058,17 @@ class BooksBackend:
                 shutil.rmtree(temporary, ignore_errors=True)
 
     def close(self):
+        """Release this instance's transfers, provider commands and staging."""
         self.downloads.stop()
         self.commands.close()
         with self._staging_lock:
             for temporary in self._staging:
                 shutil.rmtree(temporary, ignore_errors=True)
-        from spaces.movies.local import cleanup_transfers
 
-        cleanup_transfers()
-
-    def download_provider_book(self, provider, offer, title):
+    def download_provider_book(self, provider, offer, selected):
+        check_cancelled()
+        progress(detail='Matching the catalogue…')
+        title = self.download_title(offer, selected)
         check_cancelled()
         progress(detail='Resolving book download…')
         try:
@@ -1111,7 +1165,7 @@ class BooksBackend:
         if op == 'providerDownload':
             return self.queue_provider_download(request)
         if op == 'local_list':
-            return self.local.list('book')
+            return self._mark_favorites(self.local.list('book'))
         if op == 'local_files':
             return self.local.files(request['title'])
         if op == 'init':
@@ -1234,14 +1288,43 @@ def browse_cache_key(query, filters, offset):
     )
 
 
+def sweep_staging(data):
+    """Remove download staging that a killed worker could not clean up."""
+    directory = Path(data) / 'downloads'
+    cutoff = time.time() - TRANSFER_DEADLINE - STAGING_GRACE
+    # Best effort: an unreadable staging area must not stop the worker starting.
+    try:
+        entries = list(directory.iterdir())
+    except OSError:
+        return
+    for entry in entries:
+        try:
+            info = entry.lstat()
+        except OSError:
+            continue
+        # Only mkdtemp directories; live ones are younger than any transfer.
+        if (
+            entry.name.startswith('tmp')
+            and stat.S_ISDIR(info.st_mode)
+            and info.st_mtime < cutoff
+        ):
+            shutil.rmtree(entry, ignore_errors=True)
+
+
 def main():
     backend = BooksBackend()
+    sweep_staging(backend.data)
+
+    def release():
+        backend.close()
+        # Process-wide: import copies in progress beside library destinations.
+        cleanup_transfers()
 
     def stop(_signal, _frame):
         # A blocked network read must not retain a closed Space indefinitely.
         signal.signal(signal.SIGALRM, lambda *_: os._exit(0))
         signal.alarm(2)
-        backend.close()
+        release()
         raise SystemExit(0)
 
     signal.signal(signal.SIGTERM, stop)
@@ -1263,7 +1346,7 @@ def main():
             controls=('save', 'providerDownload', 'cancel_job'),
         )
     finally:
-        backend.close()
+        release()
 
 
 if __name__ == '__main__':

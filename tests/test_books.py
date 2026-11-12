@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 import tempfile
 import time
@@ -342,6 +343,154 @@ class BooksBackendTests(unittest.TestCase):
         self.assertEqual(edition['pages'], 312)
         self.assertEqual(edition['isbn'], ['9780000000001', '0000000000'])
         self.assertNotIn('authors', edition)
+
+    def test_removed_cover_and_photo_placeholders_do_not_become_image_urls(self):
+        work = books.normalize_work({'key': '/works/OL1W', 'covers': [-1, 55]})
+        self.assertEqual(work['coverId'], '55')
+        self.assertIn('/b/id/55-M.jpg', work['coverSmall'])
+        for doc in ({'covers': [-1]}, {'cover_i': -1}, {'cover_i': True}):
+            work = books.normalize_work({'key': '/works/OL1W', **doc})
+            self.assertEqual((work['coverId'], work['coverSmall']), ('', ''))
+        edition = books.normalize_edition({'key': '/books/OL1M', 'covers': [-1]})
+        self.assertEqual(edition['cover'], '')
+        self.assertEqual(books.normalize_author({'photos': [-1]}, 'OL1A')['image'], '')
+
+    def test_explicit_sort_alone_keeps_the_discovery_catalogue_ttl(self):
+        response = {'num_found': 0, 'docs': []}
+        request = {'filters': {'sort': 'trending', 'subject': '', 'language': ''}}
+        with patch.object(self.backend, 'request', return_value=response) as api:
+            self.backend.browse(request)
+        key = books.browse_cache_key('', request['filters'], 0)
+        with self.backend.db(self.backend.cache_db) as db:
+            db.execute(
+                'UPDATE cache SET updated=? WHERE key=?',
+                (time.time() - books.CATALOGUE_TTL - 5, key),
+            )
+        with patch.object(self.backend, 'request', return_value=response) as api:
+            self.backend.browse(request)
+        self.assertEqual(api.call_count, 1)
+
+    def test_detail_hydration_keeps_favorite_order_and_never_recreates_one(self):
+        for index in (1, 2, 3):
+            self.backend._save_favorite(
+                {'id': f'OL{index}W', 'title': f'Book {index}'}, True
+            )
+
+        def listed():
+            items = self.backend.browse({'favorites': True})['items']
+            return [book['id'] for book in items]
+
+        self.assertEqual(listed(), ['OL1W', 'OL2W', 'OL3W'])
+        work = {'key': '/works/OL1W', 'title': 'Hydrated'}
+        with patch.object(self.backend, 'request', return_value=work):
+            self.backend.details({'book': {'id': 'OL1W'}, 'refresh': True})
+            self.assertEqual(listed(), ['OL1W', 'OL2W', 'OL3W'])
+            self.assertEqual(
+                self.backend.browse({'favorites': True})['items'][0]['title'],
+                'Hydrated',
+            )
+            # A removal that lands while details are loading stays removed.
+            self.backend.handle(
+                {'op': 'save', 'book': {'id': 'OL1W'}, 'favorite': False}
+            )
+            self.backend.details({'book': {'id': 'OL1W'}, 'refresh': True})
+        self.assertEqual(listed(), ['OL2W', 'OL3W'])
+        self.assertEqual(
+            self.backend._save_favorite({'id': 'OL1W'}, True, refresh=True),
+            {'favorite': False},
+        )
+        self.assertEqual(listed(), ['OL2W', 'OL3W'])
+
+    def test_favorite_markers_follow_saved_state_not_cached_or_imported_copies(self):
+        payload = self.fixture('search.json')
+        self.backend.handle({'op': 'save', 'book': self.book, 'favorite': True})
+        with patch.object(self.backend, 'request', return_value=payload):
+            page = self.backend.browse({})
+        self.assertEqual(
+            {book['id']: book['favorite'] for book in page['items']},
+            {'OL100W': True, 'OL101W': False},
+        )
+        self.assertEqual(self.backend.snapshot({})['items'][0]['favorite'], True)
+        with self.backend.db(self.backend.cache_db) as db:
+            cached = db.execute('SELECT value FROM cache').fetchall()
+        self.assertNotIn('"favorite"', str(cached))
+        self.backend.put_cache(
+            'author-works:OL1A:0', {'items': [{'id': 'OL100W'}], 'next': ''}
+        )
+        works = self.backend.author_works({'author': {'id': 'OL1A', 'name': 'Ada'}})
+        self.assertTrue(works['items'][0]['favorite'])
+
+        documents = Path(self.temp.name) / 'documents'
+        source = Path(self.temp.name) / 'book.epub'
+        source.write_bytes(b'epub')
+        with patch.dict(books.os.environ, {'XDG_DOCUMENTS_DIR': str(documents)}):
+            # An import title may carry the selection's favorite flag of that moment.
+            self.backend.local.add(
+                self.book | {'kind': 'book', 'author': 'Ada', 'favorite': True}, source
+            )
+            self.backend.handle({'op': 'save', 'book': self.book, 'favorite': False})
+            local = self.backend.handle({'op': 'local_list'})
+        self.assertEqual([book['favorite'] for book in local], [False])
+
+    def test_pacing_is_shared_by_backends_in_one_process(self):
+        other = books.BooksBackend(
+            self.backend.config_path, self.backend.data, self.backend.cache
+        )
+        self.addCleanup(other.close)
+        self.addCleanup(self.backend.close)
+
+        class Response(io.BytesIO):
+            def __exit__(self, *_):
+                return False
+
+        with (
+            patch.object(
+                books.urllib.request,
+                'urlopen',
+                side_effect=lambda *_a, **_k: Response(b'{}'),
+            ),
+            patch.object(books.time, 'sleep') as sleep,
+        ):
+            self.backend.request('/works/OL1W.json')
+            other.request('/works/OL2W.json')
+        self.assertEqual(sleep.call_count, 1)
+        self.assertGreater(sleep.call_args.args[0], books.ANONYMOUS_INTERVAL - 0.5)
+
+    def test_close_is_instance_scoped_and_startup_sweeps_only_stale_staging(self):
+        from spaces.movies.local import transfer
+
+        directory = Path(self.temp.name) / 'library'
+        directory.mkdir()
+        with transfer(directory, '.import-') as in_flight:
+            self.backend.close()
+            # Another backend's import copy in this process is not this instance's.
+            self.assertTrue(in_flight.exists())
+
+        staging = self.backend.data / 'downloads'
+        staging.mkdir()
+        old = time.time() - books.TRANSFER_DEADLINE - books.STAGING_GRACE - 60
+        stale, live, foreign = (
+            staging / 'tmpstale',
+            staging / 'tmplive',
+            staging / 'kept',
+        )
+        for path in (stale, live, foreign):
+            path.mkdir()
+            (path / 'partial.epub').write_bytes(b'partial')
+        outside = Path(self.temp.name) / 'outside'
+        outside.mkdir()
+        (outside / 'keep.epub').write_bytes(b'keep')
+        link = staging / 'tmplink'
+        link.symlink_to(outside, target_is_directory=True)
+        for path in (stale, foreign, outside):
+            books.os.utime(path, (old, old))
+        books.os.utime(link, (old, old), follow_symlinks=False)
+        books.sweep_staging(self.backend.data)
+        self.assertEqual(
+            sorted(path.name for path in staging.iterdir()),
+            ['kept', 'tmplink', 'tmplive'],
+        )
+        self.assertTrue((outside / 'keep.epub').is_file())
 
     def test_provider_errors_are_concise_and_do_not_echo_response_body(self):
         with patch.object(

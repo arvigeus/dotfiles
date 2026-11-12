@@ -1,5 +1,6 @@
 """Books uses production workers, controls and the retained fullscreen host."""
 
+import json
 import sys
 import unittest
 
@@ -12,6 +13,17 @@ from spaces.books.backend import BooksBackend
 
 def setup(root):
     movies_setup(root)
+    # qBittorrent/scan stub: one unidentified file, never a real Documents folder.
+    (root / 'spaces/movies/torrent_backend.py').write_text("""import json,sys,time
+for line in sys.stdin:
+ r=json.loads(line);op=r['op']
+ if op=='scan':
+  assert not r.get('path') and r.get('kind')=='book',r
+  time.sleep(.15)
+  result=dict(imported=[],review=[dict(token='unknown',path='/Books/Unknown.epub',guess=dict(title='Unknown'),reason='Choose the matching catalogue title.')],limited=False)
+ else:result=[]
+ print(json.dumps(dict(id=r['id'],result=result)),flush=True)
+""")
     backend = BooksBackend(
         root / 'config/quickshell/desktop/spaces/books/books.json',
         root / 'data/quickshell/desktop/spaces/books',
@@ -24,6 +36,7 @@ def setup(root):
         firstPublishYear=2024,
         editionCount=2,
         languages=['eng'],
+        subjects=['Computing'],
         description='A saved synopsis',
         ratingAverage=4.2,
         ratingCount=12,
@@ -42,8 +55,7 @@ def setup(root):
         'author:OL1A',
         dict(id='OL1A', name='Fixture author', biography='A saved biography'),
     )
-    backend.downloads.stop()
-    backend.commands.close()
+    backend.close()
     path = root / 'spaces/books/backend.py'
     source = path.read_text()
     # Use the real request/response path and database without contacting any provider.
@@ -71,6 +83,15 @@ def setup(root):
             '    backend = BooksBackend()\n', fixture + '    backend = BooksBackend()\n'
         )
     )
+
+
+def setup_invalid_providers(root):
+    setup(root)
+    config = root / 'config/quickshell/desktop/spaces/books/books.json'
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.touch(mode=0o600)
+    provider = dict(name='Duplicate', command=['false'])
+    config.write_text(json.dumps(dict(providers=[provider, provider])))
 
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
@@ -151,10 +172,27 @@ ShellRoot {
    click(find(host.contentItem,"booksLibraryTab"));root.step=20;return;
   }
   if(root.step===20){
-   click(find(host.contentItem,"booksRefreshButton"));input.wait(40);
-   check(page.tab==="scan"&&find(page,"booksScan").visible,"scan inaccessible");
-   host.escapeHandler();check(host.opened&&page.tab==="overview","scan Escape hid Books");
-   click(find(host.contentItem,"booksBrowseTab"));root.step=21;return;
+   check(page.localMode&&!page.scanOpen,"library tab opened the review");
+   click(find(host.contentItem,"booksRefreshButton"));
+   check(page.localScan.scanning&&!page.scanOpen,"Refresh did not scan directly");
+   root.step=22;return;
+  }
+  if(root.step===22){
+   if(page.localScan.scanning||!page.scanOpen)return;
+   check(page.localScan.review.length===1&&!page.localScan.showScanControls,"review has scan path controls");
+   check(find(page,"catalogueGrid").visible&&page.tab==="overview","review replaced the catalogue");
+   host.escapeHandler();check(host.opened&&!page.scanOpen,"review Escape hid Books");
+   // A review that finishes after leaving My Library waits until returning.
+   click(find(host.contentItem,"booksRefreshButton"));click(find(host.contentItem,"booksBrowseTab"));
+   root.step=23;return;
+  }
+  if(root.step===23){
+   if(page.localScan.scanning)return;
+   check(!page.scanOpen&&page.reviewPending,"review opened outside My Library");
+   click(find(host.contentItem,"booksLibraryTab"));
+   check(page.scanOpen&&!page.reviewPending,"deferred review lost");
+   click(find(host.contentItem,"booksBrowseTab"));check(!page.scanOpen,"review stayed over Browse");
+   root.step=21;return;
   }
   if(root.step===21){
    page.downloadOffer({title:"Fixture download"});root.retained=page;
@@ -189,4 +227,55 @@ ShellRoot {
 }
 """,
             setup=setup,
+        )
+
+    def test_setup_errors_refresh_scope_and_subject_filters(self):
+        self.run_qml(
+            """import QtQuick
+import QtQuick.Controls
+import QtTest
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState {id:interactions}
+ SpaceHost {id:host;interactionState:interactions}
+ TestCase {id:input;when:false;parent:host.contentItem}
+ property int step:0
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ Timer {id:driver;interval:80;running:true;repeat:false;onTriggered:{try{
+  if(root.step===0){SpaceState.open("books",Quickshell.screens[0]);root.step++;return;}
+  const page=host.currentPage;if(!page||page.loading||page.detailLoading||!page.selected.id)return;
+  if(root.step===1){
+   if(!page.setupError)return;
+   // The catalogue loaded after init failed; its success must not hide the problem.
+   check(page.error===""&&page.setupError.includes("unique"),"provider setup error lost: "+page.setupError);
+   const message=find(page,"booksError");
+   check(message.visible&&message.text===page.setupError,"provider setup error not shown");
+   check(!page.providerNames.length&&!find(page,"readOnlineButton").visible,"invalid providers still offered");
+   const book=page.selected;
+   page.clearSelection();page.selectBook(Object.assign({},book,{favorite:false}));
+   check(!page.personal.favorite,"fixture selection already favorite");
+   page.refreshBook();root.step++;return;
+  }
+  if(root.step===2){
+   // Refresh replaces metadata only; the selection's favorite reply still applies.
+   if(!page.personal.favorite)return;
+   check(page.selected.description==="A saved synopsis"&&!("warning" in page.selected),"refreshed details wrong");
+   check(page.favorites===false&&!page.localMode,"fixture starts outside Browse");
+   page.favorites=true;page.browse(false,false);root.step++;return;
+  }
+  if(root.step===3){
+   const subject=find(page,"bookSubject");
+   check(subject&&subject.visible,"subject filter missing");
+   input.mouseClick(subject,subject.width/2,subject.height/2);
+   check(!page.favorites&&!page.localMode&&page.filters.subject==="Computing","subject filter stayed in Favorites");
+   SpaceState.close("books");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(error){console.error("DISPLAY_FAIL",error.message+" "+error.stack);Qt.quit();}finally{driver.restart();}}}
+ Timer {interval:11000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at "+root.step);Qt.quit();}}
+}
+""",
+            setup=setup_invalid_providers,
         )

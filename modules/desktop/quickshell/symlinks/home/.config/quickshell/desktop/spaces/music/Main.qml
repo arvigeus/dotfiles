@@ -20,7 +20,11 @@ Item {
     property string section: "library"
     property var viewStates: ({})
     property var savedViews: ({})
-    property string notice: ""
+    // Actionable degraded states stay inline (shared header contract): the view's
+    // saved-results warning, and local library problems shown in My Library.
+    // Unlike error, neither stops pagination or offers Retry.
+    property string warning: ""
+    property string libraryWarning: ""
     property bool restoringView: false
     property string category: "songs"
     property string genreId: ""
@@ -118,12 +122,8 @@ Item {
             const notified = root.notifyJob(job, cacheService);
             if (info.busy && String(job.job_id) === info.jobId)
                 info.complete(job.result || {}, job.error || (job.state === "cancelled" ? "Operation cancelled." : ""));
-            else if (job.error) {
-                if (!notified)
-                    root.error = job.error;
-            } else if (!notified) {
-                root.notice = "Song cached in Music.";
-            }
+            else if (job.error && !notified)
+                root.error = job.error;
             root.observeFiles(true);
         }
     }
@@ -204,11 +204,10 @@ Item {
         }, (result, failure) => {
             refreshingFiles = false;
             if (failure) {
-                notice = failure;
+                libraryWarning = failure;
                 return;
             }
-            if (result.warning)
-                notice = result.warning;
+            libraryWarning = result.warning || "";
             if (result.version && result.version !== localVersion) {
                 localVersion = result.version;
                 applyIndex(result.index, false);
@@ -365,7 +364,7 @@ Item {
         needsBrowse = false;
         searchDelay.stop();
         error = "";
-        notice = "";
+        warning = "";
         const token = ++generation;
         appending = !!append;
         const previousScroll = preserveScroll ? list.contentY : 0;
@@ -420,7 +419,7 @@ Item {
                         error = failure;
                         return;
                     }
-                    notice = result.warning || "";
+                    warning = result.warning || "";
                     entityPaging = Object.assign({}, entityPaging, {
                         [category]: Object.assign({}, state, result)
                     });
@@ -471,7 +470,7 @@ Item {
             offset = result.limit || 0;
             cursor = result.cursor || "";
             hasMore = !!result.hasMore;
-            notice = result.warning || "";
+            warning = result.warning || "";
             pagination.restart();
             if (needsBrowse)
                 Qt.callLater(() => browse(false, false, true));
@@ -495,7 +494,7 @@ Item {
             entityPaging: entityPaging,
             history: history,
             entityReady: entityReady,
-            notice: notice,
+            warning: warning,
             rows: rows.slice(),
             offset: offset,
             cursor: cursor,
@@ -545,7 +544,7 @@ Item {
         updateRows(view.rows || [], false);
         restoringView = false;
         error = "";
-        notice = view.notice || "";
+        warning = view.warning || "";
         persist();
         if (!view.rows || view.needsBrowse)
             browse(false);
@@ -659,7 +658,7 @@ Item {
                 return;
             }
             applyIndex(result.index, false);
-            notice = result.warning || "";
+            warning = result.warning || "";
             entityReady = true;
             entity = result[item.kind] || item;
             entityRows = ({
@@ -1066,13 +1065,16 @@ Item {
         anchors.fill: parent
         spacing: 12
         RowLayout {
-            visible: !!root.error || !!root.saveError
+            id: messageRow
+            readonly property string message: [root.error, root.saveError, root.warning, root.section === "library" ? root.libraryWarning : ""].filter(Boolean).join("\n")
+            visible: !!message
             Layout.fillWidth: true
             MovieText {
+                objectName: "musicMessage"
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
                 color: MovieStyle.danger
-                text: [root.error, root.saveError].filter(Boolean).join("\n")
+                text: messageRow.message
             }
             MovieButton {
                 text: "Retry"

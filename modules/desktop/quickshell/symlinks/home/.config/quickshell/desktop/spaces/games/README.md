@@ -9,17 +9,19 @@ products can remain visible; the filter is not a complete content classification
 See [classification details](ARCHITECTURE.md#native-content-filtering).
 
 Configure `~/.config/quickshell/desktop/spaces/games/games.json` using
-[games.example.json](games.example.json). A Twitch application's
-`igdb_client_id` and `igdb_client_secret` enable Browse. Optional `steam_api_key`
-and 17-digit `steam_id` enable ownership checks for a public Steam profile.
-Sign into Epic with `legendary auth`; the Legendary module supplies its launcher
-and UMU. Steam and Legendary accounts require sign-in after a fresh installation.
-Epic purchases appear after **Refresh**; Games re-reads Epic ownership every few
-hours and keeps the saved list while Epic is unreachable. After an uninstall, the
-store button updates once the launcher finishes. Epic installations show progress
-on the store button and speed/ETA below it;
-**Downloads** lists tracked installs. Downloads continue when Games closes, and
-reopening restores their progress. Click Install again to retry a failed download.
+[games.example.json](games.example.json); with credentials or `proton_path` it
+must be private (`chmod 600`), or Games ignores it and says why. A Twitch
+application's `igdb_client_id` and `igdb_client_secret` enable Browse. Optional
+`steam_api_key` and 17-digit `steam_id` enable ownership checks for a public
+Steam profile. Sign into Epic with `legendary auth`; the Legendary module
+supplies its launcher and UMU. Steam and Legendary accounts require sign-in
+after a fresh installation. Epic purchases appear after **Refresh**; Games
+re-reads Epic ownership every few hours and keeps the saved list while Epic is
+unreachable. After an uninstall, the store button updates once the launcher
+finishes. Epic installations show progress on the store button and speed/ETA
+below it; **Downloads** lists tracked installs. Downloads continue when Games
+closes, and reopening restores their progress. Click Install again to retry a
+failed download.
 
 For GOG, enable the `gaming/launchers/heroic` module, sign into GOG in Heroic and
 refresh its library, then refresh Games. Native and Flatpak Heroic are supported;

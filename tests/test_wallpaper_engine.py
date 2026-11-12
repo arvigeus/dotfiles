@@ -477,6 +477,7 @@ class WallpaperEngineTests(unittest.TestCase):
         custom.write_bytes(b'fixture')
         custom.chmod(0o755)
         self.setting({})
+        (engine.config_dir() / 'pictures.json').touch(mode=0o600)
         (engine.config_dir() / 'pictures.json').write_text(
             json.dumps({'wallpaper_engine': {'library_paths': [str(extra)]}})
         )
@@ -840,6 +841,7 @@ class WallpaperEngineTests(unittest.TestCase):
         folder = engine.config_dir()
         folder.mkdir(parents=True)
         (folder.parent / 'games').mkdir(exist_ok=True)
+        (folder.parent / 'games/games.json').touch(mode=0o600)
         (folder.parent / 'games/games.json').write_text(
             '{"steam_api_key":"private-test-key"}'
         )
@@ -921,6 +923,32 @@ class WallpaperEngineTests(unittest.TestCase):
             self.assertEqual(http.call_count, 1)
         control.assert_not_called()
         spawn.assert_not_called()
+
+    def test_workshop_key_in_pictures_json_requires_a_private_file(self):
+        folder = engine.config_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        settings = folder / 'pictures.json'
+        settings.write_text('{"wallpaper_engine":{"steam_api_key":"pictures-key"}}')
+        settings.chmod(0o644)
+        self.assertEqual(workshop.api_key(folder), '')
+        with patch.object(workshop, 'urlopen') as http:
+            with self.assertRaisesRegex(ValueError, 'chmod 600'):
+                workshop.query(folder, {})
+            http.assert_not_called()
+        games = folder.parent / 'games/games.json'
+        games.parent.mkdir(exist_ok=True)
+        games.write_text('{"steam_api_key":"games-key"}')
+        games.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, 'pictures.json holds a Steam API key'):
+            workshop.query(folder, {})
+        settings.unlink()
+        with self.assertRaisesRegex(ValueError, 'games.json holds a Steam API key'):
+            workshop.query(folder, {})
+        games.chmod(0o600)
+        self.assertEqual(workshop.api_key(folder), 'games-key')
+        settings.write_text('{"wallpaper_engine":{"steam_api_key":"pictures-key"}}')
+        settings.chmod(0o600)
+        self.assertEqual(workshop.api_key(folder), 'pictures-key')
 
     def test_workshop_missing_key_errors_are_redacted_and_previews_are_restricted(self):
         with patch.object(workshop, 'urlopen') as http:
@@ -1236,10 +1264,20 @@ class WallpaperEngineTests(unittest.TestCase):
             custom.parent.mkdir()
             custom.write_bytes(b'fixture')
             custom.chmod(0o755)
-            (engine.config_dir() / 'pictures.json').write_text(
+            settings = engine.config_dir() / 'pictures.json'
+            settings.write_text(
                 json.dumps({'wallpaper_engine': {'proton_bin': str(custom)}})
             )
-            self.assertTrue(engine.installation_status(item)['ready'])
+            # Settings that choose what runs are ignored from a file others can read.
+            settings.chmod(0o644)
+            status = engine.installation_status(item)
+            self.assertFalse(status['ready'])
+            self.assertIn('not private', status['message'])
+            self.assertEqual(engine.configured_proton(), '')
+            settings.chmod(0o600)
+            status = engine.installation_status(item)
+            self.assertTrue(status['ready'], status)
+            self.assertNotIn('not private', status['message'])
             self.assertEqual(engine.configured_proton(), str(custom))
             spawn.assert_not_called()
 

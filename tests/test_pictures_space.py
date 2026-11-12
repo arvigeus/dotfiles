@@ -147,6 +147,7 @@ if os.environ.get('FIXTURE_FAIL'):
 else:
  print(json.dumps({'success':True,'items':[{'id':'private-video','title':'Private fixture','kind':'video','preview':'','ref':{'id':'private-video'}}],'next':0}))
 """)
+            (config / 'pictures.json').touch(mode=0o600)
             (config / 'pictures.json').write_text(
                 json.dumps(
                     {

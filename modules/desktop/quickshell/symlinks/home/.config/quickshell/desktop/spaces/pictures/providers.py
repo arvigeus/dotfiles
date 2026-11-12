@@ -10,6 +10,7 @@ from pathlib import Path
 
 from spaces.pictures.command_provider import CommandRunner, safe_url
 from spaces.pictures.provider_plugins import ProviderError, configured_providers
+from spaces.pictures.storage import read_settings
 
 runner = CommandRunner(label='Pictures')
 atexit.register(runner.close)
@@ -26,13 +27,16 @@ def configuration_file():
 def configured():
     path = configuration_file()
     try:
-        config = json.loads(path.read_text())
-    except FileNotFoundError:
-        return {}
-    except (OSError, ValueError) as error:
+        config, owner_only = read_settings(path)
+    except ValueError as error:
         raise ValueError('Cannot read pictures.json.') from error
     if not isinstance(config, dict):
         raise ValueError('pictures.json must contain an object.')
+    # Provider entries execute commands and may carry their secrets.
+    if config.get('providers') and not owner_only:
+        raise ValueError(
+            'pictures.json runs provider commands: it must be owned by you with mode 0600.'
+        )
     result = {}
     try:
         commands = configured_providers(config, path.parent)

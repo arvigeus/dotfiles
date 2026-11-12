@@ -114,7 +114,13 @@ read. Authentication errors never select another account's cache.
 after file jobs, and every five seconds while visible. The observer performs no
 network requests or file mutations. Symlinks, hidden files/directories and unknown
 extensions are skipped. It caches FFprobe metadata by inode/size/nanosecond mtime,
-so unchanged songs are not reprobed. Unreadable files produce a notice.
+so unchanged songs are not reprobed. Unreadable files, or a failed observation,
+show an inline warning in My Library until the next clean observation.
+
+Following the shared header contract, actionable degraded states stay inline
+beside errors: that library warning and a view's saved-results warning (such as
+Nextcloud being unavailable). Unlike errors they neither stop paging nor offer
+Retry. Routine confirmations, such as a cached song, are not shown.
 
 The regenerable `local.sqlite` inventory and `library.sqlite` merged snapshot live
 beside the remote `catalogue.sqlite` in the account's cache directory. A changed

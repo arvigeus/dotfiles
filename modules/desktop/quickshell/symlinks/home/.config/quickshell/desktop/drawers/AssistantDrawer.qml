@@ -143,7 +143,7 @@ DrawerPage {
         }
         IconButton {
             objectName: "assistantOpenApp"
-            iconName: "panels-top-left"
+            iconName: "citrus"
             text: qsTr("Open Lemonade")
             hint: qsTr("Open the full Lemonade app · starts the server if needed")
             enabled: AssistantService.installed && (AssistantService.online || !AssistantService.busy)

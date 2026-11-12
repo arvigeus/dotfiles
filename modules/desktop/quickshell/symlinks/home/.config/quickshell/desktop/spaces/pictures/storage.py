@@ -1,8 +1,11 @@
-"""Atomic replacement of owned state, safe for concurrent writers and interruption."""
+"""Owned state and settings: atomic replacement and private settings reads."""
 
+import json
 import os
 import tempfile
 from pathlib import Path
+
+from integrations import private
 
 
 def atomic_write(path, content, mode=0o600):
@@ -17,3 +20,17 @@ def atomic_write(path, content, mode=0o600):
         os.replace(temporary, path)
     finally:
         Path(temporary).unlink(missing_ok=True)
+
+
+def read_settings(path):
+    """Return (parsed JSON, owner-only) for a settings file; missing is ({}, True).
+
+    The file may link into a private checkout; the opened target is checked.
+    Settings that run commands or hold credentials are trusted only from a file
+    that only its owner can access, as Movies requires for media.json.
+    """
+    try:
+        text, info = private.read(path, follow_symlinks=True)
+    except FileNotFoundError:
+        return {}, True
+    return json.loads(text), private.owner_only(info)

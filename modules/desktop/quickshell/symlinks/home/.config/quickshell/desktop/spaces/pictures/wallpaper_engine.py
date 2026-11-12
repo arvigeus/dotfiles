@@ -24,7 +24,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from spaces.pictures import video_wallpaper, workshop
-from spaces.pictures.storage import atomic_write
+from spaces.pictures.storage import atomic_write, read_settings
 from spaces.pictures.wallpaper import update_lock_background
 
 PROVIDER: dict[str, Any] = {
@@ -246,15 +246,28 @@ def publish_still(setting, image):
         atomic_write(config_dir() / 'wallpaper.json', json.dumps(setting) + '\n')
 
 
+def engine_settings():
+    """(pictures.json wallpaper_engine object, ignored).
+
+    Its paths choose the renderer and Proton that run. From a file others can
+    access the object is ignored, so restore keeps Steam's defaults, and
+    installation_status explains why.
+    """
+    try:
+        config, owner_only = read_settings(config_dir() / 'pictures.json')
+        section = config.get('wallpaper_engine', {})
+    except (ValueError, AttributeError):
+        return {}, False
+    if not isinstance(section, dict) or not section:
+        return {}, False
+    return (section, False) if owner_only else ({}, True)
+
+
 def library_paths():
     candidates = []
-    try:
-        config = json.loads((config_dir() / 'pictures.json').read_text())
-        paths = config.get('wallpaper_engine', {}).get('library_paths', [])
-        if isinstance(paths, list):
-            candidates.extend(path for path in paths if isinstance(path, str))
-    except (OSError, ValueError, AttributeError):
-        pass
+    paths = engine_settings()[0].get('library_paths', [])
+    if isinstance(paths, list):
+        candidates.extend(path for path in paths if isinstance(path, str))
     if os.environ.get('WALLPIPER_STEAM_ROOT'):
         candidates.append(os.environ['WALLPIPER_STEAM_ROOT'])
     candidates.extend(
@@ -581,12 +594,8 @@ def engine_executable():
 def configured_proton():
     if os.environ.get('WALLPIPER_PROTON_BIN'):
         return os.environ['WALLPIPER_PROTON_BIN']
-    try:
-        config = json.loads((config_dir() / 'pictures.json').read_text())
-        value = config.get('wallpaper_engine', {}).get('proton_bin', '')
-        return value if isinstance(value, str) else ''
-    except (OSError, ValueError, AttributeError):
-        return ''
+    value = engine_settings()[0].get('proton_bin', '')
+    return value if isinstance(value, str) else ''
 
 
 def proton_executable():
@@ -630,6 +639,11 @@ def installation_status(item):
             'Steam has not downloaded this wallpaper yet. Check its Workshop download in Steam and wait for it to finish.'
         )
     ready = not messages
+    if engine_settings()[1]:
+        # Informative only: Steam's defaults may still be enough to apply.
+        messages.append(
+            'pictures.json is not private, so its Wallpaper Engine settings are ignored. Run chmod 600 on it.'
+        )
     setting, state = read_setting(), read_state()
     if (
         setting.get('mode') == 'wallpaper_engine'

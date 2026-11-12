@@ -583,6 +583,8 @@ class GamesBackendTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.config = self.root / 'config/games.json'
         self.config.parent.mkdir(parents=True)
+        # Credentials need an owner-only games.json; rewrites keep the mode.
+        self.config.touch(mode=0o600)
         self.config.write_text(
             json.dumps(
                 {
@@ -643,6 +645,31 @@ class GamesBackendTests(unittest.TestCase):
         )
         state = self.backend.libraries(force=True)['steam']
         self.assertEqual([item['externalId'] for item in state['items']], ['12345'])
+
+    def test_credentials_require_a_private_games_json_and_chmod_is_noticed(self):
+        self.config.write_text(
+            json.dumps(
+                {'igdb_client_id': 'test-client', 'igdb_client_secret': 'test-secret'}
+            )
+        )
+        self.config.chmod(0o644)
+        state = self.backend.config_state()
+        self.assertFalse(state['configured'])
+        self.assertIn('mode 0600', state['configError'])
+        self.assertNotIn('test-secret', json.dumps(state))
+        result = self.backend.handle({'op': 'browse', 'query': ''})
+        self.assertTrue(result['setupRequired'])
+        self.assertIn('mode 0600', result['warning'])
+        self.assertEqual(result['catalog']['configError'], state['configError'])
+        self.assertEqual(self.calls, [])
+        # Fixing only the mode leaves mtime alone; the next read still sees it.
+        self.config.chmod(0o600)
+        self.assertTrue(self.backend.config_state()['configured'])
+        self.assertEqual(self.backend.config_state()['configError'], '')
+        # Settings without credentials need no particular mode.
+        self.config.write_text(json.dumps({'steam_id': '76561198000000000'}))
+        self.config.chmod(0o644)
+        self.assertEqual(self.backend.config()['steam_id'], '76561198000000000')
 
     def test_missing_default_catalog_key_provides_setup_state_without_network(self):
         self.config.unlink()
