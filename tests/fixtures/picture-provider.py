@@ -71,6 +71,8 @@ elif name == 'hyprctl':
             else []
         )
         print(json.dumps({'TEST': {'levels': {'0': surfaces}}}))
+    elif sys.argv[1] == 'monitors':
+        print(json.dumps([{'name': 'TEST', 'id': 0, 'activeWorkspace': {'id': 1}}]))
     else:
         print('[]')
 elif name == 'picture-fixture-server':

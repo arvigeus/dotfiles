@@ -5,8 +5,10 @@ sys.path.insert(0, str(support.DESKTOP))
 import io
 import json
 import os
+import shutil
 import sys
 import tempfile
+import time
 import unittest
 from email.message import Message
 from pathlib import Path
@@ -15,6 +17,7 @@ from unittest.mock import patch
 from spaces.pictures import backend, providers, video_wallpaper
 from spaces.pictures import wallpaper_engine as engine
 from spaces.pictures.command_provider import CommandRunner
+from spaces.pictures.wallpaper import current_image
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,6 +39,11 @@ class ProviderTests(unittest.TestCase):
         )
         env.start()
         self.addCleanup(env.stop)
+        network = patch.object(
+            backend, 'urlopen', side_effect=AssertionError('network access')
+        )
+        network.start()
+        self.addCleanup(network.stop)
         self.config = providers.configuration_file()
         self.config.parent.mkdir(parents=True)
         self.package = self.config.parent / 'plugin with spaces'
@@ -266,12 +274,120 @@ class ProviderTests(unittest.TestCase):
         )
         runtime = engine.Runtime()
         self.addCleanup(runtime.close)
+        request = {'monitors': [], 'clients': []}
         with patch.object(
             runtime.video, 'sync', return_value={'screens': ['TEST']}
         ) as sync:
-            self.assertEqual(runtime.sync({}), {'screens': ['TEST']})
+            self.assertEqual(runtime.sync(request), {'screens': ['TEST']})
         sync.assert_called_once()
         runtime.fail(ValueError('Fixture failed'))
         with patch.object(runtime.video, 'sync') as sync:
-            self.assertIn('error', runtime.sync({}))
+            self.assertIn('error', runtime.sync(request))
         sync.assert_not_called()
+
+    def test_browse_and_favorites_read_provider_configuration_once(self):
+        rows = [
+            {'id': f'item-{index}', 'title': 'Item', 'ref': index}
+            for index in range(50)
+        ]
+        with (
+            patch.object(
+                providers,
+                'call',
+                return_value={'success': True, 'items': rows, 'next': 0},
+            ),
+            patch.object(
+                providers, 'configured', wraps=providers.configured
+            ) as configured,
+        ):
+            items = backend.browse({'provider': 'personal'})['items']
+            self.assertEqual(len(items), 50)
+            # Provider lookup and command selection; not once per row.
+            self.assertEqual(configured.call_count, 2)
+            backend.atomic_write(
+                backend.favorite_file(),
+                json.dumps([dict(item, provider='personal') for item in items]),
+            )
+            configured.reset_mock()
+            self.assertEqual(len(backend.load_favorites()), 50)
+            self.assertEqual(configured.call_count, 1)
+
+    def video_fixture(self):
+        """Fake mpvpaper/hyprctl/ffmpeg on PATH; mpvpaper serves mpv IPC."""
+        binary = self.root / 'bin'
+        binary.mkdir()
+        fixture = binary / 'picture-provider'
+        shutil.copyfile(ROOT / 'tests/fixtures/picture-provider.py', fixture)
+        fixture.chmod(0o755)
+        for name in ('mpvpaper', 'hyprctl'):
+            (binary / name).symlink_to(fixture)
+        ffmpeg = binary / 'ffmpeg'
+        ffmpeg.write_text(
+            '#!/bin/sh\nfor last; do :; done\nprintf "\\377\\330\\377poster" > "$last"\n'
+        )
+        ffmpeg.chmod(0o755)
+        return {
+            'PATH': f'{binary}:{os.environ["PATH"]}',
+            'HYPRLAND_INSTANCE_SIGNATURE': 'fixture',
+        }
+
+    def test_video_runtime_publishes_poster_on_frames_pauses_and_reaps_player(self):
+        video = self.root / 'cache' / 'personal-clip.mp4'
+        video.parent.mkdir(parents=True)
+        video.write_bytes(b'\x00\x00\x00\x18ftypisom')
+        still = current_image()
+        still.parent.mkdir(parents=True)
+        still.write_bytes(b'previous still')
+        setting = self.config.parent / 'wallpaper.json'
+        previous = {'image': still.as_uri(), 'provider': 'bing'}
+        setting.write_text(json.dumps(previous))
+        monitors = [{'name': 'TEST', 'id': 0, 'activeWorkspace': {'id': 1}}]
+        with patch.dict(os.environ, self.video_fixture()):
+            # Apply keeps the previous still until the runtime sees frames.
+            with patch.object(
+                engine,
+                'read_state',
+                side_effect=lambda: {
+                    'selection': engine.read_setting()['selection'],
+                    'status': 'ready',
+                },
+            ):
+                video_wallpaper.apply(video, 'personal')
+            choice = engine.read_setting()
+            self.assertEqual(choice['mode'], 'video')
+            self.assertEqual(choice['image'], previous['image'])
+            self.assertEqual(still.read_bytes(), b'previous still')
+            runtime = engine.Runtime()
+            self.addCleanup(runtime.close)
+            deadline = time.monotonic() + 10
+            result = {}
+            while time.monotonic() < deadline:
+                # QML sends no compositor state; the controller queries Hyprland.
+                result = runtime.sync({})
+                if result.get('screens'):
+                    break
+                self.assertEqual(still.read_bytes(), b'previous still')
+                time.sleep(0.05)
+            self.assertEqual(result, {'screens': ['TEST'], 'paused': False})
+            player = json.loads(
+                (self.root / 'players.jsonl').read_text().splitlines()[0]
+            )
+            options = player['argv'][player['argv'].index('-o') + 1].split()
+            self.assertEqual(player['argv'][-2:], ['ALL', str(video)])
+            self.assertIn('audio=no', options)
+            self.assertIn('loop-file=inf', options)
+            poster = video.with_suffix('.poster.jpg')
+            self.assertEqual(still.read_bytes(), poster.read_bytes())
+            self.assertEqual(engine.read_setting()['image'], poster.as_uri())
+            self.assertEqual(engine.read_state()['status'], 'ready')
+            client = {'monitor': 0, 'workspace': {'id': 1}, 'fullscreen': 2}
+            self.assertTrue(
+                runtime.sync({'monitors': monitors, 'clients': [client]})['paused']
+            )
+            self.assertEqual((self.root / 'pause.jsonl').read_text().split(), ['true'])
+            pid = int((self.root / 'player.pid').read_text())
+            setting.write_text(json.dumps(previous))
+            self.assertEqual(runtime.sync({}), {'screens': []})
+            self.assertEqual(engine.process_identity(pid), '')
+            self.assertEqual(engine.read_state()['status'], 'idle')
+            self.assertFalse((engine.config_dir() / '.engine-ownership.json').exists())

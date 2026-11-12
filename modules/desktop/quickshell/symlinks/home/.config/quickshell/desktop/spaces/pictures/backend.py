@@ -5,6 +5,7 @@ import json
 import os
 import random
 import re
+import stat
 import sys
 import tempfile
 import time
@@ -24,6 +25,11 @@ BING_FEED_ROOT = 'https://www.bing.com/HPImageArchive.aspx'
 USER_AGENT = 'Desktop-Pictures/1.0'
 MAX_IMAGE_BYTES = 250 * 1024 * 1024
 WALLPAPER_DOWNLOAD_SECONDS = 60
+# Downloads are regenerable; the active video and fresh files are always kept.
+WALLPAPER_CACHE_FILES = 32
+WALLPAPER_CACHE_BYTES = 2 * 1024 * 1024 * 1024
+WALLPAPER_CACHE_GRACE_SECONDS = 3600
+STALE_TEMPORARY_SECONDS = 86400
 BING_CACHE_SECONDS = 900
 BING_CATALOG_CACHE = {}
 WALLHAVEN_TAG_CACHE = {}
@@ -421,7 +427,7 @@ def clean_bing_item(raw):
     }
 
 
-def clean_item(raw, include_disabled=False):
+def clean_item(raw, include_disabled=False, catalog=None):
     if not isinstance(raw, dict):
         return None
     provider = str(raw.get('provider') or 'wallhaven')
@@ -431,7 +437,9 @@ def clean_item(raw, include_disabled=False):
         return clean_bing_item(raw)
     if provider == 'wallhaven':
         return clean_wallhaven_item(raw)
-    return command_providers.clean_item(raw, include_disabled=include_disabled)
+    return command_providers.clean_item(
+        raw, include_disabled=include_disabled, catalog=catalog
+    )
 
 
 def api_error_message(error, provider='Wallhaven'):
@@ -816,16 +824,28 @@ def load_favorites(include_disabled=False):
     path = favorite_file()
     try:
         values = json.loads(path.read_text(encoding='utf-8'))
-        if not isinstance(values, list):
-            return []
-        items = [
-            item
-            for raw in values
-            if (item := clean_item(raw, include_disabled=include_disabled))
-        ]
-        return items[:2000]
     except (OSError, json.JSONDecodeError):
         return []
+    if not isinstance(values, list):
+        return []
+    # Read pictures.json once, and only when a command-provider favorite needs it.
+    catalog = {}
+
+    def providers():
+        if 'value' not in catalog:
+            catalog['value'] = command_providers.configured()
+        return catalog['value']
+
+    items = [
+        item
+        for raw in values
+        if (
+            item := clean_item(
+                raw, include_disabled=include_disabled, catalog=providers
+            )
+        )
+    ]
+    return items[:2000]
 
 
 def save_favorites(args):
@@ -844,10 +864,11 @@ def save_favorites(args):
     atomic_write(
         path, json.dumps(favorites[:2000], ensure_ascii=False, indent=2) + '\n'
     )
-    return {
-        'favorite': is_favorite,
-        'count': len(favorites) if is_favorite else max(0, len(favorites)),
-    }
+    return {'favorite': is_favorite, 'count': len(favorites)}
+
+
+def wallpaper_cache():
+    return cache_root() / 'quickshell/desktop/spaces/pictures' / 'wallpapers'
 
 
 def wallpaper_file(item):
@@ -859,7 +880,7 @@ def wallpaper_file(item):
             'image/webp': '.webp',
             'image/avif': '.avif',
         }.get(item['fileType'].lower(), '.jpg')
-    folder = cache_root() / 'quickshell/desktop/spaces/pictures' / 'wallpapers'
+    folder = wallpaper_cache()
     folder.mkdir(mode=0o700, parents=True, exist_ok=True)
     safe_id = re.sub(r'[^A-Za-z0-9_-]', '_', item['id'])
     if item['provider'] not in PROVIDERS:
@@ -869,16 +890,38 @@ def wallpaper_file(item):
     return folder / (item['provider'] + '-' + safe_id + suffix)
 
 
+def media_file(path, video):
+    """Recognize an MP4 or a common still format, never an error page."""
+    try:
+        with path.open('rb') as stream:
+            header = stream.read(16)
+    except OSError:
+        return False
+    if video:
+        return len(header) >= 12 and header[4:8] == b'ftyp'
+    return (
+        header.startswith((b'\xff\xd8\xff', b'\x89PNG\r\n\x1a\n', b'GIF87a', b'GIF89a'))
+        or (header[:4] == b'RIFF' and header[8:12] == b'WEBP')
+        or (header[4:8] == b'ftyp' and header[8:12] in {b'avif', b'avis', b'mif1'})
+    )
+
+
 def download_wallpaper(item):
     path = wallpaper_file(item)
+    video = item.get('kind') == 'video'
     if path.is_file() and path.stat().st_size:
-        return path
+        if media_file(path, video):
+            try:
+                os.utime(path)  # Recently applied files survive cache pruning.
+            except OSError:
+                pass
+            return path
+        path.unlink(missing_ok=True)
     url, headers = (
         command_providers.resolve(item)
         if item['provider'] not in PROVIDERS
         else (item['path'], {})
     )
-    video = item.get('kind') == 'video'
     maximum = 1024 * 1024 * 1024 if video else MAX_IMAGE_BYTES
     request = Request(
         url,
@@ -926,11 +969,12 @@ def download_wallpaper(item):
                     output.write(chunk)
         if total == 0:
             raise ValueError(f'{item["providerName"]} returned an empty image file.')
-        if video:
-            with temporary.open('rb') as saved:
-                header = saved.read(12)
-            if len(header) < 12 or header[4:8] != b'ftyp':
-                raise ValueError('Wallpaper provider did not return an MP4 video.')
+        if not media_file(temporary, video):
+            raise ValueError(
+                'Wallpaper provider did not return an MP4 video.'
+                if video
+                else f'{item["providerName"]} did not return a supported image.'
+            )
         os.replace(temporary, path)
         return path
     except HTTPError as error:
@@ -942,8 +986,51 @@ def download_wallpaper(item):
             temporary.unlink(missing_ok=True)
 
 
+def prune_wallpaper_cache():
+    """Bound the download cache without touching the active video or fresh files.
+
+    Runs after a committed Apply, so it never raises.
+    """
+    setting = wallpaper_engine.read_setting()
+    try:
+        folder = wallpaper_cache().resolve()
+        paths = list(folder.iterdir())
+        keep = set()
+        if setting.get('mode') == 'video':
+            video = Path(str(setting.get('video', ''))).resolve()
+            keep = {video, video.with_suffix('.poster.jpg')}
+    except (OSError, ValueError):
+        return
+    now = time.time()
+    entries, count, size = [], 0, 0
+    for path in paths:
+        try:
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode):
+                continue
+            age = now - info.st_mtime
+            if path.name.startswith('.'):
+                # Partial downloads and frame extractions of interrupted workers.
+                if age > STALE_TEMPORARY_SECONDS:
+                    path.unlink(missing_ok=True)
+            elif path in keep or age < WALLPAPER_CACHE_GRACE_SECONDS:
+                count, size = count + 1, size + info.st_size
+            else:
+                entries.append((info.st_mtime, info.st_size, path))
+        except OSError:
+            continue
+    for _mtime, length, path in sorted(entries, reverse=True):
+        if count < WALLPAPER_CACHE_FILES and size + length <= WALLPAPER_CACHE_BYTES:
+            count, size = count + 1, size + length
+            continue
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            continue
+
+
 def apply_shell_wallpaper(path, provider=None):
-    from spaces.pictures.wallpaper import current_image
+    from spaces.pictures.wallpaper import current_image, update_lock_background
 
     setting = config_root() / 'quickshell/desktop/spaces/pictures/wallpaper.json'
     still = current_image()
@@ -951,7 +1038,7 @@ def apply_shell_wallpaper(path, provider=None):
     value = {'image': still.as_uri()}
     if provider in PROVIDERS or provider in command_providers.configured():
         value['provider'] = provider
-    apply_lock_wallpaper(path)
+    update_lock_background(path)
     try:
         atomic_write(setting, json.dumps(value) + '\n')
     except OSError:
@@ -963,39 +1050,30 @@ def apply_shell_wallpaper(path, provider=None):
     return 'desktop shell'
 
 
-def apply_lock_wallpaper(path):
-    from spaces.pictures.wallpaper import update_lock_background
-
-    update_lock_background(path, config_root())
-
-
 def set_wallpaper(args):
     item = clean_item(args.get('wallpaper'))
     if not item:
         raise ValueError('Select a valid wallpaper first.')
-    target = args.get('target', 'shell')
-    if target != 'shell':
+    if args.get('target', 'shell') != 'shell':
         raise ValueError('Unknown wallpaper target.')
     if item['provider'] == 'wallpaper_engine':
-        if target != 'shell':
-            raise ValueError('Use Wallpaper Engine from the desktop shell.')
         return wallpaper_engine.apply(item)
     if item.get('kind') == 'video':
-        if target != 'shell':
-            raise ValueError('Use video wallpapers from the desktop shell.')
         video_wallpaper.requirements()
         path = download_wallpaper(item)
-        return video_wallpaper.apply(path, item['provider'])
+        result = video_wallpaper.apply(path, item['provider'])
+        prune_wallpaper_cache()
+        return result
     path = download_wallpaper(item)
-    if target == 'shell':
-        with wallpaper_engine.control_lock():
-            animated = wallpaper_engine.read_setting().get('mode') in {
-                'wallpaper_engine',
-                'video',
-            }
-            service = apply_shell_wallpaper(path, item['provider'])
-        if animated:
-            wallpaper_engine.wait_idle()
+    with wallpaper_engine.control_lock():
+        animated = wallpaper_engine.read_setting().get('mode') in {
+            'wallpaper_engine',
+            'video',
+        }
+        service = apply_shell_wallpaper(path, item['provider'])
+    prune_wallpaper_cache()
+    if animated:
+        wallpaper_engine.wait_idle()
     return {
         'path': str(path),
         'service': service,

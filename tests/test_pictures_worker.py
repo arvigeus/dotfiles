@@ -7,9 +7,25 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 import support
+
+
+def stopped(pid, timeout=3):
+    """True once pid is gone or a zombie; /proc vanishes mid-read while reaped."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            stat = Path(f'/proc/{pid}/stat').read_text()
+        except (FileNotFoundError, ProcessLookupError):
+            return True
+        if stat.rsplit(')', 1)[1].split()[0] in {'Z', 'X'}:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.02)
 
 
 class PicturesWorkerTests(unittest.TestCase):
@@ -24,7 +40,10 @@ install_shutdown_handler(lambda:Path(sys.argv[2]).write_text('cleaned'))
 child=subprocess.Popen(['sleep','30'])
 app=subprocess.Popen(['sleep','30'],start_new_session=True)
 print(json.dumps([child.pid,app.pid]),flush=True)
-time.sleep(30)
+# Short sleeps: a signal landing just before a long sleep starts runs its
+# Python handler only when that sleep ends. The real worker wakes on stdin EOF.
+while True:
+    time.sleep(0.05)
 """
             process = subprocess.Popen(
                 [sys.executable, '-u', '-c', body, str(support.DESKTOP), str(marker)],
@@ -36,10 +55,7 @@ time.sleep(30)
                 process.terminate()
                 process.wait(timeout=4)
                 self.assertEqual(marker.read_text(), 'cleaned')
-                status = Path(f'/proc/{child}/stat')
-                self.assertTrue(
-                    not status.exists() or status.read_text().split()[2] == 'Z'
-                )
+                self.assertTrue(stopped(child), 'owned child survived close')
                 os.kill(app, 0)
             finally:
                 if process.poll() is None:

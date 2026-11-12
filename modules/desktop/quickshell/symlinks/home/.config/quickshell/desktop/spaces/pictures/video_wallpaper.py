@@ -65,11 +65,11 @@ def still_frame(path):
 
 def apply(path, provider):
     from spaces.pictures import wallpaper_engine as engine
-    from spaces.pictures.wallpaper import update_lock_background
 
     requirements()
     path = local_video(path).resolve()
-    poster = still_frame(path)
+    # Extract now so the runtime publishes a cached frame once playback is visible.
+    still_frame(path)
     selection = uuid.uuid4().hex
     with engine.control_lock():
         previous = engine.read_setting()
@@ -81,7 +81,8 @@ def apply(path, provider):
                     'video': str(path),
                     'provider': provider,
                     'selection': selection,
-                    'image': poster.as_uri(),
+                    # The previous still remains the fallback until frames appear.
+                    'image': previous.get('image', ''),
                 }
             )
             + '\n',
@@ -92,7 +93,6 @@ def apply(path, provider):
         state = engine.read_state()
         if state.get('selection') == selection:
             if state.get('status') == 'ready':
-                update_lock_background(poster, engine.config_dir().parent)
                 return {
                     'path': str(path),
                     'service': 'mpvpaper',
@@ -127,6 +127,7 @@ class Player:
         self.started = 0
         self.ready = False
         self.paused = False
+        self.published = None
 
     def stop(self):
         if self.process:
@@ -147,6 +148,7 @@ class Player:
         self.token = None
         self.ready = False
         self.paused = False
+        self.published = None
 
     def sync(self, runtime, request, setting):
         from spaces.pictures import wallpaper_engine as engine
@@ -239,5 +241,10 @@ class Player:
             if not self.ipc.send(self.socket, ['set_property', 'pause', paused]):
                 raise ValueError('Could not control video wallpaper playback.')
             self.paused = paused
+        if self.published != token:
+            # Publish before reporting ready, under the runtime's control lock,
+            # so Apply never succeeds with another choice's lock-screen still.
+            engine.publish_still(setting, still_frame(path))
+            self.published = token
         runtime.publish('ready', screens=screens, paused=paused)
         return {'screens': screens, 'paused': paused}

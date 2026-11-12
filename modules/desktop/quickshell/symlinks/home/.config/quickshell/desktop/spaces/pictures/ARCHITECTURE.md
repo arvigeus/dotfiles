@@ -26,15 +26,22 @@ Closing destroys the browser, artwork cache and provider worker, cancels request
 and kills its owned converter/plugin process groups. Detached Steam/browser
 handoffs survive. Other Spaces remain independent.
 
-`WallpaperService` owns the Displays random action. Its on-demand worker executes
-`randomSet`, pins Wallhaven/SFW regardless of current Pictures filters, and is
-unloaded on completion/failure. Repeated clicks are disabled while pending;
-errors and completion remain visible in Displays. One image button with a shuffle
-badge performs this action; there is no separate Pictures-launch action.
+`WallpaperService` is the shell's only reader of `wallpaper.json`; backgrounds and
+`WallpaperRuntime` follow its `choice`. It also owns the Displays random action.
+Its on-demand worker executes `randomSet`, pins Wallhaven/SFW regardless of
+current Pictures filters, and is unloaded on completion/failure. Repeated clicks
+are disabled while pending; errors and completion remain visible in Displays. One
+image button with a shuffle badge performs this action; there is no separate
+Pictures-launch action. Apply and random requests wait up to four minutes, longer
+than the backend's own download, startup and shutdown deadlines, so the UI never
+unlocks while an Apply is still running. Favorites, preferences and Steam handoff
+share the ordered control lane, can queue behind an Apply and use the same limit.
 
 The session-owned `WallpaperRuntime` intentionally survives browser close. It
 loads no controller for ordinary still-image sessions. Only an animated choice
-or an ownership journal needing cleanup starts its worker. Background layer
+or an ownership journal needing cleanup (read once at startup) starts its worker.
+A failed worker restarts after 1, 2 and 4 seconds; a successful sync restores
+that budget. A renderer error latches until the next Apply. Background layer
 surfaces cover each output without reserving space or taking keyboard focus.
 The shell yields an output only after the external renderer supplies frames.
 
@@ -56,30 +63,40 @@ Runtime journals/locks are machine/session state, excluded from portable backup.
 
 `$XDG_DATA_HOME/quickshell/desktop/spaces/pictures/current-wallpaper` is the single
 ordinary still-image file used by desktop backgrounds and `hyprlock.conf`.
+hyprlock reads JPEG, PNG and WebP but not GIF or AVIF, so other formats (such as
+Wallpaper Engine's GIF previews) are published as a PNG of their first frame
+through FFmpeg. Without FFmpeg the original is copied for the desktop.
 An image Apply downloads first, then publishes the still and settings under the
 wallpaper control lock. A failed settings commit restores the previous still.
-Animated choices publish their still preview/frame there when ready. Static
-background URLs use a revision to invalidate Qt's image cache even when the
-provider and stable path stay unchanged. Lock changes take effect on the next
-lock; an already-open lock screen is not modified.
+The previous still remains while an animated choice starts. Once frames are
+visible, the runtime publishes that choice's still (Wallpaper Engine preview or
+extracted video frame) under the control lock and rewrites the choice. Every
+reload of `wallpaper.json` bumps the background URL revision, invalidating Qt's
+image cache although the path stays the same. Lock changes take effect on the
+next lock; an already-open lock screen is not modified.
 
 The current image is explicitly excluded from backup, per the user's exception.
 Restored settings alone do not restore wallpaper payloads; the themed desktop
 and solid-color lock background remain available until another Apply. Downloads
 and artwork are regenerable under
-`$XDG_CACHE_HOME/quickshell/desktop/spaces/pictures/`. Videos and Steam Workshop
-payloads also need independent storage/backup. Machine-specific Steam library
-paths and Proton overrides must match the fresh machine.
+`$XDG_CACHE_HOME/quickshell/desktop/spaces/pictures/`. Each successful image or
+video Apply prunes `wallpapers/` to the 32 most recently used files within 2 GiB.
+The active video, its frame and files from the last hour are always kept;
+temporaries abandoned by killed workers are removed after a day. Videos and
+Steam Workshop payloads also need independent storage/backup. Machine-specific
+Steam library paths and Proton overrides must match the fresh machine.
 
 ## Providers and playback
 
 Python owns provider credentials and network calls. The browser uses the shared
 bounded JSON-lines worker with ordered mutations, superseded browse/tag/status
 reads, request generations and timeouts. Provider failures are shown without
-environment values. Downloads validate content type, size and deadline, write
-unique partials and remove them on failure/close. Only safe provider URLs enter
-QML. Wallhaven uses its public search API; Bing uses Microsoft's recent homepage
-feed. Bing's feed and Wallhaven's HTML tag suggestions can change independently.
+environment values. Downloads validate content type, size, deadline and file
+signature (MP4, or JPEG/PNG/WebP/AVIF/GIF), write unique partials and remove
+them on failure/close. A cached file that fails the signature check is fetched
+again. Only safe provider URLs enter QML. Wallhaven uses its public search API;
+Bing uses Microsoft's recent homepage feed. Bing's feed and Wallhaven's HTML
+tag suggestions can change independently.
 
 A private command provider entry is `{id, name, plugin, env?, env_file?}`, where
 `plugin` points to a directory beneath `providers/` relative to `pictures.json`.
@@ -97,21 +114,30 @@ transport remain private; the public shell knows only the command protocol.
 
 Wallpaper Engine retains installed/Workshop catalogues, Steam handoff, setup
 warnings, additional still previews and experimental Wallpiper playback. Its
-optional `wallpaper_engine` configuration accepts `library_paths`, `proton_bin`
-and a Steam-key override. Otherwise Workshop reads the existing Games private
+Source filter defaults to Workshop when a Steam key is available. The optional
+`wallpaper_engine` configuration accepts `library_paths`, `proton_bin` and a
+Steam-key override. Otherwise Workshop reads the existing Games private
 `../games/games.json`; no Games process starts and no key crosses into QML.
 Provider IDs, Workshop IDs, manifest formats and data keys remain stable.
 
 The runtime retains exclusive control leases, PID/start-time/owner markers,
 crash journals, native playback-policy restoration, bounded retries, fullscreen
-and DPMS suspension, still fallback and exact owned-process cleanup. It reads
-Hyprland state only while animated. Video uses mpvpaper and FFmpeg still extraction.
+and DPMS suspension, still fallback and exact owned-process cleanup. It queries
+Hyprland itself, only while animated and inside its transient-error handling, so
+a slow compositor reply recovers without tearing down the renderer. Renderer
+children get a parent-death signal tied to the worker's single control thread,
+which lives as long as the worker. Video uses mpvpaper and FFmpeg still
+extraction.
 Steam, Proton and Wallpaper Engine media remain launcher-owned. The module
 explicitly declares Python, FFmpeg and mpvpaper for command-provider/video support,
 and Wallpiper's Hyprland portal for Wallpaper Engine. Steam remains launcher-owned. No wallpaper daemon is autostarted separately.
 [Wallpiper upstream](https://github.com/ejalxndr/wallpiper) describes the supported
 runtime setup and its experimental status.
 
-The controller targets Wallpiper 2.1; the AUR Wallpiper/portal 2.0.1 packages need
-native compatibility checks. Missing Wallpaper Engine/Proton reports setup
-requirements rather than starting a renderer.
+The controller targets Wallpiper 2.1. The AUR Wallpiper/portal 2.0.1 binaries
+contain every `wallpiperctl` command (`set <path> <monitor>`, `mute`, `play`,
+`pause`), environment variable, the `wallpiper-renderer-pid` file and the
+`wallpiper-portal-hyprland` layer namespace it uses, except
+`WALLPIPER_FORCE_LINEAR`. 2.0.1 ignores that, so the Hyprland/Mesa striping
+workaround needs 2.1; rendering itself is unverified on 2.0.1. Missing Wallpaper
+Engine/Proton reports setup requirements rather than starting a renderer.

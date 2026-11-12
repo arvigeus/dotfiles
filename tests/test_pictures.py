@@ -6,12 +6,15 @@ import io
 import json
 import os
 import tempfile
+import time
 import unittest
 from email.message import Message
 from pathlib import Path
 from unittest.mock import patch
 
 from spaces.pictures import backend as pictures
+
+PNG = b'\x89PNG\r\n\x1a\n' + b'\x00' * 8
 
 
 class WallpaperTests(unittest.TestCase):
@@ -29,6 +32,12 @@ class WallpaperTests(unittest.TestCase):
         )
         environment.start()
         self.addCleanup(environment.stop)
+        # Tests that download patch urlopen themselves; nothing reaches a real host.
+        network = patch.object(
+            pictures, 'urlopen', side_effect=AssertionError('network access')
+        )
+        network.start()
+        self.addCleanup(network.stop)
         self.item = {
             'provider': 'wallhaven',
             'id': 'abc123',
@@ -37,10 +46,10 @@ class WallpaperTests(unittest.TestCase):
 
     def cached_wallpaper(self):
         path = pictures.wallpaper_file(pictures.clean_item(self.item))
-        path.write_bytes(b'cached image')
+        path.write_bytes(PNG + b'cached image')
         return path
 
-    def response(self, content=b'image'):
+    def response(self, content=PNG + b'image'):
         response = io.BytesIO(content)
         response.headers = Message()
         response.headers['Content-Type'] = 'image/png'
@@ -107,7 +116,7 @@ class WallpaperTests(unittest.TestCase):
         item = pictures.clean_item(self.item)
         with patch.object(pictures, 'urlopen', return_value=self.response()) as request:
             path = pictures.download_wallpaper(item)
-        self.assertEqual(path.read_bytes(), b'image')
+        self.assertEqual(path.read_bytes(), PNG + b'image')
         self.assertEqual(request.call_args.kwargs['timeout'], 10)
         self.assertEqual(list(path.parent.glob('*.download')), [])
 
@@ -157,7 +166,7 @@ class WallpaperTests(unittest.TestCase):
         self.assertEqual(link.read_bytes(), first.read_bytes())
         item = dict(self.item, id='def456')
         second = pictures.wallpaper_file(pictures.clean_item(item))
-        second.write_bytes(b'new wallpaper')
+        second.write_bytes(PNG + b'new wallpaper')
         pictures.set_wallpaper({'wallpaper': item})
         self.assertEqual(link.read_bytes(), second.read_bytes())
         self.assertEqual(list(link.parent.glob('.lock-wallpaper-*')), [])
@@ -242,6 +251,110 @@ class WallpaperTests(unittest.TestCase):
             first.read_bytes(),
         )
 
+    def test_mislabelled_error_page_neither_applies_nor_poisons_the_cache(self):
+        self.cached_wallpaper()
+        pictures.set_wallpaper({'wallpaper': self.item})
+        still = self.root / 'data/quickshell/desktop/spaces/pictures/current-wallpaper'
+        setting = self.root / 'config/quickshell/desktop/spaces/pictures/wallpaper.json'
+        before = still.read_bytes(), setting.read_bytes()
+        item = dict(self.item, id='def456')
+        target = pictures.wallpaper_file(pictures.clean_item(item))
+        page = self.response(b'<html>Too many requests</html>')
+        with patch.object(pictures, 'urlopen', return_value=page):
+            with self.assertRaisesRegex(ValueError, 'supported image'):
+                pictures.set_wallpaper({'wallpaper': item})
+        self.assertEqual((still.read_bytes(), setting.read_bytes()), before)
+        self.assertFalse(target.exists())
+        self.assertEqual(list(target.parent.glob('.*')), [])
+        # A bad file cached by an older version is fetched again, not reused.
+        target.write_bytes(b'<html>cached error page</html>')
+        with patch.object(pictures, 'urlopen', return_value=self.response()):
+            pictures.set_wallpaper({'wallpaper': item})
+        self.assertEqual(still.read_bytes(), PNG + b'image')
+
+    def test_lock_screen_still_converts_formats_hyprlock_cannot_read(self):
+        from spaces.pictures.wallpaper import update_lock_background
+
+        binary = self.root / 'bin'
+        binary.mkdir()
+        ffmpeg = binary / 'ffmpeg'
+        ffmpeg.write_text(
+            '#!/bin/sh\nfor last; do :; done\n'
+            'printf "\\211PNG\\r\\n\\032\\nframe" > "$last"\n'
+        )
+        ffmpeg.chmod(0o755)
+        preview = self.root / 'preview.gif'
+        preview.write_bytes(b'GIF89a animated Wallpaper Engine preview')
+        jpeg = self.root / 'still.jpg'
+        jpeg.write_bytes(b'\xff\xd8\xff jpeg')
+        still = self.root / 'data/quickshell/desktop/spaces/pictures/current-wallpaper'
+        with patch.dict(os.environ, {'PATH': f'{binary}:{os.environ["PATH"]}'}):
+            update_lock_background(preview)
+            self.assertEqual(still.read_bytes(), PNG[:8] + b'frame')
+            self.assertEqual(still.stat().st_mode & 0o777, 0o600)
+            update_lock_background(jpeg)
+            self.assertEqual(still.read_bytes(), jpeg.read_bytes())
+        # Without FFmpeg the desktop still gets the original; Qt decodes GIF.
+        with patch.dict(os.environ, {'PATH': str(self.root / 'empty')}):
+            update_lock_background(preview)
+        self.assertEqual(still.read_bytes(), preview.read_bytes())
+        self.assertEqual(list(still.parent.glob('.*')), [])
+
+    def test_download_cache_is_bounded_and_keeps_active_and_recent_files(self):
+        folder = pictures.wallpaper_cache()
+        folder.mkdir(parents=True)
+        old = time.time() - 3 * 86400
+
+        def entry(name, age=old, size=10):
+            path = folder / name
+            path.write_bytes(b'x' * size)
+            os.utime(path, (age, age))
+            return path
+
+        video = entry('personal-clip.mp4')
+        poster = entry('personal-clip.poster.jpg')
+        setting = self.root / 'config/quickshell/desktop/spaces/pictures/wallpaper.json'
+        setting.parent.mkdir(parents=True)
+        setting.write_text(
+            json.dumps({'mode': 'video', 'video': str(video), 'selection': 'x'})
+        )
+        fresh = entry('wallhaven-fresh.png', age=time.time())
+        abandoned = entry('.pictures-1-abandoned.download')
+        partial = entry('.pictures-2-active.download', age=time.time())
+        history = [entry(f'wallhaven-{n:02}.png', age=old + n) for n in range(40)]
+        with patch.object(pictures, 'WALLPAPER_CACHE_FILES', 10):
+            pictures.prune_wallpaper_cache()
+        remaining = {path.name for path in folder.iterdir()}
+        # Active video, its poster and a fresh download count toward the bound.
+        self.assertEqual(
+            remaining,
+            {video.name, poster.name, fresh.name, partial.name}
+            | {path.name for path in history[-7:]},
+        )
+        self.assertNotIn(abandoned.name, remaining)
+        with patch.object(pictures, 'WALLPAPER_CACHE_BYTES', 35):
+            pictures.prune_wallpaper_cache()
+        self.assertEqual(
+            {path.name for path in folder.iterdir()},
+            {video.name, poster.name, fresh.name, partial.name},
+        )
+        # Pruning follows a committed Apply; a malformed choice must not fail it.
+        setting.write_text(json.dumps({'mode': 'video', 'video': 'bad\u0000path'}))
+        pictures.prune_wallpaper_cache()
+
+    def test_reapplied_download_is_recent_and_apply_prunes_history(self):
+        cached = self.cached_wallpaper()
+        stale = time.time() - 3 * 86400
+        os.utime(cached, (stale, stale))
+        older = pictures.wallpaper_cache() / 'wallhaven-older.png'
+        older.write_bytes(PNG)
+        os.utime(older, (stale - 60, stale - 60))
+        with patch.object(pictures, 'WALLPAPER_CACHE_FILES', 1):
+            pictures.set_wallpaper({'wallpaper': self.item})
+        self.assertTrue(cached.exists())
+        self.assertGreater(cached.stat().st_mtime, stale)
+        self.assertFalse(older.exists())
+
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
 class WallpaperWindowTests(unittest.TestCase):
@@ -261,4 +374,150 @@ ShellRoot {
  Timer {interval:200;running:true;onTriggered:{console.log("DISPLAY_PASS");Qt.quit();}}
 }""",
             setup,
+        )
+
+
+# A stand-in controller: records each sync and follows a per-sync script.
+RUNTIME_FIXTURE = """import json,os,sys
+from pathlib import Path
+root=Path(__file__).resolve().parents[2]
+sys.path.insert(0,str(root))
+from spaces.movies.worker import serve
+log=root/'syncs.jsonl'
+setting=root/'config/quickshell/desktop/spaces/pictures/wallpaper.json'
+def sync(request):
+    try:
+        choice=json.loads(setting.read_text())
+    except (OSError,ValueError):
+        choice={}
+    count=len(log.read_text().splitlines()) if log.exists() else 0
+    with log.open('a') as stream:
+        stream.write(json.dumps({'pid':os.getpid(),'mode':choice.get('mode',''),'request':sorted(request)})+'\\n')
+    script=json.loads((root/'script.json').read_text()) if (root/'script.json').exists() else {}
+    if choice.get('mode') not in ('video','wallpaper_engine'):
+        return {'screens':[]}
+    action=script.get(str(count),'')
+    if action=='error':
+        raise ValueError('fixture worker failure')
+    if action=='fail':
+        return {'screens':[],'error':'fixture renderer failure'}
+    return {'screens':['FIXTURE']}
+serve(sync,controls=('sync',))
+"""
+
+
+@unittest.skipUnless(support.QS, 'Quickshell is required')
+class WallpaperRuntimeTests(unittest.TestCase):
+    """The session controller owns renderer workers only while they are needed."""
+
+    run_qml = support.run_qml
+
+    def runtime_setup(self, choice, script=None, journal=False):
+        def setup(root):
+            (root / 'spaces/pictures/wallpaper_engine.py').write_text(RUNTIME_FIXTURE)
+            config = root / 'config/quickshell/desktop/spaces/pictures'
+            config.mkdir(parents=True)
+            (config / 'wallpaper.json').write_text(json.dumps(choice))
+            if journal:
+                (config / '.engine-ownership.json').write_text(
+                    json.dumps({'owner': 'f' * 32})
+                )
+            if script:
+                (root / 'script.json').write_text(json.dumps(script))
+
+        return setup
+
+    PRELUDE = """import QtQuick
+import Quickshell
+import Quickshell.Io
+import "spaces/pictures"
+ShellRoot {
+ id:root
+ property int step:0
+ property double since:0
+ WallpaperRuntime {id:runtime}
+ FileView {id:choice;path:WallpaperService.configRoot+"/wallpaper.json";atomicWrites:true}
+ function check(v,m){if(!v)throw new Error(m);}
+ function workers(){let n=0;const visit=item=>{if(item.objectName==="wallpaperRuntimeWorker")n++;for(const c of item.children??[])visit(c);};visit(runtime);return n;}
+ // A fresh reader per check: a reused FileView can return text from before a reply.
+ function log(){const view=Qt.createQmlObject('import Quickshell.Io; FileView {blockLoading:true;printErrors:false}',root);view.path=Quickshell.shellPath("syncs.jsonl");const text=view.text()||"";view.destroy();return text.split("\\n").filter(Boolean).map(line=>JSON.parse(line));}
+ function choose(value){choice.setText(JSON.stringify(value));}
+ function waited(ms){if(!root.since)root.since=Date.now();if(Date.now()-root.since<ms)return false;root.since=0;return true;}
+"""
+
+    def test_animated_choice_retries_recovers_latches_failure_and_stops(self):
+        self.run_qml(
+            self.PRELUDE
+            + """ Timer {interval:50;running:true;repeat:true;onTriggered:{try{
+  const entries=root.log();
+  if(root.step===0){
+   // Still images never start a controller.
+   if(!root.waited(700))return;
+   check(!entries.length && !root.workers() && !runtime.externalScreens.length,"static choice started a controller");
+   root.choose({mode:"video",selection:"first",image:"file:///still"});root.step++;return;
+  }
+  if(root.step===1){
+   if(String(runtime.externalScreens)!=="FIXTURE")return;
+   check(root.workers()===1,"animated choice has no single controller");
+   check(entries[0].request.indexOf("monitors")<0,"QML must leave compositor queries to the controller");
+   runtime.sync();root.step++;return;
+  }
+  if(root.step===2){
+   // Sync 1 fails at the worker level: back off and release the worker.
+   if(!runtime.retrying)return;
+   check(!runtime.externalScreens.length && runtime.workerRestarts===1,"worker failure did not back off");
+   root.step++;return;
+  }
+  if(root.step===3){
+   // The restarted worker succeeds and regains the whole retry budget.
+   if(runtime.retrying || String(runtime.externalScreens)!=="FIXTURE" || entries.length<3)return;
+   check(entries.length===3 && entries[2].pid!==entries[0].pid,"worker failure did not restart the controller");
+   check(runtime.workerRestarts===0 && !runtime.failed,"a recovered worker kept its failure count");
+   runtime.sync();root.step++;return;
+  }
+  if(root.step===4){
+   // A renderer error latches until the user applies again.
+   if(!runtime.failed)return;
+   check(!runtime.externalScreens.length,"failed renderer still hides the still image");
+   if(!root.waited(600))return;
+   check(!root.workers() && entries.length===4,"failed choice kept its controller or kept syncing");
+   root.choose({mode:"video",selection:"second",image:"file:///still"});root.step++;return;
+  }
+  if(root.step===5){
+   if(String(runtime.externalScreens)!=="FIXTURE")return;
+   check(!runtime.failed,"new selection did not clear the failure latch");
+   root.choose({image:"file:///still",provider:"wallhaven"});root.step++;return;
+  }
+  if(root.step===6){
+   // The stop sync runs once in the same worker, then the worker is released.
+   if(runtime.stopping || root.workers())return;
+   check(!runtime.externalScreens.length && entries[entries.length-1].mode==="","static choice did not reach the controller");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+ Timer {interval:13000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout step "+root.step);Qt.quit();}}
+}""",
+            self.runtime_setup(
+                {'image': 'file:///still', 'provider': 'wallhaven'},
+                script={'1': 'error', '3': 'fail'},
+            ),
+        )
+
+    def test_orphan_journal_with_still_choice_runs_one_cleanup_sync(self):
+        self.run_qml(
+            self.PRELUDE
+            + """ Timer {interval:50;running:true;repeat:true;onTriggered:{try{
+  const entries=root.log();
+  if(root.step===0){
+   if(!entries.length || runtime.stopping || root.workers())return;
+   check(entries[0].mode==="","cleanup sync saw an animated choice");
+   root.step++;return;
+  }
+  if(!root.waited(700))return;
+  check(root.log().length===1 && !root.workers() && !runtime.externalScreens.length,"cleanup controller kept running");
+  console.log("DISPLAY_PASS");Qt.quit();
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+ Timer {interval:8000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout step "+root.step);Qt.quit();}}
+}""",
+            self.runtime_setup({'image': 'file:///still'}, journal=True),
         )

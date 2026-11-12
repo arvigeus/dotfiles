@@ -21,6 +21,9 @@ from spaces.pictures import backend as pictures
 from spaces.pictures import wallpaper_engine as engine
 from spaces.pictures import workshop
 
+# Compositor state as the shell's Hyprland would report it.
+REQUEST = {'monitors': [{'name': 'TEST', 'id': 0}], 'clients': []}
+
 
 class WallpaperEngineTests(unittest.TestCase):
     def setUp(self):
@@ -40,6 +43,12 @@ class WallpaperEngineTests(unittest.TestCase):
         )
         environment.start()
         self.addCleanup(environment.stop)
+        for module in (pictures, workshop):
+            network = patch.object(
+                module, 'urlopen', side_effect=AssertionError('network access')
+            )
+            network.start()
+            self.addCleanup(network.stop)
         self.folder = self.root / 'Steam/steamapps/workshop/content/431960/123456'
         self.folder.mkdir(parents=True)
         self.project = self.folder / 'project.json'
@@ -53,7 +62,7 @@ class WallpaperEngineTests(unittest.TestCase):
                 }
             )
         )
-        (self.folder / 'preview.png').write_bytes(b'preview')
+        (self.folder / 'preview.png').write_bytes(b'\x89PNG\r\n\x1a\npreview')
         self.engine_executable = (
             self.root / 'Steam/steamapps/common/wallpaper_engine/wallpaper64.exe'
         )
@@ -492,11 +501,33 @@ class WallpaperEngineTests(unittest.TestCase):
             ),
             patch.object(runtime, 'stop') as stop,
         ):
-            self.assertTrue(runtime.sync({})['recovering'])
+            self.assertTrue(runtime.sync(REQUEST)['recovering'])
             self.assertEqual(engine.read_state()['status'], 'recovering')
-            self.assertEqual(runtime.sync({})['screens'], ['TEST'])
+            self.assertEqual(runtime.sync(REQUEST)['screens'], ['TEST'])
             self.assertIsNone(runtime.transient_since)
             stop.assert_not_called()
+
+    def test_slow_compositor_query_recovers_inside_the_worker(self):
+        environment = self.fixture_environment()
+        hyprctl = self.root / 'bin/hyprctl'
+        hyprctl.unlink()
+        hyprctl.write_text('#!/bin/sh\nexit 1\n')
+        hyprctl.chmod(0o755)
+        self.setting(
+            {'mode': 'wallpaper_engine', 'workshop_id': '123456', 'selection': 'first'}
+        )
+        worker = self.spawn_worker(environment)
+        for serial in (1, 2):
+            # The shell sends no compositor state; a failed query is transient.
+            worker.stdin.write(json.dumps({'id': serial, 'op': 'sync'}) + '\n')
+            worker.stdin.flush()
+            self.assertTrue(select.select([worker.stdout], [], [], 5)[0])
+            response = json.loads(worker.stdout.readline())
+            self.assertNotIn('error', response)
+            self.assertTrue(response['result']['recovering'])
+        self.assertEqual(engine.read_state()['status'], 'recovering')
+        self.assertFalse((self.root / 'pids.json').exists())
+        self.assertIsNone(worker.poll())
 
     def test_persistent_failures_have_bounded_restart_budget(self):
         self.setting(
@@ -512,24 +543,24 @@ class WallpaperEngineTests(unittest.TestCase):
             ),
             patch.object(engine.time, 'monotonic', return_value=100),
         ):
-            runtime.sync({})
+            runtime.sync(REQUEST)
             for attempt in range(engine.MAX_RESTARTS):
                 runtime.restart_at = 0
                 runtime.transient_since = 0
-                self.assertTrue(runtime.sync({})['recovering'])
+                self.assertTrue(runtime.sync(REQUEST)['recovering'])
                 self.assertEqual(runtime.restarts, attempt + 1)
                 self.assertEqual(runtime.restart_at, 100 + 2**attempt)
             runtime.restart_at = 0
             runtime.transient_since = 0
-            result = runtime.sync({})
+            result = runtime.sync(REQUEST)
             self.assertIn('IPC unavailable', result['error'])
             self.assertEqual(engine.read_state()['status'], 'error')
-        self.assertIn('IPC unavailable', runtime.sync({})['error'])
+        self.assertIn('IPC unavailable', runtime.sync(REQUEST)['error'])
         self.setting(
             {'mode': 'wallpaper_engine', 'workshop_id': '123456', 'selection': 'second'}
         )
         with patch.object(runtime, 'sync_engine', return_value={'screens': ['TEST']}):
-            self.assertEqual(runtime.sync({})['screens'], ['TEST'])
+            self.assertEqual(runtime.sync(REQUEST)['screens'], ['TEST'])
         self.assertEqual(runtime.restarts, 0)
 
     def test_healthy_runtime_regains_restart_budget(self):
@@ -562,7 +593,10 @@ class WallpaperEngineTests(unittest.TestCase):
                 [{'name': 'TEST', 'dpmsStatus': False}],
                 [{'name': 'TEST', 'disabled': True}],
             ):
-                self.assertEqual(runtime.sync({'monitors': monitors}), {'screens': []})
+                self.assertEqual(
+                    runtime.sync({'monitors': monitors, 'clients': []}),
+                    {'screens': []},
+                )
                 self.assertEqual(engine.read_state()['status'], 'waiting')
             start.assert_not_called()
 
@@ -711,10 +745,21 @@ class WallpaperEngineTests(unittest.TestCase):
             patch.object(engine.subprocess, 'Popen') as spawn,
         ):
             descriptor = pictures.run({'op': 'providers'})['providers'][-1]
+            filters = {field['key']: field for field in descriptor['filters']}
             self.assertEqual(
-                [entry['value'] for entry in descriptor['filters'][1]['options']],
+                [entry['value'] for entry in filters['tag']['options']],
                 ['', 'nature', 'relaxing'],
             )
+            # Installed and Workshop catalogues are both reachable from the UI.
+            self.assertEqual(
+                [entry['value'] for entry in filters['source']['options']],
+                ['installed', 'workshop'],
+            )
+            for key in ('tag', 'sorting', 'workshopTag', 'workshopSort'):
+                self.assertIn(
+                    filters[key]['when']['value'],
+                    [entry['value'] for entry in filters['source']['options']],
+                )
             request = {'op': 'browse', 'provider': 'wallpaper_engine'}
             self.assertEqual(
                 [

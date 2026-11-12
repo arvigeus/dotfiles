@@ -67,7 +67,8 @@ def descriptors():
     ]
 
 
-def clean_item(raw, include_disabled=False):
+def clean_item(raw, include_disabled=False, catalog=None):
+    """catalog() may supply configured() already read for a whole page or list."""
     if not isinstance(raw, dict):
         return None
     provider_id = raw.get('provider')
@@ -75,7 +76,7 @@ def clean_item(raw, include_disabled=False):
         r'[a-z][a-z0-9_-]{0,63}', provider_id
     ):
         return None
-    provider = configured().get(provider_id)
+    provider = (catalog or configured)().get(provider_id)
     if not provider and include_disabled and provider_id not in RESERVED:
         provider = {
             'id': provider_id,
@@ -147,9 +148,10 @@ def browse(args):
             'Wallpaper provider must return an items list of at most 500 entries.'
         )
     items = []
+    page_catalog = {provider['id']: provider}
     for row in rows:
         item = (
-            clean_item(dict(row, provider=provider['id']))
+            clean_item(dict(row, provider=provider['id']), catalog=lambda: page_catalog)
             if isinstance(row, dict)
             else None
         )

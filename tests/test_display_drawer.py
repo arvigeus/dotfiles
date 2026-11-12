@@ -697,8 +697,10 @@ class DisplayRulesTests(unittest.TestCase):
 @unittest.skipUnless(shutil.which('lua'), 'Lua is required')
 class DisplayEventBridgeTests(unittest.TestCase):
     def test_native_hook_forwards_only_when_compositor_reports_change(self):
+        # The hook belongs to the Hyprland module, not the (possibly staged) shell.
         monitors = (
-            DESKTOP.parents[5] / 'hyprland/symlinks/home/.config/hypr/monitors.lua'
+            support.REPO
+            / 'modules/desktop/hyprland/symlinks/home/.config/hypr/monitors.lua'
         )
         # Read the production hook with an isolated config directory and native
         # API stand-ins. Dispatching the notification cannot launch a process.

@@ -57,6 +57,8 @@ Item {
         }
     ]
     property string error: ""
+    // Ordered mutations can queue behind an Apply; never report them failed early.
+    readonly property int controlTimeout: WallpaperService.applyTimeout
     property string actionMessage: ""
     property bool actionFailed: false
     property string query: ""
@@ -181,7 +183,7 @@ Item {
         providerFilters = stored;
         providerId = id;
         const descriptor = providerDescriptor(id);
-        filters = Object.assign({}, providerFilters[id] || descriptor.defaultFilters || {});
+        filters = Object.assign({}, descriptor.defaultFilters || {}, providerFilters[id] || {});
         providerChoice.currentIndex = Math.max(0, providerIndex(id));
         syncFilterControls();
         updateCatalogue([], false);
@@ -370,9 +372,23 @@ Item {
             actionMessage = value ? "Added to Favorites." : "Removed from Favorites.";
             if (favoritesView)
                 browse(false);
-        });
+        }, controlTimeout);
     }
 
+    function wallpaperName(item) {
+        return item.title || providerName(item.provider || providerId) + " · " + item.id;
+    }
+    // Results of an action on a wallpaper that is no longer selected: success is
+    // dropped, but a failure must not vanish or read as the new selection's.
+    function reportFor(key, item, message, failure) {
+        if (key === wallpaperKey(selected)) {
+            actionMessage = failure || message;
+            actionFailed = !!failure;
+        } else if (failure) {
+            actionMessage = wallpaperName(item) + ": " + failure;
+            actionFailed = true;
+        }
+    }
     function setDesktopWallpaper() {
         if (!selected || !selected.id || settingWallpaper)
             return;
@@ -386,29 +402,24 @@ Item {
             wallpaper: wallpaper
         }, (result, failure) => {
             settingWallpaper = false;
-            if (key !== wallpaperKey(selected))
-                return;
-            actionMessage = failure || (result ? result.message : "Wallpaper could not be set.");
-            actionFailed = !!failure;
-        });
+            reportFor(key, wallpaper, result ? result.message : "Wallpaper could not be set.", failure);
+        }, controlTimeout);
     }
 
     function openSteamWorkshop() {
         if (!engineSelected || !selected.id || openingWorkshop)
             return;
-        const key = wallpaperKey(selected);
+        const wallpaper = selected;
+        const key = wallpaperKey(wallpaper);
         openingWorkshop = true;
         actionMessage = "Opening Steam…";
         actionFailed = false;
         service.request("openWorkshop", {
-            workshopId: selected.id
+            workshopId: wallpaper.id
         }, (result, failure) => {
             openingWorkshop = false;
-            if (key !== wallpaperKey(selected))
-                return;
-            actionMessage = failure || (result ? result.message : "Steam could not open the Workshop page.");
-            actionFailed = !!failure;
-        });
+            reportFor(key, wallpaper, result ? result.message : "Steam could not open the Workshop page.", failure);
+        }, controlTimeout);
     }
 
     function refreshEngineInstallation() {
@@ -532,7 +543,6 @@ Item {
                 providerId = result.provider || "wallhaven";
                 savedProvider = result.provider || "";
                 providerFilters = Object.assign({}, providerFilters, result.filters || {});
-                initialized = !!result.provider;
             }
             preferencesReady = true;
             loadFavoriteIds();
@@ -552,7 +562,7 @@ Item {
         }, (result, failure) => {
             if (failure)
                 root.error = failure;
-        })
+        }, root.controlTimeout)
     }
 
     Timer {
@@ -572,7 +582,9 @@ Item {
         onTriggered: {
             if (!root.active || root.favoritesView || root.loading || !root.page || !root.wallpapers.length)
                 return;
-            const nearEnd = root.gridMode ? grid.contentY + grid.height >= grid.contentHeight - grid.cellHeight * 2 : rail.contentX + rail.width >= rail.contentWidth - rail.width * 0.55;
+            // Positions are relative to the origin, which moves negative when
+            // a refresh inserts wallpapers ahead of the visible ones.
+            const nearEnd = root.gridMode ? grid.contentY - grid.originY + grid.height >= grid.contentHeight - grid.cellHeight * 2 : rail.contentX - rail.originX + rail.width >= rail.contentWidth - rail.width * 0.55;
             if (nearEnd)
                 root.browse(true);
         }

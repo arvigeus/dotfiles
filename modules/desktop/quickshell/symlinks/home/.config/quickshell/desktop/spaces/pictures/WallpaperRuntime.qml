@@ -1,5 +1,4 @@
 import QtQuick
-import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 import "../movies"
@@ -24,33 +23,30 @@ Item {
     property bool ownershipReady: false
     property bool ownershipChecked: false
 
-    FileView {
-        id: setting
-        readonly property string configuredRoot: Quickshell.env("XDG_CONFIG_HOME") || ""
-        path: (configuredRoot.startsWith("/") ? configuredRoot : Quickshell.env("HOME") + "/.config") + "/quickshell/desktop/spaces/pictures/wallpaper.json"
-        preload: true
-        blockLoading: false
-        printErrors: false
-        watchChanges: true
-        onFileChanged: reload()
-        onLoaded: {
-            let data = {};
-            try {
-                data = JSON.parse(text());
-            } catch (exception) {}
-            root.configure(["wallpaper_engine", "video"].includes(data.mode), String(data.selection || ""));
+    Connections {
+        target: WallpaperService
+        function onChoiceChanged() {
+            root.applyChoice();
         }
-        onLoadFailed: root.configure(false, "")
+        function onLoadedChanged() {
+            root.applyChoice();
+        }
+    }
+    Component.onCompleted: applyChoice()
+    function applyChoice() {
+        if (!WallpaperService.loaded)
+            return;
+        const data = WallpaperService.choice;
+        configure(["wallpaper_engine", "video"].includes(data.mode), String(data.selection || ""));
     }
 
+    // Read once at startup: only a journal left by a killed controller matters.
     FileView {
         id: ownership
-        path: setting.path.toString().replace(/wallpaper\.json$/, ".engine-ownership.json")
+        path: WallpaperService.configRoot + "/.engine-ownership.json"
         preload: true
         blockLoading: false
         printErrors: false
-        watchChanges: true
-        onFileChanged: reload()
         onLoaded: {
             root.ownershipReady = true;
             root.reconcileOwnership();
@@ -71,7 +67,7 @@ Item {
         try {
             data = JSON.parse(ownership.text());
         } catch (exception) {}
-        if (!data.owner)
+        if (!data?.owner)
             return;
         // A crash followed by a static choice still needs one cleanup worker.
         stopping = true;
@@ -107,6 +103,9 @@ Item {
             pending = false;
             if (requestedGeneration === generation) {
                 screens = error || !result ? [] : result.screens || [];
+                // Backoff budget covers consecutive worker failures, not a whole session.
+                if (!error)
+                    workerRestarts = 0;
                 if (error || (result && result.error))
                     console.warn("Wallpaper playback:", error || result.error);
                 if (!animated && !error)

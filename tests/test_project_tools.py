@@ -2,6 +2,7 @@
 
 import importlib.machinery
 import importlib.util
+import os
 import subprocess
 import tempfile
 import unittest
@@ -221,7 +222,10 @@ class ProjectMaintenanceTests(unittest.TestCase):
         self.git('config', 'gpg.program', str(signer))
         self.git('config', 'user.signingKey', 'test-key')
         before = self.git('rev-parse', 'HEAD')
-        self.assertNotEqual(project.git_action('commit', self.root), 0)
+        # GIT_EDITOR outranks core.editor; agent and CI shells often set it to true.
+        with patch.dict(os.environ):
+            os.environ.pop('GIT_EDITOR', None)
+            self.assertNotEqual(project.git_action('commit', self.root), 0)
         self.assertTrue(marker.exists())
         self.assertEqual(self.git('rev-parse', 'HEAD'), before)
         self.assertTrue(self.git('diff', '--cached', '--name-only'))

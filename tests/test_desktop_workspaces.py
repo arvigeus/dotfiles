@@ -648,12 +648,15 @@ CROWDED_STEPS = """        [() => part("OUT-1", "windowList").windows.length ===
         // Without a hidden request, a marker scrolls about a page.
         [() => part("OUT-1", "windowList").hiddenAfter < tabs.hidden - 1, () => {
             const list = part("OUT-1", "windowList");
-            tabs = {fit: Math.floor((list.available + Theme.spacingSmall) / (list.minimumCellWidth + Theme.spacingSmall))};
-            check(tabs.fit > 3 && tabs.fit < 14, "fixture cannot show shared widths: " + list.available);
-            fake({events: list.windows.slice(tabs.fit).map(window => "closewindow>>" + window.address)});
+            const fit = Math.floor((list.available + Theme.spacingSmall) / (list.minimumCellWidth + Theme.spacingSmall));
+            check(fit > 4 && fit < 14, "fixture cannot show shared widths: " + list.available);
+            // One fewer than fits leaves real slack: exactly `fit` tabs may floor
+            // to the minimum width when the strip is a whole number of them.
+            tabs = {shared: fit - 1};
+            fake({events: list.windows.slice(tabs.shared).map(window => "closewindow>>" + window.address)});
         }],
         // Tabs share the width before scrolling, and keep full width when few.
-        [() => part("OUT-1", "windowList").windows.length === tabs.fit, () => {
+        [() => part("OUT-1", "windowList").windows.length === tabs.shared, () => {
             const list = part("OUT-1", "windowList");
             check(list.hiddenBefore === 0 && list.hiddenAfter === 0 && list.width <= list.maximumWidth, "fitting tabs still scroll");
             check(list.tabWidth > list.minimumCellWidth && list.tabWidth < list.cellWidth, "tabs did not share the width: " + list.tabWidth);

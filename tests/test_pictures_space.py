@@ -217,6 +217,99 @@ ShellRoot {
             setup=private_setup,
         )
 
+    def test_failed_apply_after_moving_on_names_the_failed_wallpaper(self):
+        def failing_setup(root):
+            setup(root)
+            worker = root / 'spaces/pictures/backend.py'
+            source = worker.read_text().replace(
+                "return {'items':[item],'next':0}",
+                "return {'items':[item,dict(item,id='def456',title='Desert road')],'next':0}",
+            )
+            source = source.replace(
+                "if r['op']=='set':time.sleep(.25);return {'message':'Wallpaper and lock updated'}",
+                "if r['op']=='set':time.sleep(.4);raise ValueError('Fixture download failed.')",
+            )
+            worker.write_text(source)
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState{id:interactions}
+ SpaceHost{id:host;interactionState:interactions}
+ property int step:0
+ function check(v,m){if(!v)throw new Error(m);}
+ Timer{interval:40;running:true;repeat:true;onTriggered:{try{
+  if(root.step===0){SpaceState.open("pictures",Quickshell.screens[0]);root.step++;return;}
+  const page=host.currentPage;if(!page||page.loading||page.wallpapers.length<2)return;
+  if(root.step===1){
+   page.selectWallpaper(page.wallpapers[0]);page.setDesktopWallpaper();
+   page.selectWallpaper(page.wallpapers[1]);
+   check(!page.actionFailed && !page.actionMessage,"moving on kept the previous action message");
+   root.step++;return;
+  }
+  if(page.settingWallpaper)return;
+  check(page.selected.id==="def456","the failed Apply changed the selection");
+  check(page.actionFailed && page.actionMessage==="Mountain lake: Fixture download failed.","failure was lost or misattributed: "+page.actionMessage);
+  SpaceState.close("pictures");console.log("DISPLAY_PASS");Qt.quit();
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+ Timer{interval:9000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
+}""",
+            setup=failing_setup,
+        )
+
+    def test_refresh_that_adds_newer_wallpapers_still_pages_at_the_end(self):
+        def paging_setup(root):
+            setup(root)
+            worker = root / 'spaces/pictures/backend.py'
+            source = worker.read_text().replace(
+                "if r['op']=='browse' and not r.get('favorites'):return {'items':[item],'next':0}",
+                """if r['op']=='browse' and not r.get('favorites'):
+  calls.append(r.get('page'))
+  page=lambda prefix,count:[dict(item,id=f'{prefix}{n:02}',title=f'{prefix} {n}') for n in range(count)]
+  if r.get('page')==2:return {'items':page('older',5),'next':0}
+  # A refresh returns newer wallpapers ahead of those already shown.
+  return {'items':(page('newer',10) if len(calls)>1 else [])+page('shown',30),'next':2 if len(calls)>1 else 0}""",
+            )
+            worker.write_text(
+                source.replace('def handle(r):', 'calls=[]\ndef handle(r):')
+            )
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState{id:interactions}
+ SpaceHost{id:host;interactionState:interactions}
+ property int step:0
+ function check(v,m){if(!v)throw new Error(m);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ Timer{interval:60;running:true;repeat:true;onTriggered:{try{
+  if(root.step===0){SpaceState.open("pictures",Quickshell.screens[0]);root.step++;return;}
+  const page=host.currentPage;if(!page||page.loading||!page.wallpapers.length)return;
+  const rail=find(page,"wallpaperRail");
+  if(root.step===1){page.selectWallpaper(page.wallpapers[29]);root.step++;return;}
+  if(root.step===2){check(rail.atXEnd,"the last wallpaper is not at the rail end");page.browse(false);root.step++;return;}
+  if(root.step===3){
+   if(page.wallpapers.length<40)return;
+   check(rail.originX<0 && rail.atXEnd,"fixture did not shift the rail origin at its end: "+rail.originX);
+   root.step++;return;
+  }
+  if(root.step===4){
+   if(page.wallpapers.length<45)return;
+   check(page.wallpapers[44].id==="older04","the next page did not follow the refreshed one");
+   SpaceState.close("pictures");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+ Timer{interval:9000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout step "+root.step);Qt.quit();}}
+}""",
+            setup=paging_setup,
+        )
+
     def test_displays_header_has_one_badged_wallpaper_action(self):
         self.run_qml("""import QtQuick
 import Quickshell

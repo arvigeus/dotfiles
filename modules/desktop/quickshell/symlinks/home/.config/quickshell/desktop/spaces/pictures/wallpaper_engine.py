@@ -42,6 +42,15 @@ PROVIDER: dict[str, Any] = {
     },
     'filters': [
         {
+            'key': 'source',
+            'label': 'Source',
+            'width': 170,
+            'options': [
+                {'label': 'Installed', 'value': 'installed'},
+                {'label': 'Steam Workshop', 'value': 'workshop'},
+            ],
+        },
+        {
             'key': 'type',
             'label': 'Type',
             'width': 150,
@@ -99,6 +108,9 @@ STARTUP_TIMEOUT = 45
 RECOVERY_TIMEOUT = 15
 MAX_RESTARTS = 3
 HEALTHY_SECONDS = 60
+# Runtime.stop() can take ~25 s (player 6 s, daemon 15 s, reaping 4 s) plus the
+# QML debounce and a sync already holding the control lock.
+SHUTDOWN_TIMEOUT = 40
 PR_SET_PDEATHSIG = 1
 _prctl = ctypes.CDLL(None).prctl
 
@@ -201,7 +213,7 @@ def open_lock(path):
     return os.fdopen(descriptor, 'a')
 
 
-def wait_idle(timeout=20):
+def wait_idle(timeout=SHUTDOWN_TIMEOUT):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         state = read_state()
@@ -220,6 +232,18 @@ def control_lock():
     with open_lock(folder / '.engine-control.lock') as stream:
         fcntl.flock(stream, fcntl.LOCK_EX)
         yield
+
+
+def publish_still(setting, image):
+    """Give the desktop fallback and lock screen this animated choice's still.
+
+    Call under control_lock with the setting read there. Rewriting the choice
+    makes the shell reload its fallback from the replaced still file.
+    """
+    update_lock_background(image)
+    if setting.get('image') != image.as_uri():
+        setting['image'] = image.as_uri()
+        atomic_write(config_dir() / 'wallpaper.json', json.dumps(setting) + '\n')
 
 
 def library_paths():
@@ -348,7 +372,8 @@ def descriptor():
     for _project, metadata in projects().values():
         for label in project_tags(metadata):
             tags.setdefault(label.casefold(), label)
-    provider['filters'][1]['options'].extend(
+    installed_tags = next(f for f in provider['filters'] if f['key'] == 'tag')
+    installed_tags['options'].extend(
         {'label': tags[key], 'value': key} for key in sorted(tags)[:500]
     )
     return provider
@@ -1159,6 +1184,7 @@ class Runtime:
         )
         # Tiled exports can import successfully yet display as stripes on
         # Hyprland/Mesa. Linear dma-bufs retain the GPU copy/capture path.
+        # Wallpiper 2.1 reads this; 2.0.1 ignores it.
         environment.setdefault('WALLPIPER_FORCE_LINEAR', '1')
         renderer = engine_executable()
         if not renderer:
@@ -1307,6 +1333,12 @@ class Runtime:
                     )
                 if time.monotonic() < self.restart_at:
                     return {'screens': [], 'recovering': True}
+                # Inside the TransientError scope: a slow compositor reply must
+                # recover here, not fail the request and kill the worker's tree.
+                request = dict(request)
+                for subject in ('monitors', 'clients'):
+                    if subject not in request:
+                        request[subject] = hypr_query(subject)
                 if setting.get('mode') == 'video':
                     return self.video.sync(self, request, setting)
                 self.video.stop()
@@ -1482,12 +1514,7 @@ class Runtime:
             self.token = token
             self.paused = False
             if preview:
-                update_lock_background(preview, config_dir().parent)
-                if setting.get('image') != preview.as_uri():
-                    setting['image'] = preview.as_uri()
-                    atomic_write(
-                        config_dir() / 'wallpaper.json', json.dumps(setting) + '\n'
-                    )
+                publish_still(setting, preview)
         # A newly created portal is transparent until the renderer supplies
         # frames. Its existence alone must not hide the still-image fallback
         # or report that Apply succeeded.
@@ -1514,13 +1541,6 @@ if __name__ == '__main__':
 
     runtime = Runtime()
 
-    def sync(request):
-        if 'monitors' not in request:
-            request['monitors'] = hypr_query('monitors')
-        if 'clients' not in request:
-            request['clients'] = hypr_query('clients')
-        return runtime.sync(request)
-
     def shutdown(signum, frame):
         runtime.close()
         os._exit(0)
@@ -1528,6 +1548,6 @@ if __name__ == '__main__':
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
     try:
-        serve(sync, controls=('sync',))
+        serve(runtime.sync, controls=('sync',))
     finally:
         runtime.close()
