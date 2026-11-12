@@ -19,7 +19,7 @@ Popup {
     property var touched: ({})
     property var knownFields: []
     property var changes: ({})
-    property var fileSignature: []
+    property string fileSignature: ""
     property string remoteVersion: ""
     property string originalPath: ""
     property string relativePath: ""
@@ -135,7 +135,7 @@ Popup {
         }
         if (result.remoteVersion !== undefined) {
             remoteVersion = result.remoteVersion;
-            fileSignature = [];
+            fileSignature = "";
         }
         fileInfo = result.fileInfo || fileInfo;
         updateChanges();
@@ -193,7 +193,7 @@ Popup {
         remoteVersion = "";
         touched = ({});
         changes = ({});
-        fileSignature = [];
+        fileSignature = "";
         setMessage("");
         original = previewTags(item);
         knownFields = Object.keys(original).filter(key => !!original[key]);
@@ -665,7 +665,8 @@ Popup {
                 objectName: "musicMovePath"
                 Layout.fillWidth: true
                 text: root.relativePath
-                readOnly: !root.editable || !root.originalPath || root.editing || root.busy || root.reading
+                // A lyrics result is staged for this path; it cannot change meanwhile.
+                readOnly: !root.editable || !root.originalPath || root.editing || root.busy || root.reading || root.lookingUp
                 placeholderText: root.reading ? "Loading…" : "Path unavailable from the server"
                 Accessible.name: "Music-relative file path"
                 onTextEdited: root.relativePath = text
@@ -675,7 +676,7 @@ Popup {
                 objectName: "musicMove"
                 text: "Move"
                 iconName: "folder"
-                enabled: root.editable && !!root.originalPath && root.pathDirty && !root.editing && !root.busy && !root.reading
+                enabled: root.editable && !!root.originalPath && root.pathDirty && !root.editing && !root.busy && !root.reading && !root.lookingUp
                 onClicked: root.run("move")
             }
         }

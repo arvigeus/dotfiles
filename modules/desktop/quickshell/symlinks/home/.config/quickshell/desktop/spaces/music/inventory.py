@@ -11,8 +11,11 @@ import threading
 import time
 
 from spaces.music import local_files as files, tags
-from spaces.music.cloud_index import CatalogueIndex, fold
+from spaces.music.cloud_index import SCHEMA, CatalogueIndex, fold
 from spaces.music.records import MusicError
+
+# A catalogue built this long after a move has had time to index it.
+MOVE_GRACE = 3600
 
 
 class Inventory:
@@ -25,6 +28,40 @@ class Inventory:
         self.version = ''
         self.error = ''
         index.view_path = self.view
+
+    @staticmethod
+    def audio_files():
+        """(relative path, signature JSON) of ordinary audio files in Music.
+
+        Hidden entries and symbolic links are skipped and never followed, so
+        every path stays inside the folder without validating each parent.
+        """
+        pending = [(files.ROOT, '')]
+        while pending:
+            directory, prefix = pending.pop()
+            try:
+                entries = list(os.scandir(directory))
+            except OSError:
+                continue
+            for entry in entries:
+                try:
+                    if entry.name.startswith('.') or entry.is_symlink():
+                        continue
+                    rel = prefix + entry.name
+                    if entry.is_dir(follow_symlinks=False):
+                        pending.append((entry.path, rel + '/'))
+                    elif os.path.splitext(entry.name)[
+                        1
+                    ].lower() in files.EXTENSIONS and entry.is_file(
+                        follow_symlinks=False
+                    ):
+                        stat = entry.stat(follow_symlinks=False)
+                        yield (
+                            rel,
+                            json.dumps([stat.st_ino, stat.st_size, stat.st_mtime_ns]),
+                        )
+                except OSError:
+                    continue  # Removed while walking.
 
     def refresh(self, force=False):
         if not self.lock.acquire(blocking=False):
@@ -42,43 +79,34 @@ class Inventory:
             db.execute(
                 'CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY,signature TEXT,payload TEXT)'
             )
+            # Payloads stay JSON text: an unchanged pass compares strings only.
             old = {
-                rel: (sig, json.loads(payload))
-                for rel, sig, payload in db.execute('SELECT * FROM files')
+                rel: (sig, payload)
+                for rel, sig, payload in db.execute(
+                    'SELECT path,signature,payload FROM files'
+                )
             }
             current = {}
             unreadable = 0
-            for directory, dirs, names in os.walk(files.ROOT, followlinks=False):
-                dirs[:] = [
-                    name
-                    for name in dirs
-                    if not name.startswith('.')
-                    and not (Path(directory) / name).is_symlink()
-                ]
-                for name in names:
-                    path = Path(directory) / name
-                    if (
-                        name.startswith('.')
-                        or path.suffix.lower() not in files.EXTENSIONS
-                        or path.is_symlink()
-                        or not path.is_file()
-                    ):
-                        continue
-                    rel = path.relative_to(files.ROOT).as_posix()
-                    try:
-                        files.local_path(rel)
-                        sig = json.dumps(files.signature(path))
-                        if rel in old and old[rel][0] == sig:
-                            details = old[rel][1]
-                        else:
-                            details = tags.read(path, files.run)
-                        current[rel] = (sig, details)
-                    except (MusicError, OSError, ValueError):
-                        unreadable += 1
-                        if rel in old:
-                            current[rel] = old[rel]
-            source = (
-                self.index.path.stat().st_mtime_ns if self.index.path.exists() else 0
+            for rel, sig in self.audio_files():
+                if rel in old and old[rel][0] == sig:
+                    current[rel] = old[rel]
+                    continue
+                try:
+                    details = tags.read(files.ROOT / rel, files.run)
+                    current[rel] = (sig, json.dumps(details))
+                except (MusicError, OSError, ValueError):
+                    unreadable += 1
+                    if rel in old:
+                        current[rel] = old[rel]
+            # Server snapshots and local associations (baselines, pending uploads
+            # and moves) change rows without changing any audio file. Creating
+            # the association tables first keeps that from counting as a change.
+            with files.db():
+                pass
+            source = tuple(
+                path.stat().st_mtime_ns if path.exists() else 0
+                for path in (self.index.path, files.DATA / 'library.sqlite')
             )
             changed = (
                 force
@@ -88,13 +116,18 @@ class Inventory:
             )
             if changed:
                 # These are regenerable metadata rows. Audio files are never removed.
-                self._publish(current)
+                self._publish(
+                    {
+                        rel: (sig, json.loads(payload))
+                        for rel, (sig, payload) in current.items()
+                    }
+                )
                 with db:
                     db.execute('DELETE FROM files')
                     db.executemany(
                         'INSERT INTO files VALUES(?,?,?)',
                         [
-                            (rel, sig, json.dumps(payload))
+                            (rel, sig, payload)
                             for rel, (sig, payload) in current.items()
                         ],
                     )
@@ -151,29 +184,32 @@ class Inventory:
                         'SELECT old_path,new_path,payload FROM music_pending_moves WHERE account=?',
                         (self.index.account,),
                     ).fetchall()
+                    # Ids decide: moves that swap names reuse another song's path.
+                    by_id = {item['id']: item for item in remote_paths.values()}
+                    catalogued = set(remote_paths)
+                    built = db.execute(
+                        "SELECT value FROM metadata WHERE key='version'"
+                    ).fetchone()
+                    built = int(built[0]) / 1e9 if built else 0
                     for old_path, new_path, payload in moves:
                         moved = json.loads(payload)
                         aliases = [old_path, *moved.get('previousPaths', [])]
-                        previous = next(
-                            (
-                                remote_paths[path]
-                                for path in aliases
-                                if path in remote_paths
-                            ),
-                            None,
-                        )
                         identifier = moved.get('id')
-                        if not previous and identifier:
-                            previous = next(
-                                (
-                                    item
-                                    for item in remote_paths.values()
-                                    if item['id'] == identifier
-                                ),
-                                None,
+                        previous = by_id.get(identifier)
+                        acknowledged = remote_paths.get(new_path)
+                        # Neither the song nor its new path in a catalogue built
+                        # well after the move: the server no longer has it.
+                        gone = (
+                            not previous
+                            and new_path not in catalogued
+                            and built - moved.get('moved', 0) > MOVE_GRACE
+                        )
+                        if gone or (
+                            acknowledged
+                            and (
+                                acknowledged['id'] == identifier
+                                or not any(path in remote_paths for path in aliases)
                             )
-                        if new_path in remote_paths and not any(
-                            path in remote_paths for path in aliases
                         ):
                             state.execute(
                                 'DELETE FROM music_pending_moves WHERE account=? AND old_path=?',
@@ -181,9 +217,9 @@ class Inventory:
                             )
                             continue
                         if previous:
-                            remote_paths.pop(
-                                previous.get('serverPath', '').lstrip('/'), None
-                            )
+                            old = previous.get('serverPath', '').lstrip('/')
+                            if remote_paths.get(old) is previous:
+                                del remote_paths[old]
                             moved = previous | moved | {'id': previous['id']}
                         if moved.get('id'):
                             moved.update(
@@ -209,23 +245,62 @@ class Inventory:
                             if rel in remote_paths
                         ],
                     )
+
+                def artist_identity(name):
+                    return (
+                        artists.get(fold(name))
+                        or 'local-artist:'
+                        + hashlib.sha256(fold(name).encode()).hexdigest()[:20]
+                    )
+
+                def local_artist(identifier, name):
+                    if not db.execute(
+                        "SELECT 1 FROM records WHERE kind='artist' AND id=?",
+                        (identifier,),
+                    ).fetchone():
+                        self.index.put(
+                            db,
+                            dict(
+                                id=identifier,
+                                source='music-local',
+                                account=self.index.account,
+                                kind='artist',
+                                name=name,
+                            ),
+                        )
+
                 for rel, (sig, details) in current.items():
                     values = details['tags']
                     artist = values.get('artist') or 'Unknown artist'
                     album = values.get('album', '')
-                    artist_id = (
-                        artists.get(fold(artist))
-                        or 'local-artist:'
-                        + hashlib.sha256(fold(artist).encode()).hexdigest()[:20]
-                    )
-                    album_id = (
-                        albums.get((fold(album), fold(artist)))
-                        or 'local-album:'
-                        + hashlib.sha256(
-                            (fold(album) + '|' + fold(artist)).encode()
-                        ).hexdigest()[:20]
-                    )
+                    # Albums group by album artist, so featured artists and
+                    # compilations stay one album.
+                    album_artist = values.get('album_artist') or artist
                     previous = remote_paths.get(rel)
+                    # A cached copy keeps the server's identities while its tags
+                    # still name them; only an edited name selects another entity.
+                    if (
+                        previous
+                        and previous.get('artistIds')
+                        and fold(previous.get('artist', '')) == fold(artist)
+                    ):
+                        artist_ids = list(previous['artistIds'])
+                    else:
+                        artist_ids = [artist_identity(artist)]
+                    if (
+                        previous
+                        and previous.get('albumId')
+                        and fold(previous.get('album', '')) == fold(album)
+                    ):
+                        album_id = previous['albumId']
+                    else:
+                        album_id = (
+                            albums.get((fold(album), fold(album_artist)))
+                            or 'local-album:'
+                            + hashlib.sha256(
+                                (fold(album) + '|' + fold(album_artist)).encode()
+                            ).hexdigest()[:20]
+                        )
                     base = previous or dict(
                         id='local:' + rel,
                         kind='song',
@@ -244,7 +319,7 @@ class Inventory:
                         uploaded
                         and baseline
                         and pending
-                        and files.hashes(files.local_path(rel))['sha256']
+                        and files.content_hash(files.ROOT / rel, json.loads(sig))
                         == baseline['hashes']['sha256']
                     ):
                         pending = False
@@ -252,7 +327,7 @@ class Inventory:
                         fileInfo=details.get('fileInfo') or base.get('fileInfo', ''),
                         coverVersion=sig,
                         local=True,
-                        localPath=str(files.local_path(rel)),
+                        localPath=str(files.ROOT / rel),
                         pendingUpload=pending,
                         notUploaded=not uploaded,
                         awaitingIndex=rel in awaiting and previous is None,
@@ -267,7 +342,7 @@ class Inventory:
                     item.update(
                         title=values.get('title') or Path(rel).stem,
                         artist=artist,
-                        artistIds=[artist_id],
+                        artistIds=artist_ids,
                         album=album,
                         albumId=album_id if album else '',
                         releaseDate=values.get('date', ''),
@@ -277,20 +352,9 @@ class Inventory:
                         discNumber=number('disc'),
                     )
                     self.index.put(db, item)
-                    if not db.execute(
-                        "SELECT 1 FROM records WHERE kind='artist' AND id=?",
-                        (artist_id,),
-                    ).fetchone():
-                        self.index.put(
-                            db,
-                            dict(
-                                id=artist_id,
-                                source='music-local',
-                                account=self.index.account,
-                                kind='artist',
-                                name=artist,
-                            ),
-                        )
+
+                    for identifier in artist_ids:
+                        local_artist(identifier, artist)
                     if (
                         album
                         and not db.execute(
@@ -298,6 +362,8 @@ class Inventory:
                             (album_id,),
                         ).fetchone()
                     ):
+                        album_artist_id = artist_identity(album_artist)
+                        local_artist(album_artist_id, album_artist)
                         self.index.put(
                             db,
                             dict(
@@ -306,13 +372,15 @@ class Inventory:
                                 account=self.index.account,
                                 kind='album',
                                 title=album,
-                                artist=artist,
-                                artistIds=[artist_id],
+                                artist=album_artist,
+                                artistIds=[album_artist_id],
                             ),
                         )
                 self.version = str(time.time_ns())
                 meta = dict(
-                    account=self.index.account, schema='1', version=self.version
+                    account=self.index.account,
+                    schema=str(SCHEMA),
+                    version=self.version,
                 )
                 for category, kind in (
                     ('songs', 'song'),

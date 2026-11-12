@@ -20,7 +20,8 @@ def dispatch(args):
     if op == "play":
         import time
         time.sleep(.15)
-        return dict(command=["sleep","60"],ipcPath="")
+        # A path the backend never accepts: polls answer "not ready", cleanup is a no-op.
+        return dict(command=["sleep","60"],ipcPath="/nonexistent/mpv-0123456789abcdef.sock")
     return _original_dispatch(args)
 """
     (root / 'spaces/music/cloud_fixture.py').write_text("""import json,sys
@@ -28,7 +29,7 @@ song=dict(id="cloud1",kind="song",source="nextcloud",account="fixture",title="Sa
 for line in sys.stdin:
  r=json.loads(line);op=r["op"];result={}
  if op=="browse":
-  items=[song] if r.get("query") or r.get("starred") else [dict(song,id=str(i),local=i==0) for i in range(r.get("offset",0),r.get("offset",0)+50)]
+  items=[song] if r.get("query") else [dict(song,id=str(i),local=i==0) for i in range(r.get("offset",0),r.get("offset",0)+50)]
   result=dict(items=items,limit=r.get("offset",0)+50,hasMore=not r.get("query") and r.get("offset",0)<50)
  elif op=="cover":result=""
  elif op=="local-refresh":result=dict(version="fixture")
@@ -37,7 +38,6 @@ for line in sys.stdin:
  elif op=="entity-browse":
   items=[dict(id="b1",kind="album",source="nextcloud",account="fixture",title="Album",artist="Artist")] if r.get("category")=="albums" else [dict(song,title="Deep artist track" if r.get("query")=="deep" else "Artist track" if r["entity"]["kind"]=="artist" else "Album track")]
   result=dict(items=items,total=len(items),limit=len(items),hasMore=False)
- elif op=="favorite":result=dict(item=dict(r["item"],starred=r["value"]))
  elif op=="artist":result=dict(artist=r["artist"],songs=[dict(song,title="Artist track")],albums=[dict(id="b1",kind="album",source="nextcloud",account="fixture",title="Album",artist="Artist")])
  elif op=="album":result=dict(album=r["album"],songs=[dict(song,title="Album track")])
  elif op=="genres":result=[dict(id="Rock",name="Rock")]
@@ -48,15 +48,20 @@ for line in sys.stdin:
         "import json,sys\nfor line in sys.stdin:\n r=json.loads(line);print(json.dumps(dict(id=r['id'],result='')),flush=True)\n"
     )
     main = root / 'spaces/music/Main.qml'
-    main.write_text(
-        main.read_text()
-        .replace('backend: "cloud.py"', 'backend: "cloud_fixture.py"')
-        .replace(
-            'property var deliverNotification: (title,body) => Quickshell.execDetached([',
-            'property var deliverNotification: (title,body) => console.log([',
-        )
-    )
+    text = main.read_text()
+    for old, new in (
+        ('backend: "cloud.py"', 'backend: "cloud_fixture.py"'),
+        # Fixtures must never reach the session's notification server.
+        (
+            'property var deliverNotification: (title, body) => Quickshell.execDetached([',
+            'property var deliverNotification: (title, body) => console.log("NOTIFY", [',
+        ),
+    ):
+        assert text.count(old) == 1, 'Main.qml changed; update the fixture: ' + old
+        text = text.replace(old, new)
+    main.write_text(text)
     source = path.read_text()
+    assert source.count('\ndef main():') == 1, 'backend.py changed; update the fixture'
     path.write_text(source.replace('\ndef main():', fixture + '\ndef main():'))
 
 
@@ -139,6 +144,7 @@ ShellRoot {
   }
   if(root.step===12){
    const playback=Array.from(page.data).find(item=>item.objectName==="musicPlayback");if(!playback.playerProcess)return;
+   check(Array.from(playback.data).find(item=>item.objectName==="musicStatusTimer").running,"visible playback is not polled");
    host.dismiss();check(SpaceState.runningIds.includes("music")&&playback.playerProcess.running,"hide stopped playback");
    check(!find(host.contentItem,"musicLoadingIndicator").running&&!Array.from(playback.data).find(item=>item.objectName==="musicStatusTimer").running,"hidden visual polling continued");
    SpaceState.open("music",Quickshell.screens[0]);check(host.currentPage===root.retained,"restore replaced Music");
@@ -239,7 +245,7 @@ for line in sys.stdin:
    assert 'playCount' not in r['tags'],'Save must not edit play count'
    tags.update(r['tags'])
   if action=='move':assert 'tags' not in r and 'artwork' not in r,'Move must not edit metadata'
-  value=dict(action=action,path='/home/fixture/Music/'+rel,synced=action!='info',relativePath=rel,local=action!='move',tags=dict(tags),signature=[1,2,len(jobs)],pendingUpload=False,fileInfo='FLAC · 24-bit · 96 kHz · Stereo')
+  value=dict(action=action,path='/home/fixture/Music/'+rel,synced=action!='info',relativePath=rel,local=action!='move',tags=dict(tags),signature=str([1,2,len(jobs)]),pendingUpload=False,fileInfo='FLAC · 24-bit · 96 kHz · Stereo')
   identifier=str(len(jobs));jobs.append(dict(job_id=identifier,title='Fixture',state='finished',result=value));result=dict(job_id=identifier)
  print(json.dumps(dict(id=r['id'],result=result)),flush=True)
 """)
@@ -397,7 +403,7 @@ ShellRoot {
   check(root.saves.length===0&&root.lyrics.length===0,"Edit downloaded a song or fetched lyrics");
   info.editTag("title","My title");info.editTag("comment","");
   check(Object.keys(info.changes).length===2&&info.changes.comment==="","clearing an unknown comment was lost");
-  root.tags[0]({tags:{title:"File title",comment:"Existing comment",composer:"Existing composer",lyrics:"Embedded lyrics"},signature:[1,2,3],fileInfo:"FLAC · 24-bit · 96 kHz"},"");
+  root.tags[0]({tags:{title:"File title",comment:"Existing comment",composer:"Existing composer",lyrics:"Embedded lyrics"},signature:"[1, 2, 3]",fileInfo:"FLAC · 24-bit · 96 kHz"},"");
   check(info.draft.title==="My title"&&info.draft.comment===""&&info.draft.composer==="Existing composer","late tags overwrote an edit or failed to fill an untouched field");
   root.previews[0]({tags:{title:"Late API title",comment:""},knownFields:["title"],relativePath:"one.flac",fileInfo:"FLAC · 320 kbps"},"");
   check(info.draft.title==="My title"&&info.original.title==="File title","late preview replaced file tags");
@@ -409,7 +415,7 @@ ShellRoot {
   info.run("save");
   root.tags[1]({tags:{comment:"Stale comment"}},"");
   check(info.draft.comment==="New comment","a superseded tag read changed a saving draft");
-  info.complete({action:"save",synced:false,error:"Upload failed",path:"/fixture/one.flac",relativePath:"one.flac",tags:{title:"File title",comment:"New comment",lyrics:""},signature:[4,5,6]},"");
+  info.complete({action:"save",synced:false,error:"Upload failed",path:"/fixture/one.flac",relativePath:"one.flac",tags:{title:"File title",comment:"New comment",lyrics:""},signature:"[4, 5, 6]"},"");
   check(!info.dirty&&info.editing&&info.song.pendingUpload&&find(info.contentItem,"musicSaveTags").enabled,"upload failure was not retryable");
   info.run("save");check(Object.keys(root.saves[2].tags).length===0,"retry rewrote tags");
   info.complete({action:"save",synced:true,relativePath:"one.flac",tags:{title:"File title",comment:"New comment",lyrics:""}},"");
@@ -441,7 +447,7 @@ ShellRoot {
  QtObject {id:fileService;function startJob(op,args,accepted){throw new Error("Info downloaded a song");}}
  QtObject {id:catalogue;function request(op,args,callback){
   if(op==="song-info"){
-   if(args.song.local)callback({tags:{title:"Local title",comment:"Local comment",lyrics:"Local lyrics"},signature:[1,2,3],fileInfo:"FLAC · 24-bit"},"");
+   if(args.song.local)callback({tags:{title:"Local title",comment:"Local comment",lyrics:"Local lyrics"},signature:"[1, 2, 3]",fileInfo:"FLAC · 24-bit"},"");
    else callback({tags:{title:"Server title",comment:""},knownFields:["title"]},"");
   }else if(op==="file-tags"){root.fileReads++;root.pending=callback;}
   else throw new Error("Info started a lyrics lookup");
@@ -527,6 +533,106 @@ ShellRoot {
             setup=setup,
         )
 
+    def test_seek_drag_ignores_position_polls_and_seeks_once_on_release(self):
+        self.run_qml(
+            """import QtQuick
+import QtTest
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState {id:interactions}
+ SpaceHost {id:host;interactionState:interactions}
+ TestCase {id:input;when:false;parent:host.contentItem}
+ property int step:0
+ property int seeks:0
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ Timer {id:driver;interval:100;repeat:false;running:true;onTriggered:{try{
+  if(root.step===0){check(SpaceState.open("music",Quickshell.screens[0]),"Music missing");root.step++;return;}
+  const page=host.currentPage;
+  if(!page||!page.initialized||page.loading||page.rows.length!==50)return;
+  const playback=Array.from(page.data).find(item=>item.objectName==="musicPlayback");
+  if(root.step===1){page.select(page.rows[0]);root.step++;return;}
+  if(root.step===2){
+   if(!playback.playerProcess||playback.preparing)return;
+   const seek=find(host.contentItem,"musicSeek");
+   playback.positionChanged.connect(()=>root.seeks++);
+   input.mousePress(seek,seek.leftPadding+2,seek.height/2);
+   input.mouseMove(seek,seek.width*0.5,seek.height/2);
+   input.mouseMove(seek,seek.width*0.75,seek.height/2);
+   const dragged=seek.value;
+   // A status poll arriving mid-drag must not pull the handle back.
+   playback.position=3;
+   check(seek.value===dragged&&dragged>30,"poll moved the handle during a drag: "+seek.value+" / "+dragged);
+   root.seeks=0;
+   input.mouseRelease(seek,seek.width*0.75,seek.height/2);
+   check(root.seeks===1&&Math.abs(playback.position-dragged)<0.01&&Math.abs(seek.value-dragged)<0.01,"release did not seek once to the drag target: "+root.seeks+" "+playback.position+" "+seek.value);
+   playback.stopPlayback();SpaceState.close("music");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(error){console.error("DISPLAY_FAIL",error.message);Qt.quit();}finally{driver.restart();}}}
+ Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",root.step);Qt.quit();}}
+}""",
+            setup=setup,
+        )
+
+    def test_queue_matches_the_visible_collection_and_plays_the_chosen_song(self):
+        def queue_setup(root):
+            setup(root)
+            cloud = root / 'spaces/music/cloud_fixture.py'
+            source = cloud.read_text()
+            queue = 'elif op=="queue":result=dict(items=[song])'
+            self.assertEqual(source.count(queue), 1)
+            # Filtered queues return a different song than the visible lists.
+            cloud.write_text(
+                source.replace(
+                    queue,
+                    'elif op=="queue":result=dict(items=[dict(song,id="filtered")] if r.get("genreName") or r.get("pending") else [song])',
+                )
+            )
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState {id:interactions}
+ SpaceHost {id:host;interactionState:interactions}
+ property int step:0
+ function check(value,message){if(!value)throw new Error(message);}
+ Timer {id:driver;interval:100;repeat:false;running:true;onTriggered:{try{
+  if(root.step===0){check(SpaceState.open("music",Quickshell.screens[0]),"Music missing");root.step++;return;}
+  const page=host.currentPage;
+  if(!page||!page.initialized||page.loading)return;
+  const playback=Array.from(page.data).find(item=>item.objectName==="musicPlayback");
+  if(root.step===1){
+   if(page.rows.length!==50)return;
+   // The list changed after its last browse: the chosen song still plays.
+   page.genreId="Rock";page.genreName="Rock";page.pendingOnly=true;
+   page.select(page.rows[3]);root.step++;return;
+  }
+  if(root.step===2){
+   if(!playback.currentTrack||playback.preparing)return;
+   check(playback.currentTrack.id==="3","a different song played: "+playback.currentTrack.id);
+   page.openArtist(page.rows[0]);root.step++;return;
+  }
+  if(root.step===3){
+   if(page.entity?.kind!=="artist"||page.rows[0]?.title!=="Artist track")return;
+   page.select(page.rows[0]);root.step++;return;
+  }
+  if(root.step===4){
+   if(playback.currentTrack?.title!=="Saved song"&&playback.currentTrack?.id!=="filtered"||playback.preparing)return;
+   // Library-level genre/upload filters do not apply inside an artist page.
+   check(playback.queueSongs.length===1&&playback.queueSongs[0].id==="cloud1"&&playback.currentTrack.id==="cloud1","artist queue used hidden filters: "+JSON.stringify(playback.queueSongs.map(song=>song.id)));
+   playback.stopPlayback();SpaceState.close("music");console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(error){console.error("DISPLAY_FAIL",error.message);Qt.quit();}finally{driver.restart();}}}
+ Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",root.step);Qt.quit();}}
+}""",
+            setup=queue_setup,
+        )
+
     def test_stopped_file_worker_settles_accepted_jobs(self):
         self.run_qml(
             """import QtQuick
@@ -545,6 +651,68 @@ ShellRoot {
  }catch(error){console.error("DISPLAY_FAIL",error.message);Qt.quit();}}}
 }""",
             setup=setup,
+        )
+
+
+@unittest.skipUnless(support.QS, 'Quickshell required')
+class MusicQueueTests(unittest.TestCase):
+    run_qml = support.run_qml
+
+    def test_failed_start_previous_repeat_and_replaced_queue_positions(self):
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "spaces/music"
+ShellRoot {
+ id:root
+ property int step:0
+ property var sent:[]
+ property var command:["/nonexistent/music-player"]
+ property var tracks:[{id:"a",title:"A"},{id:"b",title:"B"}]
+ QtObject {id:service
+  function request(op,args,callback){
+   root.sent=root.sent.concat([op+(args.action?":"+args.action+":"+args.value:"")]);
+   Qt.callLater(()=>callback(op==="play"?{command:root.command,ipcPath:"/fixture.sock"}:{},""));
+   return root.sent.length;
+  }
+ }
+ MusicPlayback {id:playback;active:false;service:service;controller:root}
+ function recordKey(track){return track.id;}
+ function songScopeKey(){return "fixture";}
+ function check(value,message){if(!value)throw new Error(message);}
+ function plays(){return root.sent.filter(value=>value==="play").length;}
+ Timer {interval:150;running:true;repeat:true;onTriggered:{try{
+  if(root.step===0){playback.playSongs(root.tracks,0);root.step++;return;}
+  if(root.step===1){
+   if(playback.preparing||!playback.playFailed)return;
+   // A player that never starts must not look like playback.
+   check(!playback.playerProcess&&playback.playMessage==="Could not start the audio player.","failed start looked like playback: "+playback.playMessage);
+   root.command=["sleep","30"];playback.playSongs(root.tracks,0);root.step++;return;
+  }
+  if(root.step===2){
+   if(!playback.playerProcess||playback.preparing)return;
+   root.sent=[];playback.playPrevious();
+   check(!playback.playerPaused&&root.sent.join()==="player-command:seek:0","Previous on the first song did not restart it: "+root.sent.join());
+   root.sent=[];playback.playSongs(root.tracks.slice().reverse(),1);root.step++;return;
+  }
+  if(root.step===3){
+   if(playback.preparing)return;
+   // Play all from the current song starts the new queue at its position.
+   check(plays()===1&&!playback.playerPaused&&playback.currentTrackIndex===1&&playback.currentTrack.id==="a","replacing the queue toggled the current song");
+   root.sent=[];playback.repeatAllEnabled=true;playback.playSongs([root.tracks[0]],0);root.step++;return;
+  }
+  if(root.step===4){
+   if(playback.preparing)return;
+   root.sent=[];playback.playNext(false);root.step++;return;
+  }
+  if(root.step===5){
+   if(playback.preparing)return;
+   check(plays()===1&&!playback.playerPaused&&playback.playerProcess,"Next with repeat paused instead of restarting: "+root.sent.join());
+   playback.stopPlayback();console.log("DISPLAY_PASS");Qt.quit();
+  }
+ }catch(error){console.error("DISPLAY_FAIL",error.message);Qt.quit();}}}
+ Timer {interval:10000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at "+root.step);Qt.quit();}}
+}"""
         )
 
 

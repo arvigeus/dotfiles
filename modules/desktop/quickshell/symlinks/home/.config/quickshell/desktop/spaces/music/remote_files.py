@@ -70,7 +70,7 @@ class RemoteFiles:
             except nextcloud.NextcloudError:
                 self.dav.request('PROPFIND', url, headers={'Depth': '0'})
 
-    def upload(self, path, rel, expected, history):
+    def upload(self, path, rel, expected, history, sha1=''):
         destination = self.url('Music/' + rel)
         self.parents('Music/' + rel)
         if expected:
@@ -94,6 +94,10 @@ class RemoteFiles:
             'X-OC-Mtime': str(int(path.stat().st_mtime)),
         }
         headers.update({'If-Match': expected} if expected else {'If-None-Match': '*'})
+        if sha1:
+            # Nextcloud stores it, so verification and later downloads can
+            # compare hashes instead of reading the whole file again.
+            headers['OC-Checksum'] = 'SHA1:' + sha1
         with path.open('rb') as stream:
             _, response = self.dav.request(
                 'PUT', destination, UploadBody(stream), headers

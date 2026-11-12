@@ -9,11 +9,13 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from urllib.parse import urlsplit
+from urllib.request import Request, build_opener
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from integrations import nextcloud
-from integrations.subsonic import MusicError, SubsonicClient
+from integrations.subsonic import MusicError, NoRedirect, SubsonicClient
 from spaces.music.cloud_index import CatalogueIndex
 from spaces.music.storage import atomic_write
 
@@ -39,7 +41,6 @@ def record(raw, kind, account):
         source='nextcloud',
         account=account,
         kind=kind,
-        starred=bool(raw.get('starred')),
         coverArt=str(raw.get('coverArt') or ''),
     )
     if kind == 'artist':
@@ -89,10 +90,7 @@ class LibraryClient(SubsonicClient):
         'getArtistInfo2',
         'getAlbumList2',
         'getSongsByGenre',
-        'getStarred2',
         'getGenres',
-        'star',
-        'unstar',
         'stream',
     }
 
@@ -143,12 +141,14 @@ class CloudLibrary:
             self.warning = 'Nextcloud is unavailable. Showing the saved library view.'
             return cached['result']
         atomic_write(path, json.dumps(dict(updated=time.time(), result=result)))
-        cached_paths = sorted(
-            self.cache.glob('*.json'),
-            key=lambda entry: entry.stat().st_mtime,
-            reverse=True,
-        )
-        for old in cached_paths[256:]:
+        # Other threads and workers prune the same directory concurrently.
+        cached_paths = []
+        for entry in self.cache.glob('*.json'):
+            try:
+                cached_paths.append((entry.stat().st_mtime, entry))
+            except FileNotFoundError:
+                continue
+        for _, old in sorted(cached_paths, reverse=True)[256:]:
             old.unlink(missing_ok=True)
         return result
 
@@ -179,24 +179,7 @@ class CloudLibrary:
         refresh = bool(args.get('refresh'))
         kind = {'songs': 'song', 'albums': 'album', 'artists': 'artist'}[category]
         more = False
-        if args.get('starred'):
-            result = self.request('getStarred2', refresh=refresh).get('starred2', {})
-            items = self.rows(result.get(kind, []), kind)
-            if query:
-                items = [
-                    item
-                    for item in items
-                    if query.casefold()
-                    in ' '.join(
-                        str(item.get(key) or '')
-                        for key in ('name', 'title', 'artist', 'album')
-                    ).casefold()
-                ]
-            if genre:
-                items = [item for item in items if genre in item.get('genreNames', [])]
-            more = len(items) > offset + PAGE
-            items = items[offset : offset + PAGE]
-        elif category == 'artists' and not query:
+        if category == 'artists' and not query:
             indexes = (
                 self.request('getArtists', refresh=refresh)
                 .get('artists', {})
@@ -310,11 +293,49 @@ class CloudLibrary:
             artist=item
             | dict(
                 biography=str(result.get('biography') or ''),
-                cover=str(
-                    result.get('largeImageUrl') or result.get('mediumImageUrl') or ''
+                cover=self.artist_image(
+                    item,
+                    str(
+                        result.get('largeImageUrl')
+                        or result.get('mediumImageUrl')
+                        or ''
+                    ),
                 ),
             )
         )
+
+    def artist_image(self, item, url):
+        """Server artist images carry an access token, so QML only gets a
+        cached copy; other hosts are ignored."""
+        account = getattr(self.client, 'account', None) or {}
+        origin = urlsplit(str(account.get('url') or ''))
+        parsed = urlsplit(url)
+        if not url or (parsed.scheme, parsed.netloc) != (origin.scheme, origin.netloc):
+            return ''
+        key = hashlib.sha256(json.dumps(['artist', item.get('id')]).encode())
+        directory = self.cache / 'covers'
+        target = directory / (key.hexdigest() + '.img')
+        with _COVER_LOCKS[int(key.hexdigest()[:4], 16) % len(_COVER_LOCKS)]:
+            if target.is_file():
+                return target.as_uri()
+            try:
+                request = Request(url, headers={'User-Agent': 'QuickshellDesktop/1.0'})
+                with build_opener(NoRedirect()).open(request, timeout=15) as reply:
+                    kind = str(reply.headers.get('Content-Type', '')).lower()
+                    data = reply.read(4 * 1024 * 1024 + 1)
+            except (OSError, ValueError):
+                return ''
+            if not kind.startswith('image/') or not data or len(data) > 4 * 1024 * 1024:
+                return ''
+            directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+            fd, name = tempfile.mkstemp(prefix='.cover-', dir=directory)
+            try:
+                with os.fdopen(fd, 'wb') as stream:
+                    stream.write(data)
+                os.replace(name, target)
+            finally:
+                Path(name).unlink(missing_ok=True)
+            return target.as_uri()
 
     def lyrics(self, item):
         identifier = self.checked(item)
@@ -579,17 +600,18 @@ class CloudLibrary:
         )
 
     def queue(self, args):
+        if not self.index.info():
+            raise MusicError('The library index is still loading.')
         entity = args.get('entity') or {}
-        if entity.get('kind') == 'playlist':
-            return dict(items=self.playlist(entity)['songs'])
         scope = {}
         if entity:
             scope[entity['kind']] = self.checked(entity)
-        page = self.index.browse(dict(args, category='songs', offset=0), **scope)
-        items = page['items']
+        items, page = [], dict(limit=0, hasMore=True)
         while page['hasMore']:
+            # Large pages avoid rescanning OFFSET rows for every 200 songs.
             page = self.index.browse(
-                dict(args, category='songs', offset=page['limit']), **scope
+                dict(args, category='songs', offset=page['limit'], pageSize=100000),
+                **scope,
             )
             items.extend(page['items'])
         return dict(items=items)
@@ -612,19 +634,6 @@ class CloudLibrary:
         self.index.update_song(song)
         return {}
 
-    def favorite(self, item, value):
-        identifier = self.checked(item)
-        key = {'song': 'id', 'album': 'albumId', 'artist': 'artistId'}.get(
-            item.get('kind')
-        )
-        if not key:
-            raise MusicError('This library item cannot be starred.')
-        self.client.request('star' if value else 'unstar', **{key: identifier})
-        self.index.set_star(item, value)
-        for path in self.cache.glob('*.json'):
-            path.unlink(missing_ok=True)
-        return dict(item=item | dict(starred=bool(value)))
-
 
 def handle(args):
     library = CloudLibrary()
@@ -645,10 +654,6 @@ def handle(args):
         result = library.refresh_item(args.get('item'), args.get('action', ''))
     elif op == 'entity-browse':
         result = library.entity_browse(args)
-    elif op == 'album-songs-page':
-        result = library.index.browse(
-            dict(args, category='songs'), album=library.checked(args['album'])
-        )
     elif op == 'artist-albums-page':
         result = library.index.browse(
             dict(args, category='albums'), artist=library.checked(args['artist'])
@@ -677,8 +682,6 @@ def handle(args):
         )
     elif op == 'artist-songs-page':
         result = library.artist_songs(args)
-    elif op == 'favorite':
-        result = library.favorite(args['item'], args['value'])
     else:
         raise MusicError('Unknown library operation.')
     return dict(warning=library.warning, index=library.index.status()) | result
@@ -689,6 +692,7 @@ if __name__ == '__main__':
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from spaces.movies.worker import own_process_group, serve
+    from spaces.music.records import MusicError as LocalError
 
     def cleanup():
         for index in tuple(_INDEXES.values()):
@@ -697,7 +701,8 @@ if __name__ == '__main__':
     own_process_group(cleanup)
     serve(
         handle,
-        errors=(MusicError,),
+        # Local inventory and file associations raise Music's own errors.
+        errors=(MusicError, LocalError, nextcloud.NextcloudError),
         latest=(
             'browse',
             'album',
@@ -706,6 +711,5 @@ if __name__ == '__main__':
             'artist-songs-page',
             'entity-browse',
         ),
-        controls=('favorite',),
         scope=lambda r: (r['op'], r.get('lane', ''), r.get('category', '')),
     )

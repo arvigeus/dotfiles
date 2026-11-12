@@ -56,7 +56,6 @@ Item {
         })
     property var entityPaging: ({})
     property var history: []
-    property string panel: ""
     property string error: ""
     property string saveError: ""
     property bool pendingOnly: false
@@ -69,7 +68,6 @@ Item {
             track: false,
             album: false
         })
-    readonly property bool busy: (section === "library" && libraryIndexing) || cacheService.activeJobCount > 0 || loading || genresLoading || service.activeJobCount > 0
 
     ListModel {
         id: catalogue
@@ -92,7 +90,8 @@ Item {
             const notified = root.notifyJob(job, service);
             const failure = job.error || job.result?.error;
             if (failure) {
-                if (!notified)
+                // A cancellation is the user's own request, not a page failure.
+                if (!notified && job.state !== "cancelled")
                     root.error = failure;
             } else {
                 root.observeFiles();
@@ -122,7 +121,7 @@ Item {
             const notified = root.notifyJob(job, cacheService);
             if (info.busy && String(job.job_id) === info.jobId)
                 info.complete(job.result || {}, job.error || (job.state === "cancelled" ? "Operation cancelled." : ""));
-            else if (job.error && !notified)
+            else if (job.error && !notified && job.state !== "cancelled")
                 root.error = job.error;
             root.observeFiles(true);
         }
@@ -184,9 +183,6 @@ Item {
 
     function recordKey(item) {
         return String(item?.source || "") + "|" + String(item?.kind || "") + "|" + String(item?.id || "");
-    }
-    function songScopeKey() {
-        return section + ":" + (entity?.id || "") + ":" + search.text;
     }
     function fileAction(action, song) {
         cacheService.startJob("file-job", {
@@ -297,7 +293,6 @@ Item {
             const settings = result.settings || {};
             section = "library";
             savedViews = settings.views || ({});
-            const view = savedViews[section] || {};
             category = "songs";
             pendingOnly = false;
             genreId = "";
@@ -420,8 +415,12 @@ Item {
                         return;
                     }
                     warning = result.warning || "";
+                    // Paging state goes back with the next request; rows do not.
+                    const paging = Object.assign({}, state, result);
+                    delete paging.items;
+                    delete paging.warning;
                     entityPaging = Object.assign({}, entityPaging, {
-                        [category]: Object.assign({}, state, result)
+                        [category]: paging
                     });
                     const combined = (entityRows[category] || []).slice(), seen = new Set(combined.map(recordKey));
                     for (const item of result.items || [])
@@ -477,7 +476,7 @@ Item {
         });
     }
     function maybeLoadMore() {
-        if (active && !panel && !loading && hasMore && !error && list.contentY + list.height >= list.contentHeight - 280)
+        if (active && !loading && hasMore && !error && list.contentY + list.height >= list.contentHeight - 280)
             browse(true);
     }
     function snapshot() {
@@ -515,7 +514,6 @@ Item {
         loading = false;
         genresLoading = false;
         genres = [];
-        panel = "";
         closeMenus();
         section = value;
         restoringView = true;
@@ -643,6 +641,7 @@ Item {
     }
     function loadEntity(item, refresh) {
         const token = ++generation;
+        appending = false;
         loading = true;
         error = "";
         updateRows([], false);
@@ -676,7 +675,6 @@ Item {
     function back() {
         ++generation;
         loading = false;
-        panel = "";
         if (!history.length) {
             entity = null;
             browse(false);
@@ -698,6 +696,8 @@ Item {
         restoringView = true;
         search.text = previous.query;
         restoringView = false;
+        // A restored query keeps filtering, so keep it visible.
+        searchOpen = searchOpen || !!previous.query;
         searchDelay.stop();
         total = previous.total || 0;
         offset = previous.offset;
@@ -709,27 +709,39 @@ Item {
             pagination.restart();
         });
     }
+    function playVisible(item) {
+        const songs = rows.filter(row => row.kind === "song");
+        playback.playSongs(songs, Math.max(0, songs.findIndex(row => recordKey(row) === recordKey(item))));
+    }
+    // Queues hold the complete collection the list shows: the same entity,
+    // search and (outside entities) genre and upload filters as browse().
     function playCollection(item) {
-        if (section !== "library" || !libraryIndexed) {
-            const songs = rows.filter(row => row.kind === "song");
-            playback.playSongs(songs, Math.max(0, songs.findIndex(row => recordKey(row) === recordKey(item))));
+        // Playlists are loaded whole, so their filtered rows are the collection.
+        if (section !== "library" || !libraryIndexed || entity?.kind === "playlist") {
+            playVisible(item);
             return;
         }
+        // Supersedes a song that is still opening; its late result is cleaned up.
         const token = ++playback.playGeneration;
         cloudService.request("queue", {
             entity: entity,
             query: search.text.trim(),
-            genreName: genreName,
-            pending: pendingOnly
+            genreName: entity ? "" : genreName,
+            pending: !entity && pendingOnly
         }, (result, failure) => {
             if (token !== playback.playGeneration)
                 return;
-            if (failure) {
-                error = failure;
-                return;
-            }
-            const songs = result.items || [];
-            playback.playSongs(songs, Math.max(0, songs.findIndex(row => recordKey(row) === recordKey(item))));
+            const songs = result?.items || [];
+            const index = item ? songs.findIndex(row => recordKey(row) === recordKey(item)) : 0;
+            if (failure || !songs.length && !item) {
+                playback.preparing = false;
+                if (failure)
+                    error = failure;
+            } else if (index < 0)
+                // A list that changed meanwhile still plays the song that was chosen.
+                playVisible(item);
+            else
+                playback.playSongs(songs, index);
         });
     }
     function loadArtistInfo(item) {
@@ -758,18 +770,23 @@ Item {
     }
     function download(item) {
         if (["nextcloud", "music-local"].includes(item.source)) {
+            const cache = songs => cacheService.startJob("file-job", {
+                    action: "cache-collection",
+                    songs: songs,
+                    title: "Cache album"
+                });
+            // Before the first index, the open album already holds its songs.
+            if (!libraryIndexed) {
+                cache(entityRows.songs || []);
+                return;
+            }
             cloudService.request("queue", {
                 entity: item
             }, (result, failure) => {
-                if (failure) {
+                if (failure)
                     error = failure;
-                    return;
-                }
-                cacheService.startJob("file-job", {
-                    action: "cache-collection",
-                    songs: result.items || [],
-                    title: "Cache album"
-                });
+                else
+                    cache(result.items || []);
             });
             return;
         }
@@ -798,11 +815,8 @@ Item {
             closeMenus();
             return true;
         }
-        if (panel) {
-            panel = "";
-            return true;
-        }
-        if (filtersOpen) {
+        // Filters are hidden inside an entity; Escape goes back instead.
+        if (filtersOpen && !entity) {
             filtersOpen = false;
             return true;
         }
@@ -878,10 +892,10 @@ Item {
         visible: root.active
         spacing: 8
         MovieIconButton {
-            visible: !!root.entity || !!root.panel
+            visible: !!root.entity
             iconName: "arrow-left"
             text: "Back to music"
-            onClicked: root.panel ? root.panel = "" : root.back()
+            onClicked: root.back()
         }
         MovieTab {
             objectName: "musicLibraryTab"
@@ -901,7 +915,6 @@ Item {
         MovieText {
             text: (root.total || root.rows.length).toLocaleString()
             color: MovieStyle.muted
-            visible: !root.panel
         }
         Item {
             Layout.fillWidth: true
@@ -1084,7 +1097,7 @@ Item {
             }
         }
         RowLayout {
-            visible: !!root.entity && !root.panel
+            visible: !!root.entity
             Layout.fillWidth: true
             MovieText {
                 Layout.fillWidth: true
@@ -1111,7 +1124,7 @@ Item {
             }
         }
         RowLayout {
-            visible: root.entity?.kind === "artist" && !root.panel
+            visible: root.entity?.kind === "artist"
             Layout.fillWidth: true
             spacing: 20
             Image {
@@ -1150,7 +1163,6 @@ Item {
                 id: list
                 objectName: "musicList"
                 anchors.fill: parent
-                visible: !root.panel
                 clip: true
                 spacing: 2
                 model: catalogue
@@ -1194,7 +1206,7 @@ Item {
                         spacing: 12
                         MovieIconButton {
                             objectName: "musicPlay:" + row.index
-                            iconName: row.record.kind !== "song" ? "chevron-right" : row.playing && !playback.playerPaused ? "pause" : "play"
+                            iconName: row.record.kind !== "song" ? "chevron-right" : row.playing && playback.playerProcess && !playback.playerPaused ? "pause" : "play"
                             text: (row.record.kind === "song" ? "Play " : "Browse ") + (row.record.title || row.record.name)
                             onClicked: root.select(row.record)
                         }
@@ -1304,7 +1316,7 @@ Item {
             MovieText {
                 anchors.centerIn: parent
                 width: Math.min(500, parent.width - 40)
-                visible: !root.panel && !root.rows.length && !root.loading && !root.error
+                visible: !root.rows.length && !root.loading && !root.error
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
                 color: MovieStyle.muted
@@ -1368,14 +1380,35 @@ Item {
                 color: MovieStyle.muted
             }
             MusicSlider {
+                id: seekSlider
                 objectName: "musicSeek"
+                property real target: -1
+                property real origin: 0
                 Layout.preferredWidth: Math.min(220, root.width * 0.17)
                 from: 0
                 to: Math.max(1, playback.duration)
-                value: playback.position
+                stepSize: 5
                 enabled: !!playback.playerProcess
-                onMoved: playback.seekTo(value)
                 Accessible.name: "Playback position"
+                // Position polls never move the handle under the pointer; a drag
+                // or key press seeks once, when it ends.
+                Binding on value {
+                    when: !seekSlider.pressed
+                    value: playback.position
+                    restoreMode: Binding.RestoreNone
+                }
+                onMoved: {
+                    target = value;
+                    if (!pressed)
+                        playback.seekTo(value);
+                }
+                onPressedChanged: {
+                    if (pressed) {
+                        origin = value;
+                        target = -1;
+                    } else if (target >= 0 && target !== origin)
+                        playback.seekTo(target);
+                }
             }
             MovieIconButton {
                 iconName: "shuffle"

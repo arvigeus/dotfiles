@@ -13,7 +13,7 @@ background values never replace your edits. **Fetch lyrics** explicitly looks fo
 lyrics and opens an editable draft, ready to save. Lyrics providers share
 `~/.config/audio-tools/lyrics.json` with Audio tools.
 **Save** downloads the song into `~/Music` if needed, applies your changes and uploads it; cover
-editing supports MP3, FLAC and M4A. Failed uploads keep local edits for an explicit
+editing supports MP3, FLAC and M4A and keeps the song's other tags. Failed uploads keep local edits for an explicit
 retry. An unavailable field stays marked as not loaded; typing replaces its value,
 and its clear button explicitly removes it.
 
@@ -26,7 +26,7 @@ catalogue. Artist and album pickers search online as you type. Downloads save
 tagged FLAC files named `Title - Artist - Album (YYYY-MM-DD).flac` in `~/Music`,
 ready to review and upload. FLAC preserves the source's decoded audio; it does not
 improve a lossy source. Downloads try configured sources in order when a source
-cannot match or save a song.
+cannot match or save a song; songs already saved are reused.
 
 My Library uses the shared Nextcloud account, Music API key and rclone remote.
 Browse needs `music.json` with a catalogue token; full-track playback and downloads

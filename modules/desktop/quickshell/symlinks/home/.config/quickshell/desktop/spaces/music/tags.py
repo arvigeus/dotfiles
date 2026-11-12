@@ -8,8 +8,9 @@ import stat
 import tempfile
 
 from mutagen import File, MutagenError
-from mutagen.id3 import Frames, ID3, COMM, USLT
-from mutagen.mp4 import MP4Tags
+from mutagen.flac import FLAC, Picture
+from mutagen.id3 import APIC, Frames, ID3, COMM, USLT, PictureType
+from mutagen.mp4 import MP4Cover, MP4Tags
 
 from spaces.music.records import MusicError
 
@@ -64,6 +65,7 @@ MP4_FIELDS = {
 }
 
 TAG_FORMATS = {'.mp3', '.flac', '.m4a', '.mp4', '.ogg', '.opus'}
+COVER_FORMATS = {'.mp3', '.flac', '.m4a', '.mp4'}
 
 
 def text(value):
@@ -204,6 +206,42 @@ def update_tags(path, changes):
     audio.save()
 
 
+def replace_cover(path, data, mime):
+    """Replace only the attached front cover; every other tag stays untouched."""
+    audio = File(path)
+    if audio is None:
+        raise MusicError('This file has no supported tag container.')
+    if audio.tags is None:
+        audio.add_tags()
+    if isinstance(audio, FLAC):
+        picture = Picture()
+        picture.type = PictureType.COVER_FRONT
+        picture.mime = mime
+        picture.desc = 'Cover'
+        picture.data = data
+        audio.clear_pictures()
+        audio.add_picture(picture)
+    elif isinstance(audio.tags, ID3):
+        audio.tags.delall('APIC')
+        audio.tags.add(
+            APIC(
+                encoding=3,
+                mime=mime,
+                type=PictureType.COVER_FRONT,
+                desc='Cover',
+                data=data,
+            )
+        )
+    elif isinstance(audio.tags, MP4Tags):
+        image_format = (
+            MP4Cover.FORMAT_PNG if mime == 'image/png' else MP4Cover.FORMAT_JPEG
+        )
+        audio.tags['covr'] = [MP4Cover(data, imageformat=image_format)]
+    else:
+        raise MusicError('Cover editing supports MP3, FLAC and M4A files.')
+    audio.save()
+
+
 def format_summary(extension, *, bits=0, rate=0, channels=0, bitrate=0):
     summary = [extension.upper()]
     if bits:
@@ -297,6 +335,32 @@ def read(path, run):
     )
 
 
+def cover_data(image, codec, run, register, unregister):
+    """JPEG and PNG embed unchanged; other images become a high-quality JPEG."""
+    if codec in ('mjpeg', 'png'):
+        # Embedded bytes are never decoded here, so prove they decode first.
+        decode = ['ffmpeg', '-v', 'error', '-nostdin', '-i', str(image)]
+        if run(decode + ['-frames:v', '1', '-f', 'null', '-'], 20)[0]:
+            raise MusicError('The selected file could not be read as an image.')
+        return image.read_bytes(), 'image/png' if codec == 'png' else 'image/jpeg'
+    fd, name = tempfile.mkstemp(prefix='.music-cover-', suffix='.jpg')
+    os.close(fd)
+    converted = Path(name)
+    register(converted)
+    try:
+        code, _ = run(
+            ['ffmpeg', '-v', 'error', '-nostdin', '-y', '-i', str(image)]
+            + ['-frames:v', '1', '-c:v', 'mjpeg', '-q:v', '2', str(converted)],
+            20,
+        )
+        if code or not converted.stat().st_size:
+            raise MusicError('The selected file could not be read as an image.')
+        return converted.read_bytes(), 'image/jpeg'
+    finally:
+        converted.unlink(missing_ok=True)
+        unregister(converted)
+
+
 def write(path, changes, run, signature, register, unregister, artwork=None):
     if (
         not isinstance(changes, dict)
@@ -312,14 +376,17 @@ def write(path, changes, run, signature, register, unregister, artwork=None):
     if artwork is not None:
         from urllib.parse import unquote, urlsplit
 
-        if path.suffix.lower() not in ('.mp3', '.flac', '.m4a', '.mp4'):
+        if path.suffix.lower() not in COVER_FORMATS:
             raise MusicError('Cover editing supports MP3, FLAC and M4A files.')
         parsed = urlsplit(str(artwork))
         if parsed.scheme not in ('', 'file') or parsed.netloc not in ('', 'localhost'):
             raise MusicError('Choose a local image file.')
-        image = Path(unquote(parsed.path) if parsed.scheme else str(artwork)).resolve(
-            strict=True
-        )
+        try:
+            image = Path(
+                unquote(parsed.path) if parsed.scheme else str(artwork)
+            ).resolve(strict=True)
+        except OSError:
+            raise MusicError('The selected image is no longer available.') from None
         if not image.is_file() or image.stat().st_size > 20 * 1024 * 1024:
             raise MusicError('Choose an image smaller than 20 MiB.')
         code, output = run(
@@ -330,17 +397,24 @@ def write(path, changes, run, signature, register, unregister, artwork=None):
                 '-select_streams',
                 'v:0',
                 '-show_entries',
-                'stream=width,height',
+                'stream=codec_name,width,height',
                 '-of',
                 'json',
                 str(image),
             ],
             20,
         )
-        if code or not json.loads(output).get('streams'):
+        streams = json.loads(output).get('streams') if not code else None
+        stream = streams[0] if streams else {}
+        codec = stream.get('codec_name')
+        # The picker offers these; FFmpeg would also "decode" text as ANSI art.
+        if codec not in ('mjpeg', 'png', 'webp') or not (
+            stream.get('width') and stream.get('height')
+        ):
             raise MusicError('The selected file could not be read as an image.')
         image_signature = signature(image)
     before = signature(path)
+    original = read(path, run)['tags']
     fd, name = tempfile.mkstemp(
         prefix='.music-tags-', suffix=path.suffix, dir=path.parent
     )
@@ -348,51 +422,33 @@ def write(path, changes, run, signature, register, unregister, artwork=None):
     temporary = Path(name)
     register(temporary)
     try:
-        command = ['ffmpeg', '-v', 'error', '-nostdin', '-y', '-i', str(path)]
-        previous = read(path, run) if image else None
-        if image:
-            command += ['-i', str(image)]
-        command += [
-            '-map',
-            '0',
-            '-map_metadata',
-            '0',
-            '-map_chapters',
-            '0',
-            '-c',
-            'copy',
-        ]
-        if image:
-            for index in previous['coverIndexes']:
-                command += ['-map', '-0:' + str(index)]
-            command += [
-                '-map',
-                '1:v:0',
-                '-c:v',
-                'mjpeg',
-                '-disposition:v',
-                'attached_pic',
-                '-metadata:s:v',
-                'title=Cover',
-                '-metadata:s:v',
-                'comment=Cover (front)',
-            ]
-        for key, value in changes.items():
-            command += ['-metadata', key + '=' + value]
-            if path.suffix.lower() in ('.mka', '.mkv', '.ogg', '.opus'):
-                command += ['-metadata:s:a:0', key + '=' + value]
-        if path.suffix.lower() in TAG_FORMATS and not image:
+        if path.suffix.lower() in TAG_FORMATS:
+            # Mutagen edits a private copy in place: custom frames, ratings,
+            # lyrics and audio packets survive, unlike an FFmpeg remux.
             shutil.copyfile(path, temporary)
             try:
-                update_tags(temporary, changes)
+                if changes:
+                    update_tags(temporary, changes)
+                if image:
+                    replace_cover(
+                        temporary, *cover_data(image, codec, run, register, unregister)
+                    )
             except MutagenError:
                 raise MusicError(
                     'The tags could not be saved. The original song was kept.'
                 ) from None
-        elif run(command + [str(temporary)])[0]:
-            raise MusicError(
-                'This format could not save the tags. The original song was kept.'
-            )
+        else:
+            command = ['ffmpeg', '-v', 'error', '-nostdin', '-y', '-i', str(path)]
+            command += ['-map', '0', '-map_metadata', '0', '-map_chapters', '0']
+            command += ['-c', 'copy']
+            for key, value in changes.items():
+                command += ['-metadata', key + '=' + value]
+                if path.suffix.lower() in ('.mka', '.mkv'):
+                    command += ['-metadata:s:a:0', key + '=' + value]
+            if run(command + [str(temporary)])[0]:
+                raise MusicError(
+                    'This format could not save the tags. The original song was kept.'
+                )
         checked = read(temporary, run)
         if image and (
             not checked['coverIndexes'] or signature(image) != image_signature
@@ -401,7 +457,8 @@ def write(path, changes, run, signature, register, unregister, artwork=None):
                 'The cover could not be saved safely. The original song was kept.'
             )
         actual = checked['tags']
-        if any(actual.get(key, '') != value for key, value in changes.items()):
+        expected = original | changes
+        if any(actual.get(key, '') != value for key, value in expected.items()):
             raise MusicError(
                 'This format could not preserve every tag edit. The original song was kept.'
             )

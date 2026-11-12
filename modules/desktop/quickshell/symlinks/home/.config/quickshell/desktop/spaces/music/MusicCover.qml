@@ -9,6 +9,8 @@ Rectangle {
     property bool fetchEnabled: false
     property bool initialized: false
     property int generation: 0
+    // The identity the current image belongs to; rows scrolling back reuse it.
+    property string shownIdentity: ""
     readonly property bool imageReady: cover.status === Image.Ready
     readonly property string identity: JSON.stringify([record?.source, record?.account, record?.albumId || record?.id, record?.localPath, record?.cover, record?.coverVersion, String(previewSource)])
     color: "#211b24"
@@ -35,20 +37,26 @@ Rectangle {
     }
     function resolve() {
         const token = ++generation;
-        if (!fetchEnabled)
+        if (!fetchEnabled || shownIdentity === identity)
             return;
         if (String(previewSource)) {
             cover.source = previewSource;
+            shownIdentity = identity;
             return;
         }
+        cover.source = "";
+        shownIdentity = "";
         if (!record || !service)
             return;
-        cover.source = "";
+        const requested = identity;
         service.request("cover", {
             item: record
         }, (file, error) => {
-            if (token === generation && fetchEnabled)
-                cover.source = error ? "" : file || "";
+            if (token !== generation || !fetchEnabled)
+                return;
+            cover.source = error ? "" : file || "";
+            // Failures retry the next time the cover becomes visible.
+            shownIdentity = error ? "" : requested;
         });
     }
     onIdentityChanged: if (initialized)

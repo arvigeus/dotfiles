@@ -11,8 +11,10 @@ behind the filter button in both tabs; playlists are library-only.
 Library pickers read indexed metadata immediately;
 Browse pickers wait for two query characters and search Apple dynamically.
 Artist pages enrich their header independently of song reads, first from
-Subsonic `getArtistInfo2`, then Apple when needed. Enrichment never changes the
-library identity or playback source. Songs and Albums remain separate views.
+Subsonic `getArtistInfo2`, then Apple when needed. Server artist images carry an
+access token, so the cloud worker caches them and QML gets a local file. Enrichment
+never changes the library identity or playback source. Songs and Albums remain
+separate views.
 
 `MusicInfo.qml` has separate read-only and editing states. Opening it requests
 `song-info`: Subsonic `getSong` supplies fresh server metadata, the read-only
@@ -74,7 +76,10 @@ cannot settle its operation; worker exit settles accepted jobs before clearing
 state. No automatic lyrics-provider lookups, tag writes, uploads or retries occur while viewing.
 Values already present in the file skip tag rewriting; publishing an identical
 server file skips uploading. A captured local signature or remote preview ETag is
-checked before editing, in addition to the conditional DAV commit. Failures before
+checked before editing, in addition to the conditional DAV commit. QML holds the
+signature as an opaque string: nanosecond mtimes exceed exact JavaScript numbers.
+A cached copy without local edits is first replaced by a newer server version
+(edited elsewhere); Info must then be reopened before editing. Failures before
 local saving retain the draft; upload failures retain the saved file and permit
 a retry without rewriting tags.
 
@@ -105,15 +110,18 @@ observation. Close destroys the page and its workers/player.
 batches, then atomically publishes it. Queries return 200-item pages with folded
 Unicode search, indexed order and artist/album relationships. Refresh runs in a
 background thread while the previous snapshot stays readable. Library playback
-queues read the complete matching collection, independently of displayed pages.
-Playlists use cached `getPlaylists` and `getPlaylist` reads; entry order is retained.
+queues read the complete collection the list shows, independently of displayed
+pages: entity pages ignore the library's genre and upload filters, and playlists
+play their loaded rows. If a queue no longer contains the chosen song, the visible
+list plays instead. Playlists use cached `getPlaylists` and `getPlaylist` reads;
+entry order is retained.
 Provider caches are account-scoped, bounded and usable offline after a successful
 read. Authentication errors never select another account's cache.
 
 `inventory.py` observes ordinary files in `~/Music` on opening/restoring My Library,
 after file jobs, and every five seconds while visible. The observer performs no
 network requests or file mutations. Symlinks, hidden files/directories and unknown
-extensions are skipped. It caches FFprobe metadata by inode/size/nanosecond mtime,
+extensions are skipped and never followed, so every path stays inside Music. It caches FFprobe metadata by inode/size/nanosecond mtime,
 so unchanged songs are not reprobed. Unreadable files, or a failed observation,
 show an inline warning in My Library until the next clean observation.
 
@@ -124,11 +132,14 @@ Retry. Routine confirmations, such as a cached song, are not shown.
 
 The regenerable `local.sqlite` inventory and `library.sqlite` merged snapshot live
 beside the remote `catalogue.sqlite` in the account's cache directory. A changed
-inventory or remote snapshot builds a new merged database, then publishes it
-atomically. Failure preserves the previous readable view and permits retry.
+inventory, remote snapshot or set of local associations (baselines, pending
+uploads and moves) builds a new merged database, then publishes it atomically. Failure preserves the previous readable view and permits retry.
 Server-relative paths identify cache copies, avoiding duplicate rows. Cached file tags
-override stale server metadata in search, including while the server indexes a save. Local-only artists/albums join
-existing names or receive stable local identities. Missing cache bytes remove
+override stale server metadata in search, including while the server indexes a save.
+Cached copies keep the server's album and artists while their tags still name
+them. Local albums group by album artist, so featured artists and compilations
+stay one album. Local-only artists/albums join existing names or receive stable
+local identities. Missing cache bytes remove
 only local availability; the remote record remains. Media payloads are never
 removed. The observer operates independently of the background remote index build.
 
@@ -147,10 +158,12 @@ Existing cached files use FFprobe/Mutagen with a stable local signature instead.
 
 `local_files.py` owns path validation, downloads, local-first playback and file
 jobs. Subsonic paths are relative to the server Music root despite a leading
-slash. They map to `~/Music/<relative path>`. Traversal, symbolic links and
+slash. They map to `<XDG music folder, normally ~/Music>/<relative path>`, the
+folder catalogue downloads and Movies' music imports also use. Traversal, symbolic links and
 extension-changing moves are rejected. Account/rclone identities must agree.
-Downloads verify stable server metadata, byte count and advertised checksums,
-then publish atomically without replacing existing local files.
+Downloads write into a private temporary file in place (a cancelled rclone leaves
+no partial file), verify stable server metadata, byte count and advertised
+checksums, then publish atomically without replacing existing local files.
 
 The private data database's `music_cache` table records account/path, synchronized
 hashes, local signatures and server fingerprints, including DAV ETags.
@@ -158,7 +171,10 @@ hashes, local signatures and server fingerprints, including DAV ETags.
 their paths. `music_pending_moves` records the old/new paths and song identity,
 including intermediate paths for repeated moves. Inventory applies those moves
 to the merged snapshot before joining local files, then drops associations once
-the server catalogue acknowledges them. Metadata previews resolve pending paths
+the server catalogue acknowledges them. Song ids match moves; paths only identify
+records without an id, because moves that swap names reuse paths. A catalogue
+built over an hour after a move that has neither the song nor its new path drops
+the association: the server no longer has that song. Metadata previews resolve pending paths
 through the same association, avoiding duplicates and false upload indicators.
 
 `remote_files.py` performs conditional DAV writes. Existing files are copied to a
@@ -166,7 +182,7 @@ unique `Music-history` destination with `If-Match`, then updated in place with t
 same version precondition. New files use `If-None-Match: *`. The source remains in
 place during backup so the final PUT can reject concurrent changes atomically.
 Uploads stream from a private snapshot with byte progress and cooperative
-cancellation. Once PUT is confirmed, verification finishes even if Cancel arrives;
+cancellation, sending `OC-Checksum` so Nextcloud stores a SHA-1 for later checks. Once PUT is confirmed, verification finishes even if Cancel arrives;
 a committed update wins over late cancellation. Stable metadata and hashes verify
 the result. An identical server copy can be adopted after a lost upload response
 without uploading twice. Conflicts retain local edits and never schedule retries.
@@ -176,11 +192,12 @@ deletion or synchronization, and missing unuploaded files cannot adopt unrelated
 server files with colliding names.
 
 `tags.py` owns canonical ID3/MP4/Vorbis/APE/ASF field normalization and uses
-FFprobe for local format details. Tag-only MP3/FLAC/M4A/Ogg/Opus edits use Mutagen
-on a private copy, retaining custom tags, embedded pictures and audio packets.
-Other edits use FFmpeg stream copy. All edits verify requested tags
-and source signature, then atomically replace the cache file. MP3/FLAC/M4A cover replacement removes only existing attached-picture streams,
-embeds the selected image, verifies its presence and checks both source versions.
+FFprobe for local format details. MP3/FLAC/M4A/Ogg/Opus tag and cover edits use
+Mutagen on a private copy, retaining custom frames, ratings, lyrics and audio
+packets; a cover edit replaces only the front picture. JPEG/PNG covers embed
+unchanged after a test decode; WebP becomes JPEG. Other formats use FFmpeg stream
+copy. Every edit verifies the requested tags, the unchanged editable fields and
+the source and image signatures, then atomically replaces the cache file.
 Local signatures invalidate thumbnails after cover changes. Temporary files
 are registered for cancellation/close cleanup. Saving a server copy captures its
 baseline before editing. A failed upload returns a local-saved result to the
@@ -189,6 +206,7 @@ Local-only information, saves and moves can finish without network access.
 
 Moves reject local/server destination collisions. DAV creates required parent
 folders, obtains a source ETag, and uses `MOVE` with `Overwrite: F` and `If-Match`.
+A committed `MOVE` reports success even if the follow-up metadata read fails.
 A cached file changes its local name as part of the action; an uncached song moves
 on the server without downloading. Baselines and pending catalogue associations
 follow the move. Filesystem changes never infer remote moves or deletes.
@@ -209,13 +227,17 @@ and `download.track`/`download.album` URL templates or `stream`. Templates escap
 metadata. Secrets remain in private configuration and sanitized worker errors.
 Provider order defines preference. HTTP providers can set `timeout` (1–60
 seconds, default 24); an endpoint error immediately advances to the next provider
-instead of repeating searches against the same failed endpoint. Empty results
-still try ISRC, artist/title and title-only queries with the same match threshold.
+instead of repeating searches against the same failed endpoint, including a
+connection dropped while reading the reply. Empty results still try ISRC,
+artist/title and title-only queries with the same match threshold; titles match
+whole words. Playback resolution stops after 35 seconds, below the QML request
+timeout. A catalogue token rejected with HTTP 401 is fetched once more.
 Stream downloads try every eligible provider in order for each song, including
 after an unreadable or failed audio transfer. Failed attempts revoke their stream
 and remove partial output before retrying. Cancellation and local filesystem
 errors propagate without switching sources. Album progress counts completed songs,
-independently of provider attempts, and successful songs are not downloaded again.
+independently of provider attempts. A catalogue song already saved in Music is
+reused, including by retries; numbered names only separate different songs.
 
 A provider can instead use `command` (a direct argument array) or `plugin` (a
 directory relative to Music's configuration directory, containing an API-v1
@@ -248,18 +270,25 @@ capabilities reach QML, mpv and FFmpeg. Nextcloud uses authenticated POST/range
 requests with redirects disabled. Provider headers and signed URLs remain in
 Python; HLS references and DASH bases/templates are rewritten into the same
 revocable session, retaining authentication for media segments. Media suffixes
-remain on opaque reference paths for demuxer compatibility. Playlists are bounded
-to 4 MiB and 16,384 references. Cleanup revokes every child reference and closes
-upstream responses, including requests that were still opening when revoked.
+remain on opaque reference paths for demuxer compatibility. Only directory
+references accept a path tail, which must stay inside that directory. Playlists
+are bounded to 4 MiB and 16,384 references. Cleanup revokes every child reference
+and closes upstream responses, including requests that were still opening when
+revoked; those close before the gateway answers.
 
-Process completion advances the queue while hidden; visual position polling only
-runs while visible. File/transfer polling continues while hidden until active jobs
+A player that never starts reports a failure. Queue navigation always starts the
+requested position (Previous at the first song restarts it); selecting the playing
+row toggles pause. Pause toggles inside mpv, so MPRIS changes made while hidden
+stay correct. Position polls never move the seek handle under the pointer; a drag
+or key press seeks once when it ends. Process completion advances the queue while
+hidden; visual position polling only runs while visible. File/transfer polling continues while hidden until active jobs
 finish so completion notifications arrive on time.
 Music sends completion/error notifications through `notify-send` to the shell’s
 normal notification server. The Notifications bell retains progress/cancel/retry
 controls, with routine Info reads excluded from both the panel and delivery.
-Page-level status omits outcomes already announced by desktop notifications;
-request/job-start and task-specific errors stay with their recovery controls.
+Page-level status omits outcomes already announced by desktop notifications and
+cancellations; request/job-start and task-specific errors stay with their
+recovery controls.
 Generations discard stale play resolutions after Stop. Close cancels owned jobs
 and keeps completed media files.
 
@@ -267,8 +296,7 @@ and keeps completed media files.
 
 Persistent state consists of
 `music.json`, `music-ui.json`, and the data `library.sqlite` with local associations
-and cache baselines. Favorites controls are absent from both tabs. Nextcloud
-credentials and `rclone.conf` are shared integrations.
+and cache baselines. Nextcloud credentials and `rclone.conf` are shared integrations.
 Private files use 0600 and leaf directories use 0700. Metadata
 caches, runtime sockets, active playback and large audio payloads are excluded
 from library state. New, unuploaded music needs a separate media backup.

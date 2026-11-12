@@ -247,13 +247,17 @@ class ConditionalWriteTests(unittest.TestCase):
     def test_update_streams_bytes_and_retains_the_previous_version(self):
         self.assertEqual(self.remote.etag('song.flac'), '"v1"')
         self.assertEqual(
-            self.remote.upload(self.path, 'song.flac', '"v1"', 'history'), '"v2"'
+            self.remote.upload(self.path, 'song.flac', '"v1"', 'history', sha1='abc'),
+            '"v2"',
         )
         self.assertEqual(self.files['Music/song.flac'][0], self.path.read_bytes())
         self.assertEqual(
             self.files['Music-history/history/song.flac'][0], b'original server song'
         )
         self.assertEqual(self.requests[-1][1]['If-Match'], '"v1"')
+        # Nextcloud keeps the checksum for later verification without a download.
+        headers = {key.lower(): value for key, value in self.requests[-1][1].items()}
+        self.assertEqual(headers['oc-checksum'], 'SHA1:abc')
 
     def test_concurrent_update_after_backup_is_rejected_without_replacing_it(self):
         self.after_copy = lambda: self.files.update(

@@ -4,7 +4,6 @@ import configparser
 import hashlib
 import json
 import os
-import signal
 import sqlite3
 import subprocess
 import sys
@@ -12,6 +11,7 @@ import tempfile
 import threading
 import time
 import uuid
+import xml.etree.ElementTree as ET
 from contextlib import closing, contextmanager
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit, unquote
@@ -19,7 +19,7 @@ from urllib.parse import urlsplit, unquote
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from integrations import nextcloud
 from spaces.books.jobs import Jobs, check_cancelled, progress
-from spaces.movies.local import place
+from spaces.movies.local import place, xdg_dir
 from spaces.music.records import MusicError
 from spaces.music.storage import DATA
 from spaces.music.remote_files import RemoteFiles
@@ -39,7 +39,8 @@ EXTENSIONS = {
     '.ape',
     '.wv',
 }
-ROOT = Path.home() / 'Music'
+# The same folder catalogue downloads and Movies' music imports use.
+ROOT = xdg_dir('XDG_MUSIC_DIR', 'Music')
 JOBS = Jobs(errors=(MusicError, ValueError))
 _processes = set()
 _partials = set()
@@ -118,6 +119,17 @@ def checked(song):
     return owner, relative(song)
 
 
+def same_song(moved, old_path, song):
+    """Whether a pending move describes song. Paths can be reused by another
+    song (moves that swap names), so ids decide whenever both have one."""
+    if moved.get('id') and song.get('id'):
+        return moved['id'] == song['id']
+    return str(song.get('serverPath') or '').lstrip('/') in (
+        old_path,
+        *moved.get('previousPaths', []),
+    )
+
+
 def pending_path(owner, song):
     with db() as connection:
         rows = connection.execute(
@@ -125,10 +137,7 @@ def pending_path(owner, song):
             (owner,),
         ).fetchall()
     for old_path, new_path, payload in rows:
-        item = json.loads(payload)
-        if (item.get('id') and item.get('id') == song.get('id')) or str(
-            song.get('serverPath') or ''
-        ).lstrip('/') in [old_path, *item.get('previousPaths', [])]:
+        if same_song(json.loads(payload), old_path, song):
             return new_path
     return ''
 
@@ -142,6 +151,30 @@ def cached(song):
 def signature(path):
     stat = path.stat()
     return [stat.st_ino, stat.st_size, stat.st_mtime_ns]
+
+
+def token(value):
+    """A signature as QML holds it: nanosecond mtimes exceed exact JS numbers."""
+    return json.dumps(value)
+
+
+_CONTENT = {}
+
+
+def content_hash(path, observed):
+    """SHA-256 for dirty checks, reused while the file keeps its signature.
+    Scrolling and folder observation ask repeatedly about the same edited files."""
+    key = (str(path), tuple(observed))
+    if key not in _CONTENT:
+        value = hashlib.sha256()
+        with path.open('rb') as stream:
+            while chunk := stream.read(1024 * 1024):
+                value.update(chunk)
+        with _lock:
+            if len(_CONTENT) >= 256:
+                _CONTENT.clear()
+            _CONTENT[key] = value.hexdigest()
+    return _CONTENT[key]
 
 
 def hashes(path):
@@ -376,7 +409,9 @@ def publish(path, create=False):
         expected = remote.get('ETag') if remote else None
         if remote and not expected:
             raise MusicError('The server did not provide a safe update version.')
-        committed = RemoteFiles().upload(snapshot, rel, expected, history)
+        committed = RemoteFiles().upload(
+            snapshot, rel, expected, history, sha1=values['sha1']
+        )
         # Verification finishes after a confirmed commit, even if Cancel arrives.
         _commit.confirmed = True
         try:
@@ -438,8 +473,6 @@ def move(path, newrel, remote_allowed=True, song=None):
         os.link(path, target)
     try:
         if remote:
-            import xml.etree.ElementTree as ET
-
             account = nextcloud.load_account()
             dav = nextcloud.DAVClient(
                 account,
@@ -495,12 +528,21 @@ def move(path, newrel, remote_allowed=True, song=None):
                     'If-Match': etag,
                 },
             )
-            payload = dict(song or {}, serverPath='/' + newrel)
+            payload = dict(song or {}, serverPath='/' + newrel, moved=time.time())
             with db() as connection:
-                pending = connection.execute(
-                    'SELECT old_path,payload FROM music_pending_moves WHERE account=? AND new_path=?',
-                    (owner, rel),
-                ).fetchone()
+                pending = next(
+                    (
+                        row
+                        for row in connection.execute(
+                            'SELECT old_path,payload FROM music_pending_moves WHERE account=? AND new_path=?',
+                            (owner, rel),
+                        )
+                        if same_song(
+                            json.loads(row[1]), row[0], dict(payload, serverPath=rel)
+                        )
+                    ),
+                    None,
+                )
                 if pending:
                     previous = json.loads(pending[1])
                     payload['previousPaths'] = list(
@@ -526,6 +568,9 @@ def move(path, newrel, remote_allowed=True, song=None):
         _commit.confirmed = bool(remote)
         try:
             after = metadata(newrel) if remote else old['remote']
+        except (MusicError, ValueError, OSError):
+            # The MOVE already committed; a failed check must not report failure.
+            after = None
         finally:
             _commit.confirmed = False
         confirmed = after or old['remote']
@@ -553,13 +598,6 @@ def move(path, newrel, remote_allowed=True, song=None):
     )
 
 
-def rename(path, name):
-    if not isinstance(name, str) or '/' in name or '\\' in name:
-        raise MusicError('Choose a filename.')
-    rel = Path(path).relative_to(ROOT).as_posix()
-    return move(path, str(PurePosixPath(rel).with_name(name)))
-
-
 def download(song):
     owner, rel = checked(song)
     path = local_path(rel)
@@ -567,6 +605,34 @@ def download(song):
         return path
     if song.get('source') == 'music-local' and song.get('notUploaded', True):
         raise MusicError('The local song is no longer available. Refresh My Library.')
+    before = metadata(rel)
+    if not before:
+        raise MusicError('This song is no longer on Nextcloud.')
+    return fetch(owner, rel, path, before)
+
+
+def refresh_stale(owner, rel, path):
+    """Replace a cached copy without local edits when Nextcloud has a newer
+    version (edited elsewhere). Returns whether the copy was replaced."""
+    old = baseline(owner, rel)
+    if not old or not old['remote'].get('ETag'):
+        return False
+    observed = signature(path)
+    if (
+        observed != old['signature']
+        and content_hash(path, observed) != old['hashes']['sha256']
+    ):
+        return False  # Local edits: publishing reports the conflict instead.
+    remote = metadata(rel)
+    if not remote or same_remote(old['remote'], remote):
+        return False
+    fetch(owner, rel, path, remote, replace=observed)
+    return True
+
+
+def fetch(owner, rel, path, before, replace=None):
+    """Download the server version described by before. A new copy never
+    replaces a file; replace names the only local version it may overwrite."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(
         prefix='.nextcloud-download-', suffix='.part', dir=path.parent
@@ -576,9 +642,6 @@ def download(song):
     with _lock:
         _partials.add(temporary)
     try:
-        before = metadata(rel)
-        if not before:
-            raise MusicError('This song is no longer on Nextcloud.')
         progress(detail='Downloading local copy…')
         code, _ = run(
             [
@@ -586,6 +649,9 @@ def download(song):
                 'copyto',
                 'nextcloud:Music/' + rel,
                 str(temporary),
+                # The target is already private; rclone's own partial file would
+                # outlive a cancelled (killed) download.
+                '--inplace',
                 '--checksum',
                 '--retries',
                 '1',
@@ -612,10 +678,17 @@ def download(song):
                 'Downloaded bytes could not be verified against Nextcloud.'
             )
         check_cancelled()
-        try:
-            place(temporary, path)
-        except FileExistsError:
-            return path
+        if replace is None:
+            try:
+                place(temporary, path)
+            except FileExistsError:
+                return path
+        elif signature(path) != replace:
+            raise MusicError(
+                'The local song changed while updating it from Nextcloud. It was kept.'
+            )
+        else:
+            os.replace(temporary, path)
         remember(owner, rel, path, remote, values, observed=signature(path))
         return path
     finally:
@@ -636,11 +709,12 @@ def states(items):
             path = local_path(rel)
             old = baseline(owner, rel)
             local = path.is_file()
+            observed = signature(path) if local else None
             dirty = local and (
                 not old
                 or (
-                    signature(path) != old['signature']
-                    and hashes(path)['sha256'] != old['hashes']['sha256']
+                    observed != old['signature']
+                    and content_hash(path, observed) != old['hashes']['sha256']
                 )
             )
             output.append(
@@ -658,39 +732,6 @@ def states(items):
     return output
 
 
-def scan():
-    owner = account_id()
-    items = []
-    if ROOT.is_symlink() or ROOT.is_mount():
-        raise MusicError('Music must remain an ordinary local cache directory.')
-    if ROOT.exists():
-        for path in ROOT.rglob('*'):
-            if (
-                path.suffix.lower() not in EXTENSIONS
-                or path.is_symlink()
-                or not path.is_file()
-                or path.name.startswith('.')
-            ):
-                continue
-            rel = path.relative_to(ROOT).as_posix()
-            local_path(rel)
-            items.append(
-                dict(
-                    id='local:' + rel,
-                    kind='song',
-                    source='music-local',
-                    account=owner,
-                    serverPath='/' + rel,
-                    title=path.stem,
-                    artist='',
-                    album='',
-                    local=True,
-                    localPath=str(path),
-                )
-            )
-    return dict(action='scan', items=items)
-
-
 def register(path):
     with _lock:
         _partials.add(path)
@@ -706,8 +747,6 @@ def file_job(args):
 
     action = args['action']
     song = args.get('song', {})
-    if action == 'scan':
-        return scan()
     if action == 'cache-collection':
         count = 0
         errors = []
@@ -716,7 +755,7 @@ def file_job(args):
             try:
                 download(item)
                 count += 1
-            except (MusicError, nextcloud.NextcloudError, OSError):
+            except (MusicError, ValueError, OSError, sqlite3.Error, ET.ParseError):
                 errors.append(item.get('title') or 'Song')
         if errors:
             raise MusicError(
@@ -739,20 +778,24 @@ def file_job(args):
                 song=song,
             ),
         )
-    expected = args.get('remoteVersion')
-    if expected and action == 'save':
+    if action == 'download':
+        return dict(action=action, path=str(download(song)))
+    if action != 'save':
+        raise MusicError('Unknown Music file action.')
+
+    def unchanged_server():
         current = metadata(rel)
         if not current or current.get('ETag') != expected:
             raise MusicError(
                 'The server song changed since editing began. Your draft was kept; reload its metadata before saving.'
             )
+
+    expected = args.get('remoteVersion')
+    if expected:
+        unchanged_server()
     path = download(song)
-    # Capture a comparison baseline before edits; opening information never uploads.
-    if (
-        action in ('info', 'save', 'lyrics', 'editor')
-        and song.get('source') == 'nextcloud'
-        and baseline(owner, rel) is None
-    ):
+    # Capture a comparison baseline before edits.
+    if song.get('source') == 'nextcloud' and baseline(owner, rel) is None:
         remote = metadata(rel)
         if remote:
             code, output = run(
@@ -772,86 +815,64 @@ def file_job(args):
                     'The server song changed while opening it. Please retry.'
                 )
             remember(owner, rel, path, remote, {'sha256': values[0]}, observed=[])
-    if action == 'info':
-        details = tags.read(path, run)
+    if (
+        song.get('source') == 'nextcloud'
+        and refresh_stale(owner, rel, path)
+        and args.get('signature')
+    ):
+        raise MusicError(
+            'Nextcloud had a newer version of this song, so the local copy was '
+            'updated. Reopen its information to edit it.'
+        )
+    if expected:
+        unchanged_server()
+    if args.get('signature') and token(signature(path)) != args['signature']:
+        raise MusicError('The local song changed. Reopen information before saving.')
+    changes = args.get('tags')
+    if isinstance(changes, dict):
+        current_tags = tags.read(path, run)['tags']
+        changes = {
+            key: value
+            for key, value in changes.items()
+            if current_tags.get(key) != value
+        }
+    if changes or args.get('artwork'):
+        tags.write(
+            path,
+            changes,
+            run,
+            signature,
+            register,
+            unregister,
+            artwork=args.get('artwork'),
+        )
+    details = tags.read(path, run)
+    observed = signature(path)
+    try:
+        result = publish(
+            path,
+            create=bool(song.get('notUploaded', song.get('source') == 'music-local')),
+        )
+    except (MusicError, ValueError, OSError, sqlite3.Error, ET.ParseError) as error:
         return dict(
             action=action,
             path=str(path),
             relativePath=rel,
-            signature=signature(path),
+            synced=False,
+            error=str(error),
+            localSaved=True,
+            signature=token(observed),
             **details,
-            **states([song])[0],
         )
-    if action in ('save', 'lyrics'):
-        if expected:
-            current = metadata(rel)
-            if not current or current.get('ETag') != expected:
-                raise MusicError(
-                    'The server song changed since editing began. Your draft was kept; reload its metadata before saving.'
-                )
-        if args.get('signature') and signature(path) != args['signature']:
-            raise MusicError(
-                'The local song changed. Reopen information before saving.'
+    if result.get('synced'):
+        with db() as connection:
+            connection.execute(
+                'INSERT OR IGNORE INTO music_pending_index VALUES(?,?)',
+                (owner, rel),
             )
-        changes = (
-            args.get('tags') if action == 'save' else {'lyrics': args.get('lyrics', '')}
-        )
-        if isinstance(changes, dict):
-            current_tags = tags.read(path, run)['tags']
-            changes = {
-                key: value
-                for key, value in changes.items()
-                if current_tags.get(key) != value
-            }
-        if changes or args.get('artwork'):
-            tags.write(
-                path,
-                changes,
-                run,
-                signature,
-                register,
-                unregister,
-                artwork=args.get('artwork'),
-            )
-        details = tags.read(path, run)
-        observed = signature(path)
-        try:
-            result = publish(
-                path,
-                create=bool(
-                    song.get('notUploaded', song.get('source') == 'music-local')
-                ),
-            )
-        except (MusicError, nextcloud.NextcloudError, OSError) as error:
-            return dict(
-                action=action,
-                path=str(path),
-                relativePath=rel,
-                synced=False,
-                error=str(error),
-                localSaved=True,
-                signature=observed,
-                **details,
-            )
-        if result.get('synced'):
-            with db() as connection:
-                connection.execute(
-                    'INSERT OR IGNORE INTO music_pending_index VALUES(?,?)',
-                    (owner, rel),
-                )
-        return dict(
-            action=action, relativePath=rel, signature=observed, **details, **result
-        )
-    if action == 'upload':
-        result = publish(path, create=True)
-        if result.get('synced'):
-            with db() as connection:
-                connection.execute(
-                    'INSERT OR IGNORE INTO music_pending_index VALUES(?,?)',
-                    (owner, rel),
-                )
-        return dict(action=action, **result)
-    return dict(action=action, path=str(path))
+    return dict(
+        action=action, relativePath=rel, signature=token(observed), **details, **result
+    )
 
 
 _COVER_MISSING = set()
@@ -936,23 +957,6 @@ def handle(args):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 2 and sys.argv[1] in ('save', 'upload', 'rename'):
-
-        def interrupted(*_):
-            raise SystemExit(1)
-
-        signal.signal(signal.SIGTERM, interrupted)
-        try:
-            result = (
-                rename(sys.argv[2], sys.argv[3])
-                if sys.argv[1] == 'rename'
-                else publish(sys.argv[2], create=sys.argv[1] == 'upload')
-            )
-            print(json.dumps(result))
-            sys.exit(0)
-        except (MusicError, nextcloud.NextcloudError, OSError, ValueError) as error:
-            print(json.dumps(dict(error=str(error))))
-            sys.exit(1)
     from spaces.movies.worker import own_process_group, serve
 
     own_process_group(shutdown)

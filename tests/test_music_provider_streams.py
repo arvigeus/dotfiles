@@ -40,6 +40,32 @@ class ProviderReferenceTests(unittest.TestCase):
                 with self.assertRaises(MusicError):
                     session.open(target, {})
 
+    def test_reference_tails_stay_inside_their_directory(self):
+        session = ProviderSession(
+            'https://provider.example/stream.mpd', {}, 'http://127.0.0.1:1234/ticket'
+        )
+        directory = session.reference('https://cdn.example/audio/', True)
+        single = session.reference('https://cdn.example/audio/init.mp4')
+        prefix = '/ticket/'
+        directory_key = directory.rsplit('/', 2)[1]
+        single_key = single.rsplit('/', 1)[1]
+        self.assertEqual(
+            session.resolve(prefix + directory_key + '/seg-1.m4s?part=2'),
+            'https://cdn.example/audio/seg-1.m4s?part=2',
+        )
+        self.assertEqual(
+            session.resolve(prefix + single_key), 'https://cdn.example/audio/init.mp4'
+        )
+        # Tails that leave the directory would carry provider headers elsewhere.
+        for tail in (
+            directory_key + '///attacker.example/collect',
+            directory_key + '/../../private',
+            directory_key + '/https://attacker.example/x',
+            single_key + '/seg-1.m4s',
+        ):
+            with self.subTest(tail=tail):
+                self.assertIsNone(session.resolve(prefix + tail))
+
 
 class ProviderStreamTests(unittest.TestCase):
     def setUp(self):

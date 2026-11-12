@@ -313,11 +313,34 @@ class MetadataEditingTests(unittest.TestCase):
     ):
         from spaces.music import tags
 
+        from mutagen import File
+        from mutagen.id3 import POPM, UFID, USLT
+        from mutagen.mp4 import MP4FreeForm
+
+        # Frames outside the editable fields must survive a cover change.
+        extras = {
+            'mp3': lambda tags: [
+                tags.add(USLT(encoding=3, lang='eng', desc='', text='Kept lyrics')),
+                tags.add(UFID(owner='http://musicbrainz.org', data=b'id')),
+                tags.add(POPM(email='rating@example.test', rating=200, count=3)),
+            ],
+            'flac': lambda tags: tags.update(
+                lyrics='Kept lyrics', musicbrainz_trackid='id'
+            ),
+            'm4a': lambda tags: tags.update(
+                {
+                    '©lyr': ['Kept lyrics'],
+                    'soar': ['Sort artist'],
+                    'tmpo': [120],
+                    '----:com.apple.iTunes:MusicBrainz Track Id': [MP4FreeForm(b'id')],
+                }
+            ),
+        }
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             images = []
-            for color in ('red', 'blue'):
-                image = root / (color + ' cover.png')
+            for color, extension in (('red', 'png'), ('blue', 'webp'), ('lime', 'jpg')):
+                image = root / (color + ' cover.' + extension)
                 subprocess.run(
                     [
                         'ffmpeg',
@@ -354,6 +377,10 @@ class MetadataEditingTests(unittest.TestCase):
                         ],
                         check=True,
                     )
+                    audio = File(song)
+                    extras[extension](audio.tags)
+                    audio.save()
+                    kept = {key: str(value) for key, value in File(song).tags.items()}
 
                     def audio_hash():
                         return subprocess.check_output(
@@ -387,7 +414,12 @@ class MetadataEditingTests(unittest.TestCase):
                         details = tags.read(song, local_files.run)
                         self.assertEqual(len(details['coverIndexes']), 1)
                         self.assertEqual(details['tags']['title'], 'Original')
+                        self.assertEqual(details['tags']['lyrics'], 'Kept lyrics')
                         self.assertEqual(audio_hash(), before)
+                        current = {
+                            key: str(value) for key, value in File(song).tags.items()
+                        }
+                        self.assertEqual({key: current.get(key) for key in kept}, kept)
 
     def test_file_summary_uses_real_bit_depth_and_rate(self):
         from spaces.music import tags

@@ -182,18 +182,29 @@ def score_candidate(wanted, candidate):
     candidate_title = normalized(candidate.get('title'))
     if not wanted_title or not candidate_title:
         return 0
+
+    def contains(longer, shorter):
+        # Whole words only: "Song" is within "Song Remastered", "Intro" is not
+        # within "Introduction".
+        return f' {shorter} ' in f' {longer} '
+
     if wanted_title == candidate_title:
         score = 100
-    elif wanted_title in candidate_title or candidate_title in wanted_title:
+    elif contains(candidate_title, wanted_title) or contains(
+        wanted_title, candidate_title
+    ):
         score = 60
     else:
         return 0
     artist = normalized(wanted.get('artist'))
-    candidate_artists = [normalized(value) for value in raw_artists(candidate)]
+    candidate_artists = [
+        value for value in map(normalized, raw_artists(candidate)) if value
+    ]
     if artist and artist in candidate_artists:
         score += 80
     elif artist and any(
-        artist in value or value in artist for value in candidate_artists
+        contains(value, artist) or contains(artist, value)
+        for value in candidate_artists
     ):
         score += 35
     return score

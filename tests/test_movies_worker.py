@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 import support
 
@@ -212,6 +213,24 @@ ShellRoot {
                         os.kill(pid, signal.SIGKILL)
                     except ProcessLookupError:
                         pass
+
+    def test_a_worker_that_cannot_start_settles_its_requests_at_once(self):
+        # A missing executable never emits exited; requests must not wait for
+        # the 90-second timeout.
+        with patch.dict(os.environ, {'PATH': ''}):
+            support.run_qml(
+                self,
+                """import QtQuick
+import Quickshell
+import "spaces/movies"
+ShellRoot {
+ Worker {id:worker;backend:"backend.py";serviceName:"Probe";startOnDemand:true}
+ Component.onCompleted: worker.request("ping",{},(result,error)=>{
+  if(result===null&&error.includes("service stopped")&&worker.stopped&&!worker.pendingCount){console.log("DISPLAY_PASS");Qt.quit();}
+  else{console.error("DISPLAY_FAIL",result,error);Qt.quit();}})
+ Timer {interval:5000;running:true;onTriggered:{console.error("DISPLAY_FAIL request still pending");Qt.quit();}}
+}""",
+            )
 
     def test_a_multiline_traceback_logs_one_helper_warning(self):
         def setup(root):

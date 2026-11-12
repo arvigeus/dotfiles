@@ -38,7 +38,8 @@ class MusicLocalFilesTests(unittest.TestCase):
         case = self
 
         class Transport:
-            def upload(self, path, rel, expected, history):
+            def upload(self, path, rel, expected, history, sha1=''):
+                case.assertEqual(sha1, hashlib.sha1(path.read_bytes()).hexdigest())
                 current = case.meta(rel)
                 if (current and current['ETag'] != expected) or (
                     not current and expected
@@ -138,13 +139,6 @@ class MusicLocalFilesTests(unittest.TestCase):
             },
         )
 
-    def test_browsing_new_local_files_has_no_server_side_effect(self):
-        (self.local / 'new.mp3').write_bytes(b'new local song')
-        result = files.scan()
-        self.assertEqual(len(result['items']), 1)
-        self.assertEqual(self.commands, [])
-        self.assertFalse((self.remote / 'new.mp3').exists())
-
     def test_cached_state_retains_the_row_identity_and_never_uploads(self):
         path, remote = self.seed('song.flac')
         song = dict(
@@ -166,6 +160,67 @@ class MusicLocalFilesTests(unittest.TestCase):
         self.assertTrue(remote.exists())
         self.assertEqual(self.commands, [])
 
+    def test_dirty_checks_hash_an_edited_file_once_per_version(self):
+        path, _ = self.seed('song.flac')
+        song = dict(
+            id='one',
+            kind='song',
+            source='nextcloud',
+            account='fixture',
+            serverPath='/song.flac',
+        )
+        path.write_bytes(b'edited locally')
+        with patch.object(files.hashlib, 'sha256', wraps=hashlib.sha256) as sha:
+            for _ in range(3):
+                self.assertTrue(files.states([song])[0]['pendingUpload'])
+            self.assertEqual(sha.call_count, 1)
+            path.write_bytes(b'original music')
+            self.assertFalse(files.states([song])[0]['pendingUpload'])
+            self.assertEqual(sha.call_count, 2)
+
+    def test_clean_stale_copy_refreshes_before_saving_but_local_edits_conflict(self):
+        from spaces.music import tags
+
+        local, remote = self.seed('song.flac')
+        song = dict(
+            id='1', source='nextcloud', account='fixture', serverPath='/song.flac'
+        )
+        opened = files.token(files.signature(local))
+        remote.write_bytes(b'edited on another device')
+        with self.assertRaisesRegex(files.MusicError, 'newer version'):
+            files.file_job(dict(action='save', song=song, tags={}, signature=opened))
+        self.assertEqual(local.read_bytes(), b'edited on another device')
+        self.assertEqual(remote.read_bytes(), b'edited on another device')
+        self.assertFalse(files.states([song])[0]['pendingUpload'])
+        reopened = files.token(files.signature(local))
+        with patch.object(tags, 'read', return_value=dict(tags={})):
+            result = files.file_job(
+                dict(action='save', song=song, tags={}, signature=reopened)
+            )
+        self.assertTrue(result['synced'])
+        self.assertEqual(list(self.history.rglob('*')), [])
+        # Local edits are never replaced; the conflict is reported instead.
+        local.write_bytes(b'local edit')
+        remote.write_bytes(b'another server edit')
+        with patch.object(tags, 'read', return_value=dict(tags={})):
+            result = files.file_job(dict(action='save', song=song, tags={}))
+        self.assertFalse(result['synced'])
+        self.assertIn('server song changed', result['error'])
+        self.assertEqual(local.read_bytes(), b'local edit')
+        self.assertEqual(remote.read_bytes(), b'another server edit')
+
+    def test_missing_server_song_downloads_nothing_and_creates_no_folders(self):
+        song = dict(
+            id='gone',
+            kind='song',
+            source='nextcloud',
+            account='fixture',
+            serverPath='/Artist/Album/gone.flac',
+        )
+        with self.assertRaises(files.MusicError):
+            files.download(song)
+        self.assertEqual(list(self.local.iterdir()), [])
+
     def test_existing_identical_copy_is_adopted_without_upload_or_replacement(self):
         local = self.local / 'song.flac'
         remote = self.remote / 'song.flac'
@@ -177,7 +232,9 @@ class MusicLocalFilesTests(unittest.TestCase):
         files.publish(local)
         self.assertEqual(self.commands, [])
 
-    def test_info_captures_server_version_before_saving_an_untracked_local_edit(self):
+    def test_save_captures_server_version_before_replacing_an_untracked_local_copy(
+        self,
+    ):
         local = self.local / 'song.flac'
         remote = self.remote / 'song.flac'
         local.write_bytes(b'local draft')
@@ -185,12 +242,25 @@ class MusicLocalFilesTests(unittest.TestCase):
         song = dict(
             id='1', source='nextcloud', account='fixture', serverPath='/song.flac'
         )
-        files.file_job(dict(action='editor', song=song))
-        self.assertEqual(remote.read_bytes(), b'server song')
-        self.assertEqual([command[1] for command in self.commands], ['hashsum'])
-        local.write_bytes(b'explicitly saved tags')
-        self.assertTrue(files.publish(local)['synced'])
-        self.assertEqual(remote.read_bytes(), b'explicitly saved tags')
+        self.assertEqual(
+            files.file_job(dict(action='download', song=song)),
+            dict(action='download', path=str(local)),
+        )
+        self.assertEqual(self.commands, [])
+        from spaces.music import tags
+
+        # The fixture bytes are not audio; tag reads are not under test here.
+        with patch.object(tags, 'read', return_value=dict(tags={})):
+            result = files.file_job(dict(action='save', song=song, tags={}))
+        self.assertTrue(result['synced'])
+        self.assertEqual(remote.read_bytes(), b'local draft')
+        # The server copy the baseline described survives in history.
+        self.assertEqual(
+            [path.read_bytes() for path in self.history.rglob('song.flac')],
+            [b'server song'],
+        )
+        with self.assertRaises(files.MusicError):
+            files.file_job(dict(action='info', song=song))
 
     def test_only_edited_and_new_files_upload_and_previous_versions_survive(self):
         local, remote = self.seed('album/song.flac')
@@ -219,9 +289,9 @@ class MusicLocalFilesTests(unittest.TestCase):
         local.write_bytes(b'local edit')
         upload = self.transport.upload
 
-        def race(path, rel, expected, history):
+        def race(*args, **kwargs):
             remote.write_bytes(b'concurrent server edit')
-            return upload(path, rel, expected, history)
+            return upload(*args, **kwargs)
 
         with patch.object(self.transport, 'upload', side_effect=race):
             with self.assertRaisesRegex(files.nextcloud.NextcloudError, 'changed'):
@@ -286,8 +356,8 @@ class MusicLocalFilesTests(unittest.TestCase):
         local.write_bytes(b'saved local edit')
         upload = self.transport.upload
 
-        def lost_response(*args):
-            upload(*args)
+        def lost_response(*args, **kwargs):
+            upload(*args, **kwargs)
             raise files.nextcloud.NextcloudError('Connection lost after upload')
 
         with patch.object(self.transport, 'upload', side_effect=lost_response):
@@ -311,8 +381,8 @@ class MusicLocalFilesTests(unittest.TestCase):
         local.write_bytes(b'committed local edit')
         upload = self.transport.upload
 
-        def commit_then_cancel(*args):
-            result = upload(*args)
+        def commit_then_cancel(*args, **kwargs):
+            result = upload(*args, **kwargs)
             current_job().cancelled.set()
             return result
 
@@ -430,8 +500,8 @@ class MusicLocalFilesTests(unittest.TestCase):
         self.assertEqual(cached.read_bytes(), path.read_bytes())
         self.assertEqual(files.cached(song), cached)
         self.assertEqual(
-            files.file_job(dict(action='editor', song=song)),
-            dict(action='editor', path=str(cached)),
+            files.file_job(dict(action='download', song=song)),
+            dict(action='download', path=str(cached)),
         )
         cached.write_bytes(b'local edit')
         self.commands.clear()
@@ -471,7 +541,7 @@ class MusicLocalFilesTests(unittest.TestCase):
             ),
             patch.object(files.nextcloud, 'DAVClient', return_value=DAV()),
         ):
-            result = files.rename(local, 'new.mp3')
+            result = files.move(local, 'new.mp3')
         self.assertEqual(result['path'], str(self.local / 'new.mp3'))
         self.assertTrue(result['synced'])
         self.assertFalse(local.exists())
@@ -481,8 +551,31 @@ class MusicLocalFilesTests(unittest.TestCase):
         self.assertEqual(calls[-1][1]['If-Match'], '"etag"')
         (self.local / 'taken.mp3').write_bytes(b'keep')
         with self.assertRaises(files.MusicError):
-            files.rename(self.local / 'new.mp3', 'taken.mp3')
+            files.move(self.local / 'new.mp3', 'taken.mp3')
         self.assertEqual((self.local / 'taken.mp3').read_bytes(), b'keep')
+        # A committed MOVE stays a success when the follow-up check fails.
+        checked = []
+
+        def flaky(rel):
+            # The collision check before MOVE succeeds; the check after it fails.
+            if rel == 'final.mp3' and 'final.mp3' in checked:
+                raise files.MusicError('Could not read the Nextcloud file.')
+            checked.append(rel)
+            return self.meta(rel)
+
+        with (
+            patch.object(
+                files.nextcloud,
+                'load_account',
+                return_value={'url': 'https://cloud.example/', 'username': 'fixture'},
+            ),
+            patch.object(files.nextcloud, 'DAVClient', return_value=DAV()),
+            patch.object(files, 'metadata', side_effect=flaky),
+        ):
+            result = files.move(self.local / 'new.mp3', 'final.mp3')
+        self.assertTrue(result['synced'])
+        self.assertTrue((self.remote / 'final.mp3').exists())
+        self.assertIsNotNone(files.baseline('fixture', 'final.mp3'))
 
     def test_symlinks_and_path_traversal_are_rejected(self):
         for value in ('/../outside.mp3', '/a/../../outside.mp3'):
@@ -516,7 +609,7 @@ class MusicLocalFilesTests(unittest.TestCase):
             id='1', source='nextcloud', account='fixture', serverPath='/song.flac'
         )
         files.file_job(
-            dict(action='lyrics', song=song, lyrics='Original fixture lyrics')
+            dict(action='save', song=song, tags={'lyrics': 'Original fixture lyrics'})
         )
         self.assertFalse(files.states([song])[0]['pendingUpload'])
         probe = subprocess.run(

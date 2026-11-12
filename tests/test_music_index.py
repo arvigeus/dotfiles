@@ -50,16 +50,10 @@ class Catalogue:
                     self.row(kind, i) for i in range(offset, min(total, offset + size))
                 ]
             return dict(searchResult3=groups)
-        if method == 'getStarred2':
-            return dict(
-                starred2=dict(song=[dict(id='s1')], album=[dict(id='b0')], artist=[])
-            )
         if method == 'getSong':
             return dict(
                 song=self.row('song', int(args['id'][1:])) | dict(title='Edited title')
             )
-        if method in ('star', 'unstar'):
-            return {}
         raise AssertionError('Unexpected network request: ' + method)
 
     def row(self, kind, i):
@@ -124,9 +118,6 @@ class CatalogueIndexTests(unittest.TestCase):
         self.assertEqual(self.library.browse(dict(offset=1200))['total'], 1203)
         self.assertEqual(len(self.library.browse(dict(query='CAFE'))['items']), 1)
         self.assertEqual(self.library.browse(dict(genreName='Rock'))['total'], 601)
-        self.assertEqual(
-            self.library.browse(dict(starred=True))['items'][0]['id'], 's1'
-        )
         self.assertEqual(len(self.library.genres()), 2)
         artist = self.index.lookup('artist', 'a0')
         detail = self.library.artist(artist)
@@ -169,14 +160,12 @@ class CatalogueIndexTests(unittest.TestCase):
         self.client.release.set()
         thread.join(10)
 
-    def test_star_and_single_song_edits_update_cached_views_without_full_reload(self):
+    def test_single_song_edits_update_cached_views_without_full_reload(self):
         self.build()
         song = self.index.lookup('song', 's0')
-        self.library.favorite(song, True)
-        self.assertTrue(self.index.lookup('song', 's0')['starred'])
         self.library.refresh_item(song)
         self.assertEqual(self.index.lookup('song', 's0')['title'], 'Edited title')
-        self.assertTrue(self.index.lookup('album', 'b0')['starred'])
+        self.assertEqual(self.index.lookup('album', 'b0')['title'], 'Album 0')
         self.client.offline = True
         self.assertEqual(self.library.browse(dict(query='Edited title'))['total'], 1)
 
@@ -184,19 +173,15 @@ class CatalogueIndexTests(unittest.TestCase):
         self.build()
         song = self.index.lookup('song', 's0')
         self.library.refresh_item(song)
-        self.library.favorite(song, True)
         self.build()
         self.assertEqual(self.index.lookup('song', 's0')['title'], 'Song 00000')
-        self.assertFalse(self.index.lookup('song', 's0')['starred'])
         self.client.block = threading.Event()
         self.index.start(True)
         self.assertTrue(self.client.block.wait(2))
         self.library.refresh_item(song)
-        self.library.favorite(song, True)
         self.client.release.set()
         self.index.thread.join(10)
         self.assertEqual(self.index.lookup('song', 's0')['title'], 'Edited title')
-        self.assertTrue(self.index.lookup('song', 's0')['starred'])
         self.assertEqual(self.index.lookup('album', 'b0')['releaseDate'], '2020')
 
     def test_account_scoping_and_private_cache_permissions(self):

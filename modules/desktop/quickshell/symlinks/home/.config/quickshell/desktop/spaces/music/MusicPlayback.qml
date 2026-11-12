@@ -19,7 +19,6 @@ Item {
     property var queueSongs: []
     property var shuffleHistory: []
     property var playHistory: []
-    property string queueScopeKey: ""
     property int currentTrackIndex: -1
     property int playGeneration: 0
     property double position: 0
@@ -33,13 +32,12 @@ Item {
     function recordKey(track) {
         return controller.recordKey(track);
     }
-    function songScopeKey() {
-        return controller.songScopeKey();
-    }
 
     function seekTo(value) {
         if (!ipcPath || !playerProcess)
             return;
+        // Shown at once; the next poll confirms where mpv landed.
+        position = Math.max(0, value);
         service.request("player-command", {
             ipcPath: ipcPath,
             action: "seek",
@@ -66,10 +64,10 @@ Item {
         if (!ipcPath)
             return;
         playerPaused = !playerPaused;
+        // mpv owns the state; MPRIS may have changed it while polling was off.
         service.request("player-command", {
             ipcPath: ipcPath,
-            action: "pause",
-            value: playerPaused
+            action: "toggle-pause"
         }, (result, failure) => {
             if (failure) {
                 playFailed = true;
@@ -83,7 +81,6 @@ Item {
             return;
         playHistory = [];
         queueSongs = songs.slice();
-        queueScopeKey = songScopeKey();
         shuffleHistory = [index];
         playTrackAt(index);
     }
@@ -94,10 +91,6 @@ Item {
         const track = queueSongs[index];
         if (!track)
             return;
-        if (recordKey(track) === currentTrackKey && playerProcess) {
-            togglePause();
-            return;
-        }
         if (!fromHistory && currentTrackIndex >= 0 && currentTrackIndex !== index)
             playHistory = playHistory.concat([currentTrackIndex]);
         if (!shuffleHistory.includes(index))
@@ -160,6 +153,7 @@ Item {
         });
     }
 
+    // code is null when the player never started.
     function playerExited(process, code) {
         if (playerProcess !== process)
             return;
@@ -185,7 +179,7 @@ Item {
             return;
         }
         playFailed = code !== 0;
-        playMessage = code === 0 ? "Playback ended." : "The stream ended or could not be played.";
+        playMessage = code === 0 ? "Playback ended." : code === null ? "Could not start the audio player." : "The stream ended or could not be played.";
     }
 
     function playNext(fromEnd) {
@@ -235,12 +229,16 @@ Item {
             seekTo(0);
             return;
         }
+        let previous = Math.max(0, currentTrackIndex - 1);
         if (shuffleEnabled && playHistory.length) {
-            const previous = playHistory[playHistory.length - 1];
+            previous = playHistory[playHistory.length - 1];
             playHistory = playHistory.slice(0, -1);
+        }
+        // At the start of the queue, Previous restarts the current song.
+        if (previous === currentTrackIndex && playerProcess)
+            seekTo(0);
+        else
             playTrackAt(previous, true);
-        } else
-            playTrackAt(Math.max(0, currentTrackIndex - 1), true);
     }
 
     function stopPlayback() {
@@ -261,7 +259,6 @@ Item {
         currentTrackKey = "";
         currentTrackIndex = -1;
         queueSongs = [];
-        queueScopeKey = "";
         shuffleHistory = [];
         playHistory = [];
         preparing = false;
@@ -301,7 +298,9 @@ Item {
                 root.position = Number(result.position) || 0;
                 root.duration = Number(result.duration) || root.duration;
                 root.playerPaused = !!result.paused;
-                root.volume = Number(result.volume) || 0;
+                // A poll racing mpv's exit has no volume; keep the listener's level.
+                if (typeof result.volume === "number")
+                    root.volume = result.volume;
             });
         }
     }
@@ -314,6 +313,9 @@ Item {
             command: playerCommand
             running: true
             onExited: (code, status) => root.playerExited(streamPlayer, code)
+            // A failed start emits no exited; after a real exit this is a no-op.
+            onRunningChanged: if (!running)
+                root.playerExited(streamPlayer, null)
         }
     }
 }

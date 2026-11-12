@@ -147,7 +147,7 @@ def read(song):
         result = tags.read(path, local_files.run)
         if local_files.signature(path) != before:
             raise MusicError('The local song changed while reading its tags.')
-        result.update(signature=before)
+        result.update(signature=local_files.token(before))
     else:
         if Path(rel).suffix.lower() not in TAG_FORMATS | {'.wma', '.ape', '.wv'}:
             raise MusicError(

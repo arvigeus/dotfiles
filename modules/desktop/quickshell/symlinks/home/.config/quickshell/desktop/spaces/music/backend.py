@@ -1,6 +1,7 @@
 """Apple Music catalog and configurable playback providers for mpv."""
 
 import base64
+import http.client
 import json
 import re
 import shutil
@@ -161,17 +162,23 @@ def request_body(url, headers=None, timeout=24):
             return body
     except urllib.error.HTTPError as error:
         error.close()
-        if error.code in (502, 503, 504):
-            raise MusicError(
-                'A configured music endpoint is temporarily unavailable.'
-            ) from error
-        raise MusicError(
-            'A configured music endpoint returned HTTP ' + str(error.code) + '.'
-        ) from error
+        failure = MusicError(
+            'A configured music endpoint is temporarily unavailable.'
+            if error.code in (502, 503, 504)
+            else 'A configured music endpoint returned HTTP ' + str(error.code) + '.'
+        )
+        failure.status = error.code
+        raise failure from error
     except urllib.error.URLError as error:
         raise MusicError('Could not connect to a configured music endpoint.') from error
     except TimeoutError as error:
         raise MusicError('A configured music endpoint timed out.') from error
+    except (OSError, http.client.HTTPException) as error:
+        # urllib does not wrap failures while reading a reply, such as a reset
+        # connection or a truncated body; they must still reach provider fallback.
+        raise MusicError(
+            'A configured music endpoint dropped the connection.'
+        ) from error
 
 
 def request_json(url, headers=None, timeout=24):
@@ -259,6 +266,8 @@ def apple_artist_page_biography(artist_id, artist_url):
     biography = max(biographies, key=len, default='')
     if biography:
         with _artist_biography_lock:
+            if len(_artist_biography_cache) >= 512:
+                _artist_biography_cache.clear()
             _artist_biography_cache[cache_key] = biography
     return biography
 
@@ -319,11 +328,19 @@ def catalog_cache():
 
 
 def apple_get(url):
-    return catalog_cache().load(
-        url,
-        900,
-        lambda: request_json(url, {'Authorization': 'Bearer ' + apple_token()}),
-    )
+    def fetch():
+        try:
+            return request_json(url, {'Authorization': 'Bearer ' + apple_token()})
+        except MusicError as error:
+            if getattr(error, 'status', None) != 401:
+                raise
+        # A rotated token: fetch a fresh one once instead of failing until restart.
+        global _apple_token_expires
+        with _apple_token_lock:
+            _apple_token_expires = 0.0
+        return request_json(url, {'Authorization': 'Bearer ' + apple_token()})
+
+    return catalog_cache().load(url, 900, fetch)
 
 
 def apple_url(path, params=None):
@@ -459,86 +476,6 @@ def playlist_page(playlist_id, offset=0, limit=SEARCH_PAGE_SIZE, cursor=''):
     return apple_songs(apple_url('/playlists/' + playlist_id + '/tracks', params))
 
 
-def derived_artists(resources):
-    """Artist rows named by songs or albums, for views without an artist search."""
-    artists, seen = [], set()
-    for resource in resources:
-        name = str(resource.get('artist') or '').strip()
-        key = normalized(name)
-        if not name or key in seen:
-            continue
-        seen.add(key)
-        ids = resource.get('artistIds') or []
-        artists.append(
-            {
-                'kind': 'artist',
-                'id': ids[0] if ids else 'apple-name:' + key,
-                'source': 'apple',
-                'name': name,
-                'cover': '',
-                'genres': [],
-            }
-        )
-    return artists
-
-
-def derived_albums(songs):
-    albums, seen = [], set()
-    for song in songs:
-        title = str(song.get('album') or '').strip()
-        key = str(song.get('albumId') or '') or (
-            normalized(title) + '|' + normalized(song.get('artist'))
-        )
-        if not title or key in seen:
-            continue
-        seen.add(key)
-        albums.append(
-            {
-                'kind': 'album',
-                'id': str(song.get('albumId') or 'name:' + key),
-                'source': 'apple',
-                'title': title,
-                'artist': song.get('artist') or 'Unknown Artist',
-                'artists': song.get('artists') or [],
-                'artistIds': song.get('artistIds') or [],
-                'cover': song.get('cover') or '',
-                'releaseDate': song.get('releaseDate') or '',
-            }
-        )
-    return albums
-
-
-def playlist_results(playlist_id):
-    songs, raw_count, cursor = playlist_page(playlist_id)
-    return {
-        'artists': derived_artists(songs),
-        'albums': derived_albums(songs),
-        'songs': songs,
-        'paging': {
-            'songs': {
-                'limit': raw_count,
-                'hasMore': bool(cursor) and raw_count < SEARCH_MAX_LIMIT,
-                'cursor': cursor,
-            },
-        },
-    }
-
-
-def chart_results(genre_id=''):
-    results = charts('songs,albums', genre_id)
-    songs, song_count, songs_more = chart_items(results, 'songs')
-    albums, album_count, albums_more = chart_items(results, 'albums')
-    return {
-        'artists': derived_artists(songs + albums),
-        'albums': albums,
-        'songs': songs,
-        'paging': {
-            'albums': {'limit': album_count, 'hasMore': albums_more},
-            'songs': {'limit': song_count, 'hasMore': songs_more},
-        },
-    }
-
-
 def search_page(args):
     query = str(args.get('query') or '').strip()
     category = str(args.get('category') or 'songs').strip().lower()
@@ -584,49 +521,6 @@ def search_page(args):
         'limit': next_offset,
         'cursor': cursor,
     }
-
-
-def search(args):
-    query = str(args.get('query') or '').strip()
-    kind = str(args.get('kind') or 'all').strip().lower()
-    genre_id = str(args.get('genreId') or '').strip()
-    genre_name = str(args.get('genreName') or '').strip()
-    if not query:
-        playlist_id = '' if genre_id else music_config()['default_playlist']
-        return playlist_results(playlist_id) if playlist_id else chart_results(genre_id)
-
-    categories = ('songs',) if kind == 'songs' else ('artists', 'albums', 'songs')
-    page_args = {'query': query, 'genreId': genre_id, 'genreName': genre_name}
-    pages = {}
-    failures = []
-    with ThreadPoolExecutor(max_workers=len(categories)) as pool:
-        futures = {
-            category: pool.submit(
-                search_page,
-                {**page_args, 'category': category, 'limit': SEARCH_PAGE_SIZE},
-            )
-            for category in categories
-        }
-        for category, future in futures.items():
-            try:
-                pages[category] = future.result()
-            except MusicError as error:
-                failures.append(str(error))
-                pages[category] = {'items': [], 'hasMore': False, 'limit': 0}
-    if not any(page.get('items') for page in pages.values()) and failures:
-        raise MusicError(failures[0])
-    results = {
-        category: pages.get(category, {}).get('items', [])
-        for category in ('artists', 'albums', 'songs')
-    }
-    results['paging'] = {
-        category: {
-            'limit': pages.get(category, {}).get('limit', 0),
-            'hasMore': pages.get(category, {}).get('hasMore', False),
-        }
-        for category in ('artists', 'albums', 'songs')
-    }
-    return results
 
 
 def find_apple_artists(name):
@@ -786,7 +680,7 @@ def artist_details(item):
             'hasMore': bool(cursor or album_page['items']),
         },
         'songs': unique_songs(songs),
-        'trackWarning': warning,
+        'warning': warning,
     }
 
 
@@ -822,7 +716,7 @@ def artist_songs_page(args):
         'cursor': '',
         'albumOffset': page['offset'],
         'hasMore': page['hasMore'],
-        'trackWarning': 'Some album tracks could not load.' if failures else '',
+        'warning': 'Some album tracks could not load.' if failures else '',
     }
 
 
@@ -899,13 +793,6 @@ def album_details(item, include_tracks=True):
         'artists': artists,
         'songs': tracks_for_album(album) if include_tracks else [],
     }
-
-
-def song_artists(args):
-    song = args.get('song') or {}
-    return catalog_artist_records(
-        song.get('artistIds'), song.get('artists') or [song.get('artist')]
-    )
 
 
 def value_at_path(value, path):
@@ -1156,6 +1043,10 @@ def stop_downloads(*_):
 def save_track_with_fallback(track, providers, directory):
     job = current_job()
     base = job.snapshot()['done'] if job else 0
+    # A retried album or a second click reuses songs that are already saved.
+    if saved := local_library().files({**track, 'kind': 'music'}):
+        progress(done=base + 1)
+        return saved[0]['path']
     last_error = None
     for provider in providers:
         check_cancelled()
@@ -1436,7 +1327,7 @@ def local_library():
     return library
 
 
-def resolve_track(track, providers=None, local_first=True):
+def resolve_track(track, providers=None, local_first=True, deadline=None):
     if local_first:
         local_files = local_library().files({**track, 'kind': 'music'})
         if local_files:
@@ -1453,6 +1344,15 @@ def resolve_track(track, providers=None, local_first=True):
     # A title-only fallback still has to pass the same artist/ISRC match score.
     queries = ([isrc] if isrc else []) + [f'{artist} {title}', title]
     provider_errors = 0
+
+    def bounded(provider):
+        if deadline is None:
+            return provider
+        remaining = deadline - time.monotonic()
+        if remaining < 1:
+            raise MusicError('The playback providers took too long to answer.')
+        return provider | dict(timeout=min(provider.get('timeout', 24), remaining))
+
     for provider in providers:
         check_cancelled()
         if not provider.get('command') and (
@@ -1460,6 +1360,7 @@ def resolve_track(track, providers=None, local_first=True):
         ):
             continue
         for query in queries:
+            provider = bounded(provider)
             try:
                 candidates = provider_results(provider, track, query)
             except MusicError:
@@ -1494,6 +1395,13 @@ def resolve_track(track, providers=None, local_first=True):
 
 
 player_ipc = MpvIpc('music')
+# With one more command call (25 s) and its resolve, this stays below the QML
+# request timeout (90 s), so a late answer never strands a stream ticket.
+PLAY_RESOLVE_SECONDS = 35
+
+
+def player_socket():
+    return str(player_ipc.directory() / ('mpv-' + uuid.uuid4().hex[:16] + '.sock'))
 
 
 def start_player(args):
@@ -1514,15 +1422,16 @@ def start_player(args):
             path = None
         if track.get('source') == 'music-local' and path is None:
             raise MusicError('The local song is no longer available.')
+        ipc_path = player_socket()
         resolved = {'url': str(path) if path else STREAMS.url(track), 'headers': {}}
     else:
         resolved = (
             {'url': track['localPath'], 'headers': {}}
             if track.get('source') == 'local'
             and Path(track.get('localPath', '')).is_file()
-            else resolve_track(track)
+            else resolve_track(track, deadline=time.monotonic() + PLAY_RESOLVE_SECONDS)
         )
-    ipc_path = str(player_ipc.directory() / ('mpv-' + uuid.uuid4().hex[:16] + '.sock'))
+        ipc_path = player_socket()
     stream_url = resolved['url']
     if track.get('source') == 'nextcloud':
         STREAMS.bind(ipc_path, stream_url)
@@ -1582,8 +1491,6 @@ def player_command(args):
     action = str(args.get('action') or '')
     if action == 'toggle-pause':
         command = ['cycle', 'pause']
-    elif action == 'pause':
-        command = ['set_property', 'pause', bool(args.get('value'))]
     elif action == 'seek':
         command = ['seek', max(0, float(args.get('value') or 0)), 'absolute+exact']
     elif action == 'volume':
@@ -1673,7 +1580,8 @@ def song_information(args):
 
             try:
                 result |= CloudLibrary().song_info(song)
-            except MusicError:
+            except (MusicError, CloudError):
+                # Local information never depends on reaching the server.
                 if not path:
                     raise
         if path:
@@ -1682,7 +1590,7 @@ def song_information(args):
             if local_files.signature(path) != before:
                 raise MusicError('The local song changed while reading its tags.')
             result['knownFields'] = list(result['tags'])
-            result['signature'] = before
+            result['signature'] = local_files.token(before)
     return result
 
 
@@ -1704,13 +1612,6 @@ def dispatch(args):
         return JOBS.start(
             str(args.get('title') or 'Save music'), lambda: open_download(args)
         )
-    if operation == 'local-songs':
-        return [
-            {**item, 'kind': 'song', 'source': 'local'}
-            for item in local_library().list('music')
-        ]
-    if operation == 'search':
-        return search(args)
     if operation == 'search-page':
         return search_page(args)
     if operation == 'genres':
@@ -1725,8 +1626,6 @@ def dispatch(args):
         return artist_songs_page(args)
     if operation == 'album':
         return album_details(args.get('album') or {})
-    if operation == 'song-artists':
-        return song_artists(args)
     if operation == 'lyrics':
         return fetch_lyrics(args)
     if operation == 'song-info':
@@ -1759,9 +1658,9 @@ def main():
     own_process_group(stop_downloads)
     serve(
         dispatch,
-        errors=(MusicError, CloudError),
+        # ValueError: Subsonic and Nextcloud account errors and the job queue.
+        errors=(MusicError, ValueError),
         latest=(
-            'search',
             'search-page',
             'artist',
             'artist-info',

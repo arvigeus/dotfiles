@@ -2,6 +2,7 @@
 
 from contextlib import ExitStack
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -48,28 +49,18 @@ class InventoryTests(unittest.TestCase):
         self.client.offline = True
         self.client.calls.clear()
 
-    def song(self, name, title='New song', artist='Artist 0', album='Album 0'):
+    def song(self, name, title='New song', artist='Artist 0', album='Album 0', **extra):
         path = self.music / name
         path.parent.mkdir(parents=True, exist_ok=True)
+        metadata = dict(title=title, artist=artist, album=album, **extra)
         subprocess.run(
-            [
-                'ffmpeg',
-                '-v',
-                'error',
-                '-f',
-                'lavfi',
-                '-i',
-                'anullsrc',
-                '-t',
-                '0.05',
-                '-metadata',
-                'title=' + title,
-                '-metadata',
-                'artist=' + artist,
-                '-metadata',
-                'album=' + album,
-                str(path),
-            ],
+            ['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'anullsrc', '-t', '0.05']
+            + [
+                argument
+                for key, value in metadata.items()
+                for argument in ('-metadata', key + '=' + value)
+            ]
+            + [str(path)],
             check=True,
         )
         return path
@@ -101,6 +92,24 @@ class InventoryTests(unittest.TestCase):
         ):
             self.assertFalse(self.inventory.refresh()['changed'])
 
+    def test_observation_skips_links_hidden_entries_and_other_files(self):
+        kept = self.song('Artist/Album/kept.flac', title='Kept')
+        self.song('.hidden/inside.flac')
+        self.song('Artist/.hidden.flac')
+        outside = self.root / 'outside'
+        outside.mkdir()
+        (outside / 'linked.flac').write_bytes(kept.read_bytes())
+        (self.music / 'linked').symlink_to(outside, target_is_directory=True)
+        (self.music / 'link.flac').symlink_to(kept)
+        (self.music / 'notes.txt').write_text('not audio')
+        self.assertEqual(
+            [rel for rel, _ in self.inventory.audio_files()],
+            ['Artist/Album/kept.flac'],
+        )
+        self.inventory.refresh()
+        local = self.library.browse({'pending': True})
+        self.assertEqual([item['title'] for item in local['items']], ['Kept'])
+
     def test_cache_is_deduplicated_and_removing_bytes_keeps_remote_song(self):
         path = self.song('song-0.flac', title='Song 00000')
         files.remember(
@@ -115,6 +124,54 @@ class InventoryTests(unittest.TestCase):
         self.inventory.refresh()
         self.assertEqual(self.library.browse({})['total'], 230)
         self.assertNotIn('local', self.index.lookup('song', 's0'))
+        self.assertEqual(self.client.calls, [])
+
+    def test_cached_featured_tracks_and_local_compilations_keep_one_album(self):
+        def album_songs(album_id):
+            album = self.index.lookup('album', album_id)
+            return {
+                song['title']
+                for song in self.library.entity_browse(
+                    dict(entity=album, category='songs')
+                )['items']
+            }
+
+        albums = self.library.browse({'category': 'albums'})['total']
+        # A cached server song whose track artist differs from the album artist.
+        featured = self.song(
+            'song-0.flac', title='Song 00000', artist='Artist 0 feat. Guest'
+        )
+        files.remember(
+            self.client.account_id,
+            'song-0.flac',
+            featured,
+            {'Size': featured.stat().st_size},
+        )
+        # An unchanged cached copy keeps the server artist too.
+        plain = self.song('song-1.flac', title='Café song 00001')
+        files.remember(
+            self.client.account_id, 'song-1.flac', plain, {'Size': plain.stat().st_size}
+        )
+        for index, artist in enumerate(('One', 'Two')):
+            self.song(
+                f'mix-{index}.flac',
+                title='Mix ' + artist,
+                artist=artist,
+                album='Summer Mix',
+                album_artist='Various Artists',
+            )
+        self.inventory.refresh()
+        self.assertEqual(self.index.lookup('song', 's0')['albumId'], 'b0')
+        self.assertEqual(self.index.lookup('song', 's1')['artistIds'], ['a0'])
+        self.assertIn('Song 00000', album_songs('b0'))
+        mix = self.library.browse({'category': 'albums', 'query': 'summer mix'})
+        self.assertEqual(mix['total'], 1)
+        self.assertEqual(mix['items'][0]['artist'], 'Various Artists')
+        self.assertEqual(album_songs(mix['items'][0]['id']), {'Mix One', 'Mix Two'})
+        # Only the new compilation adds an album.
+        self.assertEqual(
+            self.library.browse({'category': 'albums'})['total'], albums + 1
+        )
         self.assertEqual(self.client.calls, [])
 
     def test_local_edits_update_search_and_failed_refresh_keeps_readable_snapshot(self):
@@ -151,7 +208,13 @@ class InventoryTests(unittest.TestCase):
             serverPath='/new.flac',
             notUploaded=True,
         )
-        opened = files.file_job(dict(action='info', song=song))
+        # Local writes leave nanosecond mtimes, beyond exact JavaScript numbers.
+        os.utime(path, ns=(1794497584339927924, 1794497584339927924))
+        from spaces.music import backend
+
+        opened = backend.song_information(dict(song=song))
+        # QML parses numbers as doubles before sending the signature back.
+        opened = json.loads(json.dumps(opened), parse_int=float)
         with patch.object(
             files, 'publish', return_value=dict(path=str(path), synced=True)
         ) as publish:
@@ -228,6 +291,10 @@ class InventoryTests(unittest.TestCase):
 
     def test_explicit_upload_is_visible_before_server_catalogue_indexes_it(self):
         path = self.song('new.flac')
+        self.inventory.refresh()
+        self.assertTrue(
+            self.library.browse({'query': 'New song'})['items'][0]['notUploaded']
+        )
         song = dict(
             id='local:new.flac',
             source='music-local',
@@ -241,8 +308,9 @@ class InventoryTests(unittest.TestCase):
         with patch.object(
             files, 'publish', return_value=dict(synced=True, path=str(path))
         ):
-            files.file_job(dict(action='upload', song=song))
-        self.inventory.refresh()
+            files.file_job(dict(action='save', song=song, tags={}))
+        # Only the association changed; an ordinary observation still sees it.
+        self.assertTrue(self.inventory.refresh()['changed'])
         item = self.library.browse({'query': 'New song'})['items'][0]
         self.assertFalse(item['notUploaded'])
         self.assertFalse(item['pendingUpload'])
@@ -300,4 +368,91 @@ class InventoryTests(unittest.TestCase):
         with files.db() as db:
             self.assertEqual(
                 db.execute('SELECT count(*) FROM music_pending_moves').fetchone()[0], 0
+            )
+
+    def test_moves_that_swap_names_never_resolve_one_song_to_the_other(self):
+        first, second = (self.index.lookup('song', key) for key in ('s0', 's1'))
+        # s0: song-0 -> parked -> song-1, while s1: song-1 -> song-0.
+        with files.db() as db:
+            db.executemany(
+                'INSERT INTO music_pending_moves VALUES(?,?,?,?)',
+                [
+                    (
+                        self.client.account_id,
+                        'song-0.flac',
+                        'song-1.flac',
+                        json.dumps(
+                            first
+                            | dict(
+                                serverPath='/song-1.flac',
+                                previousPaths=['song-0.flac', 'parked.flac'],
+                            )
+                        ),
+                    ),
+                    (
+                        self.client.account_id,
+                        'song-1.flac',
+                        'song-0.flac',
+                        json.dumps(second | dict(serverPath='/song-0.flac')),
+                    ),
+                ],
+            )
+        account = self.client.account_id
+        self.assertEqual(
+            files.pending_path(account, second | dict(serverPath='/song-0.flac')),
+            'song-0.flac',
+        )
+        self.assertEqual(
+            files.pending_path(account, first | dict(serverPath='/song-1.flac')),
+            'song-1.flac',
+        )
+        self.inventory.refresh()
+        self.assertEqual(self.index.lookup('song', 's0')['serverPath'], '/song-1.flac')
+        self.assertEqual(self.index.lookup('song', 's1')['serverPath'], '/song-0.flac')
+        self.assertEqual(self.library.browse({})['total'], 230)
+        # Once the catalogue shows both songs at their new paths, both rows go.
+        self.index.update_song(first | dict(serverPath='/song-1.flac'))
+        self.index.update_song(second | dict(serverPath='/song-0.flac'))
+        self.inventory.refresh()
+        with files.db() as db:
+            self.assertEqual(
+                db.execute('SELECT count(*) FROM music_pending_moves').fetchone()[0], 0
+            )
+
+    def test_moves_the_server_never_indexed_expire_after_a_later_catalogue(self):
+        import time
+
+        gone = dict(id='deleted', kind='song', title='Deleted on the server')
+        with files.db() as db:
+            db.executemany(
+                'INSERT INTO music_pending_moves VALUES(?,?,?,?)',
+                [
+                    (
+                        self.client.account_id,
+                        old + '.flac',
+                        new + '.flac',
+                        json.dumps(
+                            gone
+                            | dict(id=old, serverPath='/' + new + '.flac', moved=when)
+                        ),
+                    )
+                    for old, new, when in (
+                        ('stale', 'stale-new', time.time() - 7200),
+                        ('fresh', 'fresh-new', time.time()),
+                    )
+                ],
+            )
+        self.inventory.refresh()
+        # The fresh move may still be indexing; the stale one is gone for good.
+        self.assertIsNone(self.index.lookup('song', 'stale'))
+        self.assertEqual(
+            self.index.lookup('song', 'fresh')['serverPath'], '/fresh-new.flac'
+        )
+        with files.db() as db:
+            self.assertEqual(
+                [
+                    row[0]
+                    for row in db.execute('SELECT old_path FROM music_pending_moves')
+                ],
+                ['fresh.flac'],
             )

@@ -12,7 +12,7 @@ from pathlib import Path
 
 BATCH = 500
 PAGE = 200
-SCHEMA = 1
+SCHEMA = 2
 
 
 def fold(text):
@@ -40,7 +40,6 @@ class CatalogueIndex:
         self.loaded = 0
         self.error = ''
         self.phase = ''
-        self.star_edits = {}
         self.song_edits = {}
 
     def connect(self, remote=False):
@@ -97,7 +96,6 @@ class CatalogueIndex:
             self.error = ''
             self.phase = 'songs'
             self.cancelled.clear()
-            self.star_edits = {}
             self.song_edits = {}
             self.thread = threading.Thread(
                 target=self._build, daemon=True, name='music-catalogue'
@@ -114,7 +112,7 @@ class CatalogueIndex:
     def create(db):
         db.executescript("""
             CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT);
-            CREATE TABLE records(kind TEXT,id TEXT,payload TEXT,search TEXT,sort TEXT,album TEXT,disc INTEGER,track INTEGER,starred INTEGER,PRIMARY KEY(kind,id));
+            CREATE TABLE records(kind TEXT,id TEXT,payload TEXT,search TEXT,sort TEXT,album TEXT,disc INTEGER,track INTEGER,PRIMARY KEY(kind,id));
             CREATE TABLE artist_songs(artist TEXT,song TEXT,PRIMARY KEY(artist,song));
             CREATE TABLE album_artists(artist TEXT,album TEXT,PRIMARY KEY(artist,album));
             CREATE TABLE genres(kind TEXT,id TEXT,name TEXT,PRIMARY KEY(kind,id,name));
@@ -134,7 +132,7 @@ class CatalogueIndex:
             )
         )
         db.execute(
-            'INSERT OR REPLACE INTO records VALUES(?,?,?,?,?,?,?,?,?)',
+            'INSERT OR REPLACE INTO records VALUES(?,?,?,?,?,?,?,?)',
             (
                 kind,
                 identifier,
@@ -144,7 +142,6 @@ class CatalogueIndex:
                 item.get('albumId', ''),
                 int(item.get('discNumber') or 0),
                 int(item.get('trackNumber') or 0),
-                int(bool(item.get('starred'))),
             ),
         )
         db.execute('DELETE FROM genres WHERE kind=? AND id=?', (kind, identifier))
@@ -214,16 +211,6 @@ class CatalogueIndex:
                     with self.lock:
                         self.loaded = offsets['song']
                         self.phase = 'metadata'
-                stars = self.client.request('getStarred2').get('starred2')
-                if not isinstance(stars, dict):
-                    raise ValueError('Invalid starred catalogue')
-                db.execute('UPDATE records SET starred=0')
-                for kind in ('song', 'album', 'artist'):
-                    for item in stars.get(kind, []):
-                        db.execute(
-                            'UPDATE records SET starred=1 WHERE kind=? AND id=?',
-                            (kind, str(item['id'])),
-                        )
                 version = time.time_ns()
                 meta = dict(
                     account=self.account, schema=str(SCHEMA), version=str(version)
@@ -244,11 +231,6 @@ class CatalogueIndex:
                         return
                     for item in self.song_edits.values():
                         self._put_song(db, item)
-                    for (kind, identifier), starred in self.star_edits.items():
-                        db.execute(
-                            'UPDATE records SET starred=? WHERE kind=? AND id=?',
-                            (int(starred), kind, identifier),
-                        )
                     db.commit()
                     os.replace(temporary, self.path)
         except Exception:
@@ -264,12 +246,10 @@ class CatalogueIndex:
     def lookup(self, kind, identifier):
         with closing(self.connect()) as db:
             row = db.execute(
-                'SELECT payload,starred FROM records WHERE kind=? AND id=?',
+                'SELECT payload FROM records WHERE kind=? AND id=?',
                 (kind, str(identifier)),
             ).fetchone()
-        if not row:
-            return None
-        return json.loads(row[0]) | dict(starred=bool(row[1]))
+        return json.loads(row[0]) if row else None
 
     def browse(self, args, *, artist=None, album=None):
         kind = {'songs': 'song', 'albums': 'album', 'artists': 'artist'}.get(
@@ -286,8 +266,6 @@ class CatalogueIndex:
             params.append(term)
         if args.get('pending'):
             clauses.append("json_extract(r.payload,'$.notUploaded')=1")
-        if args.get('starred'):
-            clauses.append('r.starred=1')
         genre = args.get('genreName') or ''
         if genre and kind == 'song':
             clauses.append(
@@ -320,7 +298,7 @@ class CatalogueIndex:
                 'SELECT count(*) FROM records r WHERE ' + where, params
             ).fetchone()[0]
             values = db.execute(
-                'SELECT r.payload,r.starred FROM records r WHERE '
+                'SELECT r.payload FROM records r WHERE '
                 + where
                 + ' ORDER BY '
                 + order
@@ -328,10 +306,7 @@ class CatalogueIndex:
                 [*params, page_size, offset],
             ).fetchall()
         return dict(
-            items=[
-                json.loads(payload) | dict(starred=bool(starred))
-                for payload, starred in values
-            ],
+            items=[json.loads(payload) for (payload,) in values],
             total=total,
             limit=offset + len(values),
             hasMore=offset + len(values) < total,
@@ -346,23 +321,11 @@ class CatalogueIndex:
             ).fetchall()
         return [dict(id=name, name=name) for (name,) in values]
 
-    def set_star(self, item, value):
-        key = (item['kind'], str(item['id']))
-        with self.lock:
-            self.star_edits[key] = bool(value)
-            if self.info():
-                with closing(sqlite3.connect(self.path, timeout=5)) as db:
-                    with db:
-                        db.execute(
-                            'UPDATE records SET starred=? WHERE kind=? AND id=?',
-                            (int(value), *key),
-                        )
-
     def _put_song(self, db, song):
         self.put(db, song)
         if song.get('albumId'):
             old = db.execute(
-                "SELECT payload,starred FROM records WHERE kind='album' AND id=?",
+                "SELECT payload FROM records WHERE kind='album' AND id=?",
                 (str(song['albumId']),),
             ).fetchone()
             album = (
@@ -379,13 +342,7 @@ class CatalogueIndex:
                     releaseDate=song.get('releaseDate', ''),
                 )
             )
-            self.put(
-                db,
-                album
-                | dict(
-                    title=song.get('album', ''), starred=bool(old[1]) if old else False
-                ),
-            )
+            self.put(db, album | dict(title=song.get('album', '')))
         for artist in song.get('artistIds', []):
             if not db.execute(
                 "SELECT 1 FROM records WHERE kind='artist' AND id=?", (str(artist),)

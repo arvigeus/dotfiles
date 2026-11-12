@@ -42,6 +42,12 @@ Item {
         for (const id of Object.keys(callbacks))
             settle(id, null, message);
     }
+    function halt() {
+        processReady = false;
+        startupRequests = [];
+        stopped = true;
+        failPending(serviceName + " service stopped. Close this module using the X in Spaces, then reopen it.");
+    }
     function request(op, args, callback, timeoutMs) {
         const id = ++serial;
         callbacks[id] = {
@@ -125,12 +131,10 @@ Item {
                 root.settle(response.id, response.result, response.error, response.error_code);
             }
         }
-        onExited: {
-            root.processReady = false;
-            root.startupRequests = [];
-            root.stopped = true;
-            root.failPending(root.serviceName + " service stopped. Close this module using the X in Spaces, then reopen it.");
-        }
+        onExited: root.halt()
+        // A process that never starts (missing executable) emits no exited.
+        onRunningChanged: if (!running && !root.processReady && !root.stopped)
+            root.halt()
     }
     // Under the supervisor, destruction alone delivers exactly one SIGTERM.
     Component.onDestruction: if (!gracefulStop)

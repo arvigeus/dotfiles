@@ -33,7 +33,7 @@ class ProviderSession:
         with self.lock:
             if len(self.references) >= 16384 and key not in self.references:
                 raise MusicError('The provider playlist contains too many references.')
-            self.references[key] = url
+            self.references[key] = (url, directory)
         return self.base + '/' + key + ('/' if directory else '')
 
     def resolve(self, path):
@@ -42,10 +42,13 @@ class ProviderSession:
             return self.url
         key, _, tail = suffix.lstrip('/').partition('/')
         with self.lock:
-            url = self.references.get(key)
-        if url is None:
-            return None
-        return urljoin(url, tail) if tail else url
+            url, directory = self.references.get(key, (None, False))
+        if url is None or not tail:
+            return url
+        # Only directory references take a tail, and it must stay inside that
+        # directory: "//host/x" or "../" would carry provider headers elsewhere.
+        target = urljoin(url, tail)
+        return target if directory and target.startswith(url) else None
 
     def open(self, url, extra):
         self.validate_url(url)
@@ -197,10 +200,15 @@ class StreamBroker:
                         self.send_error(502)
                         return
                     with owner.lock:
-                        if owner.tickets.get(path) is not entry:
-                            self.send_error(404)
-                            return
-                        owner.responses[upstream] = path
+                        revoked = owner.tickets.get(path) is not entry
+                        if not revoked:
+                            owner.responses[upstream] = path
+                    if revoked:
+                        # Release the upstream before answering: nothing outlives
+                        # a revocation, even briefly.
+                        upstream.close()
+                        self.send_error(404)
+                        return
                     self.send_response(upstream.status)
                     for key in (
                         'Content-Type',
@@ -223,7 +231,7 @@ class StreamBroker:
                 except HTTPError as error:
                     error.close()
                     self.send_error(416 if error.code == 416 else 502)
-                except (OSError, ValueError):
+                except (OSError, ValueError, ET.ParseError):
                     self.close_connection = True
                 finally:
                     if upstream:

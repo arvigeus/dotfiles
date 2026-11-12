@@ -53,11 +53,8 @@ class Client:
             'getAlbum': {'album': dict(album, id=args.get('id', 'b1'))},
             'getSong': {'song': song},
             'getArtist': {'artist': artist},
-            'getStarred2': {'starred2': {'song': [dict(song, starred='date')]}},
             'getGenres': {'genres': {'genre': [{'value': 'Rock'}]}},
             'getSongsByGenre': {'songsByGenre': {'song': [song]}},
-            'star': {},
-            'unstar': {},
         }[method]
 
 
@@ -68,6 +65,59 @@ class CloudLibraryTests(unittest.TestCase):
         self.client = Client()
         self.library = CloudLibrary(self.client, Path(self.tmp.name) / 'cache')
         self.library.index.start = lambda *args: None
+
+    def test_server_artist_images_reach_qml_only_as_cached_files(self):
+        from functools import partial
+        from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+        import threading
+
+        root = Path(self.tmp.name) / 'server'
+        root.mkdir()
+        (root / 'artist.png').write_bytes(b'\x89PNG fixture')
+
+        class Quiet(SimpleHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+        server = ThreadingHTTPServer(('127.0.0.1', 0), partial(Quiet, directory=root))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        origin = f'http://127.0.0.1:{server.server_port}/'
+        self.client.account = {'url': origin}
+        artist = dict(
+            id='a1', kind='artist', source='nextcloud', account=self.client.account_id
+        )
+        signed = origin + 'artist.png?token=secret'
+        with patch.object(
+            self.client,
+            'request',
+            return_value={'artistInfo2': {'biography': 'Bio', 'largeImageUrl': signed}},
+        ):
+            cover = self.library.artist_info(artist)['artist']['cover']
+            self.assertTrue(cover.startswith('file://') and 'secret' not in cover)
+            self.assertEqual(Path(cover[7:]).read_bytes(), b'\x89PNG fixture')
+        with patch.object(
+            self.client,
+            'request',
+            return_value={
+                'artistInfo2': {'largeImageUrl': 'https://elsewhere.example/a.png'}
+            },
+        ):
+            other = dict(artist, id='a2')
+            self.assertEqual(self.library.artist_info(other)['artist']['cover'], '')
+
+    def test_response_cache_pruning_tolerates_concurrently_removed_files(self):
+        real = Path.glob
+        vanished = self.library.cache / 'vanished.json'
+
+        def glob(path, pattern):
+            # Another worker removed this entry between listing and stat().
+            return iter([vanished, *real(path, pattern)])
+
+        with patch.object(Path, 'glob', glob):
+            result = self.library.request('getSong', refresh=True, id='s1')
+        self.assertEqual(result['song']['id'], 's1')
 
     def test_song_play_count_preserves_zero_and_missing_values(self):
         for value in (None, 0, 17, 3_000_000_000):
@@ -86,7 +136,7 @@ class CloudLibraryTests(unittest.TestCase):
             self.assertEqual(self.library.song_info(song)['song']['playCount'], 17)
         self.assertEqual(self.client.calls, [('getSong', {'id': 's1'})])
 
-    def test_library_search_categories_genres_and_starred_are_source_scoped(self):
+    def test_library_search_categories_and_genres_are_source_scoped(self):
         songs = self.library.browse({'category': 'songs', 'query': 'Song'})['items']
         self.assertEqual(songs[0]['source'], 'nextcloud')
         self.assertEqual(songs[0]['account'], self.client.account_id)
@@ -103,7 +153,6 @@ class CloudLibraryTests(unittest.TestCase):
             self.library.browse({'category': 'artists'})['items'][0]['kind'], 'artist'
         )
         self.assertEqual(self.library.genres(), [dict(id='Rock', name='Rock')])
-        self.assertTrue(self.library.browse({'starred': True})['items'][0]['starred'])
         self.assertEqual(len(self.library.browse({'genreName': 'Rock'})['items']), 1)
         self.assertEqual(self.client.calls[-1][0], 'getSongsByGenre')
 
@@ -122,20 +171,13 @@ class CloudLibraryTests(unittest.TestCase):
         album = self.library.album(result['albums'][0])
         self.assertEqual(album['songs'][0]['title'], 'Song')
 
-    def test_offline_cache_and_account_isolation_and_star_mutation(self):
+    def test_offline_cache_and_account_isolation(self):
         song = self.library.browse({})['items'][0]
         self.client.offline = True
         self.assertEqual(self.library.browse({'refresh': True})['items'][0], song)
         self.assertTrue(self.library.warning)
         with self.assertRaises(MusicError):
             self.library.album(dict(id='1', account='another'))
-        self.client.offline = False
-        self.assertTrue(self.library.favorite(song, True)['item']['starred'])
-        self.assertEqual(self.client.calls[-1], ('star', {'id': 's1'}))
-        self.assertEqual(list(self.library.cache.glob('*.json')), [])
-        album = dict(song, kind='album')
-        self.library.favorite(album, False)
-        self.assertEqual(self.client.calls[-1], ('unstar', {'albumId': 's1'}))
 
 
 class StreamTests(unittest.TestCase):

@@ -56,10 +56,15 @@ class MusicTests(unittest.TestCase):
             self.assertEqual(result['song']['playCount'], 17)
             self.assertEqual(result['tags'], local['tags'])
             self.assertEqual(result['fileInfo'], local['fileInfo'])
-            info.side_effect = music.MusicError('Offline')
+            # CloudLibrary raises the Subsonic transport's error class, not Music's.
+            info.side_effect = cloud.MusicError('Nextcloud Music is unreachable.')
             result = music.song_information({'song': song})
             self.assertEqual(result['song']['playCount'], 2)
             self.assertEqual(result['tags'], local['tags'])
+            # Without a local copy, the server failure is the answer.
+            local_files.cached.return_value = None
+            with self.assertRaises(cloud.MusicError):
+                music.song_information({'song': song})
 
     def test_discovery_playlist_continues_past_500_and_genre_filter_preserves_cursor(
         self,
@@ -100,6 +105,75 @@ class MusicTests(unittest.TestCase):
             ),
             0,
         )
+
+    def test_titles_match_whole_words_and_blank_artists_never_count(self):
+        def score(title, candidate_title, candidate_artist='Artist'):
+            return music.score_candidate(
+                {'title': title, 'artist': 'Artist'},
+                {'title': candidate_title, 'artist': candidate_artist},
+            )
+
+        self.assertGreaterEqual(score('Song', 'Song (Remastered 2011)'), 120)
+        self.assertLess(score('Intro', 'Introduction'), 120)
+        self.assertEqual(score('Song', 'Song', '???'), 100)
+
+    def test_rejected_catalog_token_is_fetched_again_once(self):
+        rejected = music.MusicError('A configured music endpoint returned HTTP 401.')
+        rejected.status = 401
+        cache = music.JsonCache('fixture', self.tmp.name)
+        with (
+            patch.object(music, 'apple_token', side_effect=['old', 'new']),
+            patch.object(
+                music, 'request_json', side_effect=[rejected, {'data': []}]
+            ) as request,
+            patch.object(music, 'catalog_cache', return_value=cache),
+        ):
+            self.assertEqual(
+                music.apple_get('https://fixture.invalid/v1'), {'data': []}
+            )
+        self.assertEqual(
+            [call.args[1]['Authorization'] for call in request.call_args_list],
+            ['Bearer old', 'Bearer new'],
+        )
+
+    def test_dropped_provider_connections_fall_back_to_the_next_provider(self):
+        import http.client
+        import io
+
+        for failure in (
+            http.client.RemoteDisconnected('closed'),
+            ConnectionResetError(),
+            http.client.IncompleteRead(b''),
+        ):
+            with (
+                self.subTest(failure=type(failure).__name__),
+                patch.object(music.urllib.request, 'urlopen', side_effect=failure),
+                self.assertRaises(music.MusicError),
+            ):
+                music.request_body('https://fixture.invalid/search')
+        wanted = {'kind': 'song', 'id': '1', 'artist': 'Artist', 'title': 'Song'}
+        providers = [
+            {
+                'search_url': 'https://' + host + '.invalid/search?q={query}',
+                'stream_url': 'https://' + host + '.invalid/{id}',
+            }
+            for host in ('first', 'second')
+        ]
+
+        def urlopen(request, timeout):
+            if 'first.invalid' in request.full_url:
+                raise http.client.RemoteDisconnected('closed')
+            return io.BytesIO(
+                json.dumps(
+                    dict(tracks=[dict(id='7', title='Song', artist='Artist')])
+                ).encode()
+            )
+
+        with patch.object(music.urllib.request, 'urlopen', side_effect=urlopen):
+            resolved = music.resolve_track(
+                wanted, providers=providers, local_first=False
+            )
+        self.assertEqual(resolved['url'], 'https://second.invalid/7')
 
     def test_duration_units_preserve_long_song_lyrics_and_short_catalogue_tracks(self):
         from urllib.parse import parse_qs, urlsplit
@@ -350,8 +424,15 @@ class MusicTests(unittest.TestCase):
                 patch.dict(os.environ, {'XDG_MUSIC_DIR': str(destination)}),
             ):
                 result = music.open_download({'kind': 'track', 'item': song})
-                second = music.open_download({'kind': 'track', 'item': song})
+                # The same catalogue song is reused, never saved twice.
+                again = music.open_download({'kind': 'track', 'item': song})
+                # Another song with the same name keeps both files.
+                second = music.open_download(
+                    {'kind': 'track', 'item': song | {'id': '43'}}
+                )
             self.assertEqual(result['saved'], 1)
+            self.assertEqual(again['path'], result['path'])
+            self.assertEqual(resolve.call_count, 2)
             self.assertEqual(second['saved'], 1)
             self.assertEqual(
                 Path(result['path']).name,
