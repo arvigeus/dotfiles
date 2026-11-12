@@ -830,10 +830,23 @@ def ensure(current, capped=False):
     return current
 
 
+def lit(state):
+    return any(row['enabled'] and row['mirror'] == 'none' for row in state['displays'])
+
+
+def wait_until_lit(seconds):
+    until = time.monotonic() + seconds
+    while True:
+        current = snapshot()
+        if lit(current) or time.monotonic() >= until:
+            return current
+        time.sleep(0.1)
+
+
 def emergency(current):
     """Recover an otherwise dark session even when a profile is invalid/unavailable."""
     rows = current['displays']
-    if any(row['enabled'] and row['mirror'] == 'none' for row in rows):
+    if lit(current):
         return current
     target = next(
         (
@@ -854,7 +867,16 @@ def emergency(current):
     )
     if reply != 'ok':
         raise RuntimeError(reply or 'Hyprland rejected the display change.')
-    return snapshot()
+    current = wait_until_lit(1)
+    if lit(current):
+        return current
+    # Hyprland applies rule changes on the next rendered frame. A session that
+    # started with every connected output disabled by the last layout renders
+    # none, so the change stays pending. Replacing the layout reloads the config,
+    # which applies rules at once; host defaults hold until ensure() restores
+    # this monitor set.
+    compile_layout([])
+    return wait_until_lit(3)
 
 
 def handle(request):

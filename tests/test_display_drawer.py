@@ -1,6 +1,7 @@
 """Display safety and production QML, with no host monitor mutations."""
 
 import copy
+import itertools
 import json
 import os
 import shutil
@@ -668,7 +669,7 @@ class DisplayRulesTests(unittest.TestCase):
     def test_ensure_reenables_the_panel_only_when_no_display_is_usable(self):
         with (
             patch.object(backend, 'command', return_value='ok') as command,
-            patch.object(backend, 'snapshot') as snapshot,
+            patch.object(backend, 'snapshot', return_value=self.current) as snapshot,
         ):
             self.assertIs(backend.emergency(self.current), self.current)
             command.assert_not_called()
@@ -680,6 +681,30 @@ class DisplayRulesTests(unittest.TestCase):
             'eval', 'hl.monitor({ output = "desc:Panel Co P1", disabled = false })'
         )
         snapshot.assert_called_once()
+        self.assertFalse(self.path.exists())
+
+    def test_dark_start_reloads_without_the_rules_that_disabled_every_output(self):
+        # The docked layout disables the panel. Booting undocked renders nothing,
+        # so Hyprland leaves the live enable rule pending until its config reloads.
+        backend.persist(state([dict(self.panel, enabled=False), self.external]), False)
+        preferences = backend.profiles_path().read_text()
+        dark, lit = state([dict(self.panel, enabled=False)]), state([self.panel])
+        with (
+            patch.object(backend, 'command', return_value='ok') as command,
+            patch.object(
+                backend,
+                'snapshot',
+                side_effect=lambda: (
+                    dark if 'disabled = true' in self.path.read_text() else lit
+                ),
+            ),
+            patch.object(backend.time, 'monotonic', side_effect=itertools.count()),
+            patch.object(backend.time, 'sleep'),
+        ):
+            self.assertIs(backend.emergency(dark), lit)
+        command.assert_called_once()
+        self.assertEqual(self.lines(), backend.HEADER)
+        self.assertEqual(backend.profiles_path().read_text(), preferences)
 
     def test_redocking_restores_panel_choice_without_persisting_fallback(self):
         backend.persist(state([dict(self.panel, enabled=False), self.external]), False)

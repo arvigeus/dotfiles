@@ -367,7 +367,9 @@ Replacing Lua triggers a complete config reload, so Powersave reapplies its cap.
 
 Unknown sets start side by side without being saved. Wake retries dark outputs.
 Emergency undock recovery enables one output, preferring the panel; invalid saved
-modes retain their source and report errors. Powersave caps only enabled internal
+modes retain their source and report errors. Hyprland applies live rule changes on
+the next rendered frame, so after a start whose layout disabled every connected
+output, recovery replaces `displays.lua` with host defaults to force a reload. Powersave caps only enabled internal
 panels to an available mode at/below 60 Hz in live rules, retaining the uncapped
 preference. Explicit refresh changes override it until the next mode change.
 Brightness is independent. Identify/test windows are bounded session-owned work.
