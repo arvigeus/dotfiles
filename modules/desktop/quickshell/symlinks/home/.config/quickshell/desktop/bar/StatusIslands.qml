@@ -8,6 +8,7 @@ import "../drawers/weather"
 import "../drawers/capture"
 import "../drawers/notifications"
 import "../drawers/tray"
+import "../drawers/events"
 import "../drawers/power/Format.js" as PowerFormat
 
 Item {
@@ -18,7 +19,38 @@ Item {
     property var inputLanguage: InputLanguage
     property var notificationCenter: NotificationCenter
     property var trayStatus: TrayService
+    property var calendarService: CalendarService
     property date localDate: new Date()
+    readonly property int todayEventCount: calendarService.eventsOn(localDate).length
+    readonly property var upcomingEvent: {
+        const now = localDate.getTime();
+        const until = new Date(now);
+        until.setDate(until.getDate() + 7);
+        let next = null;
+        let nextStart = until.getTime();
+        for (const event of calendarService.state.events) {
+            const start = eventStart(event).getTime();
+            if (start > now && start <= nextStart) {
+                next = event;
+                nextStart = start;
+            }
+        }
+        return next;
+    }
+    readonly property string calendarDescription: {
+        const lines = [qsTr("Calendar, agenda and tasks")];
+        if (calendarService.state.eventsReady)
+            lines.push(todayEventCount === 1 ? qsTr("1 event today") : qsTr("%1 events today").arg(todayEventCount));
+        if (upcomingEvent)
+            lines.push(qsTr("Next: %1 · %2").arg(upcomingEvent.summary).arg(upcomingEvent.all_day ? Qt.formatDate(eventStart(upcomingEvent), "ddd d MMM") + " · " + qsTr("All day") : Qt.formatDateTime(eventStart(upcomingEvent), "ddd d MMM · HH:mm")));
+        if (calendarService.state.stale)
+            lines.push(qsTr("Showing saved data"));
+        return lines.join("\n");
+    }
+    // All-day dates follow the local calendar; timed events keep their UTC offset.
+    function eventStart(event: var): date {
+        return new Date(event.all_day ? event.date + "T00:00:00" : event.start);
+    }
     readonly property string powerProfile: PowerProfiles.profile === PowerProfile.PowerSaver ? "power-saver" : PowerProfiles.profile === PowerProfile.Performance ? "performance" : "balanced"
     signal drawerRequested(string key)
     readonly property alias trayIsland: tray
@@ -217,8 +249,12 @@ Item {
                         key: "events"
                         title: qsTr("Events and tasks")
                         iconName: "calendar-days"
+                        badge: root.todayEventCount > 99 ? "99+" : root.todayEventCount ? String(root.todayEventCount) : root.upcomingEvent ? "!" : ""
+                        badgeReserveText: "99+"
+                        attention: root.calendarService.hasUnseenEvents(root.localDate)
+                        iconColor: attention ? Theme.accent : Theme.text
                         label: Qt.formatDate(root.localDate, "ddd d")
-                        description: qsTr("Calendar, agenda and tasks")
+                        description: root.calendarDescription
                     },
                     BarEntry {
                         key: "notifications"

@@ -2,3 +2,7 @@ singleton AssistantService 1.0 AssistantService.qml
 AssistantInbox 1.0 AssistantInbox.qml
 ModelPicker 1.0 ModelPicker.qml
 AttachmentStrip 1.0 AttachmentStrip.qml
+ToolActivity 1.0 ToolActivity.qml
+ActivityDisclosure 1.0 ActivityDisclosure.qml
+RegistryRequest 1.0 RegistryRequest.qml
+RegistryModels 1.0 RegistryModels.qml

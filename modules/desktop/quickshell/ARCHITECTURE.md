@@ -129,6 +129,99 @@ standalone chat models are eligible; image context additionally requires vision.
 No independent memory-fit estimate is maintained. Native aliases are resolved
 again before concrete download/delete/unload operations. An unavailable optional
 `/internal/aliases` endpoint leaves public inference usable without alias grouping.
+The protocol follows [Lemonade's Chat Completions API](https://lemonade-server.ai/docs/api/openai/).
+
+`ModelPicker` filters the local catalogue immediately and searches Hugging Face
+and ModelScope through `/v1/registry/search` after a 350 ms debounce and three
+characters. The two `RegistryModels` sections own independent `RegistryRequest`
+helpers, loading/error states and retries. Searches do not hold the singleton's
+control lock; query changes, dismissal and going offline cancel metadata helpers.
+Request revisions discard late replies. No discovery polling or eager per-result
+file inspection runs. Opening a repository requests `/v1/pull/variants`; only
+standalone llama.cpp GGUF chat models with valid files are installable. Vision
+context still requires a vision model. The quantization chooser prefers Q4_K_M.
+Collapsed result loaders are hidden as well as unloaded, so the column excludes
+their retained geometry.
+
+An explicit download uses the singleton's serialized control path and rechecks
+the repository's files before `/v1/pull`. Main, vision-projector and optional
+draft checkpoints and the selected registry come from this validation. Matching
+existing definitions are reused without changing their options; new `user.*`
+names include a source/checkpoint digest to avoid collisions, and conflicting
+definitions are refused. Lemonade owns the download (`stream: true`,
+`subscribe: false`); its normal jobs, pause/resume and deletion remain in use.
+Successful registration selects/reveals the model without changing the chat or
+draft. Registry errors stay in their own sections; unsupported server search
+APIs are reported there. Registry requests use the same loopback connection and
+server-managed credentials as the catalogue, never direct provider requests.
+`test_assistant_registry.py` covers provider routing, file validation, source
+preservation, existing-definition reuse, collisions, per-provider failures,
+quantization choice, row collapse, native download controls and stale/cancelled searches.
+
+Tool calling is enabled only when Lemonade's model labels include
+`tool-calling`; other models receive the existing ordinary chat request. The
+backend sends native OpenAI `tools` and `tool_choice: auto` fields and reassembles
+streamed argument fragments by call index. Tool-capable aliases use their
+catalogue labels. Argument fragments are bounded and calls execute only after
+`finish_reason: tool_calls` and the SSE completion marker. Truncated calls never
+execute. Missing/repeated call IDs are normalized before returning results. A
+rejected, malformed, or unknown call becomes a tool result so the model can
+continue without the operation; malformed stream structure ends the request.
+
+Read-only tools cover fixed system inspections (machine, disks, memory, process
+list, failed services, Bluetooth, a named service or its logs), bounded text-file
+reads, directory listings, and `rg` filename/content searches. Fixed inspection
+uses system binaries, validates unit names and disables pagers. Search ignores
+ripgrep config, including executable preprocessors. Directory sorting retains at
+most 201 entries in memory. General commands and file writes always wait for
+approval over the running backend process's stdin. Each execution receives a
+fresh approval ID independent of model call IDs; duplicate/stale UI decisions
+cannot approve another operation. Command previews include the exact script,
+working directory and deadline.
+
+Writes are limited to 64 KiB user-owned regular files; symlinks and special files
+are refused. The backend snapshots file identity, mode and content before
+approval, rechecks before commit, and atomically replaces the file while retaining
+its mode. The directory descriptor is pinned and checked against the snapshot,
+so replacing a parent with a symlink cannot redirect an approved write. New-file
+creation refuses an intervening file. These checks guard pending approvals; they
+are not a filesystem transaction across concurrent writers. The backend never
+adds privilege wrappers. An approved shell command has the current user's
+ordinary access; this is an approval boundary, not an OS sandbox.
+
+Tool activity is stored with the assistant message and rendered in the drawer as
+compact disclosure rows shared with thinking: indicator, label and an adjacent
+spinner that becomes a chevron when idle. The whole row toggles details; status
+and batch position stay in the label rather than separate right-hand controls.
+Spinners run only while the drawer is active. Inspection labels use regex
+replacement because the installed QML JavaScript engine lacks `String.replaceAll`.
+Approval previews start open while awaiting a choice and can be folded;
+stdout, stderr, exit status and other details expand on demand. Calls returned in
+one model batch are run in their original order, one approval at a time, with a
+batch position shown in the row. Completed tool transcripts stay in the in-memory
+conversation for follow-up turns, including after interruption, disconnect or
+loop limits. Unexecuted calls receive explicit results; interrupted executions
+warn of uncertain side effects. Switching to a model without tools retains the
+transcript as untrusted text in an ordinary assistant message. Saved transcripts
+must have matched call/result pairs and a terminal assistant message. Tool output
+is wrapped as untrusted data before it returns to Lemonade.
+
+Inference retains the existing per-request deadline (ten minutes for a downloaded
+model, one hour for its first native download/load). An approval expires after
+five minutes; tool argument preparation and file snapshots have a ten-second
+deadline. Fixed inspection commands time out after ten seconds, searches after
+eight seconds, and arbitrary shell commands after thirty seconds. Every tool also
+has a 45-second wall-clock deadline covering filesystem work and grouped
+inspections. Inference uses an alarm as well as a socket timeout, so heartbeats or
+an unfinished SSE line cannot extend it indefinitely. Commands run without shell
+profiles, startup environment scripts or exported functions, with stdin closed,
+in their own process group. Cancellation/timeout terminates and reaps the group,
+including descendants that inherit pipes after their leader exits. This does not
+contain intentionally daemonized processes from an approved arbitrary script.
+Captured stdout/stderr are capped at 16 KiB each, then each tool result is bounded
+to 16 KiB combined. Tool transcript size is capped at 128 KiB, SSE events at
+256 KiB, and generated text/reasoning across all rounds at 160,000/64,000
+characters. Agent workflows stop after eight model rounds or 24 tool calls.
 
 First Send uses Lemonade's native download/load behavior, not a client download
 queue. In 2026.45.3 that path creates no managed download job and cannot cancel
@@ -142,7 +235,10 @@ Deletion is a `HoldButton`, like the shell's other destructive actions.
 
 SSE parsing handles Unicode, multiline events, errors and premature EOF; text
 received before a failure is kept. Cancel terminates the request and retains
-partial text; retry replaces the last answer. A reply is cut at 160,000
+partial text; retry replaces the last answer. Completion marks an empty final
+answer separately from earlier tool prefaces, so a preface cannot disguise a
+missing answer. The UI reports the missing answer while retaining tool results;
+retries remain explicit. A reply is cut at 160,000
 characters, the context limit it could never be sent back under. Consecutive
 turns of one role, left by a failed reply, are sent as one turn because many chat
 templates require alternation. Reasoning is bounded separately to 64,000
@@ -157,6 +253,10 @@ Chat stays in memory, bounded to 80 messages. Offline Send freezes prompt/settin
 attachments; after connecting, that exact model must still exist. A missing model
 or failed startup preserves the draft, including later typing.
 
+New chat clears conversation context, draft and attachments while retaining the
+loaded model. The independent header memory action unloads only the selected idle
+model and keeps the conversation; a later Send loads it again.
+
 History, requests, editing and Copy keep the raw Markdown; `Markdown.js` is
 presentation only. Qt's Markdown renderer fetches images and raw-HTML
 backgrounds (`background=`, CSS `background-image`) from any URL, so a reply
@@ -169,8 +269,42 @@ read as code but the renderer read as HTML would load its URL. The cost is that
 HTML inside multi-line spans and quoted or nested fences shows as `&lt;`.
 `tests/test_assistant_drawer.py` renders the known vectors against a loopback
 canary; extend `REMOTE_CONTENT` when changing the pass. Segment delegates are
-keyed by count, so a streaming reply re-renders only its last segment. Display
-hard breaks are added outside code. Links open only on activation.
+keyed by text range/segment or activity ID, preserving earlier code blocks,
+thinking/tool expansion and focus as replies grow. Text, thinking and tool
+activity interleave at their original body offsets; a shared insertion order
+resolves ties when several activities precede the next text. Thinking metadata
+stores ranges into the existing bounded reasoning string, not duplicate traces.
+The backend batches adjacent tokens of one kind while preserving reasoning/text
+transitions, including transitions inside a single provider chunk. Display hard
+breaks are added outside code. Links open
+only on activation.
+
+The compact composer holds model selection and options; their popups open upward.
+Assistant messages use a small identity row and flat body, while user messages
+retain the accent surface. User messages share the account photo from the read-only
+`spaces/profile.py` helper, refreshed on drawer open with a generic-icon fallback
+for missing or unreadable images. The photo is presentation only, outside the
+conversation sent to the model. Reasoning and tool output are collapsed by default.
+Each thinking phase has its own expandable row at its position in the reply. Text
+or a tool call finishes the phase; further reasoning creates a new phase without
+restarting or modifying earlier ones. Completion, cancellation and disconnect
+close any remaining phase. Progress stays in that row without a duplicate footer
+spinner. These patterns draw on T3 Code's
+[work log](https://github.com/pingdotgg/t3code/blob/main/apps/web/src/components/chat/WorkLog.tsx),
+[activity rows](https://github.com/pingdotgg/t3code/blob/main/apps/web/src/components/chat/TimelineWorkEntryRow.tsx)
+and [follow behavior](https://github.com/pingdotgg/t3code/blob/main/apps/web/src/components/chat/useTimelineFollow.ts),
+using the shell's existing controls, palette and type scale.
+
+`test_assistant_agent.py` covers adversarial streams, ID reuse, approval expiry,
+context closure, output/loop/deadline bounds, startup/config execution injection,
+file/directory replacement and real process-group cancellation. Native drawer
+fixtures cover approval decisions, stable expansion, interleaving, cancellation
+context, code copying, scroll following, model controls and attachment regressions.
+Run the assistant suite with the isolated environment from
+[tests/ARCHITECTURE.md](../../../tests/ARCHITECTURE.md) and
+`python3 -B -m unittest discover -s tests -p 'test_assistant*.py' -v`. Real-model
+smoke checks should use an already-downloaded tool model, read-only inspection,
+exact approved commands, and disposable files for modifications.
 
 ### Attachments and Dolphin sharing
 

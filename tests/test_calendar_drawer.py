@@ -1192,6 +1192,184 @@ class CalendarQmlTests(unittest.TestCase):
     def run_qml(self, body, setup=None):
         return support.run_qml(self, body, setup)
 
+    def test_bar_event_count_upcoming_window_and_day_rollover(self):
+        def setup(root):
+            shutil.copytree(DESKTOP / 'bar', root / 'bar')
+
+        support.run_qml(
+            self,
+            """import QtQuick
+import Quickshell
+import "bar"
+import "drawers/events"
+ShellRoot {
+ id:root
+ property var service:CalendarService
+ property int stage:0
+ property real reservedWidth:0
+ property string opened:""
+ function check(value,message){if(!value)throw Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ function timed(title,start,end){return {summary:title,start:new Date(start).toISOString(),end:new Date(end).toISOString(),all_day:false};}
+ function allDay(title,day,last){return {summary:title,date:day,last_date:last,all_day:true,start:day+"T00:00:00+14:00"};}
+ function show(events,stale=false){
+  service.base={state:"ready",account_id:"fixture",eventsReady:true,tasksReady:true,stale:stale,events:events,calendars:[],tasks:[{summary:"Unfinished task",due:"2026-11-13",completed:false}]};
+  service.render();
+ }
+ Component.onCompleted:{
+  service.clock=()=>new Date("2026-11-13T12:00:00");service.tick();
+  show([
+   timed("Outside window","2026-11-20T12:01:00","2026-11-20T13:00:00"),
+   timed("Boundary","2026-11-20T12:00:00","2026-11-20T13:00:00"),
+   timed("At tomorrow's midnight","2026-11-14T00:00:00","2026-11-14T01:00:00"),
+   timed("Coming","2026-11-13T16:00:00","2026-11-13T17:00:00"),
+   timed("Finished","2026-11-13T09:00:00","2026-11-13T10:00:00"),
+   timed("Ongoing","2026-11-13T11:00:00","2026-11-13T13:00:00"),
+   timed("Ended at midnight","2026-11-12T23:00:00","2026-11-13T00:00:00"),
+   timed("Crosses midnight","2026-11-12T23:00:00","2026-11-13T01:00:00"),
+   allDay("All day","2026-11-13","2026-11-13"),
+   allDay("Multiple days","2026-11-12","2026-11-14")
+  ]);
+ }
+ FloatingWindow {implicitWidth:1500;implicitHeight:80
+  StatusIslands{id:islands;calendarService:root.service;localDate:new Date("2026-11-13T12:00:00");onDrawerRequested:key=>root.opened=key}
+ }
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  const button=find(islands,"eventsButton"),badge=find(button,"eventsBadge");
+  if(stage===0){
+   check(badge.text==="6","today must include finished, all-day and overlapping events, excluding midnight boundaries and tasks: "+badge.text);
+   check(button.entry.secondaryIconName===""&&button.selected&&badge.highlighted,"unseen events today need only the notification-style count");
+   check(button.entry.description.includes("6 events today")&&button.entry.description.includes("Coming"),"tooltip does not name the earliest upcoming event");
+   check(!button.entry.description.includes("Outside window"),"unsorted source selected a later event");
+   button.clicked();check(opened==="events","badge button no longer opens the drawer");
+   service.month="2027-08";
+   islands.localDate=new Date("2026-11-13T16:00:00");
+  }else if(stage===1){
+   check(badge.text==="6"&&service.month==="2027-08","browsing another month changed today's count");
+   check(button.entry.description.includes("At tomorrow's midnight")&&!button.entry.description.includes("Coming"),"started event remained upcoming");
+   show([allDay("Tomorrow","2026-11-14","2026-11-14"),allDay("Yesterday","2026-11-13","2026-11-13")],true);
+  }else if(stage===2){
+   check(badge.text==="1"&&button.entry.description.includes("1 event today"),"singular count is incorrect");
+   check(islands.upcomingEvent.summary==="Tomorrow"&&button.entry.description.includes("All day")&&button.entry.description.includes("Showing saved data"),"future all-day event or saved-data status missing");
+   islands.localDate=new Date("2026-11-14T00:00:00");
+  }else if(stage===3){
+   check(badge.text==="1"&&button.selected&&button.entry.secondaryIconName==="","midnight did not update today's unread count");
+   islands.localDate=new Date("2026-11-13T12:00:00");
+   show([timed("Boundary","2026-11-20T12:00:00","2026-11-20T13:00:00")]);
+  }else if(stage===4){
+   check(badge.text==="!"&&!button.selected&&!badge.highlighted&&islands.upcomingEvent.summary==="Boundary","future-only event must use a neutral ! badge");
+   show([timed("Outside window","2026-11-20T12:01:00","2026-11-20T13:00:00")]);
+  }else if(stage===5){
+   check(badge.text===""&&!button.selected&&button.entry.secondaryIconName==="","event beyond seven days produced an alert");
+   reservedWidth=button.width;
+   show(Array.from({length:105},(_,i)=>timed("Finished "+i,"2026-11-13T09:00:00","2026-11-13T10:00:00")));
+  }else if(stage===6){
+   check(badge.text==="99+"&&button.width===reservedWidth&&button.selected,"large unread count overflowed or changed reserved width");
+   check(button.entry.description.includes("105 events today"),"tooltip count was capped");
+   show([]);
+  }else if(stage===7){
+   check(badge.text===""&&button.width===reservedWidth&&!button.selected,"empty calendar retained a badge/alert or shifted width");
+   check(!service.started&&!service.active&&!service.busy,"bar observation started calendar work");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}""",
+            setup,
+            isolate_bus=True,
+        )
+
+    def test_event_badge_acknowledges_on_open_and_survives_reload(self):
+        with tempfile.TemporaryDirectory() as directory:
+
+            def setup(root):
+                shutil.copytree(DESKTOP / 'bar', root / 'bar')
+                (root / 'state/quickshell').mkdir(parents=True)
+                (root / 'state/quickshell/desktop').symlink_to(directory)
+                (root / 'drawers/events/backend.py').write_text(
+                    'import json,sys; json.loads(sys.stdin.readline()); '
+                    'print(json.dumps(dict(ok=False,error="Fixture offline")))'
+                )
+
+            body = """import QtQuick
+import Quickshell
+import "bar"
+import "drawers"
+import "drawers/events"
+ShellRoot {
+ id:root
+ property var service:CalendarService
+ property int stage:0
+ property var original:({href:"https://cloud.example/p/original.ics",etag:"1",summary:"Original",start:"2026-11-13T09:00:00",end:"2026-11-13T10:00:00",date:"2026-11-13",last_date:"2026-11-13",all_day:false,calendar:"Personal",location:"",editable:true})
+ function check(value,message){if(!value)throw Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ function show(events,account="fixture"){
+  service.base={state:"ready",account_id:account,eventsReady:true,tasksReady:true,stale:false,updated:1,events:events,calendars:[],tasks:[]};
+  service.render();
+ }
+ Component.onCompleted:{service.clock=()=>new Date("2026-11-13T12:00:00");service.tick();show([original]);}
+ FloatingWindow {implicitWidth:1500;implicitHeight:850
+  StatusIslands{id:islands;calendarService:root.service;localDate:new Date("2026-11-13T12:00:00");onDrawerRequested:key=>{if(key==="events")drawer.active=true;}}
+  StatusIslands{id:otherBar;y:40;calendarService:root.service;localDate:islands.localDate}
+  EventsDrawer{id:drawer;y:90;width:480;height:750;active:false;visible:active;service:root.service}
+ }
+ Timer {interval:120;repeat:true;running:true;onTriggered:{try{
+  const button=find(islands,"eventsButton"),badge=find(button,"eventsBadge"),other=find(otherBar,"eventsButton");
+  if(stage===0){
+   check(badge.text==="1"&&button.selected&&other.selected,"today's unseen event was not highlighted on both bars");
+   button.clicked();
+   check(drawer.active&&service.active&&!button.selected&&!other.selected&&badge.text==="1","opening did not clear read status across outputs while preserving the count");
+  }else if(stage===1){
+   drawer.active=false;
+   show([Object.assign({},original,{etag:"2",start:new Date(original.start).toISOString(),end:new Date(original.end).toISOString()})]);
+   check(!button.selected&&badge.text==="1","unchanged sync or UTC spelling reset acknowledgement");
+   show([original,Object.assign({},original,{href:"https://cloud.example/p/new.ics",summary:"Added"})]);
+  }else if(stage===2){
+   check(button.selected&&other.selected&&badge.text==="2","new event did not restore unread styling");
+   button.clicked();
+   show(service.state.events.concat([Object.assign({},original,{href:"https://cloud.example/p/while-open.ics",summary:"While open"})]));
+   check(!button.selected&&!other.selected&&badge.text==="3","event arriving in the open drawer was not acknowledged");
+   drawer.active=false;
+  }else if(stage===3){
+   check(!button.selected&&badge.text==="3","closing restored read attention");
+   show([Object.assign({},original,{start:"2026-11-13T15:00:00",end:"2026-11-13T16:00:00"})]);
+   check(button.selected,"rescheduling today did not restore unread styling");
+   show([Object.assign({},original,{start:"2026-11-16T09:00:00",end:"2026-11-16T10:00:00",date:"2026-11-16",last_date:"2026-11-16"})]);
+  }else if(stage===4){
+   check(badge.text==="!"&&!button.selected&&!find(button,"eventsBadge").highlighted&&button.entry.secondaryIconName==="","future-only event was not discreet");
+   service.clock=()=>new Date("2026-11-14T12:00:00");service.tick();islands.localDate=service.clock();
+   show([Object.assign({},original,{all_day:true,date:"2026-11-13",last_date:"2026-11-14"})]);
+   check(button.selected&&badge.text==="1","a new day did not get fresh unread status");
+   button.clicked();
+   check(!button.selected&&badge.text==="1","new day's acknowledgement removed the count");
+   service.clock=()=>new Date("2026-11-13T12:00:00");service.tick();islands.localDate=service.clock();show([original]);
+  }else if(stage===5){
+   drawer.active=false;
+   check(!button.selected&&badge.text==="1","final acknowledgement did not settle");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}"""
+            support.run_qml(self, body, setup, isolate_bus=True)
+            # A fresh engine reads the same private state directory.
+            reload_body = (
+                body[: body.index(' Timer {')]
+                + """
+ Timer {interval:150;running:true;onTriggered:{try{
+  const button=find(islands,"eventsButton"),badge=find(button,"eventsBadge");
+  check(!button.selected&&badge.text==="1","reload forgot the seen event");
+  show([original],"another-account");
+  check(button.selected,"another account inherited seen state");
+  show([original]);check(!button.selected,"returning to the original account lost seen state");
+  show([Object.assign({},original,{summary:"Changed title"})]);
+  check(button.selected&&badge.text==="1","changed event was silently marked read after reload");
+  console.log("DISPLAY_PASS");
+ }catch(e){console.error("DISPLAY_FAIL",e);}Qt.quit();}}
+}"""
+            )
+            support.run_qml(self, reload_body, setup, isolate_bus=True)
+
     def test_drawer_tabs_editor_and_notifications_load(self):
         self.run_qml("""import QtQuick
 import Quickshell

@@ -10,6 +10,9 @@ Popup {
     property bool active: false
     property real maximumWidth: 432
     property int deleteHoldDuration: 1300
+    property int searchRefresh: 0
+    readonly property string query: search.text.trim()
+    readonly property bool searchOnline: visible && AssistantService.online && query.length >= 3 && query.length <= 256
     readonly property var rows: {
         const query = search.text.trim().toLowerCase();
         return AssistantService.models.filter(row => (!AssistantService.needsVision || row.labels.includes("vision")) && (row.id + " " + (row.target || "") + " " + row.labels.join(" ")).toLowerCase().includes(query));
@@ -38,6 +41,10 @@ Popup {
             if (root.visible)
                 Qt.callLater(root.revealSelected);
         }
+        function onModelInstalled(id: string): void {
+            if (root.visible)
+                search.clear();
+        }
     }
     function revealSelected(): void {
         const selected = root.rows.findIndex(row => row.id === AssistantService.selectedModel);
@@ -50,7 +57,7 @@ Popup {
         return size >= 1 ? qsTr("%1 GB").arg(Number(size).toFixed(1)) : size > 0 ? qsTr("%1 MB").arg(Math.round(size * 1000)) : "";
     }
     function capabilities(entry): var {
-        return [entry.labels.includes("coding") ? qsTr("Code") : "", entry.labels.includes("reasoning") ? qsTr("Reasoning") : "", entry.labels.includes("vision") ? qsTr("Vision") : ""].filter(Boolean);
+        return [entry.labels.includes("coding") ? qsTr("Code") : "", entry.labels.includes("reasoning") ? qsTr("Reasoning") : "", entry.labels.includes("vision") ? qsTr("Vision") : "", entry.labels.includes("tool-calling") ? qsTr("Tool calling") : ""].filter(Boolean);
     }
     function progress(job): real {
         if (!job)
@@ -82,6 +89,7 @@ Popup {
                 onClicked: {
                     AssistantService.catalogueGeneration = null;
                     AssistantService.refresh();
+                    root.searchRefresh++;
                 }
             }
         }
@@ -96,6 +104,28 @@ Popup {
                 values: root.visible ? root.rows : []
             }
             ScrollBar.vertical: ScrollBar {}
+            footer: Column {
+                width: list.width
+                spacing: Theme.spacingMedium
+                ShellText {
+                    width: parent.width
+                    visible: root.rows.length === 0
+                    text: AssistantService.checking ? qsTr("Loading models…") : root.query ? qsTr("No matching local models") : qsTr("No models available")
+                    color: Theme.muted
+                    wrapMode: Text.Wrap
+                }
+                Repeater {
+                    model: ["huggingface", "modelscope"]
+                    delegate: RegistryModels {
+                        required property string modelData
+                        width: list.width
+                        source: modelData
+                        query: root.query
+                        active: root.searchOnline
+                        refreshToken: root.searchRefresh
+                    }
+                }
+            }
             delegate: Column {
                 id: row
                 required property int index
@@ -200,7 +230,7 @@ Popup {
                                 objectName: "assistantModelDelete:" + row.modelData.id
                                 visible: row.modelData.downloaded
                                 text: qsTr("Hold to delete %1 from disk").arg(row.targetModel)
-                                hint: [row.modelData.alias ? qsTr("Removes the underlying model used by this alias.") : "", row.targetModel.startsWith("user.") ? qsTr("Also removes its custom model registration in Lemonade.") : ""].filter(Boolean).join("\n")
+                                hint: [row.modelData.alias ? qsTr("Removes the underlying model used by this alias.") : "", row.targetModel.startsWith("user.") || row.modelData.labels.includes("custom") ? qsTr("Also removes its custom model registration in Lemonade.") : ""].filter(Boolean).join("\n")
                                 Accessible.name: text
                                 implicitWidth: Theme.controlHeight
                                 implicitHeight: Theme.controlHeight
@@ -242,13 +272,6 @@ Popup {
                     }
                 }
             }
-        }
-        ShellText {
-            Layout.fillWidth: true
-            visible: root.rows.length === 0
-            text: AssistantService.checking ? qsTr("Loading models…") : search.text ? qsTr("No matching models") : qsTr("No models available")
-            color: Theme.muted
-            wrapMode: Text.Wrap
         }
         ShellText {
             objectName: "assistantModelError"

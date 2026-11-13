@@ -225,6 +225,9 @@ def run_qml(test, body, setup=None, *, isolate_bus=False, entrypoint='shell.qml'
         (root / 'drawers/displays/brightness.py').write_text(
             'import json,sys; json.loads(sys.stdin.readline()); print(json.dumps(dict(ok=True,values=[])))'
         )
+        (root / 'drawers/spaces/profile.py').write_text(
+            'import json; print(json.dumps(dict(name="",username="fixture",avatar="")))'
+        )
         if setup:
             setup(root)
         shell_path = root / entrypoint

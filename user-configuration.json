@@ -1832,6 +1832,10 @@
                 "target": "home/.config/quickshell/desktop/drawers/WifiDrawer.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/ActivityDisclosure.qml",
+                "target": "home/.config/quickshell/desktop/drawers/assistant/ActivityDisclosure.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/AssistantInbox.qml",
                 "target": "home/.config/quickshell/desktop/drawers/assistant/AssistantInbox.qml"
             },
@@ -1850,6 +1854,18 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/ModelPicker.qml",
                 "target": "home/.config/quickshell/desktop/drawers/assistant/ModelPicker.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/RegistryModels.qml",
+                "target": "home/.config/quickshell/desktop/drawers/assistant/RegistryModels.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/RegistryRequest.qml",
+                "target": "home/.config/quickshell/desktop/drawers/assistant/RegistryRequest.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/ToolActivity.qml",
+                "target": "home/.config/quickshell/desktop/drawers/assistant/ToolActivity.qml"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/attachments.py",
@@ -2410,6 +2426,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/circle-dot.svg",
                 "target": "home/.config/quickshell/desktop/icons/circle-dot.svg"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/citrus.svg",
+                "target": "home/.config/quickshell/desktop/icons/citrus.svg"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/icons/clipboard.svg",
@@ -3886,6 +3906,7 @@
         "wl-clipboard",
         "libnotify",
         "quickshell",
+        "ripgrep",
         "accountsservice",
         "zenity",
         "adwaita-icon-theme",
@@ -3936,7 +3957,6 @@
         "distrobox",
         "fastfetch",
         "git",
-        "ripgrep",
         "just",
         "just-lsp",
         "lsd",

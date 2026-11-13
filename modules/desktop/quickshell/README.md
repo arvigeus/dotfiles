@@ -56,7 +56,13 @@ running; a reply that finishes meanwhile sends a notification. Chats and drafts
 last until New chat or shell restart; preferences persist. Replies never load
 remote content: images appear as links and HTML as text. Copy gives the original
 Markdown. Native aliases can be created with `lemonade alias add NAME MODEL_ID`.
-An API key in `~/.config/lemonade/lemond.conf` is used automatically.
+Model search includes Hugging Face and ModelScope catalogs through Lemonade;
+enter at least three characters, then choose a repository and quantization to download.
+Tool-capable models can inspect local files and system state. Shell commands and
+file writes require approval in the conversation. Models without tool calling
+continue as ordinary chat models. An API key in `~/.config/lemonade/lemond.conf`
+is used automatically. Commands run noninteractively with a 30-second limit;
+password prompts are unsupported. File replacement refuses symlinks.
 
 Attach images, text/code, PDF, DOCX or ODT through the paperclip, paste or drop.
 Limits are six files/message, 16 MB/file and 64,000 extracted characters/document.
@@ -96,6 +102,9 @@ local clock time across timezone changes and cannot wake a sleeping computer.
 Alarms bypass Do Not Disturb; focus/break prompts follow it.
 
 Events/tasks use Nextcloud with offline cached reads; writes require a connection.
+The calendar badge counts today's events. Opening the drawer clears the unread
+highlight and keeps the count. With no events today, a neutral `!` marks an event
+within seven days. Hover for the next event's title and date.
 Recurring-event edits and individual task exceptions are read-only.
 Configure `~/.config/quickshell/desktop/integrations/nextcloud.json` from the
 [account example](symlinks/home/.config/quickshell/desktop/integrations/nextcloud.example.json).

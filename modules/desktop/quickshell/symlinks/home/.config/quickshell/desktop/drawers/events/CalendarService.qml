@@ -1,5 +1,6 @@
 pragma Singleton
 import QtQuick
+import QtCore
 import Quickshell
 import Quickshell.Io
 
@@ -25,6 +26,7 @@ Singleton {
             account_id: ""
         })
     property var state: base
+    property var seen: ({})
     property var months: ({})
     property string sourceId: ""
     property var transactions: []
@@ -45,6 +47,51 @@ Singleton {
     signal submitted(var request)
     signal saved
     signal writeFailed(var request)
+
+    Settings {
+        id: readState
+        location: StandardPaths.writableLocation(StandardPaths.GenericStateLocation) + "/quickshell/desktop/calendar.ini"
+        category: "Events"
+    }
+    Component.onCompleted: {
+        try {
+            const saved = JSON.parse(readState.value("seen", "{}"));
+            if (typeof saved?.day === "string" && typeof saved.account_id === "string" && Array.isArray(saved.events) && saved.events.every(key => typeof key === "string"))
+                seen = saved;
+        } catch (_) {}
+    }
+    function eventsOn(date: date): var {
+        const day = Qt.formatDate(date, "yyyy-MM-dd");
+        const start = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+        const end = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime();
+        return state.events.filter(event => event.all_day ? event.date <= day && event.last_date >= day : Date.parse(event.start) < end && Date.parse(event.end) > start);
+    }
+    function eventKey(event: var): string {
+        return JSON.stringify([event.href || event._localId || event.uid || "", event.all_day ? event.date : Date.parse(event.start), event.all_day ? event.last_date : Date.parse(event.end), !!event.all_day, event.summary || "", event.location || ""]);
+    }
+    function seenOn(date: date): var {
+        return seen.day === Qt.formatDate(date, "yyyy-MM-dd") && seen.account_id === (state.account_id || "") ? seen.events : [];
+    }
+    function hasUnseenEvents(date: date): bool {
+        const keys = seenOn(date);
+        return eventsOn(date).some(event => !keys.includes(eventKey(event)));
+    }
+    function markSeen(): void {
+        const date = clock();
+        if (!hasUnseenEvents(date))
+            return;
+        seen = {
+            account_id: state.account_id || "",
+            day: Qt.formatDate(date, "yyyy-MM-dd"),
+            events: [...new Set(seenOn(date).concat(eventsOn(date).map(eventKey)))]
+        };
+        readState.setValue("seen", JSON.stringify(seen));
+        readState.sync();
+    }
+    onStateChanged: if (active)
+        markSeen()
+    onTodayChanged: if (active)
+        markSeen()
 
     function clone(value: var): var {
         return JSON.parse(JSON.stringify(value));
@@ -380,8 +427,10 @@ Singleton {
             fetcher.running = true;
         }
     }
-    onActiveChanged: if (active)
-        refresh()
+    onActiveChanged: if (active) {
+        refresh();
+        markSeen();
+    }
     onMonthChanged: {
         const previous = base;
         base = months[month] ? Object.assign({}, months[month], {

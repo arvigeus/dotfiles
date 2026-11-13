@@ -2,14 +2,19 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
+import QtQuick.Effects
 import QtQuick.Layouts
 import QtQuick.Window
+import Quickshell
+import Quickshell.Io
 import "../ui"
 import "assistant"
 import "assistant/Markdown.js" as Markdown
 
 DrawerPage {
     id: root
+    property string accountAvatar: ""
+    property bool componentReady: false
     readonly property alias optionsPopup: options
     readonly property alias modelPopup: modelPicker
     readonly property alias attachmentDialog: fileChooser
@@ -80,12 +85,19 @@ DrawerPage {
 
     onActiveChanged: {
         AssistantService.observed = active;
+        if (active && componentReady && !accountReader.running)
+            accountReader.running = true;
         if (!active) {
             options.close();
             modelPicker.close();
             fileChooser.close();
             filePreview.close();
         }
+    }
+    Component.onCompleted: {
+        componentReady = true;
+        if (active)
+            accountReader.running = true;
     }
     Component.onDestruction: {
         AssistantService.observed = false;
@@ -134,12 +146,20 @@ DrawerPage {
             objectName: "assistantNew"
             iconName: "plus"
             text: qsTr("New chat")
-            hint: qsTr("New chat · discard this conversation")
+            hint: qsTr("Fresh chat context · discard conversation and draft")
             enabled: !AssistantService.busy && (AssistantService.messages.count > 0 || !!AssistantService.draft || AssistantService.attachments.length > 0)
             onClicked: {
                 AssistantService.newChat();
                 composer.forceActiveFocus();
             }
+        }
+        IconButton {
+            objectName: "assistantRelease"
+            iconName: "brush-cleaning"
+            text: qsTr("Release model memory")
+            hint: qsTr("Unload the selected idle model to free memory\nKeeps the chat · the next message reloads the model")
+            enabled: AssistantService.online && AssistantService.canRelease
+            onClicked: AssistantService.releaseModel()
         }
         IconButton {
             objectName: "assistantOpenApp"
@@ -162,94 +182,7 @@ DrawerPage {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: Theme.spacingMedium
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: Theme.spacingSmall
-            ShellButton {
-                id: modelChoice
-                objectName: "assistantModel"
-                Layout.fillWidth: true
-                Layout.minimumWidth: 0
-                Layout.preferredHeight: 50
-                text: AssistantService.selectedEntry?.label || AssistantService.selectedModel || qsTr("Choose a model")
-                iconName: AssistantService.selectedLoaded ? "circle-dot" : "chevron-down"
-                enabled: AssistantService.installed && !AssistantService.working && !AssistantService.preparing
-                Accessible.name: qsTr("Local chat model: %1").arg(text)
-                onClicked: {
-                    options.close();
-                    modelPicker.visible ? modelPicker.close() : modelPicker.open();
-                }
-                contentItem: RowLayout {
-                    spacing: Theme.spacingMedium
-                    Rectangle {
-                        Layout.preferredWidth: 34
-                        Layout.preferredHeight: 34
-                        radius: 10
-                        color: Theme.accentSurface
-                        Icon {
-                            anchors.centerIn: parent
-                            width: 18
-                            height: 18
-                            name: "cpu"
-                            color: Theme.accent
-                        }
-                    }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.minimumWidth: 0
-                        spacing: 1
-                        ShellText {
-                            text: qsTr("LOCAL MODEL")
-                            font.pixelSize: Theme.smallFontSize
-                            font.weight: Font.DemiBold
-                            color: Theme.muted
-                        }
-                        ShellText {
-                            Layout.fillWidth: true
-                            text: modelChoice.text
-                            font.weight: Font.DemiBold
-                            elide: Text.ElideRight
-                        }
-                    }
-                    Icon {
-                        name: "chevron-down"
-                        width: 18
-                        height: 18
-                        color: modelChoice.highlighted ? Theme.accent : Theme.muted
-                    }
-                }
-                background: Rectangle {
-                    radius: 12
-                    color: modelChoice.down ? Theme.accentSurface : Theme.surface
-                    border.color: modelChoice.highlighted ? Theme.accent : Theme.border
-                }
-                PassiveToolTip {
-                    target: modelChoice
-                    text: AssistantService.selectedLoaded ? qsTr("%1 · loaded in Lemonade").arg(AssistantService.selectedModel) : qsTr("Choose or download a local chat model · starts Lemonade if needed")
-                }
-            }
-            IconButton {
-                id: optionsButton
-                objectName: "assistantOptions"
-                implicitWidth: 46
-                implicitHeight: 46
-                padding: 12
-                iconName: "sliders-horizontal"
-                text: qsTr("Assistant options")
-                hint: qsTr("Thinking, reply length, style and model memory")
-                background: Rectangle {
-                    radius: 12
-                    color: optionsButton.down ? Theme.accentSurface : optionsButton.hovered ? Theme.surface : Theme.raised
-                    border.color: optionsButton.visualFocus ? Theme.accent : Theme.border
-                }
-                onClicked: {
-                    modelPicker.close();
-                    options.visible ? options.close() : options.open();
-                }
-            }
-        }
+        spacing: Theme.spacingSmall
 
         Rectangle {
             Layout.fillWidth: true
@@ -321,7 +254,7 @@ DrawerPage {
                 id: conversation
                 objectName: "assistantConversation"
                 anchors.fill: parent
-                spacing: Theme.gap
+                spacing: Theme.spacingMedium
                 model: AssistantService.messages
                 property bool followTail: true
                 property bool positioning: false
@@ -346,55 +279,90 @@ DrawerPage {
                     required property string state
                     required property string filesJson
                     required property string reasoning
-                    property bool thoughtsExpanded: false
+                    required property string reasoningBlocksJson
+                    required property string toolActivitiesJson
                     readonly property bool assistant: speaker === "assistant"
+                    readonly property var toolActivities: {
+                        try {
+                            return JSON.parse(toolActivitiesJson || "[]");
+                        } catch (_) {
+                            return [];
+                        }
+                    }
+                    readonly property var reasoningBlocks: {
+                        try {
+                            return JSON.parse(reasoningBlocksJson || "[]");
+                        } catch (_) {
+                            return [];
+                        }
+                    }
+                    readonly property bool isThinking: assistant && state === "streaming" && index === AssistantService.messages.count - 1 && AssistantService.thinking && !AssistantService.cancelling
+                    readonly property string activeToolState: toolActivities.find(item => ["pending_approval", "running"].includes(item.state))?.state || ""
                     width: conversation.width
                     implicitHeight: bubble.implicitHeight
                     Card {
                         id: bubble
                         x: message.assistant ? 0 : parent.width - width
-                        width: parent.width * (message.assistant ? 1 : 0.86)
-                        radius: Theme.radius + 3
-                        implicitHeight: messageContent.implicitHeight + Theme.spacingMedium * 3
-                        color: message.assistant ? Theme.surface : Theme.accentSurface
-                        border.color: message.assistant ? Theme.border : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.35)
+                        width: parent.width * (message.assistant ? 1 : 0.92)
+                        radius: Theme.controlRadius
+                        implicitHeight: messageContent.implicitHeight + Theme.spacingSmall * 2
+                        color: message.assistant ? "transparent" : Theme.accentSurface
+                        border.color: "transparent"
                         ColumnLayout {
                             id: messageContent
                             anchors.fill: parent
-                            anchors.margins: Theme.spacingMedium + 2
-                            spacing: Theme.spacingMedium
+                            anchors.margins: Theme.spacingSmall
+                            spacing: Theme.spacingSmall
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: Theme.spacingSmall
-                                Rectangle {
-                                    Layout.preferredWidth: 30
-                                    Layout.preferredHeight: 30
-                                    radius: 10
-                                    color: message.assistant ? Theme.accentSurface : Theme.raised
+                                Item {
+                                    Layout.preferredWidth: message.assistant ? 14 : 20
+                                    Layout.preferredHeight: message.assistant ? 14 : 20
+                                    Image {
+                                        id: userAvatar
+                                        objectName: "assistantAvatar:" + message.index
+                                        anchors.fill: parent
+                                        source: message.assistant ? "" : root.accountAvatar
+                                        sourceSize.width: Math.ceil(width * Screen.devicePixelRatio)
+                                        sourceSize.height: Math.ceil(height * Screen.devicePixelRatio)
+                                        fillMode: Image.PreserveAspectCrop
+                                        asynchronous: true
+                                        cache: false
+                                        visible: false
+                                    }
+                                    Rectangle {
+                                        id: userAvatarMask
+                                        anchors.fill: parent
+                                        radius: width / 2
+                                        layer.enabled: true
+                                        visible: false
+                                    }
+                                    MultiEffect {
+                                        anchors.fill: parent
+                                        source: userAvatar
+                                        visible: userAvatar.status === Image.Ready
+                                        maskEnabled: true
+                                        maskSource: userAvatarMask
+                                    }
                                     Icon {
+                                        objectName: "assistantAvatarFallback:" + message.index
                                         anchors.centerIn: parent
-                                        width: 17
-                                        height: 17
+                                        width: 14
+                                        height: 14
+                                        visible: userAvatar.status !== Image.Ready
                                         name: message.assistant ? "bot" : "user-round"
-                                        color: message.assistant ? Theme.accent : Theme.muted
-                                    }
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    Layout.minimumWidth: 0
-                                    spacing: 0
-                                    ShellText {
-                                        Layout.fillWidth: true
-                                        text: message.assistant ? message.modelName : qsTr("You")
-                                        font.weight: Font.DemiBold
-                                        elide: Text.ElideRight
-                                    }
-                                    ShellText {
-                                        visible: message.assistant
-                                        text: qsTr("LOCAL ASSISTANT")
-                                        font.pixelSize: Theme.smallFontSize
                                         color: Theme.muted
                                     }
+                                }
+                                ShellText {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    text: message.assistant ? message.modelName : qsTr("You")
+                                    font.pixelSize: Theme.smallFontSize
+                                    font.weight: Font.Medium
+                                    color: Theme.muted
+                                    elide: Text.ElideRight
                                 }
                                 IconButton {
                                     objectName: "assistantEditMessage:" + message.index
@@ -449,73 +417,88 @@ DrawerPage {
                                     filePreview.open();
                                 }
                             }
-                            ShellButton {
-                                Layout.fillWidth: true
-                                visible: !!message.reasoning
-                                text: message.thoughtsExpanded ? qsTr("Hide thinking") : qsTr("Show thinking")
-                                iconName: message.thoughtsExpanded ? "chevron-up" : "chevron-down"
-                                onClicked: message.thoughtsExpanded = !message.thoughtsExpanded
-                            }
-                            ScrollView {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: Math.min(160, thoughts.contentHeight + 12)
-                                visible: message.thoughtsExpanded && !!message.reasoning
-                                contentWidth: availableWidth
-                                clip: true
-                                TextArea {
-                                    id: thoughts
-                                    text: message.reasoning
-                                    readOnly: true
-                                    selectByMouse: true
-                                    color: Theme.muted
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: Theme.smallFontSize
-                                    wrapMode: TextEdit.Wrap
-                                    textFormat: TextEdit.PlainText
-                                    background: null
-                                }
-                            }
                             ColumnLayout {
                                 id: content
-                                readonly property var parts: Markdown.segments(message.body)
+                                readonly property var parts: {
+                                    const entries = [];
+                                    let start = 0;
+                                    function appendText(from, to) {
+                                        Markdown.segments(message.body.slice(from, to)).forEach((part, index) => entries.push(Object.assign({
+                                                key: "text:" + from + ":" + index
+                                            }, part)));
+                                    }
+                                    const activities = message.toolActivities.map(activity => ({
+                                                key: "tool:" + activity.id,
+                                                kind: "tool",
+                                                activity,
+                                                bodyOffset: activity.bodyOffset || 0,
+                                                order: activity.order || 0
+                                            }));
+                                    for (const block of message.reasoningBlocks) {
+                                        activities.push({
+                                            key: "thinking:" + block.id,
+                                            kind: "thinking",
+                                            activity: Object.assign({}, block, {
+                                                messageIndex: message.index,
+                                                text: message.reasoning.slice(block.start, block.start + block.length),
+                                                running: message.isThinking && block.state === "running"
+                                            }),
+                                            bodyOffset: block.bodyOffset,
+                                            order: block.order
+                                        });
+                                    }
+                                    activities.sort((a, b) => a.bodyOffset - b.bodyOffset || a.order - b.order);
+                                    for (const entry of activities) {
+                                        const end = Math.max(start, Math.min(message.body.length, entry.bodyOffset));
+                                        appendText(start, end);
+                                        entries.push(entry);
+                                        start = end;
+                                    }
+                                    appendText(start, message.body.length);
+                                    return entries;
+                                }
                                 Layout.fillWidth: true
                                 Layout.minimumWidth: 0
                                 spacing: Theme.spacingMedium
                                 visible: parts.length > 0
+                                KeyedModel {
+                                    id: partsModel
+                                    values: content.parts
+                                }
                                 Repeater {
-                                    // Count only: a streaming reply grows its last
-                                    // segment and leaves the earlier ones in place.
-                                    model: content.parts.length
+                                    model: partsModel
                                     delegate: Loader {
                                         id: part
                                         required property int index
-                                        readonly property var entry: content.parts[index] ?? null
+                                        required property var modelData
+                                        readonly property var entry: modelData
                                         readonly property string segmentText: entry?.text ?? ""
                                         objectName: "assistantSegment:" + message.index + ":" + index
                                         Layout.fillWidth: true
                                         Layout.minimumWidth: 0
                                         Layout.preferredHeight: item?.implicitHeight ?? 0
-                                        sourceComponent: entry?.kind === "code" ? codeBlock : proseBlock
+                                        sourceComponent: entry?.kind === "thinking" ? thinkingBlock : entry?.kind === "tool" ? toolBlock : entry?.kind === "code" ? codeBlock : proseBlock
                                         Binding {
                                             target: part.item
-                                            property: "segmentText"
-                                            value: part.segmentText
+                                            property: ["tool", "thinking"].includes(part.entry?.kind) ? "activityData" : "segmentText"
+                                            value: ["tool", "thinking"].includes(part.entry?.kind) ? part.entry.activity : part.segmentText
                                             when: part.status === Loader.Ready
                                         }
                                     }
                                 }
                             }
                             RowLayout {
-                                visible: message.state === "streaming" || message.state === "stopped" || message.state === "limited"
+                                objectName: "assistantProgress:" + message.index
+                                visible: ["streaming", "stopped", "limited", "error"].includes(message.state) && !message.isThinking
                                 spacing: Theme.spacingMedium
                                 BusySpinner {
                                     Layout.preferredWidth: 14
                                     Layout.preferredHeight: 14
-                                    visible: message.state === "streaming"
+                                    visible: message.state === "streaming" && message.activeToolState !== "pending_approval"
                                     running: root.active && visible
                                 }
                                 ShellText {
-                                    text: message.state === "stopped" ? qsTr("Stopped") : message.state === "limited" ? qsTr("Output limit reached") : AssistantService.cancelling ? qsTr("Stopping…") : !AssistantService.modelAvailable ? qsTr("Downloading model…") : message.body ? qsTr("Answering…") : AssistantService.thinking ? qsTr("Thinking…") : qsTr("Preparing reply…")
+                                    text: message.state === "error" ? qsTr("Reply failed") : message.state === "stopped" ? qsTr("Stopped") : message.state === "limited" ? qsTr("Output limit reached") : AssistantService.cancelling ? qsTr("Stopping…") : message.activeToolState === "pending_approval" ? qsTr("Waiting for approval…") : message.activeToolState === "running" ? qsTr("Running tools…") : !AssistantService.modelAvailable ? qsTr("Downloading model…") : message.body ? qsTr("Answering…") : AssistantService.thinking ? qsTr("Thinking…") : qsTr("Preparing reply…")
                                     color: Theme.muted
                                     font.pixelSize: Theme.smallFontSize
                                 }
@@ -636,19 +619,19 @@ DrawerPage {
         Card {
             objectName: "assistantInput"
             Layout.fillWidth: true
-            implicitHeight: composerLayout.implicitHeight + Theme.spacingMedium * 2
+            implicitHeight: composerLayout.implicitHeight + Theme.spacingSmall * 2
             border.color: composer.activeFocus ? Theme.accent : Theme.border
             border.width: composer.activeFocus ? 2 : 1
             radius: Theme.radius + 3
             ColumnLayout {
                 id: composerLayout
                 anchors.fill: parent
-                anchors.margins: Theme.spacingMedium
+                anchors.margins: Theme.spacingSmall
                 spacing: Theme.spacingSmall
                 ScrollView {
                     objectName: "assistantEditor"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Math.min(120, Math.max(42, composer.contentHeight + composer.topPadding + composer.bottomPadding))
+                    Layout.preferredHeight: Math.min(120, Math.max(34, composer.contentHeight + composer.topPadding + composer.bottomPadding))
                     contentWidth: availableWidth
                     clip: true
                     TextArea {
@@ -701,13 +684,55 @@ DrawerPage {
                         enabled: !AssistantService.preparing
                         onClicked: fileChooser.open()
                     }
-                    ShellText {
+                    ShellButton {
+                        id: modelChoice
+                        objectName: "assistantModel"
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
-                        font.pixelSize: Theme.smallFontSize
-                        color: Theme.muted
-                        elide: Text.ElideRight
-                        text: qsTr("Enter to send · Shift+Enter for a new line")
+                        implicitHeight: 30
+                        text: AssistantService.selectedEntry?.label || AssistantService.selectedModel || qsTr("Choose a model")
+                        iconName: "chevron-down"
+                        enabled: AssistantService.installed && !AssistantService.busy
+                        Accessible.name: qsTr("Local chat model: %1").arg(text)
+                        onClicked: {
+                            options.close();
+                            modelPicker.visible ? modelPicker.close() : modelPicker.open();
+                        }
+                        contentItem: RowLayout {
+                            spacing: Theme.spacingSmall
+                            ShellText {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                text: modelChoice.text
+                                color: modelChoice.enabled ? Theme.text : Theme.muted
+                                font.pixelSize: Theme.smallFontSize
+                                elide: Text.ElideRight
+                            }
+                            Icon {
+                                Layout.preferredWidth: 12
+                                Layout.preferredHeight: 12
+                                name: "chevron-down"
+                                color: Theme.muted
+                            }
+                        }
+                        PassiveToolTip {
+                            target: modelChoice
+                            text: modelChoice.text + "\n" + (AssistantService.supportsTools ? qsTr("Agent tools available · commands and writes require approval") : qsTr("Chat model · no agent tools advertised"))
+                        }
+                    }
+                    IconButton {
+                        id: optionsButton
+                        objectName: "assistantOptions"
+                        implicitWidth: 30
+                        implicitHeight: 30
+                        padding: 7
+                        iconName: "sliders-horizontal"
+                        text: qsTr("Assistant options")
+                        hint: qsTr("Thinking: %1 · Reply: %2\nStyle and model memory").arg(AssistantService.thinkingMode).arg(AssistantService.responseLength)
+                        onClicked: {
+                            modelPicker.close();
+                            options.visible ? options.close() : options.open();
+                        }
                     }
                     IconButton {
                         id: sendButton
@@ -747,6 +772,7 @@ DrawerPage {
         id: options
         objectName: "assistantOptionsPopup"
         button: optionsButton
+        y: -height - 6
         active: root.active
         ShellText {
             text: qsTr("Reply length")
@@ -805,24 +831,75 @@ DrawerPage {
                 text: qsTr("Keep model defaults, or favor consistency or variety")
             }
         }
-        ShellButton {
-            id: releaseButton
-            objectName: "assistantRelease"
-            Layout.fillWidth: true
-            text: qsTr("Release model memory")
-            iconName: "memory-stick"
-            enabled: AssistantService.online && AssistantService.canRelease
-            onClicked: AssistantService.releaseModel()
-            PassiveToolTip {
-                target: releaseButton
-                text: qsTr("Unload the selected idle model; keep it installed")
+    }
+    Process {
+        id: accountReader
+        command: ["python3", Quickshell.shellPath("drawers/spaces/profile.py")]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const profile = JSON.parse(text);
+                    root.accountAvatar = typeof profile.avatar === "string" ? profile.avatar : "";
+                } catch (_) {
+                    root.accountAvatar = "";
+                }
             }
         }
+        stderr: StdioCollector {}
     }
     TextEdit {
         id: clipboardProxy
         visible: false
         textFormat: TextEdit.PlainText
+    }
+    Component {
+        id: thinkingBlock
+        ColumnLayout {
+            id: thinking
+            property var activityData: ({})
+            property bool expanded: false
+            readonly property string identity: activityData.messageIndex + ":" + activityData.id
+            spacing: Theme.spacingSmall
+            ActivityDisclosure {
+                objectName: "assistantReasoning:" + thinking.identity
+                Layout.fillWidth: true
+                active: root.active
+                text: busy ? qsTr("Thinking…") : qsTr("Thinking")
+                busy: !!thinking.activityData.running
+                expanded: thinking.expanded
+                indicatorColor: busy ? Theme.accent : Theme.muted
+                hint: expanded ? qsTr("Hide thinking") : qsTr("Show thinking")
+                onToggleRequested: thinking.expanded = !thinking.expanded
+            }
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(160, thoughts.contentHeight + 12)
+                visible: thinking.expanded && !!thinking.activityData.text
+                contentWidth: availableWidth
+                clip: true
+                TextArea {
+                    id: thoughts
+                    objectName: "assistantReasoningText:" + thinking.identity
+                    text: thinking.activityData.text || ""
+                    readOnly: true
+                    selectByMouse: true
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.smallFontSize
+                    wrapMode: TextEdit.Wrap
+                    textFormat: TextEdit.PlainText
+                    background: null
+                }
+            }
+        }
+    }
+    Component {
+        id: toolBlock
+        ToolActivity {
+            property var activityData: ({})
+            active: root.active
+            activity: activityData
+        }
     }
     Component {
         id: proseBlock
@@ -927,6 +1004,7 @@ DrawerPage {
         id: modelPicker
         objectName: "assistantModelPopup"
         button: modelChoice
+        y: -height - 6
         active: root.active
         maximumWidth: root.width
     }

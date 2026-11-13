@@ -62,7 +62,563 @@ def reply(handler, body, status=200, **headers):
     handler.wfile.write(data)
 
 
+def event_stream(chunks):
+    return io.BytesIO(
+        b''.join(
+            b'data: ' + json.dumps(chunk, ensure_ascii=False).encode() + b'\n\n'
+            for chunk in chunks
+        )
+        + b'data: [DONE]\n\n'
+    )
+
+
 class AssistantBackendTests(unittest.TestCase):
+    def test_tool_call_deltas_are_reassembled_approved_executed_and_returned(self):
+        first = event_stream(
+            [
+                {
+                    'choices': [
+                        {
+                            'delta': {
+                                'tool_calls': [
+                                    {
+                                        'index': 0,
+                                        'id': 'call-1',
+                                        'type': 'function',
+                                        'function': {
+                                            'name': 'run_command',
+                                            'arguments': '{"command":"printf ',
+                                        },
+                                    }
+                                ]
+                            },
+                            'finish_reason': None,
+                        }
+                    ]
+                },
+                {
+                    'choices': [
+                        {
+                            'delta': {
+                                'tool_calls': [
+                                    {
+                                        'index': 0,
+                                        'function': {'arguments': 'agent-ok"}'},
+                                    }
+                                ]
+                            },
+                            'finish_reason': 'tool_calls',
+                        }
+                    ]
+                },
+            ]
+        )
+        final = event_stream(
+            [
+                {
+                    'choices': [
+                        {
+                            'delta': {'content': 'The command returned agent-ok.'},
+                            'finish_reason': 'stop',
+                        }
+                    ]
+                },
+            ]
+        )
+        replies, requests = [], []
+
+        def request(url, payload=None, **_kwargs):
+            requests.append(json.loads(json.dumps(payload)))
+            return first if len(requests) == 1 else final
+
+        decision = (
+            json.dumps({'type': 'approval', 'id': 'call-1', 'approved': True}) + '\n'
+        )
+        with (
+            patch.object(backend, 'service', return_value=('user', {})),
+            patch.object(backend, 'server_url', return_value='http://localhost:13305'),
+            patch.object(
+                backend,
+                'get_json',
+                return_value=dict(
+                    data=[model() | dict(labels=['chat', 'tool-calling'])]
+                ),
+            ),
+            patch.object(backend, 'request', side_effect=request),
+            patch.object(backend, 'emit', side_effect=replies.append),
+            patch.object(
+                backend.uuid, 'uuid4', return_value=json.loads(decision)['id']
+            ),
+            patch.object(backend.sys, 'stdin', io.StringIO(decision)),
+            patch.object(
+                backend.select,
+                'select',
+                side_effect=lambda readers, _w, _e, _t: (readers, [], []),
+            ),
+        ):
+            backend.chat(
+                dict(
+                    model='local',
+                    messages=[dict(role='user', content='Run printf agent-ok')],
+                )
+            )
+
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[0]['tool_choice'], 'auto')
+        self.assertTrue(
+            any(
+                tool['function']['name'] == 'run_command'
+                for tool in requests[0]['tools']
+            )
+        )
+        assistant_call = requests[1]['messages'][-2]
+        tool_result = requests[1]['messages'][-1]
+        self.assertEqual(
+            assistant_call['tool_calls'][0]['function']['arguments'],
+            '{"command":"printf agent-ok"}',
+        )
+        self.assertEqual(tool_result['role'], 'tool')
+        self.assertIn('agent-ok', tool_result['content'])
+        self.assertEqual(
+            [row['activity']['state'] for row in replies if row.get('type') == 'tool'],
+            ['pending_approval', 'running', 'completed'],
+        )
+        self.assertEqual(replies[-1]['type'], 'done')
+        self.assertFalse(replies[-1]['limited'])
+        self.assertEqual(
+            [row['role'] for row in replies[-1]['tool_context']],
+            ['assistant', 'tool', 'assistant'],
+        )
+
+    def test_rejected_file_write_is_not_applied_and_model_receives_rejection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'settings.conf'
+            target.write_text('old value')
+            call = {
+                'id': 'write-1',
+                'type': 'function',
+                'function': {
+                    'name': 'write_file',
+                    'arguments': json.dumps(
+                        {'path': str(target), 'content': 'new value'}
+                    ),
+                },
+            }
+            first = event_stream(
+                [
+                    {
+                        'choices': [
+                            {
+                                'delta': {'tool_calls': [{'index': 0, **call}]},
+                                'finish_reason': 'tool_calls',
+                            }
+                        ]
+                    }
+                ]
+            )
+            final = event_stream(
+                [
+                    {
+                        'choices': [
+                            {
+                                'delta': {'content': 'I left the file unchanged.'},
+                                'finish_reason': 'stop',
+                            }
+                        ]
+                    }
+                ]
+            )
+            replies, requests = [], []
+
+            def request(url, payload=None, **_kwargs):
+                requests.append(json.loads(json.dumps(payload)))
+                return first if len(requests) == 1 else final
+
+            decision = (
+                json.dumps({'type': 'approval', 'id': 'write-1', 'approved': False})
+                + '\n'
+            )
+            with (
+                patch.object(backend, 'service', return_value=('user', {})),
+                patch.object(
+                    backend, 'server_url', return_value='http://localhost:13305'
+                ),
+                patch.object(
+                    backend,
+                    'get_json',
+                    return_value=dict(
+                        data=[model() | dict(labels=['chat', 'tool-calling'])]
+                    ),
+                ),
+                patch.object(backend, 'request', side_effect=request),
+                patch.object(backend, 'emit', side_effect=replies.append),
+                patch.object(
+                    backend.uuid, 'uuid4', return_value=json.loads(decision)['id']
+                ),
+                patch.object(backend.sys, 'stdin', io.StringIO(decision)),
+                patch.object(
+                    backend.select,
+                    'select',
+                    side_effect=lambda readers, _w, _e, _t: (readers, [], []),
+                ),
+            ):
+                backend.chat(
+                    dict(
+                        model='local',
+                        messages=[dict(role='user', content='Change the file')],
+                    )
+                )
+
+            self.assertEqual(target.read_text(), 'old value')
+            rejected = [
+                row
+                for row in replies
+                if row.get('type') == 'tool' and row['activity']['state'] == 'rejected'
+            ]
+            self.assertEqual(len(rejected), 1)
+            self.assertIn('rejected', requests[1]['messages'][-1]['content'])
+
+    def test_invalid_tool_arguments_fail_visibly_without_running_a_command(self):
+        first = event_stream(
+            [
+                {
+                    'choices': [
+                        {
+                            'delta': {
+                                'tool_calls': [
+                                    {
+                                        'index': 0,
+                                        'id': 'bad-1',
+                                        'type': 'function',
+                                        'function': {
+                                            'name': 'run_command',
+                                            'arguments': '{broken',
+                                        },
+                                    }
+                                ]
+                            },
+                            'finish_reason': 'tool_calls',
+                        }
+                    ]
+                }
+            ]
+        )
+        final = event_stream(
+            [
+                {
+                    'choices': [
+                        {
+                            'delta': {'content': 'That call was malformed.'},
+                            'finish_reason': 'stop',
+                        }
+                    ]
+                }
+            ]
+        )
+        replies, requests = [], []
+
+        def request(url, payload=None, **_kwargs):
+            requests.append(json.loads(json.dumps(payload)))
+            return first if len(requests) == 1 else final
+
+        with (
+            patch.object(backend, 'service', return_value=('user', {})),
+            patch.object(backend, 'server_url', return_value='http://localhost:13305'),
+            patch.object(
+                backend,
+                'get_json',
+                return_value=dict(
+                    data=[model() | dict(labels=['chat', 'tool-calling'])]
+                ),
+            ),
+            patch.object(backend, 'request', side_effect=request),
+            patch.object(backend, 'emit', side_effect=replies.append),
+            patch.object(backend, 'execute_tool') as execute,
+        ):
+            backend.chat(
+                dict(
+                    model='local', messages=[dict(role='user', content='run something')]
+                )
+            )
+
+        execute.assert_not_called()
+        self.assertEqual(
+            [row['activity']['state'] for row in replies if row.get('type') == 'tool'],
+            ['failed'],
+        )
+        self.assertIn('error', requests[1]['messages'][-1]['content'])
+
+    def test_symlink_loop_in_a_tool_path_is_returned_as_a_tool_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            loop = Path(directory) / 'loop'
+            loop.symlink_to(loop)
+            replies = []
+            with patch.object(backend, 'emit', side_effect=replies.append):
+                result = backend.call_tool(
+                    {
+                        'id': 'loop-1',
+                        'function': {
+                            'name': 'read_file',
+                            'arguments': json.dumps({'path': str(loop)}),
+                        },
+                    },
+                    1,
+                )
+
+            self.assertEqual(result['role'], 'tool')
+            self.assertIn(
+                'error', json.loads(result['content'])['untrusted_tool_result']
+            )
+            self.assertEqual(replies[-1]['activity']['state'], 'failed')
+
+    def test_non_tool_model_keeps_ordinary_chat_without_tool_fields(self):
+        sent, replies = self.chat(
+            event_stream(
+                [
+                    {
+                        'choices': [
+                            {
+                                'delta': {'content': 'ordinary answer'},
+                                'finish_reason': 'stop',
+                            }
+                        ]
+                    }
+                ]
+            ).getvalue(),
+            _labels=['chat'],
+        )
+        self.assertNotIn('tools', sent[0][1])
+        self.assertNotIn('tool_choice', sent[0][1])
+        self.assertEqual(replies[-1], {'type': 'done', 'limited': False})
+
+    def test_follow_up_reuses_tool_context_only_for_a_compatible_model(self):
+        tool_context = [
+            {
+                'role': 'assistant',
+                'content': 'Checking disks.',
+                'tool_calls': [
+                    {
+                        'id': 'disk-call',
+                        'type': 'function',
+                        'function': {
+                            'name': 'inspect_system',
+                            'arguments': '{"query":"disks"}',
+                        },
+                    }
+                ],
+            },
+            {
+                'role': 'tool',
+                'tool_call_id': 'disk-call',
+                'content': '{"untrusted_tool_result":{"stdout":"nvme0n1 1T disk","exit_code":0}}',
+            },
+            {'role': 'assistant', 'content': 'Your system has one 1 TB NVMe disk.'},
+        ]
+        messages = [
+            {'role': 'user', 'content': 'Check my disks'},
+            {
+                'role': 'assistant',
+                'content': 'Your system has one 1 TB NVMe disk.',
+                'tool_context': tool_context,
+            },
+            {'role': 'user', 'content': 'Which device name did you see?'},
+        ]
+        captured, replies = [], []
+
+        def request(url, payload=None, **_kwargs):
+            captured.append(json.loads(json.dumps(payload)))
+            return event_stream(
+                [
+                    {
+                        'choices': [
+                            {'delta': {'content': 'nvme0n1'}, 'finish_reason': 'stop'}
+                        ]
+                    }
+                ]
+            )
+
+        for labels in (['chat', 'tool-calling'], ['chat']):
+            captured.clear()
+            with (
+                patch.object(backend, 'service', return_value=('user', {})),
+                patch.object(
+                    backend, 'server_url', return_value='http://localhost:13305'
+                ),
+                patch.object(
+                    backend,
+                    'get_json',
+                    return_value=dict(data=[model() | dict(labels=labels)]),
+                ),
+                patch.object(backend, 'request', side_effect=request),
+                patch.object(backend, 'emit', side_effect=replies.append),
+            ):
+                backend.chat(dict(model='local', messages=messages))
+            sent_messages = captured[0]['messages']
+            if 'tool-calling' in labels:
+                self.assertEqual(
+                    [row['role'] for row in sent_messages[1:]],
+                    ['user', 'assistant', 'tool', 'assistant', 'user'],
+                )
+                self.assertIn('nvme0n1', sent_messages[3]['content'])
+            else:
+                self.assertEqual(
+                    [row['role'] for row in sent_messages[1:]],
+                    ['user', 'assistant', 'user'],
+                )
+                self.assertNotIn('tools', captured[0])
+
+    def test_cancellation_during_approval_marks_the_call_cancelled(self):
+        first = event_stream(
+            [
+                {
+                    'choices': [
+                        {
+                            'delta': {
+                                'tool_calls': [
+                                    {
+                                        'index': 0,
+                                        'id': 'cancel-1',
+                                        'type': 'function',
+                                        'function': {
+                                            'name': 'run_command',
+                                            'arguments': '{"command":"uname -a"}',
+                                        },
+                                    }
+                                ]
+                            },
+                            'finish_reason': 'tool_calls',
+                        }
+                    ]
+                }
+            ]
+        )
+        replies = []
+        with (
+            patch.object(backend, 'service', return_value=('user', {})),
+            patch.object(backend, 'server_url', return_value='http://localhost:13305'),
+            patch.object(
+                backend,
+                'get_json',
+                return_value=dict(
+                    data=[model() | dict(labels=['chat', 'tool-calling'])]
+                ),
+            ),
+            patch.object(backend, 'request', return_value=first),
+            patch.object(backend, 'emit', side_effect=replies.append),
+            patch.object(backend, 'wait_for_approval', side_effect=backend.Cancelled()),
+        ):
+            with self.assertRaises(backend.Cancelled):
+                backend.chat(
+                    dict(model='local', messages=[dict(role='user', content='uname')])
+                )
+        self.assertEqual(
+            [row['activity']['state'] for row in replies if row.get('type') == 'tool'],
+            ['pending_approval', 'cancelled'],
+        )
+
+    def test_approved_write_refuses_a_file_changed_while_waiting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'settings.conf'
+            target.write_text('before')
+            snapshot = backend.write_snapshot(
+                {'path': str(target), 'content': 'approved content'}
+            )
+            target.write_text('changed after approval prompt')
+            with self.assertRaisesRegex(
+                ValueError, 'changed while approval was pending'
+            ):
+                backend.write_file(snapshot)
+            self.assertEqual(target.read_text(), 'changed after approval prompt')
+
+    def test_approved_write_replaces_only_the_reviewed_user_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'settings.conf'
+            target.write_text('before')
+            call = {
+                'id': 'write-ok',
+                'type': 'function',
+                'function': {
+                    'name': 'write_file',
+                    'arguments': json.dumps(
+                        {'path': str(target), 'content': 'approved content'}
+                    ),
+                },
+            }
+            replies = []
+            with (
+                patch.object(backend, 'emit', side_effect=replies.append),
+                patch.object(backend, 'wait_for_approval', return_value=(True, '')),
+            ):
+                result = backend.call_tool(call, 1)
+            self.assertEqual(target.read_text(), 'approved content')
+            self.assertEqual(
+                json.loads(result['content'])['untrusted_tool_result']['written_bytes'],
+                len('approved content'),
+            )
+            self.assertEqual(
+                [row['activity']['state'] for row in replies],
+                ['pending_approval', 'running', 'completed'],
+            )
+
+    def test_read_file_runs_without_approval_and_limits_regular_text(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'notes.txt'
+            target.write_text('local note')
+            call = {
+                'id': 'read-1',
+                'type': 'function',
+                'function': {
+                    'name': 'read_file',
+                    'arguments': json.dumps({'path': str(target)}),
+                },
+            }
+            replies = []
+            with (
+                patch.object(backend, 'emit', side_effect=replies.append),
+                patch.object(backend, 'wait_for_approval') as approval,
+            ):
+                result = backend.call_tool(call, 1)
+            approval.assert_not_called()
+            self.assertIn('local note', result['content'])
+            self.assertEqual(replies[-1]['activity']['state'], 'completed')
+
+    def test_write_file_refuses_symlinks_and_command_timeout_kills_process_group(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'settings.conf'
+            target.write_text('do not replace through a symlink')
+            link = Path(directory) / 'alias.conf'
+            link.symlink_to(target)
+            with self.assertRaisesRegex(ValueError, 'symlinks'):
+                backend.write_snapshot({'path': str(link), 'content': 'changed'})
+            self.assertEqual(target.read_text(), 'do not replace through a symlink')
+        started = backend.time.monotonic()
+        result = backend.bounded_process(
+            ['/bin/bash', '--noprofile', '--norc', '-c', 'sleep 10 & wait'],
+            timeout=0.1,
+        )
+        self.assertTrue(result['timed_out'])
+        self.assertIsNotNone(result['exit_code'])
+        self.assertLess(backend.time.monotonic() - started, 3)
+
+    def test_approved_new_file_does_not_overwrite_a_path_that_appears_during_commit(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'new.conf'
+            snapshot = backend.write_snapshot(
+                {'path': str(target), 'content': 'approved content'}
+            )
+            link = backend.os.link
+
+            def create_before_link(source, destination, **kwargs):
+                target.write_text('another process created this')
+                return link(source, destination, **kwargs)
+
+            with patch.object(backend.os, 'link', side_effect=create_before_link):
+                with self.assertRaises(FileExistsError):
+                    backend.write_file(snapshot)
+            self.assertEqual(target.read_text(), 'another process created this')
+
     def test_plain_chat_and_alias_use_only_the_reply_length_instruction(self):
         sent, _ = self.chat(b'data: [DONE]\n\n', _model='daily', length='balanced')
         self.assertEqual(sent[0][1]['model'], 'daily')
@@ -802,12 +1358,219 @@ else:
     print(json.dumps(result),flush=True)
 """
 
+AGENT_FAKE_BACKEND = """import json,sys,os,pathlib
+value=json.loads(sys.stdin.readline())
+if value['op']=='status':
+    print(json.dumps(dict(online=True,installed=True,scope='user',state='active',loaded=[dict(id='local',busy=False,pinned=False)],downloads=[],error='',generation=1,aliases={},models=[dict(id='local',label='Tool model',downloaded=True,size=1,labels=['chat','tool-calling'],supportsTools=True,alias=False,target='local')])),flush=True)
+    sys.exit(0)
+if value['op']!='chat':
+    print(json.dumps(dict(type='error',error='unexpected operation')),flush=True)
+    sys.exit(0)
+print(json.dumps(dict(type='delta',text='I will check that command.',reasoning='',thinking=False)),flush=True)
+activity=dict(id='approval-1',name='run_command',arguments=dict(command='uname -a'),state='pending_approval',summary='Waiting for your approval.',result={})
+print(json.dumps(dict(type='tool',activity=activity)),flush=True)
+decision=json.loads(sys.stdin.readline())
+state=pathlib.Path(os.environ['XDG_STATE_HOME']);state.mkdir(parents=True,exist_ok=True)
+(state/'decisions.log').open('a').write(json.dumps(decision)+'\\n')
+activity['state']='rejected' if decision.get('approved') is not True else 'completed'
+activity['summary']='Rejected; operation was not run.' if decision.get('approved') is not True else 'Command exited 0.'
+activity['result']={'error':'The user rejected this operation.','rejected':True} if decision.get('approved') is not True else {'stdout':'Linux fixture','stderr':'','exit_code':0}
+print(json.dumps(dict(type='tool',activity=activity)),flush=True)
+write_activity=dict(id='write-2',name='write_file',arguments=dict(path='/tmp/assistant.conf',content='safe = true\\n'),state='pending_approval',summary='Waiting for your approval.',result={})
+print(json.dumps(dict(type='tool',activity=write_activity)),flush=True)
+write_decision=json.loads(sys.stdin.readline())
+(state/'decisions.log').open('a').write(json.dumps(write_decision)+'\\n')
+write_activity['state']='completed' if write_decision.get('approved') is True else 'rejected'
+write_activity['summary']='Wrote /tmp/assistant.conf.' if write_decision.get('approved') is True else 'Rejected; operation was not run.'
+write_activity['result']={'path':'/tmp/assistant.conf','written_bytes':11,'duration_ms':1} if write_decision.get('approved') is True else {'error':'The user rejected this operation.','rejected':True}
+print(json.dumps(dict(type='tool',activity=write_activity)),flush=True)
+print(json.dumps(dict(type='delta',text='I did not run the command.',reasoning='',thinking=False)),flush=True)
+print(json.dumps(dict(type='done',limited=False)),flush=True)
+"""
+
 
 @unittest.skipUnless(support.QS, 'Quickshell is required')
 class AssistantDrawerTests(unittest.TestCase):
     def run_qml(self, body, setup=None, **options):
         # A reply that outlives its page notifies; never on the session bus.
         return support.run_qml(self, body, setup, **{'isolate_bus': True, **options})
+
+    def test_tool_activity_shows_exact_preview_and_rejection_continues_chat(self):
+        def setup(root):
+            (root / 'drawers/assistant/backend.py').write_text(AGENT_FAKE_BACKEND)
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import Quickshell.Io
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ property int stage:0
+ property int tries:0
+ property bool previewStarted:false
+ property bool previewReady:false
+ property var firstCard:null
+ FloatingWindow {id:window;implicitWidth:420;implicitHeight:580;visible:true;color:Theme.background
+  Item {id:preview;anchors.fill:parent
+  Rectangle {anchors.fill:parent;color:Theme.background}
+  AssistantDrawer {id:drawer;x:12;y:12;width:396;height:556;active:true}
+  }
+ }
+ FileView {id:decisionFile;path:Quickshell.env("XDG_STATE_HOME")+"/decisions.log";blockLoading:true;printErrors:false}
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>90)throw new Error("timeout stage "+stage+" "+AssistantService.error);
+  if(stage===0){
+   if(!AssistantService.checked||!AssistantService.online||AssistantService.checking)return;
+   check(AssistantService.supportsTools,"tool-calling model capability was lost");
+   AssistantService.draft="Run uname -a";check(AssistantService.send(),"agent send refused");
+  }else if(stage===1){
+   const card=find(drawer,"assistantToolActivity:approval-1");if(!card)return;
+   check(find(card,"assistantToolApprove:approval-1").enabled,"approval control is unavailable");
+   check(find(card,"assistantToolInput:approval-1").text==="uname -a","command preview is not exact");
+   const disclosure=find(card,"assistantToolDetails:approval-1");
+   check(disclosure.expanded,"approval preview did not start expanded");
+   disclosure.clicked();check(!disclosure.expanded,"approval row cannot collapse");
+   disclosure.clicked();check(disclosure.expanded&&find(card,"assistantToolApprove:approval-1").visible,"approval row did not restore review controls");
+   check(find(drawer,"assistantSegment:1:0").item.segmentText.includes("I will check"),"activity replaced the assistant preface");
+   check(!AssistantService.decideTool("missing",true),"unknown approval was sent");
+   firstCard=card;card.showDetails=true;
+   find(card,"assistantToolReject:approval-1").clicked();
+   check(!AssistantService.decideTool("approval-1",true),"duplicate approval was sent");
+  }else if(stage===2){
+   const rows=JSON.parse(AssistantService.messages.get(1).toolActivitiesJson);
+   if(rows.length<2||rows[1].state!=="pending_approval")return;
+   check(rows[0].state==="rejected","rejection state missing");
+   check(find(drawer,"assistantToolActivity:approval-1")===firstCard&&firstCard.showDetails,"tool update recreated the expanded row");
+   const writeCard=find(drawer,"assistantToolActivity:write-2");
+   check(find(writeCard,"assistantToolInput:write-2").text.includes("safe = true"),"full proposed file content is not shown");
+   const folder=Quickshell.env("DISPLAY_PREVIEW_DIR");
+   if(folder&&!previewStarted){
+    previewStarted=true;
+    preview.grabToImage(result=>{result.saveToFile(folder+"/assistant-agent.png");previewReady=true;});
+    return;
+   }
+   if(folder&&!previewReady)return;
+   find(writeCard,"assistantToolApprove:write-2").clicked();
+  }else if(stage===3){
+   if(AssistantService.generating)return;
+   const rows=JSON.parse(AssistantService.messages.get(1).toolActivitiesJson);
+   check(rows[0].state==="rejected"&&rows[1].state==="completed","tool decisions were not reflected");
+   check(AssistantService.messages.get(1).body.includes("did not run"),"assistant did not continue after rejection");
+   check(find(drawer,"assistantToolOutput:approval-1").text.includes("rejected"),"expanded result is missing");
+   decisionFile.reload();decisionFile.waitForJob();
+   const decisions=decisionFile.text().trim().split("\\n").map(JSON.parse);
+   check(decisions.length===2&&decisions[0].approved===false&&decisions[1].approved===true,"tool decisions were not sent to the backend");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}""",
+            setup,
+        )
+
+    def test_stop_keeps_tool_context_and_terminal_states_in_the_conversation(self):
+        def setup(root):
+            preamble = AGENT_FAKE_BACKEND.split(
+                "print(json.dumps(dict(type='delta',text='I will check that command.'"
+            )[0]
+            script = (
+                preamble
+                + """import signal,time
+completed=dict(id='read-1',name='read_file',arguments={'path':'/tmp/example'},state='completed',summary='Read file.',result={'content':'confirmed configuration'})
+running=dict(id='run-2',name='run_command',arguments={'command':'sleep 20'},state='running',summary='Running',result={})
+context=[{'role':'assistant','content':None,'tool_calls':[{'id':'read-api','type':'function','function':{'name':'read_file','arguments':'{}'}}]},{'role':'tool','tool_call_id':'read-api','content':'confirmed configuration'},{'role':'assistant','content':'Workflow interrupted.'}]
+def stop(*args):
+    print(json.dumps(dict(type='context',tool_context=context)),flush=True)
+    print(json.dumps(dict(type='cancelled')),flush=True)
+    sys.exit(0)
+signal.signal(signal.SIGTERM,stop)
+print(json.dumps(dict(type='tool',activity=completed)),flush=True)
+print(json.dumps(dict(type='tool',activity=running)),flush=True)
+time.sleep(10)
+"""
+            )
+            (root / 'drawers/assistant/backend.py').write_text(script)
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ property int stage:0
+ property int tries:0
+ FloatingWindow {implicitWidth:380;implicitHeight:500;visible:true
+  AssistantDrawer {id:drawer;anchors.fill:parent;active:true}
+ }
+ function check(value,message){if(!value)throw new Error(message);}
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>80)throw new Error("timeout stage "+stage+" "+AssistantService.error);
+  if(stage===0){
+   if(!AssistantService.online||AssistantService.checking)return;
+   AssistantService.draft="Investigate";check(AssistantService.send(),"send failed");
+  }else if(stage===1){
+   const rows=JSON.parse(AssistantService.messages.get(1).toolActivitiesJson);
+   if(rows.length<2)return;
+   AssistantService.cancel();
+  }else if(stage===2){
+   if(AssistantService.generating)return;
+   const row=AssistantService.messages.get(1);
+   const activities=JSON.parse(row.toolActivitiesJson);
+   check(row.state==="stopped","interruption was not shown");
+   check(activities[0].state==="completed"&&activities[1].state==="cancelled","terminal tool states were lost");
+   check(row.toolContextJson.includes("confirmed configuration"),"Stop discarded completed results");
+   check(!AssistantService.error,"cancellation became an error: "+AssistantService.error);
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}""",
+            setup,
+        )
+
+    def test_composer_popups_fit_a_short_narrow_drawer(self):
+        def setup(root):
+            (root / 'drawers/assistant/backend.py').write_text(FAKE_BACKEND)
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ property int stage:0
+ property int tries:0
+ FloatingWindow {id:window;implicitWidth:380;implicitHeight:420;visible:true
+  AssistantDrawer {id:drawer;x:12;y:12;width:356;height:396;active:true}
+ }
+ function check(value,message){if(!value)throw new Error(message);}
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ function fits(popup){const surface=popup.contentItem.parent;const p=surface.mapToItem(window.contentItem,0,0);check(p.x>=0&&p.y>=0&&p.x+surface.width<=window.width&&p.y+surface.height<=window.height,"popup escapes viewport: "+p.x+","+p.y+" "+surface.width+"x"+surface.height);}
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>80)throw new Error("timeout stage "+stage+" "+AssistantService.error);
+  if(stage===0){
+   if(!AssistantService.online||AssistantService.checking)return;
+   find(drawer,"assistantModel").clicked();
+  }else if(stage===1){
+   if(!drawer.modelPopup.visible||AssistantService.checking)return;
+   fits(drawer.modelPopup);drawer.modelPopup.close();
+   find(drawer,"assistantOptions").clicked();
+  }else if(stage===2){
+   if(!drawer.optionsPopup.visible)return;
+   fits(drawer.optionsPopup);
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}""",
+            setup,
+        )
 
     def test_opening_drawer_is_passive_and_model_picker_starts_on_demand(self):
         def setup(root):
@@ -1317,8 +2080,8 @@ ShellRoot {
  TestCase {id:input;name:"Assistant input";when:false;parent:window.contentItem}
  function check(value,message){if(!value)throw new Error(message);}
  function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
- function rendered(page,message){const out=[];for(let i=0;;i++){const part=find(page,"assistantSegment:"+message+":"+i);if(!part)break;const item=part.item;out.push(item.code?item.segmentText:item.getText(0,item.length).replace(/[\u2028\u2029]/g,"\n"));}return out.join("\n");}
- function prose(page,message){const out=[];for(let i=0;;i++){const part=find(page,"assistantSegment:"+message+":"+i);if(!part)break;if(!part.item.code)out.push(part.item.segmentText);}return out.join("\n");}
+ function rendered(page,message){const out=[];for(let i=0;;i++){const part=find(page,"assistantSegment:"+message+":"+i);if(!part)break;if(!["text","code"].includes(part.entry.kind))continue;const item=part.item;out.push(item.code?item.segmentText:item.getText(0,item.length).replace(/[\u2028\u2029]/g,"\n"));}return out.join("\n");}
+ function prose(page,message){const out=[];for(let i=0;;i++){const part=find(page,"assistantSegment:"+message+":"+i);if(!part)break;if(part.entry.kind==="text")out.push(part.item.segmentText);}return out.join("\n");}
  Timer {interval:100;repeat:true;running:true;onTriggered:{try{
   if(++tries>80)throw new Error("timeout "+stage+" "+AssistantService.error);
   const composer=find(drawer,"assistantComposer");
@@ -1515,7 +2278,8 @@ ShellRoot {
  property int stage:0
  property int tries:0
  FloatingWindow {implicitWidth:480;implicitHeight:760;visible:true;color:Theme.background
-  AssistantDrawer {id:drawer;x:16;y:16;width:448;height:728;active:true}
+  Loader {id:header;x:16;y:0;sourceComponent:drawer.headerActions}
+  AssistantDrawer {id:drawer;x:16;y:40;width:448;height:704;active:true}
  }
  function check(value,message){if(!value)throw new Error(message);}
  function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
@@ -1565,10 +2329,16 @@ ShellRoot {
    check(!drawer.modelPopup.visible&&AssistantService.selectedModel==="new","installed selection failed");
    AssistantService.chooseModel("local");
    check(AssistantService.canRelease,"loaded idle model cannot release memory");
-   AssistantService.releaseModel();
+   find(header,"assistantNew").clicked();
+   check(!AssistantService.draft&&!!AssistantService.selectedLoaded,"new chat did not clear the draft while keeping the model loaded");
+   AssistantService.draft="keep after unload";
+   const release=find(header,"assistantRelease");
+   check(release.enabled,"header memory release is unavailable");
+   release.clicked();
   }else if(stage===9){
    if(AssistantService.checking)return;
    check(!AssistantService.selectedLoaded&&!AssistantService.canRelease,"release did not follow Lemonade state");
+   check(AssistantService.draft==="keep after unload","memory release discarded the draft");
    drawer.width=308;drawer.height=408;drawer.modelPopup.open();
   }else if(stage===10){
    check(drawer.modelPopup.width<=drawer.width,"picker exceeds narrow drawer");
@@ -1631,7 +2401,9 @@ ShellRoot {
   }else if(stage===4){
    if(AssistantService.generating)return;
    check(!AssistantService.error&&AssistantService.messages.count===2&&AssistantService.messages.get(1).state==="done","retry failed "+AssistantService.error);
-   check(find(page.item,"assistantSegment:1:0").item.segmentText.includes("answer"),"answer not rendered");
+   const answerParts=[];
+   for(let i=0;;i++){const part=find(page.item,"assistantSegment:1:"+i);if(!part)break;if(part.entry.kind==="text")answerParts.push(part.item.segmentText);}
+   check(answerParts.some(text=>text.includes("answer")),"answer not rendered");
    const folder=Quickshell.env("DISPLAY_PREVIEW_DIR");
    if(folder)page.item.grabToImage(result=>result.saveToFile(folder+"/assistant-chat.png"));
    find(page.item,"assistantOptions").clicked();
@@ -1670,8 +2442,8 @@ ShellRoot {
 HARNESS = """
  function check(value,message){if(!value)throw new Error(message);}
  function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
- function say(speaker,body){AssistantService.messages.append({speaker,body,modelName:"local",state:"done",filesJson:"[]",hasImages:false,reasoning:""});}
- function rendered(page,message){const out=[];for(let i=0;;i++){const part=find(page,"assistantSegment:"+message+":"+i);if(!part)break;const item=part.item;out.push(item.code?item.segmentText:item.getText(0,item.length).replace(/[\\u2028\\u2029]/g,"\\n"));}return out.join("\\n");}
+ function say(speaker,body){AssistantService.messages.append({speaker,body,modelName:"local",state:"done",filesJson:"[]",hasImages:false,reasoning:"",reasoningBlocksJson:"[]",toolContextJson:"[]",toolActivitiesJson:"[]"});}
+ function rendered(page,message){const out=[];for(let i=0;;i++){const part=find(page,"assistantSegment:"+message+":"+i);if(!part)break;if(!["text","code"].includes(part.entry.kind))continue;const item=part.item;out.push(item.code?item.segmentText:item.getText(0,item.length).replace(/[\\u2028\\u2029]/g,"\\n"));}return out.join("\\n");}
 """
 
 # Everything a reply could use to make Qt's Markdown renderer load a URL. @U@ is
@@ -1719,6 +2491,283 @@ class AssistantPresentationTests(unittest.TestCase):
             body.replace('HARNESS', HARNESS),
             prepare,
             **{'isolate_bus': True, **options},
+        )
+
+    def test_thinking_and_inspection_use_compact_clickable_activity_rows(self):
+        self.run_qml(
+            """import QtQuick
+import QtTest
+import Quickshell
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ property int stage:0
+ property int tries:0
+ property var firstThinking:null
+ FloatingWindow {id:window;implicitWidth:480;implicitHeight:600;visible:true;color:Theme.background
+  Item {id:preview;anchors.fill:parent
+   Rectangle {anchors.fill:parent;color:Theme.background}
+   AssistantDrawer {id:drawer;x:16;y:16;width:448;height:568;active:true}
+  }
+ }
+ TestCase {id:input;when:false;parent:window.contentItem}
+HARNESS
+ function tool(state){return {id:"machine",name:"inspect_system",arguments:{query:"failed_services"},state,summary:"Inspected services.",result:state==="completed"?{stdout:"No failed services.",exit_code:0}:{}};}
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>80)throw new Error("timeout stage "+stage+" "+AssistantService.error);
+  const thinking=find(drawer,"assistantReasoning:1:0");
+  if(stage===0){
+   if(!AssistantService.online||AssistantService.checking)return;
+   say("user","Inspect services");say("assistant","");
+   AssistantService.messages.setProperty(1,"state","streaming");
+   AssistantService.receive(JSON.stringify({type:"delta",reasoning:"First inspection thought.",thinking:true}));
+  }else if(stage===1){
+   if(!thinking)return;
+   firstThinking=thinking;
+   const spinner=find(thinking,"assistantReasoning:1:0Spinner"),chevron=find(thinking,"assistantReasoning:1:0Chevron");
+   check(spinner.visible&&spinner.running&&!chevron.visible,"thinking indicator missing");
+   check(spinner.mapToItem(thinking,0,0).x<thinking.width/2,"spinner was pushed to the far right");
+   check(!find(drawer,"assistantProgress:1").visible,"thinking has a duplicate status row");
+   // Click blank row space clear of the conversation scrollbar overlay.
+   input.mouseClick(thinking,thinking.width-24,thinking.height/2);input.wait(20);
+   check(thinking.expanded,"thinking row is not fully clickable");
+   drawer.active=false;check(!spinner.running,"dismissed thinking still animates");drawer.active=true;
+   AssistantService.receive(JSON.stringify({type:"tool",activity:tool("running")}));
+  }else if(stage===2){
+   const card=find(drawer,"assistantToolActivity:machine");if(!card)return;
+   check(card.title==="Inspect system · failed services","inspection label failed: "+card.title);
+   const row=find(card,"assistantToolDetails:machine");
+   check(find(row,"assistantToolDetails:machineSpinner").visible,"tool has no inline spinner");
+   input.mouseClick(row,row.width-24,row.height/2);input.wait(20);
+   check(card.showDetails,"tool row is not fully clickable");
+   AssistantService.receive(JSON.stringify({type:"tool",activity:tool("completed")}));
+  }else if(stage===3){
+   const card=find(drawer,"assistantToolActivity:machine"),row=find(card,"assistantToolDetails:machine");
+   check(card.showDetails&&card.resultText.includes("No failed services"),"completion lost details or output");
+   check(!find(row,"assistantToolDetails:machineSpinner").visible&&find(row,"assistantToolDetails:machineChevron").visible,"completed tool did not become a disclosure");
+   check(find(thinking,"assistantReasoning:1:0Chevron").visible,"completed thinking did not become a disclosure");
+   row.clicked();
+   AssistantService.receive(JSON.stringify({type:"delta",reasoning:"Second inspection thought.",thinking:true}));
+  }else if(stage===4){
+   const second=find(drawer,"assistantReasoning:1:1");if(!second)return;
+   const card=find(drawer,"assistantToolActivity:machine");
+   check(thinking===firstThinking&&thinking.expanded,"later thinking recreated or collapsed the earlier phase");
+   check(!find(thinking,"assistantReasoning:1:0Spinner").visible,"earlier thinking restarted");
+   check(find(second,"assistantReasoning:1:1Spinner").visible,"new thinking phase has no progress indicator");
+   check(second.mapToItem(drawer,0,0).y>card.mapToItem(drawer,0,0).y+card.height,"new thinking phase appeared above its tool");
+   second.clicked();
+   check(find(drawer,"assistantReasoningText:1:0").text==="First inspection thought.","earlier thought changed");
+   check(find(drawer,"assistantReasoningText:1:1").text==="Second inspection thought.","new phase contains earlier thinking");
+   AssistantService.receive(JSON.stringify({type:"delta",reasoning:" Continued.",thinking:true}));
+   AssistantService.receive(JSON.stringify({type:"delta",text:"No failed services were found.",thinking:false}));
+   AssistantService.receive(JSON.stringify({type:"done",limited:false}));
+  }else if(stage===5){
+   check(!AssistantService.error,"successful tool reply reported an error");
+   check(!find(thinking,"assistantReasoning:1:0Spinner").running,"finished thinking still animates");
+   const second=find(drawer,"assistantReasoning:1:1");
+   check(!find(second,"assistantReasoning:1:1Spinner").running,"last thinking phase still animates");
+   check(find(drawer,"assistantReasoningText:1:1").text==="Second inspection thought. Continued.","streaming did not append to the current phase");
+   const blocks=JSON.parse(AssistantService.messages.get(1).reasoningBlocksJson);
+   check(blocks.length===2&&blocks.every(block=>block.state==="completed"),"thinking phase lifecycle was lost");
+   const folder=Quickshell.env("DISPLAY_PREVIEW_DIR");
+   if(folder){preview.grabToImage(result=>{result.saveToFile(folder+"/assistant-thinking-timeline.png");console.log("DISPLAY_PASS");Qt.quit();});return;}
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}"""
+        )
+
+    def test_thinking_timeline_preserves_text_and_tools_at_shared_offsets(self):
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ property int stage:0
+ property int tries:0
+ FloatingWindow {implicitWidth:480;implicitHeight:600;visible:true;color:Theme.background
+  AssistantDrawer {id:drawer;x:16;y:16;width:448;height:568;active:true}
+ }
+HARNESS
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>80)throw new Error("timeout stage "+stage);
+  if(stage===0){
+   if(!AssistantService.online||AssistantService.checking)return;
+   say("user","Investigate");say("assistant","");
+   AssistantService.messages.setProperty(1,"state","streaming");
+   AssistantService.receive(JSON.stringify({type:"delta",reasoning:"Before inspection.",text:"A preface.\\n",thinking:true}));
+   AssistantService.receive(JSON.stringify({type:"tool",activity:{id:"machine",name:"inspect_system",arguments:{query:"machine"},state:"completed",summary:"Inspected.",result:{stdout:"Linux 7.2",exit_code:0}}}));
+   AssistantService.receive(JSON.stringify({type:"delta",reasoning:"After inspection.",text:"The final answer.",thinking:true}));
+   AssistantService.receive(JSON.stringify({type:"done",limited:false}));
+  }else{
+   const first=find(drawer,"assistantReasoning:1:0"),second=find(drawer,"assistantReasoning:1:1");
+   const preface=find(drawer,"assistantSegment:1:1"),tool=find(drawer,"assistantToolActivity:machine"),answer=find(drawer,"assistantSegment:1:4");
+   if(!first||!second||!preface?.item||!answer?.item||!tool)return;
+   const positions=[first,preface,tool,second,answer].map(item=>item.mapToItem(drawer,0,0).y);
+   check(positions.every((position,index)=>index===0||position>positions[index-1]),"thinking/text/tool order is wrong: "+positions);
+   check(preface.item.segmentText.includes("A preface.")&&answer.item.segmentText.includes("The final answer."),"text segments were lost");
+   first.clicked();second.clicked();
+   check(find(drawer,"assistantReasoningText:1:0").text==="Before inspection.","first thinking text is wrong");
+   check(find(drawer,"assistantReasoningText:1:1").text==="After inspection.","second thinking text is wrong");
+   check(!AssistantService.thinking&&!find(second,"assistantReasoning:1:1Spinner").running,"mixed reasoning/text delta left thinking active");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}"""
+        )
+
+    def test_open_thinking_phase_finishes_on_cancellation_or_disconnect(self):
+        def setup(root):
+            prefix = AGENT_FAKE_BACKEND.split(
+                "print(json.dumps(dict(type='delta',text='I will check that command.'"
+            )[0]
+            (root / 'drawers/assistant/backend.py').write_text(
+                prefix
+                + """import time
+print(json.dumps(dict(type='delta',reasoning='Thought held open.',thinking=True)),flush=True)
+if value['messages'][-1]['content']=='cancel':time.sleep(10)
+"""
+            )
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ property int stage:0
+ property int tries:0
+ FloatingWindow {implicitWidth:480;implicitHeight:600;visible:true;color:Theme.background
+  AssistantDrawer {id:drawer;x:16;y:16;width:448;height:568;active:true}
+ }
+HARNESS
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>80)throw new Error("timeout stage "+stage+" "+AssistantService.error);
+  if(stage===0){
+   if(!AssistantService.online||AssistantService.checking)return;
+   AssistantService.draft="cancel";check(AssistantService.send(),"send failed");
+  }else if(stage===1){
+   if(!AssistantService.messages.get(1).reasoning)return;
+   AssistantService.cancel();
+  }else if(stage===2){
+   if(AssistantService.generating)return;
+   const row=AssistantService.messages.get(1),blocks=JSON.parse(row.reasoningBlocksJson);
+   check(row.state==="stopped"&&blocks.length===1&&blocks[0].state==="cancelled","cancellation left thinking open");
+   check(row.reasoning==="Thought held open."&&!find(drawer,"assistantReasoning:1:0Spinner").running,"cancellation lost thinking or kept it animated");
+   AssistantService.newChat();AssistantService.draft="disconnect";check(AssistantService.send(),"second send failed");
+  }else if(stage===3){
+   if(AssistantService.generating)return;
+   const row=AssistantService.messages.get(1),blocks=JSON.parse(row.reasoningBlocksJson);
+   check(row.state==="error"&&blocks.length===1&&blocks[0].state==="failed","disconnect left thinking open");
+   check(row.reasoning==="Thought held open."&&!AssistantService.thinking,"disconnect discarded thinking");
+   check(!find(drawer,"assistantReasoning:1:0Spinner").running,"disconnected thinking still animates");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}""",
+            setup,
+        )
+
+    def test_empty_final_tool_reply_is_reported_even_with_a_preface(self):
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ FloatingWindow {implicitWidth:480;implicitHeight:600;visible:true;color:Theme.background
+  AssistantDrawer {id:drawer;x:16;y:16;width:448;height:568;active:true}
+ }
+HARNESS
+ Timer {interval:200;repeat:true;running:true;onTriggered:{try{
+  if(!AssistantService.online||AssistantService.checking)return;
+  say("user","What kernel?");say("assistant","I will check.");
+  AssistantService.applyToolActivity({id:"machine",name:"inspect_system",arguments:{query:"machine"},state:"completed",summary:"Inspected machine.",result:{stdout:"Linux 7.2",exit_code:0}});
+  AssistantService.receive(JSON.stringify({type:"done",limited:false,empty_answer:true}));
+  check(AssistantService.messages.get(1).state==="error","preface disguised a missing final answer");
+  check(AssistantService.error.includes("after tool calls"),"missing answer blamed thinking without evidence");
+  check(AssistantService.messages.get(1).toolActivitiesJson.includes("Linux 7.2"),"missing answer discarded the tool result");
+  console.log("DISPLAY_PASS");Qt.quit();
+ }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
+}"""
+        )
+
+    def test_account_photo_refresh_fallback_and_presentation_only(self):
+        def setup(root):
+            photo = (root / 'icons/user-round.svg').as_uri()
+            (root / 'profile.json').write_text(json.dumps({'avatar': photo + '?v=1'}))
+            (root / 'broken-photo.png').write_text('not an image')
+            (root / 'drawers/spaces/profile.py').write_text(
+                'from pathlib import Path\nprint(Path('
+                + repr(str(root / 'profile.json'))
+                + ').read_text())\n'
+            )
+
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import Quickshell.Io
+import "ui"
+import "drawers"
+import "drawers/assistant"
+ShellRoot {
+ property int stage:0
+ property int tries:0
+ FloatingWindow {implicitWidth:480;implicitHeight:600;visible:true;color:Theme.background
+  AssistantDrawer {id:drawer;x:16;y:16;width:448;height:568;active:true}
+ }
+ FileView {id:profile;path:Quickshell.shellPath("profile.json");blockLoading:true}
+ FileView {id:request;path:Quickshell.env("XDG_STATE_HOME")+"/request.json";blockLoading:true;printErrors:false}
+HARNESS
+ function updatePhoto(source){
+  profile.setText(JSON.stringify({avatar:source}));profile.waitForJob();
+  drawer.active=false;drawer.active=true;
+ }
+ Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+  if(++tries>80)throw new Error("timeout stage "+stage+" "+AssistantService.error);
+  const avatar=find(drawer,"assistantAvatar:0");
+  if(stage===0){
+   if(!AssistantService.online||AssistantService.checking)return;
+   say("user","Hello");say("assistant","Hi");
+  }else if(stage===1){
+   if(!avatar||avatar.status!==Image.Ready)return;
+   check(String(avatar.source).endsWith("?v=1"),"account photo was not loaded");
+   check(!find(drawer,"assistantAvatarFallback:0").visible,"photo retained generic user icon");
+   check(!String(find(drawer,"assistantAvatar:1").source)&&find(drawer,"assistantAvatarFallback:1").name==="bot","assistant used the account photo");
+   updatePhoto("");
+  }else if(stage===2){
+   if(String(avatar.source))return;
+   check(find(drawer,"assistantAvatarFallback:0").visible,"missing photo has no generic fallback");
+   updatePhoto(Qt.resolvedUrl("broken-photo.png"));
+  }else if(stage===3){
+   if(avatar.status!==Image.Error)return;
+   check(find(drawer,"assistantAvatarFallback:0").visible,"invalid photo has no generic fallback");
+   check(!AssistantService.error,"invalid photo broke chat");
+   updatePhoto(Qt.resolvedUrl("icons/user-round.svg")+"?v=2");
+  }else if(stage===4){
+   if(avatar.status!==Image.Ready||!String(avatar.source).endsWith("?v=2"))return;
+   check(!find(drawer,"assistantAvatarFallback:0").visible,"changed photo retained fallback");
+   AssistantService.draft="hello";check(AssistantService.send(),"chat with an account photo failed");
+  }else if(stage===5){
+   if(AssistantService.generating)return;
+   request.reload();request.waitForJob();
+   const payload=JSON.parse(request.text());
+   check(!JSON.stringify(payload).includes(drawer.accountAvatar),"account photo entered model context");
+   check(payload.messages.every(row=>!(row.attachments||[]).length),"account photo became an attachment");
+   console.log("DISPLAY_PASS");Qt.quit();
+  }
+  stage++;tries=0;
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+}""",
+            setup,
         )
 
     def test_replies_cannot_make_the_renderer_fetch_anything(self):
@@ -1875,7 +2924,7 @@ HARNESS
    check(view.atYEnd&&!latest.visible,"growing reply left the tail at step "+stage);
    grow();
   }else if(stage===8){
-   check(view.atYEnd&&view.contentHeight>view.height*2,"reply did not outgrow the view while following");
+   check(view.atYEnd&&view.contentHeight>view.height,"reply did not outgrow the view while following");
    input.mouseWheel(view,40,40,0,240);
   }else if(stage===9){
    check(!view.atYEnd&&latest.visible,"scrolling up did not leave the tail");

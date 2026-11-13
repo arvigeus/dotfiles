@@ -14,6 +14,23 @@ from that day. Network snapshots have a 15-minute lifetime and
 failed reads back off for five minutes; manual refresh bypasses backoff. Refresh
 status does not replace the section's ordinary text while cached data is visible.
 
+The bar derives today's event count and the next start within seven local calendar
+days from the singleton's event snapshot, independent of drawer visibility,
+selected day and task filters. Its existing minute clock updates both without
+extra backend requests. Timed events count when their half-open interval overlaps
+the local day; all-day events use inclusive `date`/`last_date` fields. Future
+all-day starts use local midnight. The count badge caps at `99+`; when today has
+no events, `!` marks a start within seven days without attention styling. The
+tooltip names the next event and marks saved data when stale.
+
+Only unseen events today receive notification-style attention. Opening the drawer
+acknowledges them without changing the count; events arriving while it is open
+are also acknowledged. `CalendarService` shares this state across bars and saves
+the current account/day's seen occurrence signatures in
+`$XDG_STATE_HOME/quickshell/desktop/calendar.ini`. Identity, schedule, title and
+location changes become unseen; ordinary syncs and ETag changes do not. A new
+day requires acknowledgement again, including for continuing multi-day events.
+
 The service keeps up to 12 month snapshots in memory. Revisiting a month renders
 synchronously; uncached months retain shared tasks/collections and any known event
 overlap while their disk read completes. The backend reuses the cached upcoming

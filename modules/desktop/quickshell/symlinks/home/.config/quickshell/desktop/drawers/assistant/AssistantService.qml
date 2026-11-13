@@ -45,6 +45,7 @@ Singleton {
     readonly property bool busy: generating || working || preparing
     readonly property string selectedModel: models.find(row => row.id === preferredModel)?.id || models.find(row => row.downloaded && loaded.some(item => item.id === row.id))?.id || models.find(row => row.downloaded)?.id || (!online ? preferredModel : "")
     readonly property var selectedEntry: models.find(row => row.id === selectedModel) ?? null
+    readonly property bool supportsTools: selectedEntry?.supportsTools ?? false
     readonly property var selectedLoaded: loaded.find(row => row.id === (selectedEntry?.target || selectedModel)) ?? null
     readonly property var selectedDownload: downloads.find(row => row.model_name === (selectedEntry?.target || selectedModel) && row.status !== "completed") ?? null
     readonly property bool modelAvailable: selectedEntry?.downloaded ?? false
@@ -69,6 +70,7 @@ Singleton {
     // A reply longer than the context limit could never be sent back.
     readonly property int maximumReply: 160000
     signal appOpened
+    signal modelInstalled(string id)
     signal pasted(int cursor)
 
     ListModel {
@@ -229,6 +231,17 @@ Singleton {
             savePreferences();
         }
     }
+    function installRegistryModel(source: string, repository: string, variant: string): bool {
+        if (!online || busy)
+            return false;
+        return request({
+            op: "registry_install",
+            source,
+            repository,
+            variant,
+            needs_vision: needsVision
+        });
+    }
     function pauseDownload(value: string): void {
         if (online && !busy)
             request({
@@ -309,7 +322,10 @@ Singleton {
             state: "done",
             filesJson: JSON.stringify(files),
             hasImages: files.some(item => item.kind === "image"),
-            reasoning: ""
+            reasoning: "",
+            reasoningBlocksJson: "[]",
+            toolContextJson: "[]",
+            toolActivitiesJson: "[]"
         });
         if (draft === prompt || !draft.trim())
             draft = "";
@@ -339,12 +355,22 @@ Singleton {
         const context = [];
         for (let i = 0; i < history.count; i++) {
             const row = history.get(i);
-            if (row.body || row.filesJson && row.filesJson !== "[]")
+            const files = JSON.parse(row.filesJson || "[]");
+            const toolContext = JSON.parse(row.toolContextJson || "[]");
+            if (row.speaker === "assistant") {
+                if (row.body || toolContext.length)
+                    context.push({
+                        role: "assistant",
+                        content: row.body,
+                        tool_context: toolContext
+                    });
+            } else if (row.body || files.length) {
                 context.push({
                     role: row.speaker,
                     content: row.body,
-                    attachments: JSON.parse(row.filesJson || "[]")
+                    attachments: files
                 });
+            }
         }
         generation.payload = {
             op: "chat",
@@ -361,7 +387,10 @@ Singleton {
             state: "streaming",
             filesJson: "[]",
             hasImages: false,
-            reasoning: ""
+            reasoning: "",
+            reasoningBlocksJson: "[]",
+            toolContextJson: "[]",
+            toolActivitiesJson: "[]"
         });
         thinking = false;
         cancelling = false;
@@ -375,16 +404,130 @@ Singleton {
     function cancel(): void {
         if (generating && !cancelling) {
             cancelling = true;
+            finishThinking("cancelled");
+            setPendingToolsCancelled();
             generation.signal(15);
         }
     }
+    function appendThinking(text: string): void {
+        if (!text || !history.count)
+            return;
+        const index = history.count - 1;
+        const row = history.get(index);
+        const blocks = JSON.parse(row.reasoningBlocksJson || "[]");
+        const continuing = blocks.length && blocks[blocks.length - 1].state === "running";
+        const separator = !continuing && row.reasoning ? "\n\n" : "";
+        const chunk = text.slice(0, Math.max(0, 64000 - row.reasoning.length - separator.length));
+        if (!chunk)
+            return;
+        if (!continuing) {
+            blocks.push({
+                id: blocks.length,
+                bodyOffset: row.body.length,
+                order: blocks.length + JSON.parse(row.toolActivitiesJson || "[]").length,
+                start: row.reasoning.length + separator.length,
+                length: 0,
+                state: "running"
+            });
+        }
+        blocks[blocks.length - 1].length += chunk.length;
+        history.setProperty(index, "reasoning", row.reasoning + separator + chunk);
+        history.setProperty(index, "reasoningBlocksJson", JSON.stringify(blocks));
+        thinking = true;
+    }
+    function finishThinking(state: string): void {
+        thinking = false;
+        if (!history.count)
+            return;
+        const index = history.count - 1;
+        const blocks = JSON.parse(history.get(index).reasoningBlocksJson || "[]");
+        if (!blocks.length || blocks[blocks.length - 1].state !== "running")
+            return;
+        blocks[blocks.length - 1].state = state;
+        history.setProperty(index, "reasoningBlocksJson", JSON.stringify(blocks));
+    }
+    function setPendingToolsCancelled(): void {
+        if (!history.count)
+            return;
+        const index = history.count - 1;
+        let activities = [];
+        try {
+            activities = JSON.parse(history.get(index).toolActivitiesJson || "[]");
+        } catch (_) {
+            return;
+        }
+        let changed = false;
+        activities = activities.map(item => {
+            if (["pending_approval", "running"].includes(item.state)) {
+                changed = true;
+                return Object.assign({}, item, {
+                    state: "cancelled",
+                    summary: "Cancelled."
+                });
+            }
+            return item;
+        });
+        if (changed)
+            history.setProperty(index, "toolActivitiesJson", JSON.stringify(activities));
+    }
+    function applyToolActivity(activity): void {
+        if (!history.count || !activity || typeof activity.id !== "string")
+            return;
+        const index = history.count - 1;
+        let activities = [];
+        try {
+            activities = JSON.parse(history.get(index).toolActivitiesJson || "[]");
+        } catch (_) {
+            activities = [];
+        }
+        const existing = activities.findIndex(item => item.id === activity.id);
+        activity.bodyOffset = existing < 0 ? history.get(index).body.length : activities[existing].bodyOffset;
+        activity.order = existing < 0 ? activities.length + JSON.parse(history.get(index).reasoningBlocksJson || "[]").length : activities[existing].order;
+        if (existing < 0)
+            activities.push(activity);
+        else
+            activities[existing] = activity;
+        history.setProperty(index, "toolActivitiesJson", JSON.stringify(activities));
+        if (existing < 0 && activity.state === "pending_approval" && !observed)
+            notify(qsTr("Assistant needs your approval. Open Assistant to review the operation."));
+    }
+    function decideTool(id: string, approved: bool): bool {
+        if (!generating || cancelling || !id)
+            return false;
+        const index = history.count - 1;
+        const activities = JSON.parse(history.get(index).toolActivitiesJson || "[]");
+        const activity = activities.find(item => item.id === id);
+        if (!activity || activity.state !== "pending_approval" || activity.decisionSent)
+            return false;
+        activity.decisionSent = true;
+        history.setProperty(index, "toolActivitiesJson", JSON.stringify(activities));
+        generation.write(JSON.stringify({
+            type: "approval",
+            id,
+            approved
+        }) + "\n");
+        return true;
+    }
     function receive(line: string): void {
-        if (cancelling || !history.count)
+        if (!history.count)
             return;
         try {
             const value = JSON.parse(line);
             const index = history.count - 1;
+            // SIGTERM exports completed results before exiting. Keep those even
+            // after Stop, so follow-up turns cannot forget applied operations.
+            if (value.type === "context") {
+                if (Array.isArray(value.tool_context))
+                    history.setProperty(index, "toolContextJson", JSON.stringify(value.tool_context));
+                return;
+            }
+            if (cancelling)
+                return;
             if (value.type === "delta") {
+                if (typeof value.reasoning === "string")
+                    appendThinking(value.reasoning);
+                if (value.text || value.thinking === false)
+                    finishThinking("completed");
                 const body = history.get(index).body + (value.text || "");
                 history.setProperty(index, "body", body.slice(0, maximumReply));
                 if (body.length > maximumReply) {
@@ -394,19 +537,26 @@ Singleton {
                     generation.signal(15);
                     return;
                 }
-                if (value.reasoning)
-                    history.setProperty(index, "reasoning", (history.get(index).reasoning + value.reasoning).slice(0, 64000));
-                thinking = !!value.thinking;
             } else if (value.type === "done") {
+                finishThinking("completed");
                 completed = true;
-                history.setProperty(index, "state", value.limited ? "limited" : "done");
-                if (!history.get(index).body) {
-                    error = value.limited ? qsTr("The model reached its output limit before answering. Try Thinking → Off, or increase its output/context limit in Lemonade.") : history.get(index).reasoning ? qsTr("The model returned thinking without an answer. Try Thinking → Off and retry.") : qsTr("The model returned no answer. Try again or choose another model.");
+                const noAnswer = value.empty_answer === true || !history.get(index).body.trim();
+                history.setProperty(index, "state", value.limited ? "limited" : noAnswer ? "error" : "done");
+                if (Array.isArray(value.tool_context))
+                    history.setProperty(index, "toolContextJson", JSON.stringify(value.tool_context));
+                if (noAnswer && !error) {
+                    const usedTools = JSON.parse(history.get(index).toolActivitiesJson || "[]").length > 0;
+                    error = value.limited ? qsTr("The model reached its output limit before answering. Try Thinking → Off, or increase its output/context limit in Lemonade.") : usedTools ? qsTr("The model finished after tool calls without providing an answer. Review the results or retry.") : history.get(index).reasoning ? qsTr("The model returned thinking without an answer. Try Thinking → Off and retry.") : qsTr("The model returned no answer. Try again or choose another model.");
                 }
             } else if (value.type === "error") {
+                finishThinking("failed");
                 error = value.error || qsTr("Lemonade could not answer.");
+            } else if (value.type === "tool") {
+                finishThinking("completed");
+                applyToolActivity(value.activity);
             }
         } catch (_) {
+            finishThinking("failed");
             error = qsTr("Could not read the Lemonade reply.");
         }
     }
@@ -457,6 +607,8 @@ Singleton {
         property bool answered: false
         property int added: 0
         function finish(): void {
+            if (!active)
+                return;
             active = false;
             stdinEnabled = true;
             if (!answered)
@@ -539,7 +691,11 @@ Singleton {
                 op: root.pendingRequest.op,
                 generation: root.pendingRequest.generation,
                 aliases: root.pendingRequest.aliases,
-                model: root.pendingRequest.model
+                model: root.pendingRequest.model,
+                source: root.pendingRequest.source,
+                repository: root.pendingRequest.repository,
+                variant: root.pendingRequest.variant,
+                needs_vision: root.pendingRequest.needs_vision
             }) + "\n");
             stdinEnabled = false;
         }
@@ -565,6 +721,11 @@ Singleton {
                     root.downloads = value.downloads || [];
                     root.catalogueGeneration = value.generation ?? null;
                     root.catalogueAliases = value.aliases || {};
+                    if (value.installed_model && root.models.some(row => row.id === value.installed_model)) {
+                        root.preferredModel = value.installed_model;
+                        root.savePreferences();
+                        root.modelInstalled(value.installed_model);
+                    }
                     // A health refresh must not erase a failed reply.
                     if (value.error || root.pendingOperation !== "status" || !history.count)
                         root.error = value.error || "";
@@ -583,13 +744,25 @@ Singleton {
         property var payload: ({})
         property bool active: false
         function finish(): void {
+            if (!active)
+                return;
             active = false;
             stdinEnabled = true;
-            root.thinking = false;
+            root.finishThinking(root.cancelling ? "cancelled" : root.completed ? "completed" : "failed");
             if (history.count && !root.completed)
                 history.setProperty(history.count - 1, "state", root.cancelling ? "stopped" : "error");
             if (!root.completed && !root.cancelling && !root.error)
                 root.error = qsTr("Lemonade disconnected. Try the reply again.");
+            if (root.cancelling)
+                root.setPendingToolsCancelled();
+            else if (history.count) {
+                const index = history.count - 1;
+                const activities = JSON.parse(history.get(index).toolActivitiesJson || "[]").map(item => ["running", "pending_approval"].includes(item.state) ? Object.assign({}, item, {
+                        state: "failed",
+                        summary: qsTr("The backend disconnected; check the outcome before retrying.")
+                    }) : item);
+                history.setProperty(index, "toolActivitiesJson", JSON.stringify(activities));
+            }
             // Nobody is watching a reply that outlived the drawer.
             if (!root.observed && !root.cancelling && history.count)
                 root.notify(root.completed && !root.error ? qsTr("%1 finished replying.").arg(history.get(history.count - 1).modelName) : qsTr("The reply failed: %1").arg(root.error));
@@ -599,7 +772,6 @@ Singleton {
         stdinEnabled: true
         onStarted: {
             write(JSON.stringify(payload) + "\n");
-            stdinEnabled = false;
         }
         stdout: SplitParser {
             onRead: line => root.receive(line)

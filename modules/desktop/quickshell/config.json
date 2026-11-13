@@ -1,6 +1,7 @@
 {
     "packages": [
         "quickshell",
+        "ripgrep",
         "accountsservice",
         "zenity",
         "adwaita-icon-theme",
