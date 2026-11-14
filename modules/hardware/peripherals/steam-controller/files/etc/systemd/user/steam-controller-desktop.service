@@ -1,0 +1,21 @@
+[Unit]
+Description=Steam Controller desktop mapping with automatic Steam handoff
+PartOf=graphical-session.target
+After=graphical-session.target
+Requisite=graphical-session.target
+ConditionEnvironment=WAYLAND_DISPLAY
+ConditionEnvironment=HYPRLAND_INSTANCE_SIGNATURE
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/steam-controller-desktop
+RuntimeDirectory=steam-controller-desktop
+UMask=0077
+Slice=session.slice
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=8s
+KillMode=mixed
+
+[Install]
+WantedBy=graphical-session.target

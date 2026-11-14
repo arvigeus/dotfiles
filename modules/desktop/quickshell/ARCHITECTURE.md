@@ -42,6 +42,44 @@ release, focus loss, disablement or dismissal; key repeat remains one hold.
 `PassiveToolTip` never takes input. Scroll containers reveal keyboard/programmatic
 focus after layout settles; pointer focus does not scroll.
 
+`FocusNavigation.js` traverses Qt's focus chain inside the active surface, skipping
+hidden, disabled and background Space controls. Native item views are treated as
+one target rather than stepping through every instantiated delegate. Super+F9/F10 on
+`InteractionWindow` select the previous/next target without using Shift+Tab,
+which is the desktop's global Spaces shortcut. The Steam Controller emits these
+keys with Y plus horizontal stick motion. Drawer pages and the fullscreen Space
+host use the same traversal only for unhandled arrow keys; text editing, sliders
+and native catalogue navigation keep their own arrows. Programmatic initial
+focus gives ordinary controls a keyboard focus reason so they are highlighted.
+Native item views retain programmatic initial focus: giving them Tab focus can
+make Qt reposition a retained catalogue while its paging is settling.
+Catalogue arrows remain inside their native view at its edges; focus traversal
+is explicit through Super+F9/F10 rather than an edge arrow escaping to a toolbar.
+
+Spaces with primary tabs expose `navigationTabs` (the actual tab buttons) and
+`catalogueFocus` (their current grid/list). `SpaceHost` cycles enabled, visible
+tabs using the same clicked handlers as pointer input. Pointer clicks and
+Ctrl+PageUp/PageDown also request catalogue focus. The request waits for a hidden
+catalogue to reappear after asynchronous loading and is canceled when the Space
+hides/changes or the user focuses another control before results arrive. Focus
+uses the programmatic reason to preserve native paging/scroll behavior.
+
+Super+F11/F12 enter through Hyprland's controller global shortcuts in `shell.qml`.
+`SpaceHost.handleBumper()` routes them to tab switching in a Space, focus traversal
+in another interactive shell surface, or native Hyprland column focus/centering
+on the desktop. This keeps the service profile independent of window detection
+and avoids changing desktop windows behind an open Space. Holding Y still invokes
+the desktop workspace bindings directly. The controller and real Movies fixtures
+cover contextual routing, tab focus, delayed-result cancellation and native
+catalogue edge behavior.
+
+Spaces initializes focus when its first delegate is created, rather than binding
+to `Repeater.itemAt()` before delegates exist. Up/down select one Space per step;
+left/right move between a running Space and its close control. Return/Enter opens
+the selected entry once per press. The scrolling container reveals that focus.
+`test_controller_navigation.py` exercises opening focus, selection/activation,
+scroll reveal, focus traversal and preservation of native text/list arrows.
+
 Native QObject lists use `ScriptModel`. Keyed snapshots use `KeyedModel` and
 `ui/Models.js`, preserving delegates/focus while updating moved records.
 Quickshell 0.3.2's `ScriptModel.objectProp` can leave moved `modelData` stale.

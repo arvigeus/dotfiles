@@ -1,0 +1,64 @@
+{
+    "_": "Desktop navigation; hold Y for workspace controls",
+    "buttons": {
+        "A": {
+            "action": "button(Keys.KEY_ENTER)"
+        },
+        "B": {
+            "action": "button(Keys.KEY_ESC)"
+        },
+        "BACK": {
+            "action": "button(Keys.KEY_LEFTSHIFT) and button(Keys.KEY_TAB)"
+        },
+        "C": {
+            "action": "hold(turnoff(), button(Keys.KEY_LEFTMETA) and button(Keys.KEY_R), 1.5)"
+        },
+        "LB": {
+            "action": "mode(Y, button(Keys.KEY_LEFTMETA) and button(Keys.KEY_LEFTCTRL) and button(Keys.KEY_UP), button(Keys.KEY_LEFTMETA) and button(Keys.KEY_F11))"
+        },
+        "LGRIP": {
+            "action": "mode(Y, button(Keys.KEY_LEFTMETA) and button(Keys.KEY_LEFTCTRL) and button(Keys.KEY_LEFTSHIFT) and button(Keys.KEY_UP), button(Keys.KEY_LEFTMETA) and button(Keys.KEY_LEFTBRACE))"
+        },
+        "LPAD": {
+            "action": "button(Keys.BTN_MIDDLE)"
+        },
+        "LSTICKPRESS": {
+            "action": "mode(Y, button(Keys.KEY_LEFTMETA) and button(Keys.KEY_M), keyboard())"
+        },
+        "RB": {
+            "action": "mode(Y, button(Keys.KEY_LEFTMETA) and button(Keys.KEY_LEFTCTRL) and button(Keys.KEY_DOWN), button(Keys.KEY_LEFTMETA) and button(Keys.KEY_F12))"
+        },
+        "RGRIP": {
+            "action": "mode(Y, button(Keys.KEY_LEFTMETA) and button(Keys.KEY_LEFTCTRL) and button(Keys.KEY_LEFTSHIFT) and button(Keys.KEY_DOWN), button(Keys.KEY_LEFTMETA) and button(Keys.KEY_RIGHTBRACE))"
+        },
+        "RPAD": {
+            "action": "button(Keys.BTN_LEFT)"
+        },
+        "START": {
+            "action": "button(Keys.KEY_LEFTCTRL) and button(Keys.KEY_LEFTSHIFT) and button(Keys.KEY_TAB)"
+        },
+        "X": {
+            "action": "button(Keys.KEY_SPACE)"
+        },
+        "Y": {}
+    },
+    "gyro": {},
+    "is_template": false,
+    "menus": {},
+    "pad_left": {
+        "action": "feedback(LEFT, 4096, 16, ball(XY(mouse(Rels.REL_HWHEEL, -1.0), mouse(Rels.REL_WHEEL, -1.0))))"
+    },
+    "pad_right": {
+        "action": "smooth(8, 0.78, 2.0, feedback(RIGHT, 256, ball(mouse())))"
+    },
+    "lstick": {
+        "action": "deadzone(ROUND, 6000, mode(Y, dpad(None, None, button(Keys.KEY_LEFTMETA) and button(Keys.KEY_F9), button(Keys.KEY_LEFTMETA) and button(Keys.KEY_F10)), dpad(button(Keys.KEY_UP), button(Keys.KEY_DOWN), button(Keys.KEY_LEFT), button(Keys.KEY_RIGHT))))"
+    },
+    "trigger_left": {
+        "action": "button(Keys.BTN_RIGHT)"
+    },
+    "trigger_right": {
+        "action": "button(Keys.BTN_LEFT)"
+    },
+    "version": 1.6
+}

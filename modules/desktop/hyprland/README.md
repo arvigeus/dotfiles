@@ -60,6 +60,10 @@ The Display drawer offers Night light and Keep awake. If Night light is
 unavailable, check `systemctl --user status hyprsunset.service`.
 Edit `~/.config/hypr/hyprsunset.conf` to set its temperature or timed profiles.
 
+The [original Steam Controller](../../hardware/peripherals/steam-controller/README.md)
+also controls the desktop without Steam, with launcher and drawer buttons and
+automatic handoff when Steam starts.
+
 ## Screenshots and recording
 
 | Shortcut             | Action                              |

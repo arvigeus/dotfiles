@@ -16,6 +16,8 @@ Item {
     property var backdropTarget: null
     property real toolbarHeight: 46
     property var initialFocus: searchOpen ? search : tab === "posts" ? postsView : gridMode ? grid : rail
+    readonly property Item catalogueFocus: tab === "posts" ? postsView : gridMode ? grid : rail
+    readonly property list<Item> navigationTabs: [feedTab, postsTab]
     property bool initialized: false
     property bool initializing: false
     property bool loading: false
@@ -563,27 +565,21 @@ Item {
             Row {
                 id: tabs
                 spacing: 4
-                Repeater {
-                    model: [
-                        {
-                            id: "feed",
-                            name: "Discover",
-                            icon: "globe"
-                        },
-                        {
-                            id: "posts",
-                            name: "Posts",
-                            icon: "file-text"
-                        }
-                    ]
-                    MovieTab {
-                        required property var modelData
-                        objectName: "streamingTab:" + modelData.id
-                        text: modelData.name
-                        iconName: modelData.icon
-                        highlighted: root.tab === modelData.id
-                        onClicked: root.switchTab(modelData.id)
-                    }
+                MovieTab {
+                    id: feedTab
+                    objectName: "streamingTab:feed"
+                    text: "Discover"
+                    iconName: "globe"
+                    highlighted: root.tab === "feed"
+                    onClicked: root.switchTab("feed")
+                }
+                MovieTab {
+                    id: postsTab
+                    objectName: "streamingTab:posts"
+                    text: "Posts"
+                    iconName: "file-text"
+                    highlighted: root.tab === "posts"
+                    onClicked: root.switchTab("posts")
                 }
             }
         }

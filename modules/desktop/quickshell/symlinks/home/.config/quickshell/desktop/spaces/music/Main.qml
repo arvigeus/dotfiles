@@ -16,6 +16,8 @@ Item {
     property var backdropTarget: null
     property real toolbarHeight: 46
     property var initialFocus: searchOpen ? search : list
+    readonly property Item catalogueFocus: list
+    readonly property list<Item> navigationTabs: [libraryTab, browseTab]
     property bool initialized: false
     property string section: "library"
     property var viewStates: ({})
@@ -189,9 +191,7 @@ Item {
         const isLocalFile = /^file:\/\/(?:localhost)?\//i.test(value);
         if (!isLocalFile && !/^https?:\/\//i.test(value))
             return;
-        const path = isLocalFile
-            ? value.replace(/^file:\/\/(?:localhost)?/i, "")
-            : value.replace(/^https?:\/\/[^/?#]*/i, "");
+        const path = isLocalFile ? value.replace(/^file:\/\/(?:localhost)?/i, "") : value.replace(/^https?:\/\/[^/?#]*/i, "");
         const name = path.split(/[?#]/, 1)[0].split('/').filter(Boolean).pop();
         let title = name || value;
         if (name) {
@@ -201,15 +201,17 @@ Item {
                 title = name;
             }
         }
-        playback.playSongs([{
-            id: uri,
-            kind: "song",
-            source: "mpris-uri",
-            uri: uri,
-            title: title,
-            artist: "",
-            duration: 0
-        }], 0);
+        playback.playSongs([
+            {
+                id: uri,
+                kind: "song",
+                source: "mpris-uri",
+                uri: uri,
+                title: title,
+                artist: "",
+                duration: 0
+            }
+        ], 0);
     }
     function fileAction(action, song) {
         cacheService.startJob("file-job", {
@@ -948,6 +950,7 @@ Item {
             onClicked: root.back()
         }
         MovieTab {
+            id: libraryTab
             objectName: "musicLibraryTab"
             text: "My Library"
             iconName: "music"
@@ -955,6 +958,7 @@ Item {
             onClicked: root.changeSection("library")
         }
         MovieTab {
+            id: browseTab
             objectName: "musicDiscoverTab"
             text: "Browse"
             iconName: "globe"

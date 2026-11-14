@@ -17,6 +17,8 @@ Item {
     property var toolbarTarget: null
     property var backdropTarget: null
     property var initialFocus: searchOpen ? search : gridMode ? grid : rail
+    readonly property Item catalogueFocus: gridMode ? grid : rail
+    readonly property list<Item> navigationTabs: [browseTab, favoritesTab]
     property real toolbarHeight: 46
     property bool initialized: false
     property string savedProvider: ""
@@ -648,6 +650,7 @@ Item {
         visible: root.active
         spacing: 8
         MovieButton {
+            id: browseTab
             iconName: "globe"
             text: qsTr("Browse")
             highlighted: !root.favoritesView
@@ -657,6 +660,7 @@ Item {
             }
         }
         MovieButton {
+            id: favoritesTab
             iconName: "star"
             text: qsTr("Favorites")
             highlighted: root.favoritesView

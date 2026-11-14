@@ -4,6 +4,11 @@ A Quickshell bar and drawers for apps, workspaces, devices, capture, calendar,
 notifications and system maintenance. **Win+R** opens application search;
 **Win+1 / Shift+Tab** opens Spaces; **Ctrl+Shift+Tab** opens Performance.
 In application search, **Ctrl+D** favorites the selected app.
+The [Steam Controller](../../hardware/peripherals/steam-controller/README.md)
+can browse Spaces and their controls without a mouse; hold **Y + stick left/right**
+to move between catalogues, toolbars and detail actions.
+Bumpers switch a Space's primary tabs; **Ctrl+PageUp / Ctrl+PageDown** does the
+same from the keyboard. Changing tabs focuses the catalogue for arrow navigation.
 Use `/movie home`, `/series severance`, `/episode severance S01E02`,
 `/music`, `/song`, `/album`, `/artist`, `/radio`, `/tv`, `/game` or `/youtube`
 followed by search text to search Spaces. Type `/` to discover categories and

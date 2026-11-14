@@ -12,6 +12,8 @@ FocusScope {
 
     property bool active: false
     property var initialFocus: searchOpen ? search : gridMode ? grid : rail
+    readonly property Item catalogueFocus: gridMode ? grid : rail
+    readonly property list<Item> navigationTabs: [libraryTab, browseTab, favoritesTab]
     property var host
     property string kind: "movie"
     readonly property string spaceId: kind === "tv" ? "series" : "movies"
@@ -495,6 +497,14 @@ FocusScope {
         } else {
             selectionDelay.restart();
         }
+    }
+
+    function activateCatalogue(title, autoRepeat) {
+        if (!title?.id || autoRepeat)
+            return;
+        selectTitle(title);
+        if (kind === "movie" && watchButton.enabled)
+            watchButton.triggered(watchButton.currentIndex);
     }
 
     function openTitle(title) {
@@ -1176,6 +1186,7 @@ FocusScope {
         spacing: 8
 
         MovieTab {
+            id: libraryTab
             objectName: "mediaLibraryTab"
             iconName: "folder-open"
             text: "My Library"
@@ -1193,6 +1204,7 @@ FocusScope {
         }
 
         MovieTab {
+            id: browseTab
             objectName: "mediaBrowseTab"
             iconName: "globe"
             text: "Browse"
@@ -1206,6 +1218,7 @@ FocusScope {
         }
 
         MovieTab {
+            id: favoritesTab
             objectName: "mediaFavoritesTab"
             iconName: "star"
             text: "Favorites"
@@ -1533,13 +1546,13 @@ FocusScope {
                 Keys.onPressed: event => {
                     return root.releaseLinkedSelection(event);
                 }
-                Keys.onReturnPressed: {
+                Keys.onReturnPressed: event => {
                     if (currentItem)
-                        root.selectTitle(currentItem.title);
+                        root.activateCatalogue(currentItem.title, event.isAutoRepeat);
                 }
-                Keys.onEnterPressed: {
+                Keys.onEnterPressed: event => {
                     if (currentItem)
-                        root.selectTitle(currentItem.title);
+                        root.activateCatalogue(currentItem.title, event.isAutoRepeat);
                 }
                 onContentYChanged: pagination.restart()
 
@@ -1633,6 +1646,7 @@ FocusScope {
                     spacing: 8
 
                     SplitButton {
+                        id: watchButton
                         objectName: "onlineButton"
                         showLoading: false
                         busy: root.playLoading
@@ -2216,13 +2230,13 @@ FocusScope {
                 Keys.onPressed: event => {
                     return root.releaseLinkedSelection(event);
                 }
-                Keys.onReturnPressed: {
+                Keys.onReturnPressed: event => {
                     if (currentItem)
-                        root.selectTitle(currentItem.title);
+                        root.activateCatalogue(currentItem.title, event.isAutoRepeat);
                 }
-                Keys.onEnterPressed: {
+                Keys.onEnterPressed: event => {
                     if (currentItem)
-                        root.selectTitle(currentItem.title);
+                        root.activateCatalogue(currentItem.title, event.isAutoRepeat);
                 }
                 onContentXChanged: pagination.restart()
 

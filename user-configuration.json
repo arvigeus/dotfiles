@@ -453,6 +453,7 @@
             "desktop-capture.socket",
             "cliphist@text.service",
             "cliphist@image.service",
+            "steam-controller-desktop.service",
             "power-session.path",
             "gnome-keyring-daemon.service"
         ],
@@ -1230,6 +1231,21 @@
             {
                 "source": "modules/hardware/peripherals/logitech/files/etc/logid.cfg",
                 "target": "/etc/logid.cfg",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/hardware/peripherals/steam-controller/files/etc/systemd/user/steam-controller-desktop.service",
+                "target": "/etc/systemd/user/steam-controller-desktop.service",
+                "mode": "0644"
+            },
+            {
+                "source": "modules/hardware/peripherals/steam-controller/files/usr/local/bin/steam-controller-desktop",
+                "target": "/usr/local/bin/steam-controller-desktop",
+                "mode": "0755"
+            },
+            {
+                "source": "modules/hardware/peripherals/steam-controller/files/usr/local/share/dotfiles/steam-controller/Desktop.sccprofile",
+                "target": "/usr/local/share/dotfiles/steam-controller/Desktop.sccprofile",
                 "mode": "0644"
             },
             {
@@ -3636,6 +3652,10 @@
                 "target": "home/.config/quickshell/desktop/ui/DrawerPage.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/FocusNavigation.js",
+                "target": "home/.config/quickshell/desktop/ui/FocusNavigation.js"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/HoldButton.qml",
                 "target": "home/.config/quickshell/desktop/ui/HoldButton.qml"
             },
@@ -4055,6 +4075,7 @@
         "evtest",
         "chaotic-aur/logiops",
         "solaar",
+        "sc-controller",
         "btrfs-progs",
         "lvm2",
         "cryptsetup",

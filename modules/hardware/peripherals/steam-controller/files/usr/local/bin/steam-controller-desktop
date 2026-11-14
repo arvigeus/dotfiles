@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""Run the original Steam Controller desktop mapper while Steam is closed."""
+
+from copy import deepcopy
+import fcntl
+import json
+import logging
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import threading
+
+PROFILE = '/usr/local/share/dotfiles/steam-controller/Desktop.sccprofile'
+POLL_SECONDS = 0.5
+STOP_SECONDS = 5
+LOG = logging.getLogger('steam-controller-desktop')
+
+
+class ExitOnMapperFailure:
+    """Let systemd recreate drivers instead of retrying with stale SCC state."""
+
+    def run(self):
+        try:
+            return super().run()
+        except Exception:
+            LOG.exception(
+                'SC Controller event loop failed; restarting with fresh state'
+            )
+            try:
+                self.sigterm()
+            finally:
+                raise SystemExit(1)
+
+
+def run_mapper():
+    from scc.paths import get_daemon_socket, get_pid_file
+    from scc.sccdaemon import SCCDaemon
+    from scc.tools import init_logging
+
+    init_logging()
+
+    class ManagedDaemon(ExitOnMapperFailure, SCCDaemon):
+        pass
+
+    daemon = ManagedDaemon(get_pid_file(), get_daemon_socket())
+    daemon.set_default_profile(PROFILE)
+    daemon.start(foreground=True)
+
+
+def steam_running(proc=Path('/proc'), uid=None):
+    """Check the actual client, including Flatpak, without starting Steam."""
+    uid = os.getuid() if uid is None else uid
+    for process in proc.iterdir():
+        if not process.name.isdecimal():
+            continue
+        try:
+            if process.stat().st_uid != uid:
+                continue
+            if (process / 'comm').read_text().strip() != 'steam':
+                continue
+            # A zombie must not prevent the desktop mapping from returning.
+            state = (process / 'stat').read_text().rsplit(')', 1)[1].split()[0]
+            if state != 'Z':
+                return True
+        except (OSError, IndexError):
+            # Processes can exit between directory enumeration and each read.
+            continue
+    return False
+
+
+def mapper_environment(runtime):
+    """Keep SCC's mutable configuration separate from its ordinary GUI."""
+    directory = runtime / 'scc'
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    config_path = directory / 'config.json'
+    # SCC reads its language setting during import, before Config creates a file.
+    config_path.write_text('{}')
+    previous_config = os.environ.get('XDG_CONFIG_HOME')
+    os.environ['XDG_CONFIG_HOME'] = str(runtime)
+    from scc.config import Config
+
+    if previous_config is None:
+        del os.environ['XDG_CONFIG_HOME']
+    else:
+        os.environ['XDG_CONFIG_HOME'] = previous_config
+    config = deepcopy(Config.DEFAULTS)
+    enabled = {'sc_by_cable', 'sc_dongle', 'sc_by_bt'}
+    config['drivers'] = {name: name in enabled for name in config['drivers']}
+    config['fix_xinput'] = False
+    config['gui']['news']['enabled'] = False
+    config_path.write_text(json.dumps(config))
+    return dict(os.environ, XDG_CONFIG_HOME=str(runtime))
+
+
+def stop_mapper(child):
+    """Allow SCC to restore firmware mode and reattach kernel interfaces."""
+    if child.poll() is None:
+        try:
+            # SCC closes its OSD children after releasing the controller. Sending
+            # TERM to the whole group first breaks that orderly notification.
+            child.terminate()
+        except ProcessLookupError:
+            pass
+        try:
+            child.wait(timeout=STOP_SECONDS)
+        except subprocess.TimeoutExpired:
+            LOG.error('Mapper did not release the controller within %s s', STOP_SECONDS)
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            child.wait()
+    else:
+        child.wait()
+
+
+def supervise(stopped, environment, is_steam_running=steam_running, launch=None):
+    launch = subprocess.Popen if launch is None else launch
+    child = None
+    previous = None
+    try:
+        while not stopped.is_set():
+            steam = is_steam_running()
+            if steam != previous:
+                LOG.info(
+                    'Steam owns the controller' if steam else 'Desktop mapping active'
+                )
+                previous = steam
+            if steam and child is not None:
+                stop_mapper(child)
+                child = None
+            elif not steam and child is None:
+                child = launch(
+                    [sys.executable, str(Path(__file__).resolve()), 'mapper'],
+                    env=environment,
+                    start_new_session=True,
+                )
+            if child is not None and child.poll() is not None:
+                raise RuntimeError(
+                    f'SC Controller exited with status {child.returncode}'
+                )
+            stopped.wait(POLL_SECONDS)
+    finally:
+        if child is not None:
+            stop_mapper(child)
+
+
+def main():
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+    if sys.argv[1:] == ['mapper']:
+        run_mapper()
+        return 0
+    if sys.argv[1:]:
+        LOG.error('Usage: steam-controller-desktop')
+        return 2
+    runtime = Path(os.environ['XDG_RUNTIME_DIR']) / 'steam-controller-desktop'
+    runtime.mkdir(mode=0o700, exist_ok=True)
+    with (runtime / 'supervisor.lock').open('w') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            LOG.error('Another desktop controller supervisor is running')
+            return 1
+        stopped = threading.Event()
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            signal.signal(signum, lambda *_: stopped.set())
+        try:
+            supervise(stopped, mapper_environment(runtime))
+        except (OSError, RuntimeError) as error:
+            LOG.error('%s', error)
+            return 1
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

@@ -17,6 +17,8 @@ Item {
     property Item toolbarTarget: null
     readonly property int toolbarHeight: 46
     readonly property var initialFocus: searchOpen ? search : gridMode ? grid : rail
+    readonly property Item catalogueFocus: gridMode ? grid : rail
+    readonly property list<Item> navigationTabs: [libraryTab, browseTab, favoritesTab]
     property var titles: []
     property var allTitles: []
     property bool hideNsfw: true
@@ -785,6 +787,7 @@ Item {
         visible: root.active
         spacing: 8
         MovieTab {
+            id: libraryTab
             objectName: "libraryTab"
             text: "My Library"
             iconName: "gamepad-2"
@@ -792,6 +795,7 @@ Item {
             onClicked: root.showMode("library")
         }
         MovieTab {
+            id: browseTab
             objectName: "discoverTab"
             text: "Browse"
             iconName: "globe"
@@ -799,6 +803,7 @@ Item {
             onClicked: root.showMode("discover")
         }
         MovieTab {
+            id: favoritesTab
             objectName: "favoritesTab"
             text: "Favorites"
             iconName: "star"

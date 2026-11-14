@@ -41,6 +41,115 @@ def setup(root):
 class MoviesSpaceTests(unittest.TestCase):
     run_qml = support.run_qml
 
+    def test_catalogue_enter_uses_the_current_watch_choice_once(self):
+        def playback_setup(root):
+            setup(root)
+            (root / 'spaces/movies/backend.py').write_text(
+                """import sys,time
+sys.path.insert(0,%r)
+from spaces.movies.backend import Backend
+from spaces.movies.worker import serve
+backend=Backend()
+plays=0
+def handle(request):
+ global plays
+ if request['op']=='play':
+  plays+=1;number=plays;time.sleep(.15)
+  raise ValueError(f"fixture {number} online={request['online']} provider={request['provider']}")
+ return backend.handle(request)
+serve(handle,workers=8)
+"""
+                % str(support.DESKTOP)
+            )
+
+        self.run_qml(
+            """import QtQuick
+import QtTest
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ property int stage:0
+ property double blockedAt:0
+ InteractionState{id:interactions}
+ SpaceHost{id:host;interactionState:interactions}
+ TestCase{id:input;when:false;parent:host.contentItem}
+ function check(value,message){if(!value)throw Error(message);}
+ Timer{interval:50;repeat:true;running:true;onTriggered:{try{
+  if(stage===0){SpaceState.open("movies",Quickshell.screens[0]);stage++;return;}
+  const page=host.currentPage;if(!page||!page.selected.id||page.busy)return;
+  const view=page.catalogueFocus;
+  if(stage===1){
+   page.gridMode=false;page.providers=["First provider","Second provider"];
+   page.applyLocalFiles([{path:"/nonexistent/fixture.mkv",torrent:false}]);page.watchIndex=0;
+   stage++;return;
+  }
+  if(stage===2){
+   view.forceActiveFocus();input.keyClick(Qt.Key_Return);
+   check(page.playLoading,"rail A did not start Watch locally");
+   input.keyClick(Qt.Key_Return);stage++;return;
+  }
+  if(stage===3){
+   check(page.detailError==="fixture 1 online=False provider=0","local choice or busy guard failed: "+page.detailError);
+   page.activateCatalogue(view.currentItem.title,true);
+   check(!page.playLoading,"auto-repeat started playback");
+   page.gridMode=true;page.watchIndex=2;stage++;return;
+  }
+  if(stage===4){
+   view.forceActiveFocus();input.keyClick(Qt.Key_Enter);
+   check(page.playLoading,"grid A did not start Watch online");stage++;return;
+  }
+  if(stage===5){
+   check(page.detailError==="fixture 2 online=True provider=1","selected online provider was replaced: "+page.detailError);
+   page.applyLocalFiles([]);view.forceActiveFocus();input.keyClick(Qt.Key_Return);
+   check(page.playLoading,"online-only movie did not start");stage++;return;
+  }
+  if(stage===6){
+   check(page.detailError==="fixture 3 online=True provider=0","online-only choice failed: "+page.detailError);
+   page.providers=[];input.keyClick(Qt.Key_Return);blockedAt=Date.now();stage++;return;
+  }
+  if(Date.now()-blockedAt<250)return;
+  check(!page.playLoading&&page.detailError==="fixture 3 online=True provider=0","disabled Watch action started playback");
+  SpaceState.close("movies");console.log("DISPLAY_PASS");Qt.quit();
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+ Timer{interval:8000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",root.stage);Qt.quit();}}
+}""",
+            setup=playback_setup,
+        )
+
+    def test_primary_tabs_restore_catalogue_focus_for_controller_and_keyboard(self):
+        self.run_qml(
+            """import QtQuick
+import QtTest
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ property int stage:0
+ InteractionState{id:interactions}
+ SpaceHost{id:host;interactionState:interactions}
+ TestCase{id:input;when:false;parent:host.contentItem}
+ function check(value,message){if(!value)throw Error(message);}
+ Timer{interval:80;repeat:true;running:true;onTriggered:{try{
+  if(stage===0){SpaceState.open("movies",Quickshell.screens[0]);stage++;return;}
+  const page=host.currentPage;if(!page||page.loading||!page.titles.length)return;
+  if(stage===1){
+   check(page.navigationTabs.length===3,"primary tabs not exposed");
+   host.stepTab(-1);check(page.localMode,"left bumper did not select My Library");
+   host.stepTab(1);check(!page.localMode&&!page.favorites,"right bumper did not return to Browse");
+   stage++;return;
+  }
+  check(page.catalogueFocus.activeFocus,"Browse kept toolbar focus");
+  check(page.catalogueFocus.currentIndex>=0,"Browse has no keyboard selection");
+  input.keyClick(Qt.Key_Right);
+  check(page.catalogueFocus.activeFocus,"stick left the catalogue immediately");
+  SpaceState.close("movies");console.log("DISPLAY_PASS");Qt.quit();
+ }catch(e){console.error("DISPLAY_FAIL",stage,e);Qt.quit();}}}
+ Timer{interval:7000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout",root.stage);Qt.quit();}}
+}""",
+            setup=setup,
+        )
+
     def test_header_refresh_scans_library_and_reviews_only_unidentified_files(
         self,
     ):

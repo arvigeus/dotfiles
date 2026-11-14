@@ -41,6 +41,8 @@ bind("SHIFT + TAB", hl.dsp.global("desktop:spaces"), "Open Spaces")
 bind("CTRL + ALT + DELETE", app(terminal .. " btop"), "Open btop")
 bind(mainMod .. " + SHIFT + P", hl.dsp.global("desktop:performance"), "Open Performance")
 bind("CTRL + SHIFT + TAB", hl.dsp.global("desktop:performance"), "Open Performance")
+bind(mainMod .. " + F11", hl.dsp.global("desktop:controller-previous"), "Controller previous tab or window")
+bind(mainMod .. " + F12", hl.dsp.global("desktop:controller-next"), "Controller next tab or window")
 -- Screenshots may open an editor, so they run as applications too.
 bind("PRINT", app("desktop-screenshot region"), "Select screenshot area")
 bind(mainMod .. " + SHIFT + S", app("desktop-screenshot region"), "Select screenshot area")

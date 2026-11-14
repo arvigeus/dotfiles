@@ -4,6 +4,7 @@ import QtQuick.Window
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Wayland
+import "FocusNavigation.js" as FocusNavigation
 
 PanelWindow {
     id: root
@@ -55,7 +56,15 @@ PanelWindow {
     // application focus instead of dispatching to a possibly stale saved window.
     function focusInitial(): void {
         if (focusContext.Window.active && opened && initialFocus)
-            initialFocus.forceActiveFocus();
+            initialFocus.forceActiveFocus(FocusNavigation.collectionFor(root.contentItem, initialFocus) ? Qt.OtherFocusReason : Qt.TabFocusReason);
+    }
+
+    function currentFocusItem(): Item {
+        return focusContext.Window.window?.activeFocusItem ?? null;
+    }
+
+    function stepFocus(direction: int): void {
+        FocusNavigation.step(root.contentItem, currentFocusItem(), direction);
     }
 
     // Lazy content can finish after native activation, or change while the same
@@ -75,6 +84,17 @@ PanelWindow {
             else
                 root.dismiss();
         }
+    }
+
+    Shortcut {
+        sequence: "Meta+F9"
+        enabled: root.opened && root.visible
+        onActivated: root.stepFocus(-1)
+    }
+    Shortcut {
+        sequence: "Meta+F10"
+        enabled: root.opened && root.visible
+        onActivated: root.stepFocus(1)
     }
 
     Rectangle {

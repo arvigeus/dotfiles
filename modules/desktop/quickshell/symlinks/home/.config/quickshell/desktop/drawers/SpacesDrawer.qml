@@ -10,6 +10,11 @@ DrawerPage {
     id: root
     property var service: SessionService
     property var launch: argv => Apps.launch(argv)
+    function focusEntry(index: int, closing: bool): void {
+        const row = entries.itemAt(Math.max(0, Math.min(entries.count - 1, index)));
+        if (row)
+            (closing && row.closeButton.visible ? row.closeButton : row.entryButton).forceActiveFocus(Qt.TabFocusReason);
+    }
     headerActions: Component {
         ProfileButton {
             active: root.active
@@ -34,10 +39,18 @@ DrawerPage {
             Layout.fillHeight: true
             contentSpacing: 8
             Repeater {
+                id: entries
                 model: SpaceState.entries
+                onItemAdded: (index, item) => {
+                    if (index === 0)
+                        root.initialFocus = item.entryButton;
+                }
                 Item {
                     id: row
+                    required property int index
                     required property var modelData
+                    readonly property alias entryButton: entry
+                    readonly property alias closeButton: closeEntry
                     Layout.fillWidth: true
                     Layout.preferredHeight: 52
                     readonly property bool highlighted: rowHover.hovered || entry.visualFocus || closeEntry.visualFocus
@@ -70,6 +83,18 @@ DrawerPage {
                             iconName: modelData.icon
                             Accessible.description: SpaceState.runningIds.includes(modelData.id) ? qsTr("Running") : qsTr("Open %1").arg(modelData.name)
                             onClicked: SpaceState.open(modelData.id, root.screen)
+                            Keys.onUpPressed: root.focusEntry(row.index - 1, false)
+                            Keys.onDownPressed: root.focusEntry(row.index + 1, false)
+                            Keys.onRightPressed: if (closeEntry.visible)
+                                closeEntry.forceActiveFocus(Qt.TabFocusReason)
+                            Keys.onReturnPressed: event => {
+                                if (!event.isAutoRepeat)
+                                    entry.clicked();
+                            }
+                            Keys.onEnterPressed: event => {
+                                if (!event.isAutoRepeat)
+                                    entry.clicked();
+                            }
                             contentItem: RowLayout {
                                 spacing: 14
                                 Icon {
@@ -93,6 +118,17 @@ DrawerPage {
                             iconName: "x"
                             text: qsTr("Close %1").arg(row.modelData.name)
                             onClicked: SpaceState.close(row.modelData.id)
+                            Keys.onUpPressed: root.focusEntry(row.index - 1, true)
+                            Keys.onDownPressed: root.focusEntry(row.index + 1, true)
+                            Keys.onLeftPressed: entry.forceActiveFocus(Qt.TabFocusReason)
+                            Keys.onReturnPressed: event => {
+                                if (!event.isAutoRepeat)
+                                    closeEntry.clicked();
+                            }
+                            Keys.onEnterPressed: event => {
+                                if (!event.isAutoRepeat)
+                                    closeEntry.clicked();
+                            }
                         }
                     }
                 }

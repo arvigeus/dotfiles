@@ -36,7 +36,20 @@ ShellRoot {
         interactionState: interactions
     }
     SpaceHost {
+        id: spaceHost
         interactionState: interactions
+    }
+    GlobalShortcut {
+        appid: "desktop"
+        name: "controller-previous"
+        description: qsTr("Previous Space tab or desktop window")
+        onPressed: spaceHost.handleBumper(-1)
+    }
+    GlobalShortcut {
+        appid: "desktop"
+        name: "controller-next"
+        description: qsTr("Next Space tab or desktop window")
+        onPressed: spaceHost.handleBumper(1)
     }
     WallpaperRuntime {
         id: wallpaperRuntime

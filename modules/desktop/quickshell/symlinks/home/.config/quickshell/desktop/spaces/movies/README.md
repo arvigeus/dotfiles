@@ -9,6 +9,8 @@ the OpenSubtitles account or a player command, or Movies refuses it. A TMDB key
 enables discovery; OMDb is an optional search/detail fallback. Playback providers
 and OpenSubtitles are optional.
 Player/browser windows run independently.
+In the poster rail or grid, **Enter / controller A** starts the selected movie
+using the current **Watch locally / Watch online** choice.
 
 For downloads, enable qBittorrent’s Web UI and search plugins; configure its
 shared connection in `~/.config/quickshell/desktop/integrations/torrents.json` using

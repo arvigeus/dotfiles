@@ -1,5 +1,7 @@
 import QtQuick
+import QtQuick.Window
 import Quickshell
+import "FocusNavigation.js" as FocusNavigation
 
 // Each category owns its content and feature-local services. Bind discovery,
 // subscriptions and timers to active, which becomes false as soon as input is
@@ -8,6 +10,7 @@ import Quickshell
 // transient tree; avoid eager service imports in the catalogue/host. A list-heavy
 // page can supply its own virtualized view. screen is set before activation.
 FocusScope {
+    id: root
     property bool active: false
     property ShellScreen screen: null
     property Item initialFocus: null
@@ -15,4 +18,9 @@ FocusScope {
     // An open popup can consume Escape before the host dismisses the page.
     property var escapeHandler: null
     signal closeRequested
+
+    Keys.priority: Keys.AfterItem
+    Keys.onPressed: event => {
+        event.accepted = root.active && FocusNavigation.arrow(root, root.Window.window?.activeFocusItem, event);
+    }
 }

@@ -18,6 +18,8 @@ Item {
     property var backdropTarget: null
     property real toolbarHeight: 46
     property var initialFocus: searchOpen ? search : gridMode ? grid : rail
+    readonly property Item catalogueFocus: gridMode ? grid : rail
+    readonly property list<Item> navigationTabs: [libraryTab, browseTab, favoritesTab]
     property bool initialized: false
     property bool needsBrowse: false
     property bool needsLocalRefresh: false
@@ -846,6 +848,7 @@ Item {
         visible: root.active
         spacing: 8
         MovieTab {
+            id: libraryTab
             objectName: "booksLibraryTab"
             iconName: "folder-open"
             text: "My Library"
@@ -863,6 +866,7 @@ Item {
             }
         }
         MovieTab {
+            id: browseTab
             objectName: "booksBrowseTab"
             iconName: "globe"
             text: "Browse"
@@ -876,6 +880,7 @@ Item {
             }
         }
         MovieTab {
+            id: favoritesTab
             objectName: "booksFavoritesTab"
             iconName: "star"
             text: "Favorites"

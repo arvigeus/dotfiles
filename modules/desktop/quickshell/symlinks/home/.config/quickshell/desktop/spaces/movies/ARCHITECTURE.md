@@ -47,6 +47,15 @@ file inventory, preferring a matching local file, then the first Watch online
 provider. Hiding the page, changing title or opening another card cancels queued
 card playback before it starts.
 
+Return/Enter on the Movies catalogue rail/grid triggers the current Watch split
+button action, preserving its local/online selection and provider index. Disabled
+or pending Watch actions and key auto-repeat do not submit another playback
+request. Series catalogue activation still selects the title so episode choice
+remains explicit; filmography activation also remains title selection.
+`test_catalogue_enter_uses_the_current_watch_choice_once` exercises local,
+explicit online, online-only, busy and unavailable cases with a non-launching
+worker fixture.
+
 `ProgressiveImage` owns cached preview/full layers. Backdrops retain their old
 image for up to one second, then use the current poster until the new backdrop
 is ready; failure retains the poster. Buffers reset on source changes. Pictures
