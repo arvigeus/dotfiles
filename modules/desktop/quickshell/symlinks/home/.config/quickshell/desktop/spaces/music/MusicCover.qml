@@ -12,6 +12,7 @@ Rectangle {
     // The identity the current image belongs to; rows scrolling back reuse it.
     property string shownIdentity: ""
     readonly property bool imageReady: cover.status === Image.Ready
+    readonly property string resolvedSource: imageReady ? String(cover.source) : ""
     readonly property string identity: JSON.stringify([record?.source, record?.account, record?.albumId || record?.id, record?.localPath, record?.cover, record?.coverVersion, String(previewSource)])
     color: "#211b24"
     radius: 4

@@ -26,6 +26,28 @@ ColumnLayout {
             objectName: "audioPlayer:" + modelData.dbusName
             Layout.fillWidth: true
             spacing: 4
+            Rectangle {
+                id: cover
+                objectName: player.objectName + ":cover"
+                readonly property string artUrl: player.modelData.trackArtUrl || ""
+                visible: !!artUrl
+                Layout.preferredWidth: visible ? 40 : 0
+                Layout.minimumWidth: 0
+                Layout.preferredHeight: 40
+                Layout.minimumHeight: 0
+                clip: true
+                color: "#211b24"
+                radius: 4
+                Accessible.name: qsTr("Track cover")
+                Image {
+                    anchors.fill: parent
+                    source: cover.artUrl
+                    asynchronous: true
+                    fillMode: Image.PreserveAspectCrop
+                    sourceSize.width: 80
+                    sourceSize.height: 80
+                }
+            }
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0

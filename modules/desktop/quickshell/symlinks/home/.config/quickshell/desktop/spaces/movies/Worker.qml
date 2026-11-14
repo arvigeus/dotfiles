@@ -24,6 +24,7 @@ Item {
     property var startupRequests: []
     signal failed(string message)
     signal ready
+    signal workerEvent(var payload)
 
     function settle(id, result, error, errorCode) {
         const pending = callbacks[id];
@@ -120,7 +121,13 @@ Item {
                 let response;
                 try {
                     response = JSON.parse(data);
-                    if (!response || response.id === undefined)
+                    if (!response)
+                        throw new Error("missing response");
+                    if (response.event !== undefined) {
+                        root.workerEvent(response.event);
+                        return;
+                    }
+                    if (response.id === undefined)
                         throw new Error("missing response id");
                 } catch (exception) {
                     const message = root.serviceName + " returned an unreadable response. Retry the request.";

@@ -17,6 +17,9 @@ editing supports MP3, FLAC and M4A and keeps the song's other tags. Failed uploa
 retry. An unavailable field stays marked as not loaded; typing replaces its value,
 and its clear button explicitly removes it.
 
+The bottom player shows the current cover and opens song info. MPRIS controls map
+transport, seeking, shuffle and repeat back to the active queue.
+
 The path and **Move** action at the bottom are separate from metadata editing.
 Moves preserve the audio extension and do not download uncached songs.
 The notifications bell holds transfer progress and controls.

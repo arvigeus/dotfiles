@@ -28,6 +28,7 @@ from spaces.books.jobs import Jobs, check_cancelled, current_job, progress
 from spaces.movies.local import LocalLibrary, place, safe_name, xdg_dir
 from spaces.music.cache import JsonCache
 from spaces.music.cloud_stream import StreamBroker
+from spaces.music.mpris import MprisService
 from spaces.music.records import (
     MusicError,
     clean_artist_biography,
@@ -1398,6 +1399,7 @@ def resolve_track(track, providers=None, local_first=True, deadline=None):
 
 
 player_ipc = MpvIpc('music')
+MPRIS = MprisService()
 # With one more command call (25 s) and its resolve, this stays below the QML
 # request timeout (90 s), so a late answer never strands a stream ticket.
 PLAY_RESOLVE_SECONDS = 35
@@ -1414,7 +1416,20 @@ def start_player(args):
     mpv = shutil.which('mpv')
     if not mpv:
         raise MusicError('Install mpv to play music.')
-    if track.get('source') in ('nextcloud', 'music-local'):
+    if track.get('source') == 'mpris-uri':
+        uri = str(track.get('uri') or '')
+        parsed = urllib.parse.urlsplit(uri)
+        if parsed.scheme == 'file' and parsed.netloc in ('', 'localhost'):
+            path = Path(urllib.request.url2pathname(parsed.path)).resolve()
+            if not path.is_file():
+                raise MusicError('The requested local song is unavailable.')
+            resolved = {'url': str(path), 'headers': {}}
+        elif parsed.scheme in ('http', 'https') and safe_url(uri):
+            resolved = {'url': uri, 'headers': {}}
+        else:
+            raise MusicError('Music cannot open that URI.')
+        ipc_path = player_socket()
+    elif track.get('source') in ('nextcloud', 'music-local'):
         from spaces.music.local_files import cached
 
         try:
@@ -1460,9 +1475,6 @@ def start_player(args):
         '--input-ipc-server=' + ipc_path,
         '--force-media-title=' + title,
     ]
-    plugin = Path('/usr/lib/mpv-mpris/mpris.so')
-    if plugin.is_file():
-        command.append('--script=' + str(plugin))
     volume = args.get('volume')
     if isinstance(volume, (int, float)) and not isinstance(volume, bool):
         # Each track is a new mpv process; carry the listener's volume over.
@@ -1641,6 +1653,9 @@ def dispatch(args):
         return download_capabilities()
     if operation == 'play':
         return start_player(args)
+    if operation == 'mpris-state':
+        MPRIS.update(args.get('state') or {})
+        return {'updated': True}
     if operation == 'player-state':
         return player_state(args)
     if operation == 'player-command':
@@ -1681,9 +1696,11 @@ def main():
             'player-command',
             'player-state',
             'player-cleanup',
+            'mpris-state',
         ),
         enrichment=('file-tags',),
         scope=request_scope,
+        on_started=MPRIS.start,
     )
 
 

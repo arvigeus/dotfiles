@@ -70,6 +70,7 @@ def serve(
     output=None,
     capacity=64,
     scope=None,
+    on_started=None,
 ):
     stream, output = stream or sys.stdin, output or sys.stdout
     write_lock = threading.Lock()
@@ -84,6 +85,9 @@ def serve(
         with write_lock:
             output.write(line)
             output.flush()
+
+    def send_event(event):
+        emit({'event': event})
 
     def execute(request, key, token, is_control):
         identifier = request['id']
@@ -134,6 +138,8 @@ def serve(
         ThreadPoolExecutor(max_workers=2, thread_name_prefix='artwork') as images,
         ThreadPoolExecutor(max_workers=2, thread_name_prefix='enrichment') as hydration,
     ):
+        if on_started:
+            on_started(send_event)
         for line in stream:
             request = None
             try:

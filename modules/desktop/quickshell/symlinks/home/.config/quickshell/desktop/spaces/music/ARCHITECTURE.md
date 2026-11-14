@@ -263,12 +263,25 @@ use the collection's title/artist/album/full-date filename convention, preserve
 collisions with numbered names, and register finished files locally. This does
 not imply the original stream was lossless. Album jobs report partial failures.
 
-`MusicPlayback.qml` owns one mpv process, MPRIS identity, queue and IPC socket.
+`MusicPlayback.qml` owns one mpv process, the QML queue and its IPC socket. The
+Music backend owns `org.mpris.MediaPlayer2.music` through Gio from the existing
+`python-gobject` dependency. It exports the standard MPRIS Player interface and
+routes transport, seek, volume, shuffle, repeat and OpenUri requests back to the
+QML queue. Its next/previous capability flags reflect that queue; metadata and
+art URLs come from the selected song and the shared artwork worker. It reports
+no MPRIS TrackList. Music's mpv process does not load mpv-mpris; Radio still uses
+that plugin.
+
+The bottom player's Info action opens the same `MusicInfo.qml` view used by song
+rows. MPRIS OpenUri accepts local files and HTTP(S) URLs; external URI tracks
+have no Music library metadata editor.
+
 Local Music is preferred. Uncached Nextcloud songs and configured Browse
 providers use `cloud_stream.py`'s owned loopback gateway. Only temporary track
-capabilities reach QML, mpv and FFmpeg. Nextcloud uses authenticated POST/range
+capabilities reach mpv and FFmpeg. Nextcloud uses authenticated POST/range
 requests with redirects disabled. Provider headers and signed URLs remain in
-Python; HLS references and DASH bases/templates are rewritten into the same
+Python; MPRIS OpenUri HTTP(S) URLs use the same gateway, while local files open
+directly. HLS references and DASH bases/templates are rewritten into the same
 revocable session, retaining authentication for media segments. Media suffixes
 remain on opaque reference paths for demuxer compatibility. Only directory
 references accept a path tail, which must stay inside that directory. Playlists
@@ -276,13 +289,19 @@ are bounded to 4 MiB and 16,384 references. Cleanup revokes every child referenc
 and closes upstream responses, including requests that were still opening when
 revoked; those close before the gateway answers.
 
+Shuffle and repeat preferences are stored by Qt Settings in the local
+`$XDG_CONFIG_HOME/quickshell/desktop/music-playback.ini`. The bottom player uses
+the same artwork worker as library rows, so embedded and provider covers follow
+the existing cache and authentication paths.
+
 A player that never starts reports a failure. Queue navigation always starts the
 requested position (Previous at the first song restarts it); selecting the playing
 row toggles pause. Pause toggles inside mpv, so MPRIS changes made while hidden
-stay correct. Position polls never move the seek handle under the pointer; a drag
-or key press seeks once when it ends. Process completion advances the queue while
-hidden; visual position polling only runs while visible. File/transfer polling continues while hidden until active jobs
-finish so completion notifications arrive on time.
+stay correct. Playback polls position while hidden to keep MPRIS state current;
+position polls never move the seek handle under the pointer, and a drag or key
+press seeks once when it ends. Process completion advances the queue while hidden.
+File/transfer polling continues while hidden until active jobs finish so
+completion notifications arrive on time.
 Music sends completion/error notifications through `notify-send` to the shell’s
 normal notification server. The Notifications bell retains progress/cancel/retry
 controls, with routine Info reads excluded from both the panel and delivery.
@@ -295,8 +314,9 @@ and keeps completed media files.
 ## Persistent state
 
 Persistent state consists of
-`music.json`, `music-ui.json`, and the data `library.sqlite` with local associations
-and cache baselines. Nextcloud credentials and `rclone.conf` are shared integrations.
+`music.json`, `music-ui.json`, the local `music-playback.ini`, and the data
+`library.sqlite` with local associations and cache baselines. Nextcloud credentials
+and `rclone.conf` are shared integrations.
 Private files use 0600 and leaf directories use 0700. Metadata
 caches, runtime sockets, active playback and large audio payloads are excluded
 from library state. New, unuploaded music needs a separate media backup.

@@ -184,6 +184,33 @@ Item {
     function recordKey(item) {
         return String(item?.source || "") + "|" + String(item?.kind || "") + "|" + String(item?.id || "");
     }
+    function playUri(uri) {
+        const value = String(uri || "");
+        const isLocalFile = /^file:\/\/(?:localhost)?\//i.test(value);
+        if (!isLocalFile && !/^https?:\/\//i.test(value))
+            return;
+        const path = isLocalFile
+            ? value.replace(/^file:\/\/(?:localhost)?/i, "")
+            : value.replace(/^https?:\/\/[^/?#]*/i, "");
+        const name = path.split(/[?#]/, 1)[0].split('/').filter(Boolean).pop();
+        let title = name || value;
+        if (name) {
+            try {
+                title = decodeURIComponent(name);
+            } catch (_) {
+                title = name;
+            }
+        }
+        playback.playSongs([{
+            id: uri,
+            kind: "song",
+            source: "mpris-uri",
+            uri: uri,
+            title: title,
+            artist: "",
+            duration: 0
+        }], 0);
+    }
     function fileAction(action, song) {
         cacheService.startJob("file-job", {
             action: action,
@@ -1380,6 +1407,17 @@ Item {
                 enabled: !!playback.currentTrack
                 onClicked: playback.stopPlayback()
             }
+            MusicCover {
+                objectName: "musicCurrentCover"
+                visible: !!playback.currentTrack
+                Layout.preferredWidth: 44
+                Layout.preferredHeight: 44
+                Layout.minimumWidth: 44
+                record: playback.currentTrack
+                service: covers
+                fetchEnabled: !!playback.currentTrack && playback.currentTrack.source !== "mpris-uri"
+                onResolvedSourceChanged: playback.setArtwork(resolvedSource)
+            }
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 80
@@ -1397,6 +1435,13 @@ Item {
                     elide: Text.ElideRight
                     color: MovieStyle.danger
                 }
+            }
+            MovieIconButton {
+                objectName: "musicCurrentInfo"
+                iconName: "info"
+                text: "Song information"
+                enabled: !!playback.currentTrack && playback.currentTrack.source !== "mpris-uri"
+                onClicked: info.showSong(playback.currentTrack)
             }
             MovieText {
                 text: root.timeLabel(playback.position) + " / " + root.timeLabel(playback.duration)

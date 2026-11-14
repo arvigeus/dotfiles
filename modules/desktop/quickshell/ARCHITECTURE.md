@@ -624,7 +624,11 @@ default agent authorizes incoming services from untrusted devices.
 `AudioService` uses native PipeWire nodes/link groups. Detailed trackers run only
 while observed. Levels use the loudest channel, not `PwNodeAudio.volume`'s average;
 changes preserve balance. Sink-monitor captures are not microphone use. MPRIS
-controls attach only to uniquely matching streams/application identities.
+controls attach only to uniquely matching streams/application identities. The
+Playback section reads artwork only from MPRIS `mpris:artUrl`; transport buttons
+follow the player's `CanGoPrevious` and `CanGoNext` capabilities. Music exports
+its QML-owned queue through an MPRIS Player interface because it runs one mpv
+process per track.
 
 `audio/backend.py watch` debounces Pulse card/sink/source events and publishes
 changed inventory. Watchers stop on dismissal and restart if observation resumes

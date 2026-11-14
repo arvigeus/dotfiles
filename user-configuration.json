@@ -3336,6 +3336,10 @@
                 "target": "home/.config/quickshell/desktop/spaces/music/local_files.py"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/mpris.py",
+                "target": "home/.config/quickshell/desktop/spaces/music/mpris.py"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/spaces/music/qmldir",
                 "target": "home/.config/quickshell/desktop/spaces/music/qmldir"
             },

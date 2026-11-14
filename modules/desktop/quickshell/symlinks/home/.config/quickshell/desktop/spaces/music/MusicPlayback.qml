@@ -1,4 +1,5 @@
 import QtQuick
+import QtCore
 import Quickshell.Io
 
 // Owns the queue, player process and IPC polling for one retained Music Space.
@@ -28,6 +29,146 @@ Item {
     property bool playerPaused: true
     property bool shuffleEnabled: false
     property bool repeatAllEnabled: false
+    property bool preferencesLoaded: false
+    property string artworkUrl: ""
+
+    Settings {
+        id: preferences
+        location: StandardPaths.writableLocation(StandardPaths.ConfigLocation) + "/quickshell/desktop/music-playback.ini"
+        category: "Playback"
+    }
+
+    function savePreferences() {
+        if (!preferencesLoaded)
+            return;
+        preferences.setValue("shuffleEnabled", shuffleEnabled);
+        preferences.setValue("repeatAllEnabled", repeatAllEnabled);
+        preferences.sync();
+    }
+
+    onShuffleEnabledChanged: {
+        savePreferences();
+        syncMprisState();
+    }
+    onRepeatAllEnabledChanged: {
+        savePreferences();
+        syncMprisState();
+    }
+
+    Component.onCompleted: {
+        shuffleEnabled = preferences.value("shuffleEnabled", false) === true;
+        repeatAllEnabled = preferences.value("repeatAllEnabled", false) === true;
+        preferencesLoaded = true;
+        syncMprisState();
+    }
+
+    Connections {
+        target: root.service
+        function onWorkerEvent(payload) {
+            root.handleMprisEvent(payload);
+        }
+    }
+
+    function canGoNext() {
+        if (!currentTrack || currentTrackIndex < 0 || !queueSongs.length)
+            return false;
+        if (shuffleEnabled) {
+            const unplayed = queueSongs.some((track, index) => index !== currentTrackIndex && !shuffleHistory.includes(index));
+            return unplayed || (repeatAllEnabled && queueSongs.length > 0);
+        }
+        return currentTrackIndex + 1 < queueSongs.length || (repeatAllEnabled && queueSongs.length > 0);
+    }
+
+    function canGoPrevious() {
+        if (!currentTrack || currentTrackIndex < 0)
+            return false;
+        if (position > 0)
+            return true;
+        return shuffleEnabled ? playHistory.length > 0 : currentTrackIndex > 0;
+    }
+
+    function syncMprisState() {
+        if (!service)
+            return;
+        service.request("mpris-state", {
+            state: {
+                track: currentTrack ? {
+                    title: currentTrack.title || currentTrack.name || "",
+                    artistNames: currentTrack.artistNames || currentTrack.artist || "",
+                    album: currentTrack.album || ""
+                } : null,
+                trackKey: currentTrackKey,
+                artUrl: artworkUrl,
+                playing: !!playerProcess && !playerPaused,
+                paused: playerPaused,
+                preparing: preparing,
+                active: !!playerProcess,
+                position: position,
+                duration: duration,
+                volume: volume,
+                shuffleEnabled: shuffleEnabled,
+                repeatAllEnabled: repeatAllEnabled,
+                canNext: canGoNext(),
+                canPrevious: canGoPrevious(),
+                canSeek: !!playerProcess
+            }
+        }, () => {});
+    }
+
+    function setArtwork(url) {
+        const value = String(url || "");
+        if (artworkUrl === value)
+            return;
+        artworkUrl = value;
+        syncMprisState();
+    }
+
+    function handleMprisEvent(payload) {
+        if (!payload || payload.source !== "mpris")
+            return;
+        switch (payload.command) {
+        case "next":
+            if (canGoNext())
+                playNext(false);
+            break;
+        case "previous":
+            if (canGoPrevious())
+                playPrevious();
+            break;
+        case "toggle":
+            togglePause();
+            break;
+        case "play":
+            if (playerPaused || !playerProcess)
+                togglePause();
+            break;
+        case "pause":
+            if (!playerPaused)
+                togglePause();
+            break;
+        case "stop":
+            stopPlayback();
+            break;
+        case "seek-by":
+            seekTo(position + Number(payload.value || 0));
+            break;
+        case "seek-to":
+            seekTo(Number(payload.value || 0));
+            break;
+        case "shuffle":
+            shuffleEnabled = !!payload.value;
+            break;
+        case "repeat":
+            repeatAllEnabled = !!payload.value;
+            break;
+        case "volume":
+            changeVolume(Number(payload.value || 0) * 100);
+            break;
+        case "open-uri":
+            controller.playUri(String(payload.value || ""));
+            break;
+        }
+    }
 
     function recordKey(track) {
         return controller.recordKey(track);
@@ -43,16 +184,18 @@ Item {
             action: "seek",
             value: value
         }, () => {});
+        syncMprisState();
     }
 
     function changeVolume(value) {
-        volume = value;
+        volume = Math.max(0, Math.min(100, Number(value) || 0));
         if (ipcPath && playerProcess)
             service.request("player-command", {
                 ipcPath: ipcPath,
                 action: "volume",
                 value: value
             }, () => {});
+        syncMprisState();
     }
 
     function togglePause() {
@@ -64,6 +207,7 @@ Item {
         if (!ipcPath)
             return;
         playerPaused = !playerPaused;
+        syncMprisState();
         // mpv owns the state; MPRIS may have changed it while polling was off.
         service.request("player-command", {
             ipcPath: ipcPath,
@@ -109,12 +253,14 @@ Item {
         currentTrack = track;
         currentTrackKey = recordKey(track);
         currentTrackIndex = index;
+        artworkUrl = "";
         position = 0;
         duration = Number(track.duration) || 0;
         playerPaused = false;
         preparing = true;
         playFailed = false;
         playMessage = "Loading " + (track.title || "song") + "…";
+        syncMprisState();
         service.request("play", {
             track: track,
             volume: volume
@@ -131,6 +277,7 @@ Item {
                 playFailed = true;
                 playerPaused = true;
                 playMessage = failure || "Could not resolve this song's stream.";
+                syncMprisState();
                 return;
             }
             const process = playerComponent.createObject(root, {
@@ -144,12 +291,14 @@ Item {
                 service.request("player-cleanup", {
                     ipcPath: result.ipcPath || ""
                 }, () => {});
+                syncMprisState();
                 return;
             }
             ipcPath = result.ipcPath || "";
             playerProcess = process;
             preparing = false;
             playMessage = "Playing";
+            syncMprisState();
         });
     }
 
@@ -176,10 +325,12 @@ Item {
                 return;
             }
             playMessage = "Queue finished.";
+            syncMprisState();
             return;
         }
         playFailed = code !== 0;
         playMessage = code === 0 ? "Playback ended." : code === null ? "Could not start the audio player." : "The stream ended or could not be played.";
+        syncMprisState();
     }
 
     function playNext(fromEnd) {
@@ -264,6 +415,8 @@ Item {
         preparing = false;
         playFailed = false;
         playMessage = "Playback stopped.";
+        artworkUrl = "";
+        syncMprisState();
     }
 
     Component.onDestruction: {
@@ -283,7 +436,7 @@ Item {
         objectName: "musicStatusTimer"
         interval: 650
         repeat: true
-        running: root.active && !!root.playerProcess && !!root.ipcPath
+        running: !!root.playerProcess && !!root.ipcPath
         onTriggered: {
             if (root.playerPollPending)
                 return;
@@ -301,6 +454,7 @@ Item {
                 // A poll racing mpv's exit has no volume; keep the listener's level.
                 if (typeof result.volume === "number")
                     root.volume = result.volume;
+                root.syncMprisState();
             });
         }
     }
