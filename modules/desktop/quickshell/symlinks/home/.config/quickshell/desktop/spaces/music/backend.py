@@ -44,6 +44,7 @@ from spaces.music.storage import CONFIG, DATA, atomic_write, read_json
 from spaces.music.storage import MusicIpc as MpvIpc
 from spaces.pictures.command_provider import CommandRunner, safe_url
 from spaces.pictures.provider_plugins import ProviderError, configured_providers
+from ui.browser import browser_argv
 
 APPLE_API = 'https://api.music.apple.com/v1/catalog'
 USER_AGENT = (
@@ -1122,7 +1123,7 @@ def open_download(args):
     url = download_url(kind, args.get('item'))
     try:
         subprocess.Popen(
-            ['uwsm', 'app', '-t', 'service', '--', 'xdg-open', url],
+            ['uwsm', 'app', '-t', 'service', '--', *browser_argv('music', url)],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

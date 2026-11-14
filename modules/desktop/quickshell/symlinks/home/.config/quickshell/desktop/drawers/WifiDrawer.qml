@@ -486,7 +486,7 @@ DrawerPage {
                     visible: root.networking.connectivity === NetworkConnectivity.Portal
                     text: qsTr("Open network sign-in")
                     onClicked: {
-                        Qt.openUrlExternally("http://neverssl.com");
+                        Apps.openUrl("http://neverssl.com", "network");
                         root.closeRequested();
                     }
                 }

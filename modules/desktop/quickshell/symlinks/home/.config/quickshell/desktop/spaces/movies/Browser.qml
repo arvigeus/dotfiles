@@ -8,7 +8,7 @@ QtObject {
         if (!/^https?:\/\//i.test(target))
             return;
 
-        Apps.launch(["xdg-open", target]);
+        Apps.openUrl(target, moduleId, command);
         if (host)
             host.hide();
     }

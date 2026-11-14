@@ -538,6 +538,41 @@ class MusicTests(unittest.TestCase):
             with self.assertRaisesRegex(music.MusicError, 'Could not open'):
                 music.open_download({'kind': 'album', 'item': {'id': '7'}})
 
+    def test_download_uses_the_music_browser_override(self):
+        config = self.config / 'quickshell/desktop/browser.json'
+        config.parent.mkdir(parents=True)
+        config.write_text(
+            json.dumps({'modules': {'music': ['fixture-browser', '--kiosk']}})
+        )
+        with (
+            patch.dict(os.environ, XDG_CONFIG_HOME=str(self.config)),
+            patch.object(
+                music,
+                'music_config',
+                return_value={
+                    'providers': [{'download': {'album': 'https://example.test/{id}'}}]
+                },
+            ),
+            patch.object(music.subprocess, 'Popen') as launch,
+        ):
+            self.assertEqual(
+                music.open_download({'kind': 'album', 'item': {'id': '7'}}),
+                {'started': True},
+            )
+        self.assertEqual(
+            launch.call_args.args[0],
+            [
+                'uwsm',
+                'app',
+                '-t',
+                'service',
+                '--',
+                'fixture-browser',
+                '--kiosk',
+                'https://example.test/7',
+            ],
+        )
+
     def test_artist_selection_does_not_fetch_every_album_tracklist(self):
         calls = []
 

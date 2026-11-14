@@ -9,6 +9,18 @@ can browse Spaces and their controls without a mouse; hold **Y + stick left/righ
 to move between catalogues, toolbars and detail actions.
 Bumpers switch a Space's primary tabs; **Ctrl+PageUp / Ctrl+PageDown** does the
 same from the keyboard. Changing tabs focuses the catalogue for arrow navigation.
+
+Web links, including **Watch Online**, open in a separate fullscreen Chromium
+window without tabs or an address bar. Its dedicated profile retains logins and
+extension settings; Chromium's managed extensions include uBlock Origin Lite.
+On first use, allow the extensions to install. Close its windows and run
+`desktop-browser-kiosk --setup` to check or configure them.
+
+Choose another browser in `~/.config/quickshell/desktop/browser.json`; for example,
+`{"command": ["xdg-open"]}` uses the system browser. Individual features can
+override it with `"modules": {"games": ["xdg-open"]}`. Changes apply to the next
+link. See [browser configuration](ARCHITECTURE.md#browser-links) for details.
+
 Use `/movie home`, `/series severance`, `/episode severance S01E02`,
 `/music`, `/song`, `/album`, `/artist`, `/radio`, `/tv`, `/game` or `/youtube`
 followed by search text to search Spaces. Type `/` to discover categories and

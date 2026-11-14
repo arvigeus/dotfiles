@@ -924,7 +924,7 @@ DrawerPage {
             Accessible.name: qsTr("Message text")
             onLinkActivated: link => {
                 if (/^https?:\/\//i.test(link))
-                    Apps.launch(["xdg-open", link]);
+                    Apps.openUrl(link, "assistant");
             }
         }
     }

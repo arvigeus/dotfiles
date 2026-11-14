@@ -396,7 +396,7 @@ DrawerPage {
             Note {
                 text: "Open-Meteo ↗"
                 TapHandler {
-                    onTapped: Qt.openUrlExternally("https://open-meteo.com/")
+                    onTapped: Apps.openUrl("https://open-meteo.com/", "weather")
                 }
                 HoverHandler {
                     cursorShape: Qt.PointingHandCursor

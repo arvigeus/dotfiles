@@ -102,11 +102,11 @@ Item {
     }
     function openYouTube() {
         if (selected?.id)
-            Desktop.Apps.launch(["xdg-open", "https://www.youtube.com/watch?v=" + selected.id]);
+            Desktop.Apps.openUrl("https://www.youtube.com/watch?v=" + selected.id, "streaming");
     }
     function openPost(id) {
         if (/^Ug[A-Za-z0-9_-]{10,100}$/.test(id))
-            Desktop.Apps.launch(["xdg-open", "https://www.youtube.com/post/" + id]);
+            Desktop.Apps.openUrl("https://www.youtube.com/post/" + id, "streaming");
     }
     function followedChannel(video) {
         return channels.find(channel => channel.url === video.followedChannelUrl || (video.channelId && channel.id === video.channelId) || channel.url.toLowerCase() === String(video.channel || "").toLowerCase() || channel.url.toLowerCase() === String(video.channelHandle || "").toLowerCase() || (channel.aliases || []).includes(video.channel)) || null;

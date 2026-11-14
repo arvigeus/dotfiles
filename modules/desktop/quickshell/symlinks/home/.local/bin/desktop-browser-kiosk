@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# A persistent, separate browser instance for shell web links.
+set -Eeuo pipefail
+
+if [[ $# -ne 1 ]]; then
+    echo 'Usage: desktop-browser-kiosk URL | --setup' >&2
+    exit 2
+fi
+
+profile="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/browser-profile"
+mkdir -p -- "$profile"
+args=(--user-data-dir="$profile" --no-first-run --no-default-browser-check)
+if [[ $1 == --setup ]]; then
+    # Close kiosk windows first so this instance starts with ordinary controls.
+    exec chromium "${args[@]}" --new-window chrome://extensions
+fi
+case ${1,,} in
+    http://?* | https://?*) ;;
+    *)
+        echo 'Browser links must use HTTP or HTTPS.' >&2
+        exit 2
+        ;;
+esac
+exec chromium "${args[@]}" --new-window --app="$1"

@@ -171,7 +171,7 @@ ColumnLayout {
             enabled: /^https?:\/\//.test(modelData.url || "")
             ToolTip.visible: hovered
             ToolTip.text: modelData.url || ""
-            onClicked: Apps.launch(["xdg-open", modelData.url])
+            onClicked: Apps.openUrl(modelData.url, "assistant")
         }
     }
     ShellText {

@@ -874,6 +874,11 @@
                 "mode": "0644"
             },
             {
+                "source": "modules/desktop/quickshell/files/home/.config/quickshell/desktop/browser.json",
+                "target": "home/.config/quickshell/desktop/browser.json",
+                "mode": "0644"
+            },
+            {
                 "source": "modules/desktop/quickshell/files/home/.config/quickshell/desktop/integrations/media-library.json.example",
                 "target": "home/.config/quickshell/desktop/integrations/media-library.json.example",
                 "mode": "0644"
@@ -3784,6 +3789,10 @@
                 "target": "home/.config/quickshell/desktop/ui/WheelScroll.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/browser.py",
+                "target": "home/.config/quickshell/desktop/ui/browser.py"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/qmldir",
                 "target": "home/.config/quickshell/desktop/ui/qmldir"
             },
@@ -3802,6 +3811,10 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.local/bin/desktop-assistant-context",
                 "target": "home/.local/bin/desktop-assistant-context"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.local/bin/desktop-browser-kiosk",
+                "target": "home/.local/bin/desktop-browser-kiosk"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.local/share/kpackage/Purpose/desktop-assistant-context/contents/code/main.sh",

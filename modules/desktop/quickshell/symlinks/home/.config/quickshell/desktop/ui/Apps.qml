@@ -11,4 +11,17 @@ Singleton {
     function launch(argv): void {
         Quickshell.execDetached(command(argv));
     }
+    function openUrl(url, moduleId = "", override = ""): void {
+        const target = String(url || "");
+        if (!target)
+            return;
+        if (!/^https?:\/\//i.test(target)) {
+            launch(["xdg-open", target]);
+            return;
+        }
+        const argv = ["python3", Qt.resolvedUrl("browser.py").toString().replace(/^file:\/\//, ""), moduleId, target];
+        if (override)
+            argv.push(override);
+        launch(argv);
+    }
 }

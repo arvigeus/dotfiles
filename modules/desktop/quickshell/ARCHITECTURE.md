@@ -34,6 +34,45 @@ pending debounced query; catalogue/favorite changes preserve selection.
 
 ## Shared UI
 
+### Browser links
+
+`Apps.openUrl(url, moduleId, override)` routes HTTP(S) links through
+`ui/browser.py` in an independent UWSM application unit. The Movies `Browser`
+singleton delegates to it for Movies, Series, Books, Games and Pictures;
+Streaming, Assistant, Weather and Network call it directly. Music's download
+backend uses the same `browser_argv()` resolver. Local files and non-web URI
+handlers continue through `xdg-open`.
+
+`$XDG_CONFIG_HOME/quickshell/desktop/browser.json` (default `~/.config`) is read
+on every launch. It accepts a shared `command` and a `modules` object keyed by
+`movies`, `series`, `books`, `games`, `pictures`, `streaming`, `assistant`,
+`weather`, `network` or `music`. Commands can be nonempty argument arrays or
+strings parsed with `shlex.split`; the URL is appended as one final argument.
+No shell, variable, tilde or placeholder expansion occurs. Precedence is an
+explicit call override, the feature's command, the shared command, then
+`["xdg-open"]`. Missing configuration uses that fallback; invalid configuration
+fails with a notification instead of silently opening a different browser.
+
+The installed configuration selects `desktop-browser-kiosk`. Its Chromium
+`--app=URL --kiosk` invocation opens a standalone fullscreen app window on each
+launch. A dedicated persistent `--user-data-dir` at
+`$XDG_CONFIG_HOME/quickshell/browser-profile` separates this browser instance
+from ordinary Chromium windows. Logins, history and extension settings persist;
+no profile copying or unpacked-extension flags are involved. The Chromium module
+owns installation and extension policies, including uBlock Origin Lite. A new
+profile needs an online launch to install those extensions. `--setup` uses the
+same profile with ordinary controls at `chrome://extensions`; close all kiosk
+windows before setup, and close setup before resuming kiosk launches, since
+Chromium shares startup mode within an instance.
+
+`test_browser.py` exercises command resolution, literal URL arguments, retained
+profile ownership and a real QML-to-UWSM-helper launch with stub executables.
+Native verification additionally requires two simultaneous app launches to
+produce separate fullscreen windows and an online profile bootstrap to confirm
+the managed ad blocker installs.
+
+### Theme and controls
+
 `Theme` reads the shared palette and user-owned `theme-mode` preference (dark by
 default); production synchronization starts through `Theme.start()`. See
 [appearance integration](../../look-and-feel/ARCHITECTURE.md).

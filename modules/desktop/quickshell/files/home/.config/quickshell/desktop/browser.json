@@ -1,0 +1,6 @@
+{
+    "command": [
+        "desktop-browser-kiosk"
+    ],
+    "modules": {}
+}
