@@ -28,6 +28,7 @@ Item {
     property bool gridMode: false
     property bool searchOpen: false
     property bool playOpening: false
+    property int playGeneration: 0
     property bool updatingCatalogue: false
     property string tab: "feed"
     property string channel: ""
@@ -334,6 +335,7 @@ Item {
     function play(audio, start) {
         if (!selected)
             return;
+        const generation = ++playGeneration;
         audio = audio || !!selected.audio;
         const args = {
             videoId: selected.id,
@@ -344,6 +346,8 @@ Item {
         detailError = "";
         command("play", args, result => {
             playback = result;
+            if (generation !== playGeneration)
+                return;
             playOpening = !audio;
             status();
         });
@@ -401,8 +405,11 @@ Item {
         if (statusPolling)
             return;
         statusPolling = true;
+        const generation = playGeneration;
         service.request("status", {}, (result, failure) => {
             statusPolling = false;
+            if (generation !== playGeneration)
+                return;
             if (failure) {
                 error = failure;
                 return;
@@ -452,6 +459,12 @@ Item {
         return false;
     }
     function handleOpen(payload) {
+        ++playGeneration;
+        playOpening = false;
+        if (payload?.item) {
+            externalOpen.submit(payload);
+            return;
+        }
         if (payload?.url) {
             if (tab !== "feed")
                 switchTab("feed");
@@ -459,6 +472,23 @@ Item {
             searchOpen = true;
             if (initialized && active)
                 browse(false);
+        }
+    }
+    Desktop.SpaceOpenRequest {
+        id: externalOpen
+        active: root.active
+        ready: root.initialized && !root.commandPending
+        onDelivered: payload => {
+            ++root.browseGeneration;
+            root.loading = false;
+            root.tab = "feed";
+            root.searchOpen = true;
+            search.text = "https://www.youtube.com/watch?v=" + payload.item.id;
+            searchDelay.stop();
+            root.videos = Models.update(videoModel, root.videos, [payload.item], false);
+            root.select(payload.item);
+            if (payload.play)
+                root.play(false);
         }
     }
     onActiveChanged: {

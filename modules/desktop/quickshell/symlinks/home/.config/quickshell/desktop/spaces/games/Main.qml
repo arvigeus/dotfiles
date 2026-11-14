@@ -431,6 +431,39 @@ Item {
         tab = "overview";
         detailDelay.restart();
     }
+    function handleOpen(payload) {
+        externalOpen.submit(payload);
+    }
+    SpaceOpenRequest {
+        id: externalOpen
+        active: root.active
+        ready: !root.initializing && !root.actionBusy
+        onDelivered: payload => {
+            if (!payload?.item?.id)
+                return;
+            ++root.browseGeneration;
+            root.loading = false;
+            root.selectGame(payload.item);
+            if (payload.play) {
+                const id = payload.item.id;
+                service.request("availability", {
+                    gameId: id
+                }, (result, failure) => {
+                    if (!root.active || root.selected.id !== id)
+                        return;
+                    if (failure) {
+                        root.detailError = failure;
+                        return;
+                    }
+                    const action = (result.stores || []).reduce((actions, store) => actions.concat(store.actions || []), []).find(action => action.type === "play");
+                    if (action)
+                        root.execute(action);
+                    else
+                        root.detailError = "This game is no longer installed. Choose a store to continue.";
+                });
+            }
+        }
+    }
     function hydrateSelection(refresh) {
         if (!active || !selected.id)
             return;

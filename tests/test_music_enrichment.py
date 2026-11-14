@@ -60,6 +60,38 @@ class LyricsCacheTests(unittest.TestCase):
                 'Already saved',
             )
 
+    def test_offline_lyrics_reuse_cache_without_cloud_or_provider_requests(self):
+        with patch.object(
+            backend.audio_lyrics,
+            'request_json',
+            return_value={'plainLyrics': 'Cached words'},
+        ):
+            backend.fetch_lyrics({'song': self.song})
+        with (
+            patch.object(
+                backend.audio_lyrics,
+                'request_json',
+                side_effect=AssertionError('Offline provider request'),
+            ),
+            patch.object(
+                CloudLibrary,
+                'lyrics',
+                side_effect=AssertionError('Offline cloud request'),
+            ),
+        ):
+            self.assertEqual(
+                backend.fetch_lyrics({'song': self.song, 'online': False})['lyrics'],
+                'Cached words',
+            )
+            self.assertFalse(
+                backend.fetch_lyrics(
+                    {
+                        'song': dict(self.song, title='Unknown', source='nextcloud'),
+                        'online': False,
+                    }
+                )['available']
+            )
+
     def test_unsaved_lyrics_are_reused_across_ids_and_worker_restarts(self):
         with patch.object(
             backend.audio_lyrics,
@@ -81,6 +113,33 @@ class LyricsCacheTests(unittest.TestCase):
             self.assertEqual(request.call_count, 1)
         with self.cache.path.open('rb') as stream:
             self.assertNotIn(b'fixture-private-token', stream.read())
+
+    def test_missing_local_lyrics_fall_back_to_saved_server_lyrics(self):
+        song = dict(self.song, source='nextcloud', local=True)
+        with (
+            patch.object(
+                local_files, 'cached', return_value=Path('/fixture/song.flac')
+            ),
+            patch('spaces.music.tags.read', return_value={'tags': {'lyrics': ''}}),
+            patch.object(
+                CloudLibrary,
+                'lyrics',
+                return_value=dict(
+                    available=True,
+                    lyrics='Saved server words',
+                    provider='Song tags',
+                    saved=True,
+                ),
+            ),
+            patch.object(
+                backend.audio_lyrics,
+                'request_json',
+                side_effect=AssertionError('Saved server lyrics must win'),
+            ),
+        ):
+            self.assertEqual(
+                backend.fetch_lyrics(dict(song=song))['lyrics'], 'Saved server words'
+            )
 
     def test_no_match_is_cached_but_explicit_retry_bypasses_it(self):
         with patch.object(

@@ -236,7 +236,8 @@ Item {
         playbackError = "";
         service.request("play", {
             channelId: channel.id,
-            streamId: stream.id
+            streamId: stream.id,
+            channel: channel
         }, (result, failure) => {
             if (generation !== commandGeneration)
                 return;
@@ -249,6 +250,27 @@ Item {
             if (active && result.playing && host)
                 host.hide();
         });
+    }
+    function handleOpen(payload) {
+        externalOpen.submit(payload);
+    }
+    SpaceOpenRequest {
+        id: externalOpen
+        active: root.active
+        ready: root.initialized
+        onDelivered: payload => {
+            if (!payload?.item)
+                return;
+            ++root.browseGeneration;
+            root.loading = false;
+            root.searchOpen = true;
+            search.text = payload.item.name;
+            searchDelay.stop();
+            root.channels = Models.update(channelModel, root.channels, [payload.item], false);
+            channelList.currentIndex = 0;
+            if (payload.play)
+                root.play(payload.item);
+        }
     }
     function playerCommand(op) {
         const generation = ++commandGeneration;

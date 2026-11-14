@@ -4,6 +4,28 @@ A Quickshell bar and drawers for apps, workspaces, devices, capture, calendar,
 notifications and system maintenance. **Win+R** opens application search;
 **Win+1 / Shift+Tab** opens Spaces; **Ctrl+Shift+Tab** opens Performance.
 In application search, **Ctrl+D** favorites the selected app.
+Use `/movie home`, `/series severance`, `/episode severance S01E02`,
+`/music`, `/song`, `/album`, `/artist`, `/radio`, `/tv`, `/game` or `/youtube`
+followed by search text to search Spaces. Type `/` to discover categories and
+**Tab** to complete one. Local results appear first; cards open the matching Space,
+and the play button or **Ctrl+Enter** starts playback where available.
+Search uses each Space's providers and saved library; open Music or Television
+first to build or refresh their library/directory snapshots.
+Filters can replace title text, for example:
+
+```text
+/movie genre:sci-fi year:2000..2025 rating:7 sort:rating
+/game genre:rpg platform:pc installed:true
+/radio genre:jazz country:Vietnam bitrate:128
+/tv category:news language:English
+/song artist:"Daft Punk" duration:..5m
+```
+
+`local:true` restricts results to local files/installed games; `library:true`
+includes owned games, saved music and favorites. `online:false` searches saved
+metadata without contacting providers. Quotes group multiword filter values;
+year/duration ranges can be open-ended, and durations accept `s`, `m` or `h`.
+Movie/series genre discovery online requires a TMDB key.
 See [Hyprland](../hyprland/README.md) for window, session and capture shortcuts.
 
 ## Spaces
@@ -58,7 +80,17 @@ remote content: images appear as links and HTML as text. Copy gives the original
 Markdown. Native aliases can be created with `lemonade alias add NAME MODEL_ID`.
 Model search includes Hugging Face and ModelScope catalogs through Lemonade;
 enter at least three characters, then choose a repository and quantization to download.
-Tool-capable models can inspect local files and system state. Shell commands and
+Tool-capable models can inspect local files and system state, search Spaces, and
+recommend items using genre, years, ratings and other filters. They can present
+a chosen shortlist as cards with reasons, including in follow-up replies.
+They can identify songs from remembered lyrics or movies from plot descriptions,
+research public web pages, and resolve matches to Space cards. Lyrics lookup
+prefers saved library lyrics before online providers. Local fragment matching
+uses embedded lyrics indexed by Music; open Music to refresh that index.
+Web search uses DuckDuckGo; an optional SearXNG endpoint is described in
+[research configuration](ARCHITECTURE.md#web-and-lyrics-research).
+Ask for “my library only” to use your collection or “offline” to search saved
+metadata. Playback starts when you choose a card's play action. Shell commands and
 file writes require approval in the conversation. Models without tool calling
 continue as ordinary chat models. An API key in `~/.config/lemonade/lemond.conf`
 is used automatically. Commands run noninteractively with a 30-second limit;

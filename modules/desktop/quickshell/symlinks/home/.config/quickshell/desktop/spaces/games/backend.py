@@ -1801,7 +1801,14 @@ class GamesBackend:
                     raise GamesError('Choose a valid genre or platform filter.')
                 params[parameter] = str(int(value))
         ordering = str(filters.get('sort', '-added') or '-added')
-        if ordering not in {'-added', '-rating', '-released', '-updated', 'name'}:
+        if ordering not in {
+            '-added',
+            '-rating',
+            '-released',
+            'released',
+            '-updated',
+            'name',
+        }:
             raise GamesError('Choose a valid sort order.')
         params['ordering'] = ordering
         start = str(filters.get('fromYear', '') or '').strip()
@@ -2102,7 +2109,7 @@ class GamesBackend:
                     libraries.append(resolved)
         return roots, libraries
 
-    def _steam_owned_state(self):
+    def _steam_owned_state(self, offline=False):
         config = self.config()
         api_key = _safe_text(config.get('steam_api_key', '')).strip()
         steam_id = _safe_text(config.get('steam_id', '')).strip()
@@ -2125,7 +2132,7 @@ class GamesBackend:
             'steam-owned:'
             + hashlib.sha256((api_key + ':' + steam_id).encode()).hexdigest()
         )
-        cached, fresh = self._cache_get(cache_key, 1800)
+        cached, fresh = self._cache_get(cache_key, 1800, allow_stale=offline)
         if cached:
             return {
                 'configured': True,
@@ -2134,6 +2141,14 @@ class GamesBackend:
                 'games': cached.get('games', []),
                 'message': cached.get('message', ''),
             }
+        if offline:
+            return dict(
+                configured=True,
+                known=False,
+                ids=[],
+                games=[],
+                message='Refresh Games to check Steam ownership.',
+            )
         key = urllib.parse.urlencode({'key': api_key, 'steamids': steam_id})
         try:
             players = self._request(
@@ -2212,7 +2227,7 @@ class GamesBackend:
         self._cache_put(cache_key, result)
         return {'configured': True, **result}
 
-    def _steam_state(self):
+    def _steam_state(self, offline=False):
         executable = self._which('steam')
         if not executable:
             for root in self._steam_roots():
@@ -2238,7 +2253,7 @@ class GamesBackend:
                 seen.add(item['externalId'])
                 item['launchable'] = bool(executable)
                 installed_items.append(item)
-        owned = self._steam_owned_state()
+        owned = self._steam_owned_state(offline=offline)
         items_by_id = {game['externalId']: game for game in owned.get('games', [])}
         for item in installed_items:
             merged = dict(items_by_id.get(item['externalId'], {}))

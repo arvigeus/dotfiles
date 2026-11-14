@@ -15,7 +15,13 @@ Popup {
     readonly property bool searchOnline: visible && AssistantService.online && query.length >= 3 && query.length <= 256
     readonly property var rows: {
         const query = search.text.trim().toLowerCase();
-        return AssistantService.models.filter(row => (!AssistantService.needsVision || row.labels.includes("vision")) && (row.id + " " + (row.target || "") + " " + row.labels.join(" ")).toLowerCase().includes(query));
+        const downloading = new Set(AssistantService.downloads.filter(job => job.running && job.status !== "completed").map(job => job.model_name));
+        const groups = [[], [], []];
+        for (const row of AssistantService.models) {
+            if ((!AssistantService.needsVision || row.labels.includes("vision")) && (row.id + " " + (row.target || "") + " " + row.labels.join(" ")).toLowerCase().includes(query))
+                groups[row.downloaded ? 0 : downloading.has(row.target || row.id) ? 1 : 2].push(row);
+        }
+        return groups[0].concat(groups[1], groups[2]);
     }
     parent: button
     popupType: Popup.Item

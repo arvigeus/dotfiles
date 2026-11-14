@@ -86,6 +86,36 @@ class TelevisionTests(unittest.TestCase):
         )
         self.addCleanup(self.backend.player.stop)
 
+    def test_external_card_plays_new_channel_without_refreshing_retained_directory(
+        self,
+    ):
+        self.backend.handle(dict(op='refresh'))
+        channel = normalize(datasets(111))['channels'][-1]
+        with patch.object(
+            self.backend.player, 'start', return_value={'playing': True}
+        ) as start:
+            for _ in range(3):
+                result = self.backend.handle(
+                    dict(
+                        op='play',
+                        channelId=channel['id'],
+                        streamId=channel['streams'][0]['id'],
+                        channel=channel,
+                    )
+                )
+                self.assertTrue(result['playing'])
+            self.assertEqual(start.call_count, 3)
+            self.assertEqual(start.call_args.args[0]['id'], channel['id'])
+            with self.assertRaisesRegex(TelevisionError, 'does not match'):
+                self.backend.handle(
+                    dict(
+                        op='play',
+                        channelId='other',
+                        streamId=channel['streams'][0]['id'],
+                        channel=channel,
+                    )
+                )
+
     def test_catalogue_groups_feeds_headers_unknown_channels_and_provider_exclusions(
         self,
     ):

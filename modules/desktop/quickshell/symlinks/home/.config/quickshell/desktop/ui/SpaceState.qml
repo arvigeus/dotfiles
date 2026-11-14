@@ -4,86 +4,98 @@ import Quickshell
 
 Singleton {
     id: root
+
     property var host: null
     property string currentId: ""
     property var runningIds: []
     // The single Spaces registry, in drawer order.
     readonly property var entries: [
         {
-            id: "movies",
-            name: qsTr("Movies"),
-            icon: "film",
-            source: "../spaces/movies/MediaBrowser.qml"
+            "id": "movies",
+            "name": qsTr("Movies"),
+            "icon": "film",
+            "source": "../spaces/movies/MediaBrowser.qml"
         },
         {
-            id: "series",
-            name: qsTr("TV Series"),
-            icon: "tv",
-            source: "../spaces/series/Main.qml"
+            "id": "series",
+            "name": qsTr("TV Series"),
+            "icon": "tv",
+            "source": "../spaces/series/Main.qml"
         },
         {
-            id: "music",
-            name: qsTr("Music"),
-            icon: "music",
-            source: "../spaces/music/Main.qml"
+            "id": "music",
+            "name": qsTr("Music"),
+            "icon": "music",
+            "source": "../spaces/music/Main.qml"
         },
         {
-            id: "streaming",
-            name: qsTr("Streaming"),
-            icon: "video",
-            source: "../spaces/streaming/Main.qml"
+            "id": "streaming",
+            "name": qsTr("Streaming"),
+            "icon": "video",
+            "source": "../spaces/streaming/Main.qml"
         },
         {
-            id: "radio",
-            name: qsTr("Radio"),
-            icon: "boom-box",
-            source: "../spaces/radio/Main.qml"
+            "id": "radio",
+            "name": qsTr("Radio"),
+            "icon": "boom-box",
+            "source": "../spaces/radio/Main.qml"
         },
         {
-            id: "television",
-            name: qsTr("Television"),
-            icon: "antenna",
-            source: "../spaces/television/Main.qml"
+            "id": "television",
+            "name": qsTr("Television"),
+            "icon": "antenna",
+            "source": "../spaces/television/Main.qml"
         },
         {
-            id: "pictures",
-            name: qsTr("Pictures"),
-            icon: "image",
-            source: "../spaces/pictures/Main.qml"
+            "id": "pictures",
+            "name": qsTr("Pictures"),
+            "icon": "image",
+            "source": "../spaces/pictures/Main.qml"
         },
         {
-            id: "games",
-            name: qsTr("Games"),
-            icon: "gamepad-2",
-            source: "../spaces/games/Main.qml"
+            "id": "games",
+            "name": qsTr("Games"),
+            "icon": "gamepad-2",
+            "source": "../spaces/games/Main.qml"
         },
         {
-            id: "books",
-            name: qsTr("Books"),
-            icon: "book-open",
-            source: "../spaces/books/Main.qml"
+            "id": "books",
+            "name": qsTr("Books"),
+            "icon": "book-open",
+            "source": "../spaces/books/Main.qml"
         }
     ]
 
     function open(id, output, payload) {
-        if (!host || !entries.some(entry => entry.id === id) || !Quickshell.screens.includes(output))
+        if (!host || !entries.some(entry => {
+            return entry.id === id;
+        }) || !Quickshell.screens.includes(output))
             return false;
+
+        // Own the request before opening the host can unload its caller (the
+        // launcher or assistant drawer). Never retain their delegate objects.
+        const request = payload ? JSON.parse(JSON.stringify(payload)) : null;
         if (!runningIds.includes(id))
             runningIds = runningIds.concat([id]);
+
         currentId = id;
         host.openOn(output);
-        host.deliver(id, payload);
+        host.deliver(id, request);
         return true;
     }
+
     function hide() {
         if (host)
             host.dismiss();
     }
+
     function close(id) {
         if (currentId === id) {
             hide();
             currentId = "";
         }
-        runningIds = runningIds.filter(value => value !== id);
+        runningIds = runningIds.filter(value => {
+            return value !== id;
+        });
     }
 }

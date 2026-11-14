@@ -899,6 +899,7 @@ DrawerPage {
             property var activityData: ({})
             active: root.active
             activity: activityData
+            output: root.screen
         }
     }
     Component {

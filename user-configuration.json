@@ -1880,6 +1880,14 @@
                 "target": "home/.config/quickshell/desktop/drawers/assistant/qmldir"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/research.py",
+                "target": "home/.config/quickshell/desktop/drawers/assistant/research.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/assistant/web.py",
+                "target": "home/.config/quickshell/desktop/drawers/assistant/web.py"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/drawers/audio/AudioService.qml",
                 "target": "home/.config/quickshell/desktop/drawers/audio/AudioService.qml"
             },
@@ -3716,6 +3724,22 @@
                 "target": "home/.config/quickshell/desktop/ui/SpaceHost.qml"
             },
             {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/SpaceOpenRequest.qml",
+                "target": "home/.config/quickshell/desktop/ui/SpaceOpenRequest.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/SpaceQuery.js",
+                "target": "home/.config/quickshell/desktop/ui/SpaceQuery.js"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/SpaceResultCard.qml",
+                "target": "home/.config/quickshell/desktop/ui/SpaceResultCard.qml"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/SpaceSearch.qml",
+                "target": "home/.config/quickshell/desktop/ui/SpaceSearch.qml"
+            },
+            {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/SpaceState.qml",
                 "target": "home/.config/quickshell/desktop/ui/SpaceState.qml"
             },
@@ -3738,6 +3762,14 @@
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/qmldir",
                 "target": "home/.config/quickshell/desktop/ui/qmldir"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/space_filters.py",
+                "target": "home/.config/quickshell/desktop/ui/space_filters.py"
+            },
+            {
+                "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/space_search.py",
+                "target": "home/.config/quickshell/desktop/ui/space_search.py"
             },
             {
                 "source": "modules/desktop/quickshell/symlinks/home/.config/quickshell/desktop/ui/theme.py",

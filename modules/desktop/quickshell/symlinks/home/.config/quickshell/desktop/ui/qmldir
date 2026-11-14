@@ -1,5 +1,8 @@
 singleton Theme 1.0 Theme.qml
 ShellText 1.0 ShellText.qml
+SpaceSearch 1.0 SpaceSearch.qml
+SpaceResultCard 1.0 SpaceResultCard.qml
+SpaceOpenRequest 1.0 SpaceOpenRequest.qml
 StatusBadge 1.0 StatusBadge.qml
 Surface 1.0 Surface.qml
 Card 1.0 Card.qml

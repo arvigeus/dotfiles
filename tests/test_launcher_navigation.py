@@ -62,10 +62,15 @@ def entry(name):
 
 @unittest.skipUnless(QS, 'Quickshell is required')
 class LauncherNavigationTests(unittest.TestCase):
-    def run_launcher(self, root, entries, driver, env=None):
+    def run_launcher(self, root, entries, driver, env=None, setup=None):
         """Run the launcher with driver QML; return the log and uwsm argv lists."""
         for name in ('launcher', 'ui', 'icons'):
             shutil.copytree(DESKTOP / name, root / name)
+        # Result rows reuse the bounded artwork cache; importing its QML types
+        # does not load a Space or start the on-demand worker.
+        shutil.copytree(DESKTOP / 'spaces/movies', root / 'spaces/movies')
+        if setup:
+            setup(root)
         # PanelWindow has no offscreen backend. Replace only its native
         # surface/shortcut plumbing; selection, handlers, models, rows and the
         # launch command line are the unchanged production source.
@@ -113,6 +118,95 @@ class LauncherNavigationTests(unittest.TestCase):
         record = stubs / 'launches'
         lines = record.read_text().splitlines() if record.exists() else []
         return log, [json.loads(line) for line in lines]
+
+    def test_space_query_debounce_local_first_stale_results_and_play_shortcut(self):
+        def setup(root):
+            (root / 'ui/space_search.py').write_text("""import json,sys,time
+args=json.loads(sys.stdin.readline());query=args['query']
+def emit(title,complete):
+ print(json.dumps(dict(items=[dict(id='movies:'+query,space='movies',title=title,subtitle='Movie',icon='film',playable=True,availability='Local',payload=dict(title=dict(id=query,kind='movie',title=title)))],complete=complete)),flush=True)
+if query=='old':time.sleep(.8)
+emit(query,False)
+time.sleep(.5)
+emit(query+' complete',True)
+""")
+
+        with tempfile.TemporaryDirectory() as directory:
+            log, launches = self.run_launcher(
+                Path(directory),
+                {'app.desktop': entry('Home app')},
+                """
+    property var handoff: null
+    QtObject {
+        id: spaceTarget
+        function openOn(output) {}
+        function deliver(id, payload) { shell.handoff = {id:id,payload:payload}; }
+    }
+    Timer {interval:100;repeat:true;running:true;onTriggered:{
+        try {
+            const field=find(launcher.contentItem,"applicationSearch");
+            const view=find(launcher.contentItem,"applicationResults");
+            if(stage===0){
+                SpaceState.host=spaceTarget;
+                check(view.count===1,"ordinary apps missing");
+                field.text="/mov";field.submit();
+                check(launcher.spaceMode && !launcher.spaceQuery.kind,"prefix was not opt in");
+                input.keyClick(Qt.Key_Tab);
+                check(field.text==="/movie ","Tab did not complete category");
+                field.text="/movie old";field.submit();
+            }else if(stage===1){
+                if(!launcher.spaceMode || !launcher.spaceQuery.query)throw Error("query lost");
+                // Replace a query while its helper has started.
+                if(retries++<4)return;
+                field.text="/movie home";field.submit();retries=0;
+            }else if(stage===2){
+                if(!view.count && retries++<30)return;
+                check(view.count===1 && launcher.matches[0].title==="home","local results not published first");
+            }else if(stage===3){
+                if(launcher.matches[0]?.title!=="home complete" && retries++<30)return;
+                check(launcher.matches[0].title==="home complete","obsolete query replaced current results");
+                field.forceActiveFocus();input.keyClick(Qt.Key_Return,Qt.ControlModifier);
+            }else{
+                check(shell.handoff?.id==="movies" && shell.handoff.payload.play && shell.handoff.payload.title.id==="home","Ctrl+Enter handoff failed");
+                console.log("NAVIGATION_PASS");Qt.quit();return;
+            }
+            stage++;
+        }catch(e){console.error("NAVIGATION_FAIL",stage,e.message);Qt.quit();}
+    }}
+""",
+                setup=setup,
+            )
+            self.assertIn('NAVIGATION_PASS', log)
+            self.assertEqual(launches, [])
+
+    def test_filter_only_search_sends_constraints_and_invalid_input_clears_results(
+        self,
+    ):
+        def setup(root):
+            (root / 'ui/space_search.py').write_text("""import json,sys
+args=json.loads(sys.stdin.readline())
+assert args['query']=='' and args['filters']=={'genre':'sci-fi','min_year':2000,'max_year':2025,'min_rating':7,'availability':'local'},args
+print(json.dumps(dict(items=[dict(id='movies:filtered',space='movies',title='Filtered movie',icon='film',availability='Local',playable=True,payload=dict(title=dict(id='filtered',kind='movie')))],complete=True)),flush=True)
+""")
+
+        with tempfile.TemporaryDirectory() as directory:
+            log, launches = self.run_launcher(
+                Path(directory),
+                {'app.desktop': entry('Home app')},
+                """
+    Timer {interval:100;repeat:true;running:true;onTriggered:{try{
+        const field=find(launcher.contentItem,"applicationSearch");
+        const view=find(launcher.contentItem,"applicationResults");
+        if(stage===0){field.text="/movie genre:sci-fi year:2000..2025 rating:7 local:true";field.submit();}
+        else if(stage===1){if(!view.count&&retries++<40)return;check(view.count===1&&launcher.matches[0].title==="Filtered movie","filter-only request failed");field.text="/movie rating:nope";field.submit();}
+        else {check(view.count===0&&launcher.spaceQuery.error,"invalid filter kept stale results");console.log("NAVIGATION_PASS");Qt.quit();return;}
+        stage++;
+    }catch(e){console.error("NAVIGATION_FAIL",stage,e.message);Qt.quit();}}}
+""",
+                setup=setup,
+            )
+            self.assertIn('NAVIGATION_PASS', log)
+            self.assertEqual(launches, [])
 
     def test_pointer_keyboard_scroll_and_activation_share_one_target(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -80,6 +80,7 @@ def tmdb_title(d, kind):
         countries=d.get('production_countries', []),
         rating=d.get('vote_average'),
         votes=d.get('vote_count', 0),
+        popularity=d.get('popularity'),
         ratings=[{'source': 'TMDB', 'value': round(d.get('vote_average', 0), 1)}],
     )
 

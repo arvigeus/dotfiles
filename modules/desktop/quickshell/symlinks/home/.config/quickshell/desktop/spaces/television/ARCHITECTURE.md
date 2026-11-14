@@ -89,6 +89,11 @@ observes its exit and any generic stream failure. Closing the shell ends playbac
 
 ## Portable state and fresh install
 
+Explicit playback carries a validated channel/stream snapshot from the selected
+row. Assistant search can discover channels after a retained Television worker
+loaded its directory; playing that card does not require a directory refresh.
+The backend checks that channel and stream IDs match the supplied snapshot.
+
 User configuration and state:
 
 - `~/.config/quickshell/desktop/spaces/television/television-ui.json`: country,

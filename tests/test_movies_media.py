@@ -1138,6 +1138,29 @@ class MediaTests(unittest.TestCase):
         result = self.backend.handle(dict(op='play', title=self.movie))
         self.assertEqual(result['url'], 'https://example.org/watch?id=42')
 
+    def test_card_playback_resolves_provider_identity_without_ui_hydration(self):
+        self.configure(
+            {
+                'providers': [
+                    {'name': 'Example', 'movie_url': 'https://example.org/{imdbId}'}
+                ]
+            }
+        )
+        candidate = dict(id='tmdb:movie:42', tmdbId=42, kind='movie', title='Movie')
+        canonical = candidate | dict(id='tt123', imdbId='tt123')
+        with patch.object(self.backend, 'details', return_value=canonical) as details:
+            for _ in range(3):
+                result = self.backend.handle(
+                    dict(op='play', title=candidate, online=True)
+                )
+                self.assertEqual(result['url'], 'https://example.org/tt123')
+            self.assertEqual(details.call_count, 3)
+        self.configure({'providers': []})
+        with patch.object(self.backend, 'details') as details:
+            with self.assertRaisesRegex(m.MediaError, 'Add a playback provider'):
+                self.backend.handle(dict(op='play', title=candidate, online=True))
+            details.assert_not_called()
+
     def test_config_secrets_do_not_cross_ui_boundary(self):
         self.configure(
             {

@@ -8,6 +8,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import "../ui"
 import "Search.js" as Search
+import "../ui/SpaceQuery.js" as SpaceQuery
 
 InteractionWindow {
     id: root
@@ -24,7 +25,18 @@ InteractionWindow {
     property point lastPointerPosition: Qt.point(0, 0)
     readonly property var favoriteIds: favorites.ids
     readonly property var candidates: Search.catalogue(DesktopEntries.applications.values)
-    readonly property var matches: Search.matches(candidates, searchQuery, favoriteIds)
+    readonly property var spaceQuery: SpaceQuery.parse(searchQuery)
+    readonly property bool spaceMode: spaceQuery !== null
+    readonly property var matches: spaceMode ? spaceSearch.items : Search.matches(candidates, searchQuery, favoriteIds)
+
+    SpaceSearch {
+        id: spaceSearch
+        active: root.opened && root.spaceMode && !root.spaceQuery.error
+        kind: root.spaceQuery?.kind || ""
+        query: root.spaceQuery?.query || ""
+        filters: root.spaceQuery?.filters || ({})
+        online: root.spaceQuery?.online ?? true
+    }
 
     Favorites {
         id: favorites
@@ -122,10 +134,19 @@ InteractionWindow {
             root.pointerPositionKnown = false
     }
 
-    function activate(index: int): void {
+    function activate(index: int, play = false): void {
         if (launching || index < 0 || index >= matches.length)
             return;
         const entry = matches[index];
+        if (spaceMode) {
+            if (SpaceState.open(entry.space, targetScreen, Object.assign({}, entry.payload, {
+                play: play && entry.playable
+            })))
+                dismiss();
+            else
+                errorMessage = qsTr("This Space is unavailable.");
+            return;
+        }
         if (!DesktopEntries.applications.values.includes(entry))
             return;
         errorMessage = "";
@@ -210,7 +231,7 @@ InteractionWindow {
                     objectName: "applicationSearch"
                     Layout.fillWidth: true
                     Layout.preferredHeight: Theme.pillHeight
-                    placeholderText: qsTr("Search applications…")
+                    placeholderText: qsTr("Search applications, or / for Spaces…")
                     leftPadding: Theme.spacingMedium
                     rightPadding: Theme.controlHeight + 4
                     debounceInterval: 100
@@ -231,11 +252,64 @@ InteractionWindow {
                         if (event.key === Qt.Key_D && event.modifiers === Qt.ControlModifier) {
                             root.applyQuery();
                             const entry = root.matches[results.currentIndex];
-                            if (entry && !root.launching)
+                            if (entry && !root.launching && !root.spaceMode)
                                 root.toggleFavorite(entry.id);
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_Return && event.modifiers === Qt.ControlModifier) {
+                            root.applyQuery();
+                            root.activate(results.currentIndex, true);
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_Tab && root.spaceMode && !root.spaceQuery.hasCriteria && !root.spaceQuery.error && root.spaceQuery.suggestions.length) {
+                            search.text = "/" + root.spaceQuery.suggestions[0].name + " ";
+                            search.submit();
                             event.accepted = true;
                         }
                     }
+                }
+            }
+
+            Flow {
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? implicitHeight : 0
+                visible: root.spaceMode && !root.spaceQuery.hasCriteria && !root.spaceQuery.error
+                spacing: Theme.spacingSmall
+                Repeater {
+                    model: root.spaceMode ? root.spaceQuery.suggestions : []
+                    ShellButton {
+                        required property var modelData
+                        text: "/" + modelData.name
+                        onClicked: {
+                            search.text = "/" + modelData.name + " ";
+                            search.submit();
+                            search.forceActiveFocus();
+                        }
+                    }
+                }
+            }
+
+            ShellText {
+                Layout.fillWidth: true
+                visible: root.spaceMode && !!root.spaceQuery.example && !root.spaceQuery.hasCriteria && !root.spaceQuery.error
+                text: root.spaceQuery?.example || ""
+                font.pixelSize: Theme.smallFontSize
+                color: Theme.muted
+                wrapMode: Text.WordWrap
+            }
+
+            RowLayout {
+                visible: root.spaceMode && root.spaceQuery.hasCriteria && !root.spaceQuery.error
+                Layout.fillWidth: true
+                BusySpinner {
+                    Layout.preferredWidth: 14
+                    Layout.preferredHeight: 14
+                    visible: spaceSearch.busy
+                    running: visible && root.opened
+                }
+                ShellText {
+                    Layout.fillWidth: true
+                    font.pixelSize: Theme.smallFontSize
+                    color: Theme.muted
+                    text: spaceSearch.busy ? qsTr("Searching Spaces · local results first…") : qsTr("Enter to open · Ctrl+Enter to play")
                 }
             }
 
@@ -258,10 +332,10 @@ InteractionWindow {
 
                 delegate: Button {
                     id: resultButton
-                    required property DesktopEntry modelData
+                    required property var modelData
                     required property int index
                     width: results.width
-                    height: 54
+                    height: root.spaceMode ? 64 : 54
                     padding: Theme.spacingMedium
                     hoverEnabled: true
                     focusPolicy: Qt.NoFocus
@@ -273,9 +347,11 @@ InteractionWindow {
                     onPressed: root.select(index)
                     onClicked: root.activate(index)
                     background: ButtonBackground {
+                        visible: !root.spaceMode
                         highlighted: resultButton.rowHighlighted
                     }
                     contentItem: RowLayout {
+                        visible: !root.spaceMode
                         spacing: Theme.gap
                         AppIcon {
                             icon: resultButton.modelData?.icon || ""
@@ -320,6 +396,18 @@ InteractionWindow {
                             background: null
                         }
                     }
+                    Loader {
+                        anchors.fill: parent
+                        active: root.spaceMode
+                        sourceComponent: SpaceResultCard {
+                            result: resultButton.modelData
+                            selectedRow: resultButton.rowHighlighted
+                            output: root.targetScreen
+                            focusPolicy: Qt.NoFocus
+                            onPressed: root.select(resultButton.index)
+                            onOpened: root.dismiss()
+                        }
+                    }
                 }
 
                 ShellText {
@@ -329,8 +417,17 @@ InteractionWindow {
                     wrapMode: Text.WordWrap
                     color: Theme.muted
                     visible: !root.matches.length
-                    text: search.text.trim() ? qsTr("No matching applications.") : qsTr("No applications available.")
+                    text: root.spaceMode ? (!root.spaceQuery.kind ? qsTr("Choose a search above. Type / to see all categories.") : !root.spaceQuery.hasCriteria ? qsTr("Type a search or add filters after /%1.").arg(root.spaceQuery.kind) : spaceSearch.busy ? qsTr("Searching…") : qsTr("No matching Space results.")) : search.text.trim() ? qsTr("No matching applications.") : qsTr("No applications available.")
                 }
+            }
+
+            ShellText {
+                Layout.fillWidth: true
+                visible: root.spaceMode && (!!root.spaceQuery.error || !!spaceSearch.warning)
+                text: root.spaceQuery?.error || spaceSearch.warning
+                color: Theme.warning
+                font.pixelSize: Theme.smallFontSize
+                wrapMode: Text.WordWrap
             }
 
             ShellText {

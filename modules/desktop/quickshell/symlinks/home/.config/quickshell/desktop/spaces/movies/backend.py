@@ -1654,6 +1654,13 @@ class Backend:
                 'Playback provider is unavailable. Reopen the module to reload providers.'
             )
         template = custom or (providers[index][1] if providers else '')
+        # Search cards can contain only a TMDB identity. Resolve the provider's
+        # required ID here too: playback must not race the UI's details request.
+        if (
+            '{imdbId}' in template
+            or (template.strip() and '{' not in template and not custom)
+        ) and not t.get('imdbId'):
+            t = self.details(dict(title=t))
         if '{tmdbId}' in template and not t.get('tmdbId'):
             t = self.save_title(self.identity(t))
         if custom and '{' not in custom:

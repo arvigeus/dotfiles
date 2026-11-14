@@ -1143,6 +1143,9 @@ def lyrics_cache():
 
 def fetch_lyrics(args):
     song = args.get('song') or {}
+    online = args.get('online', True)
+    if type(online) is not bool:
+        raise MusicError('online must be boolean.')
     if not isinstance(song, dict):
         raise MusicError('Invalid song for lyrics lookup.')
     if str(song.get('lyrics') or '').strip():
@@ -1155,7 +1158,6 @@ def fetch_lyrics(args):
     ):
         return dict(available=False, lyrics='', provider='')
     source = song.get('source')
-    local_checked = False
     if source in ('nextcloud', 'music-local') and (
         song.get('local') or song.get('localPath')
     ):
@@ -1165,7 +1167,6 @@ def fetch_lyrics(args):
             local = local_files.cached(song)
             if local:
                 details = tags.read(local, local_files.run)
-                local_checked = True
                 if details['tags']['lyrics'].strip():
                     return dict(
                         available=True,
@@ -1176,7 +1177,7 @@ def fetch_lyrics(args):
                     )
         except (MusicError, ValueError, OSError):
             pass
-    if source == 'nextcloud' and not local_checked:
+    if online and source == 'nextcloud':
         from spaces.music.cloud import CloudLibrary
 
         try:
@@ -1189,7 +1190,7 @@ def fetch_lyrics(args):
         providers = audio_lyrics.read_config()
     except audio_lyrics.LyricsError as error:
         raise MusicError(str(error)) from None
-    if not providers:
+    if not providers and online:
         raise MusicError('No lyrics provider is configured.')
     identity = json.dumps(
         [
@@ -1208,6 +1209,8 @@ def fetch_lyrics(args):
         saved = cache.get(hashlib.sha256(identity.encode()).hexdigest(), 90 * 86400)
         if saved and saved.get('available'):
             return saved
+    if not online:
+        return dict(available=False, lyrics='', provider='')
     return cache.load(
         identity,
         0 if args.get('refresh') else 86400,

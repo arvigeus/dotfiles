@@ -10,6 +10,7 @@ ColumnLayout {
     required property var activity
     property bool showDetails: false
     property bool active: true
+    property var output: null
     property bool approvalCollapsed: false
     readonly property bool detailsExpanded: showDetails || (approvalPending && !approvalCollapsed)
     readonly property var args: activity.arguments || ({})
@@ -17,6 +18,20 @@ ColumnLayout {
     readonly property bool approvalPending: activity.state === "pending_approval"
     readonly property string title: {
         switch (activity.name) {
+        case "search_spaces":
+            return qsTr("Search Spaces · %1").arg(args.kind || "");
+        case "space_filters":
+            return qsTr("Inspect Space filters · %1").arg(args.kind || "");
+        case "present_space_results":
+            return result.title || args.title || qsTr("Recommendations");
+        case "web_search":
+            return qsTr("Search web");
+        case "read_web_page":
+            return qsTr("Read web page");
+        case "search_lyrics":
+            return qsTr("Identify song from lyrics");
+        case "get_song_lyrics":
+            return qsTr("Read song lyrics");
         case "inspect_system":
             return qsTr("Inspect system · %1").arg(String(args.query || "state").replace(/_/g, " "));
         case "read_file":
@@ -34,8 +49,21 @@ ColumnLayout {
         }
     }
     readonly property string target: {
+        if (activity.name === "search_spaces") {
+            const parts = args.query ? [String(args.query)] : [];
+            parts.push(...Object.keys(args.filters || {}).map(key => key.replace(/_/g, " ") + ": " + args.filters[key]));
+            return parts.join(" · ");
+        }
         if (activity.name === "run_command")
             return String(args.command || "");
+        if (activity.name === "web_search")
+            return String(args.query || "");
+        if (activity.name === "read_web_page")
+            return String(result.title || args.url || "");
+        if (activity.name === "search_lyrics")
+            return String(args.fragment || "");
+        if (activity.name === "get_song_lyrics")
+            return [result.title, result.artist].filter(Boolean).join(" · ");
         if (activity.name === "search_files")
             return String(args.path || "") + " · " + String(args.pattern || "");
         return String(args.path || "");
@@ -85,8 +113,18 @@ ColumnLayout {
             parts.push("Written bytes: " + result.written_bytes);
         if (result.content)
             parts.push(result.content);
+        if (result.provider)
+            parts.push(qsTr("Source: %1").arg(result.provider) + (result.saved ? qsTr(" · Saved lyrics") : ""));
+        if (result.has_more)
+            parts.push(qsTr("More text available at offset %1").arg(result.next_offset));
         if (result.entries)
-            parts.push(result.entries.map(item => item.type + "  " + item.name).join("\n"));
+            parts.push(result.entries.map(item => item.url ? item.title + "\n" + item.url + "\n" + (item.snippet || "") : item.type + "  " + item.name).join("\n\n"));
+        if (result.warning)
+            parts.push(result.warning);
+        if (["search_spaces", "search_lyrics"].includes(activity.name) && result.items?.length)
+            parts.push(result.items.map(item => item.title + "\n" + JSON.stringify(item.metadata || {})).join("\n\n"));
+        if (activity.name === "space_filters")
+            parts.push(JSON.stringify(result, null, 2));
         return parts.join("\n\n");
     }
     readonly property string headerText: title + (target ? " · " + target : "") + ((activity.batch_size || 1) > 1 ? " · " + activity.batch_index + "/" + activity.batch_size : "") + (!["running", "completed"].includes(activity.state) ? " · " + statusLabel : "")
@@ -106,6 +144,51 @@ ColumnLayout {
             if (root.approvalPending)
                 root.approvalCollapsed = !expand;
         }
+    }
+    Repeater {
+        model: root.activity.name === "present_space_results" || (["search_spaces", "search_lyrics"].includes(root.activity.name) && root.result.display !== false) ? root.result.items || [] : []
+        SpaceResultCard {
+            required property var modelData
+            Layout.fillWidth: true
+            result: modelData
+            output: root.output
+        }
+    }
+    Repeater {
+        model: ["web_search", "search_lyrics"].includes(root.activity.name) ? root.result.entries || [] : root.activity.name === "read_web_page" && root.result.url ? [
+            {
+                title: root.result.title,
+                url: root.result.url
+            }
+        ] : []
+        ShellButton {
+            required property var modelData
+            objectName: "assistantWebSource:" + root.activity.id + ":" + index
+            required property int index
+            Layout.fillWidth: true
+            text: modelData.title || modelData.url || ""
+            iconName: "globe"
+            enabled: /^https?:\/\//.test(modelData.url || "")
+            ToolTip.visible: hovered
+            ToolTip.text: modelData.url || ""
+            onClicked: Apps.launch(["xdg-open", modelData.url])
+        }
+    }
+    ShellText {
+        Layout.fillWidth: true
+        visible: root.activity.name === "get_song_lyrics" && root.activity.state === "completed"
+        text: root.result.available ? qsTr("Lyrics · %1").arg(root.result.provider || qsTr("Library")) + (root.result.saved ? qsTr(" · Saved") : "") : qsTr("No lyrics available")
+        color: Theme.muted
+        font.pixelSize: Theme.smallFontSize
+        wrapMode: Text.Wrap
+    }
+    ShellText {
+        Layout.fillWidth: true
+        visible: ["search_spaces", "space_filters", "web_search", "search_lyrics"].includes(root.activity.name) && !!root.result.warning
+        text: root.result.warning || ""
+        color: Theme.warning
+        font.pixelSize: Theme.smallFontSize
+        wrapMode: Text.Wrap
     }
     ColumnLayout {
         Layout.fillWidth: true

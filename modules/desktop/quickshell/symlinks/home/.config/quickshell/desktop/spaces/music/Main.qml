@@ -639,6 +639,29 @@ Item {
             artistDetails = ({});
         }
     }
+    function handleOpen(payload) {
+        externalOpen.submit(payload);
+    }
+    SpaceOpenRequest {
+        id: externalOpen
+        active: root.active
+        ready: root.initialized
+        onDelivered: payload => {
+            const item = payload?.item;
+            if (!item?.id)
+                return;
+            ++root.generation;
+            root.loading = false;
+            root.section = ["nextcloud", "music-local"].includes(item.source) ? "library" : "discover";
+            if (item.kind === "song") {
+                if (payload.play)
+                    playback.playSongs([item], 0);
+                else
+                    info.showSong(item);
+            } else
+                root.select(item);
+        }
+    }
     function loadEntity(item, refresh) {
         const token = ++generation;
         appending = false;

@@ -189,6 +189,10 @@ video/model/question. Download associations have a 10,000-record ceiling, suppor
 local-first playback and keep the most recent file per video and type.
 Older collision-preserved copies remain on disk.
 
+External card requests wait for initialization and pending commands. A new open
+invalidates earlier player handoffs/status replies so a delayed playback callback
+cannot hide the newly requested destination. Explicit dismissal drops queued opens.
+
 The key, settings, library and resume directory use 0600 files with
 0700 leaf directories. Credentials, portable state, runtime sockets, active jobs,
 caches and media payloads stay outside source assets. Media payloads and caches

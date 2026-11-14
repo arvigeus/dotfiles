@@ -71,6 +71,109 @@ Provider, persistence and worker details belong to each Space:
   [Television](symlinks/home/.config/quickshell/desktop/spaces/television/ARCHITECTURE.md)
   and [Streaming](symlinks/home/.config/quickshell/desktop/spaces/streaming/ARCHITECTURE.md)
 
+### Launcher and assistant discovery
+
+`ui/SpaceQuery.js` recognizes explicit slash categories and aliases plus quoted
+`field:value` constraints. `year:2000..2025`, open ranges, numeric rating/vote/
+bitrate thresholds, duration suffixes and local/library/offline shortcuts become
+typed fields. Category-only input shows examples without starting a search;
+ordinary app queries never start Space discovery. `SpaceSearch.qml` debounces for 300 ms,
+publishes saved results before online results, cancels on replacement/dismissal,
+and discards responses by revision. No Space or player loads during search.
+The shared `ui/space_search.py` helper validates category/query/limits, reads
+existing SQLite/JSON snapshots, then uses the Spaces' provider implementations.
+Movies and Series have separate data/config namespaces. Music uses only the
+current Nextcloud account's merged inventory or catalogue, without starting an
+index rebuild. Game search reads current Steam manifests and saved Epic/GOG
+ownership; it never logs in to a store during the local phase. Television reads
+the saved directory and favorites, leaving full-directory refresh to its Space.
+Online episodes require a show and `S01E02` or `1x2`; plain queries include saved
+episode names and local files. Provider failures retain saved results.
+
+`ui/space_filters.py` owns supported fields per category, validation, aliases,
+metadata predicates and sorting. Unsupported fields, unknown movie genres,
+nonfinite numbers and invalid ranges fail before provider work. Missing metadata
+never satisfies a constraint, except where the provider applied a verified
+constraint (e.g. TMDB origin-country discovery). Genres normalize `sci-fi` to the
+movie or TV taxonomy; game genres/platforms resolve names or IDs from IGDB's
+options. IGDB retains those IDs alongside names and supports oldest-first
+discovery. Ratings in requests always use 0–10; Games' stored 0–5 scores are
+converted for comparison. Durations use seconds.
+
+| Category | Discovery constraints beyond text and availability |
+| --- | --- |
+| Movies/Series/Episodes | Genre, year range, minimum rating/votes, origin country, favorites |
+| Music/Songs/Albums/Artists | Genre; artist/year where meaningful; song album/duration |
+| Radio | Genre tags, country, language, minimum bitrate, codec, favorites |
+| Television | Country, language, category, favorites |
+| Games | Genre, platform, years, minimum rating/votes, installed/owned, favorites |
+| YouTube | Channel, duration, years, live status |
+
+Availability/sort filters apply within each category's supported choices. Local
+copies still precede saved/online matches; sorting acts within those groups.
+`library` means local media, owned store games, account music or favorites, not
+arbitrary cached provider metadata. `online=false` independently forbids provider
+access while retaining cached discovery. Library-only/favorite/installed/owned
+constraints skip online discovery. Local movie records merge current cached
+metadata before filtering. Music filters stream the current account's records
+before limiting; artists/albums inherit observed genres/local availability from
+related songs. Games inspect up to ten library pages before taking the shortlist.
+Online providers return bounded candidate pages; music genre discovery samples
+genre charts, so post-filtering is not an exhaustive catalogue query. Exact
+artist constraints use provider text search instead of unrelated chart results.
+YouTube hydrates metadata only when the requested constraints need it; deadlines
+retain candidates already found.
+
+Results carry stable identity, category, availability, bounded metadata and an
+entity payload. Local copies win deduplication, then saved results, then online
+results; each request returns at most twelve cards (six by default for the assistant).
+`SpaceResultCard` is shared by launcher rows and assistant tool activities. Cards
+use provider posters/covers/thumbnails through the shared bounded artwork cache,
+decode at twice the small display size and fall back to bundled icons. Availability
+stays in the tooltip/accessibility description. Search does no artwork hydration.
+Movie/series cards retain compact identity payloads; their Space hydrates details.
+TMDB/IMDb aliases with a shared TMDB identity collapse to one result.
+Only user actions call `SpaceState.open` with an explicit `play` boolean.
+The registry copies the payload before opening can unload the caller's delegates.
+`SpaceOpenRequest` defers payload delivery until the page is active/initialized
+and drops undelivered requests on dismissal. Page handlers use their existing
+selection/playback paths, retaining their normal ownership and error reporting.
+
+The assistant's read-only `space_filters` tool exposes supported constraints and
+static/saved provider choices, fetching current options only with `online=true`.
+A query narrows long option lists. `search_spaces` accepts empty text for discovery
+and typed filters, returning metadata plus opaque result refs. `display=false`
+keeps candidate cards out of the conversation while the model chooses a shortlist.
+`present_space_results` accepts up to eight returned refs with short reasons and
+renders exactly those cards in the requested order. It resolves payloads from
+tool results, never from model-authored actions. At most 96 refs survive in each
+backend request; follow-ups restore refs from validated saved discovery tool
+transcripts, excluding user/ordinary assistant text. Unknown refs require another
+search. A successful nonempty presentation is a valid answer even when the model
+finishes without extra prose; the drawer verifies that the cards exist before
+accepting that completion. Other empty tool replies retain their error behavior.
+Native tool models receive the current local date for relative year
+requests. Models without native tools retain ordinary chat.
+
+Inference prompts omit UI action payloads while saved tool transcripts retain them
+for validated follow-up refs. Before each round, the backend checks the loaded
+runtime's slot size (not its advertised model capacity). Local llama.cpp backends
+provide the full chat template and tokenizer; other/unloaded backends use a byte
+estimate. The budget reserves reply space, removes whole older turns, then bounds
+tool results without splitting call/result exchanges or truncating the current
+user request. A server context rejection updates the estimate and retries that
+inference once, without rerunning tools. `test_assistant_budget.py` covers runtime
+limits, complete exchanges, follow-up payload retention and rejection recovery.
+
+Search runs through the assistant's bounded process runner;
+the helper has a thirty-second deadline and unwinds provider cleanup on signals,
+including yt-dlp's separate process group. Tool output keeps the existing 16 KiB
+budget; excess cards/options are dropped with `truncated=true`. Tests in
+`test_space_search.py`, `test_space_discovery.py` and `test_launcher_navigation.py`
+cover ordering, real provider-filter routing, invalid/unknown metadata, account
+scope, offline boundaries, recommendation tool rounds, follow-up refs, stale
+queries and explicit card actions.
+
 `SessionService` reads logind capabilities and `ScheduledShutdown` on demand.
 Systemd owns shutdown timers. Gaming/reload delegate to `session-mode`; see
 [session ownership](../hyprland/ARCHITECTURE.md#session-ownership). Temporary
@@ -133,7 +236,10 @@ The protocol follows [Lemonade's Chat Completions API](https://lemonade-server.a
 
 `ModelPicker` filters the local catalogue immediately and searches Hugging Face
 and ModelScope through `/v1/registry/search` after a 350 ms debounce and three
-characters. The two `RegistryModels` sections own independent `RegistryRequest`
+characters. Downloaded models precede active downloads, followed by the rest of
+the catalogue; native alias and catalogue ordering is preserved within each group.
+Download ordering follows concrete targets and updates with managed job state.
+The two `RegistryModels` sections own independent `RegistryRequest`
 helpers, loading/error states and retries. Searches do not hold the singleton's
 control lock; query changes, dismissal and going offline cancel metadata helpers.
 Request revisions discard late replies. No discovery polling or eager per-result
@@ -305,6 +411,69 @@ Run the assistant suite with the isolated environment from
 `python3 -B -m unittest discover -s tests -p 'test_assistant*.py' -v`. Real-model
 smoke checks should use an already-downloaded tool model, read-only inspection,
 exact approved commands, and disposable files for modifications.
+
+### Web and lyrics research
+
+Four read-only native tools run in `drawers/assistant/research.py` through the
+bounded process runner (28-second worker deadline, 32-second parent deadline):
+`web_search`, `read_web_page`, `search_lyrics`, and `get_song_lyrics`. The model
+receives explicit instructions to verify web leads, cite their URLs and resolve
+identified titles/artists through `search_spaces` before presenting cards.
+Web search returns evidence rather than model-authored Space action payloads.
+Source buttons launch the browser only on a user click. Both web text and lyrics
+remain untrusted tool results in native transcripts.
+
+`web.py` searches DuckDuckGo's Lite endpoint with HTML fallback, recognizing
+verification challenges separately from no matches. These public endpoints may
+rate-limit or change markup. Optional private
+`$XDG_CONFIG_HOME/quickshell/desktop/assistant-web.json` selects a public SearXNG
+JSON search endpoint instead:
+
+```json
+{"provider": "searxng", "url": "https://search.example/search"}
+```
+
+Omit the file, or set `provider` to `auto`/`duckduckgo`, for the default. No browser
+cookies, session state, proxy environment, external scripts or subresources are
+used. HTTP(S) URLs must have no credentials; local names, private addresses and
+mixed public/private DNS answers are refused on every redirect. Connections pin
+the validated IP while preserving Host and TLS certificate/hostname validation.
+Responses are limited to 2 MiB with identity encoding, four redirect hops and
+ten-second socket timeouts. The reader extracts visible HTML text and safe source
+links, or plain text/JSON; it does not extract PDFs or render JavaScript. Text is
+bounded to 160,000 characters. Page and lyrics chunks include character offsets,
+`next_offset`, `total_chars` and `has_more`; UTF-8 byte truncation adjusts the
+continuation offset so multibyte text is not skipped.
+
+`search_lyrics` first scans up to 10,000 rows of the current Nextcloud account's
+Music `local.sqlite` inventory. Matching ignores case, accents, punctuation and
+LRC timestamps. Each match requires an ordinary file under the Music directory
+with the inventory's current inode/size/mtime signature; stale rows, symlinks and
+other accounts are excluded. It produces ordinary song cards with a bounded
+matching excerpt, using the merged library identity where available. Local
+matches suppress web transmission of the fragment. Otherwise, `online=true`
+searches for the quoted fragment and returns unverified web leads. LRCLIB's
+[search endpoint](https://lrclib.net/docs) searches track metadata, so it is not
+used as a lyric-text search. An empty local result does not mean every library
+song has been checked: only indexed embedded lyrics can match, and Music owns
+inventory refresh.
+
+`get_song_lyrics` accepts only a returned song ref, never a model-authored song
+object or filesystem path. The parent resolves the entity, and the worker seeks
+an exact title/artist match in the current account's library, preferring the same
+identity and album. Validated inventory lyrics are read in full rather than from
+the bounded card payload. Fallback uses Music's existing embedded-tag reader,
+Nextcloud lyrics API, configured audio-tools providers and lyrics cache. The
+`online=false` option preserves local/cache access while skipping cloud/provider
+requests. No audio is downloaded, no tags are changed, and provider configuration
+is shared with Music and Audio Tools. `search_lyrics` refs participate in the same
+96-ref registry and validated follow-up restoration as Space discovery results.
+
+`test_assistant_research.py` covers public-address and redirect validation, pinned
+TLS connections, page/search parsing, challenge fallback, Unicode continuation,
+library-first lyrics, stale signatures/account switches, the actual worker,
+native tool/card rounds and offscreen source/provenance/card rendering.
+`test_music_enrichment.py` also covers offline cache reuse without network calls.
 
 ### Attachments and Dolphin sharing
 

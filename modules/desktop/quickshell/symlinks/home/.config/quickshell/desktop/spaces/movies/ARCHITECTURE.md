@@ -38,6 +38,14 @@ activity panels; errors and recovery controls stay local. Embedded scan/download
 subtitle panels use `showStatus: false` to avoid duplicate routine notices.
 Selection and tab generations prevent older replies from clearing newer loading
 state or replacing content; `resetSelection()` clears all per-title requests.
+External title cards return to Overview even when the same title is selected.
+Their selection generation pins the destination through TMDB-to-IMDb ID hydration,
+so late catalogue replies cannot replace it. Playback resolves the provider's
+required IMDb/TMDB identity in the backend even if UI hydration is still pending.
+Explicit card playback waits for provider initialization and the selected title's
+file inventory, preferring a matching local file, then the first Watch online
+provider. Hiding the page, changing title or opening another card cancels queued
+card playback before it starts.
 
 `ProgressiveImage` owns cached preview/full layers. Backdrops retain their old
 image for up to one second, then use the current poster until the new backdrop

@@ -42,6 +42,7 @@ FocusScope {
     property var providerSeasons: []
     // The chosen season; the season picker follows it rather than owning it.
     property string season: ""
+    property string linkedSeason: ""
     property var episodes: []
     property var providerEpisodes: []
     property string episodeNext: ""
@@ -49,6 +50,7 @@ FocusScope {
     property string error: ""
     property string detailError: ""
     property bool loading: true
+    property bool initialized: false
     property bool detailLoading: false
     property bool artworkLoading: false
     property bool seasonsLoading: false
@@ -83,6 +85,7 @@ FocusScope {
     property bool collectionsLoaded: false
     property string collectionsError: ""
     property string linkedTitleId: ""
+    property int linkedSelectionGeneration: -1
     property string tab: "overview"
     property var links: []
     property string spoiler: ""
@@ -239,7 +242,10 @@ FocusScope {
         if (JSON.stringify(next) !== JSON.stringify(seasons))
             seasons = next;
 
-        if (!next.includes(season))
+        if (linkedSeason && next.includes(linkedSeason)) {
+            season = linkedSeason;
+            linkedSeason = "";
+        } else if (!next.includes(season))
             season = next.length ? next[0] : "";
     }
 
@@ -252,8 +258,10 @@ FocusScope {
     // abandons them all; their loading flags must be cleared here too.
     function resetSelection(title) {
         ++selectionGeneration;
+        externalPlay.payload = null;
         selectionDelay.stop();
         linkedTitleId = "";
+        linkedSeason = "";
         selected = title;
         backgroundImage = title.backdrop || "";
         artworkReady = false;
@@ -341,7 +349,9 @@ FocusScope {
     }
 
     function keepLinkedSelection() {
-        return !!linkedTitleId && selected.id === linkedTitleId;
+        // Details can replace a TMDB ID with its canonical IMDb ID. The
+        // selection, rather than either provider's ID, owns the open request.
+        return !!linkedTitleId && linkedSelectionGeneration === selectionGeneration;
     }
 
     function releaseLinkedSelection(event) {
@@ -495,20 +505,50 @@ FocusScope {
         localMode = false;
         favorites = false;
         scanDialog.close();
-        filters = ({
-                "genre": "Anime"
-            });
+        filters = title.id.startsWith("mal:") ? {
+            genre: "Anime"
+        } : ({});
         search.text = "";
         searchDelay.stop();
         selectTitle(title);
+        tab = "overview";
         linkedTitleId = title.id;
+        linkedSelectionGeneration = selectionGeneration;
         if (needsBrowse)
             browse(false, true);
     }
 
     function handleOpen(payload) {
-        if (payload && payload.title)
-            openTitle(payload.title);
+        externalPlay.payload = null;
+        externalOpen.submit(payload);
+    }
+    SpaceOpenRequest {
+        id: externalOpen
+        active: root.active
+        ready: true
+        onDelivered: payload => {
+            if (!payload?.title?.id || payload.title.kind !== root.kind)
+                return;
+            root.openTitle(payload.title);
+            if (payload.episode) {
+                root.tab = "episodes";
+                root.linkedSeason = String(payload.episode.season);
+                root.season = String(payload.episode.season);
+            }
+            if (payload.play)
+                externalPlay.submit(payload);
+        }
+    }
+    SpaceOpenRequest {
+        id: externalPlay
+        active: root.active
+        ready: root.initialized && !root.filesLoading
+        onDelivered: payload => {
+            const episode = payload.episode || null;
+            const local = root.localFiles.some(file => !episode || (Number(file.season) === Number(episode.season) && Number(file.episode) === Number(episode.number)));
+            root.watchIndex = 0;
+            root.play(episode, !local);
+        }
     }
 
     function openRelated(row) {
@@ -949,6 +989,7 @@ FocusScope {
                 // INI storage returns "true"/"false" strings once read from disk.
                 gridMode = String(preferences.value("catalogue/grid", false)) === "true";
             }
+            initialized = true;
         });
         service.fetch("local_titles", {
             "kind": kind

@@ -324,6 +324,29 @@ Item {
             });
         });
     }
+    function handleOpen(payload) {
+        externalOpen.submit(payload);
+    }
+    SpaceOpenRequest {
+        id: externalOpen
+        active: root.active
+        ready: root.initialized
+        onDelivered: payload => {
+            if (!payload?.item)
+                return;
+            ++root.browseGeneration;
+            root.loading = false;
+            root.searchOpen = true;
+            search.text = payload.item.name;
+            searchDelay.stop();
+            root.country = "";
+            root.genres = [];
+            root.results = [payload.item];
+            root.displayRows(false);
+            if (payload.play)
+                root.play(Stations.groupStations([payload.item])[0]);
+        }
+    }
     function playerCommand(op) {
         const generation = ++playGeneration;
         resolving = false;

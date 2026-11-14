@@ -540,7 +540,8 @@ Singleton {
             } else if (value.type === "done") {
                 finishThinking("completed");
                 completed = true;
-                const noAnswer = value.empty_answer === true || !history.get(index).body.trim();
+                const cardsAnswer = value.cards_answer === true && JSON.parse(history.get(index).toolActivitiesJson || "[]").some(activity => activity.name === "present_space_results" && activity.state === "completed" && activity.result?.items?.length > 0);
+                const noAnswer = value.empty_answer === true || (!history.get(index).body.trim() && !cardsAnswer);
                 history.setProperty(index, "state", value.limited ? "limited" : noAnswer ? "error" : "done");
                 if (Array.isArray(value.tool_context))
                     history.setProperty(index, "toolContextJson", JSON.stringify(value.tool_context));

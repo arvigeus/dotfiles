@@ -142,8 +142,18 @@ def normalize(raw, game_id=''):
         'artwork': [v for r in raw.get('artworks', [])[:12] if (v := image(r))],
         'screenshots': [v for r in raw.get('screenshots', [])[:32] if (v := image(r))],
         'genres': names('genres'),
+        'genreIds': [
+            str(item['id'])
+            for item in raw.get('genres', [])
+            if isinstance(item, dict) and item.get('id')
+        ],
         'themes': names('themes'),
         'platforms': names('platforms'),
+        'platformIds': [
+            str(item['id'])
+            for item in raw.get('platforms', [])
+            if isinstance(item, dict) and item.get('id')
+        ],
         'developers': list(
             dict.fromkeys(
                 c['company']['name']
@@ -286,6 +296,7 @@ class Client:
                 '-added': 'total_rating_count desc',
                 '-rating': 'total_rating desc',
                 '-released': 'first_release_date desc',
+                'released': 'first_release_date asc',
                 '-updated': 'updated_at desc',
                 'name': 'name asc',
                 '-metacritic': 'aggregated_rating desc',

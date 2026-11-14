@@ -154,7 +154,14 @@ class TelevisionBackend:
             return favorites
         if op == 'play':
             identity = request.get('channelId')
-            channel = next(
+            channel = (
+                clean_channel(request['channel']) if 'channel' in request else None
+            )
+            if channel is not None and channel['id'] != identity:
+                raise TelevisionError(
+                    'The selected channel does not match its playback request.'
+                )
+            channel = channel or next(
                 (
                     row
                     for row in self.catalogue.snapshot.get('channels', [])
