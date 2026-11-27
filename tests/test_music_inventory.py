@@ -66,12 +66,21 @@ class InventoryTests(unittest.TestCase):
         return path
 
     def test_new_songs_tags_entities_queue_and_search_are_available_offline(self):
-        self.song('new.flac')
+        self.song('new.flac', lyrics='A quiet cáscade')
         self.assertTrue(self.inventory.refresh()['changed'])
         songs = self.library.browse({'query': 'New song'})
         self.assertEqual(songs['total'], 1)
         self.assertTrue(songs['items'][0]['notUploaded'])
         self.assertEqual(self.library.browse({'pending': True})['total'], 1)
+        lyric_search = {'query': 'quiet cascade', 'pending': True}
+        self.assertEqual(self.library.browse(lyric_search)['total'], 1)
+        self.assertEqual(len(self.library.queue(lyric_search)['items']), 1)
+        metadata_only = dict(lyric_search, includeLyrics=False)
+        self.assertEqual(self.library.browse(metadata_only)['total'], 0)
+        self.assertEqual(self.library.queue(metadata_only)['items'], [])
+        self.assertEqual(
+            self.library.browse(dict(metadata_only, query='New song'))['total'], 1
+        )
         self.assertEqual(self.library.browse({'category': 'artists'})['total'], 20)
         artist = self.index.lookup('artist', 'a0')
         self.assertIn(
@@ -247,7 +256,7 @@ class InventoryTests(unittest.TestCase):
         self.song('new.flac')
         self.inventory.refresh()
         self.assertEqual(self.library.browse({})['total'], 1)
-        self.index.attempted = False
+        self.index.next_refresh = 0
         self.client.offline = False
         self.index.start()
         self.index.thread.join(5)

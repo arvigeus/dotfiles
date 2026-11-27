@@ -131,10 +131,10 @@ DESKTOP_TOOLS = [
     ),
     tool(
         'play_space_result',
-        'Play or open a result from search_spaces in its Space: songs, albums, '
+        'Play or open a result in its Space: songs, albums, '
         'artists, radio, TV channels, YouTube videos, movies, series, episodes and '
         'installed games. play=false only opens it. Use the exact ref returned by '
-        'search_spaces.',
+        'search_spaces or search_lyrics.',
         {'ref': {'type': 'string'}, 'play': {'type': 'boolean'}},
         ['ref'],
     ),
@@ -1154,7 +1154,7 @@ def open_space(args):
     item = lemonade.SPACE_RESULTS.get(str(args.get('ref', '')))
     if not item:
         return {
-            'error': 'That result is not available. Search with search_spaces first.'
+            'error': 'That result is not available. Search again with search_spaces or search_lyrics.'
         }
     play = args.get('play') is not False and item.get('playable') is True
     request = json.dumps(
@@ -1235,6 +1235,8 @@ def instructions(behavior):
         'to play or open a result, call play_space_result with its returned ref. '
         'Only use refs returned by your tools. Use source URLs for web research.'
     )
+    if 'research' in behavior.get('tools', []):
+        text += '\n\n' + lemonade.LYRICS_INSTRUCTIONS
     text += (
         '\n\nYou forget everything between conversations except what you save '
         'with the remember tool. When asked to remember something, call remember '

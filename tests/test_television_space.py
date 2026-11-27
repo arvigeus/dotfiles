@@ -7,7 +7,7 @@ from test_radio import fake_mpv
 from test_television import datasets
 
 
-def setup(root):
+def setup(root, data=None):
     movies_setup(root)
     player = fake_mpv(root)
     path = root / 'spaces/television/backend.py'
@@ -19,7 +19,9 @@ def setup(root):
         time.sleep(.1)
         return fixture_data[name]
     backend = TelevisionBackend(fetch=fetch)
-""".replace('PLAYER', repr(str(player))).replace('FIXTURE', repr(datasets()))
+""".replace('PLAYER', repr(str(player))).replace(
+        'FIXTURE', repr(datasets() if data is None else data)
+    )
     path.write_text(
         path.read_text().replace('    backend = TelevisionBackend()\n', fixture)
     )

@@ -64,7 +64,9 @@ from Spaces to release it.
   and [Streaming](symlinks/home/.config/quickshell/desktop/spaces/streaming/README.md):
   local/cloud music, stations, IPTV and YouTube.
 
-**Restart → Reload** closes applications and starts a fresh desktop session.
+**Restart → Reload desktop** reloads Hyprland and Quickshell while keeping
+applications open. Quickshell drawers and Spaces can reset. **Reload session**
+closes applications and starts a fresh desktop session.
 Shutdown timers continue with the drawer closed. Temporary sleep/locking pauses
 end on shell reload; manual lock and suspend remain available. Closing the lid can
 still suspend the computer, and the session locks before sleep.
@@ -103,10 +105,10 @@ choice takes effect on the next message and may reload the model.
 Tool-capable models can inspect local files and system state, search Spaces, and
 recommend items using genre, years, ratings and other filters. They can present
 a chosen shortlist as cards with reasons, including in follow-up replies.
-They can identify songs from remembered lyrics or movies from plot descriptions,
-research public web pages, and resolve matches to Space cards. Lyrics lookup
-prefers saved library lyrics before online providers. Local fragment matching
-uses embedded lyrics indexed by Music; open Music to refresh that index.
+The Assistant and Pip can identify a song from a remembered line, find songs
+about a topic, and read lyrics for a named song. They check indexed embedded and
+saved Nextcloud lyrics first. Open Music to refresh its index. They can also
+identify movies from plot descriptions and resolve research matches to Space results.
 Ask which microphone is the default, whether it is muted, or to switch to a
 named input. Microphone results can open the Microphone drawer for testing.
 Assistant and Pip can start or stop the same countdowns and focus sessions,

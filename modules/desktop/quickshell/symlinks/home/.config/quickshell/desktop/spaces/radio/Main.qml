@@ -26,6 +26,7 @@ Item {
     property string syncError: ""
     property bool searchOpen: false
     property bool filtersOpen: false
+    property bool compactRows: false
     property string country: ""
     property var genres: []
     property var qualities: ({})
@@ -120,7 +121,8 @@ Item {
             settings: {
                 country: country,
                 genres: genres,
-                qualities: qualities
+                qualities: qualities,
+                compactRows: compactRows
             }
         }, (result, failure) => {
             saveError = failure || "";
@@ -430,12 +432,17 @@ Item {
         country = result.settings.country || "";
         genres = result.settings.genres || [];
         qualities = result.settings.qualities || ({});
+        compactRows = result.settings.compactRows === true;
         acceptFavorites(result.favorites);
         syncEnabled = !!result.syncConfigured;
         initialized = true;
         browse(false);
         syncFavorites();
     })
+    ArtworkCache {
+        id: stationArtwork
+        spaceId: "radio"
+    }
     Timer {
         id: searchDelay
         interval: 350
@@ -637,6 +644,17 @@ Item {
                     root.error = "Close Radio in Spaces and reopen it to retry loading saved records.";
             }
         }
+        MovieIconButton {
+            toolbar: true
+            objectName: "radioLayoutToggle"
+            enabled: root.initialized
+            iconName: root.compactRows ? "panels-top-left" : "list"
+            text: root.compactRows ? "Show two-line entries" : "Show single-line entries"
+            onClicked: {
+                root.compactRows = !root.compactRows;
+                root.persist();
+            }
+        }
     }
 
     ColumnLayout {
@@ -767,7 +785,7 @@ Item {
                     readonly property var station: root.rowsByKey[key] || ({})
                     readonly property bool playing: root.playback.playing && Stations.stationGroupKey(root.playback.station) === key
                     width: stationList.width
-                    height: Math.max(78, stationInfo.implicitHeight + 24)
+                    height: root.compactRows ? MovieStyle.controlHeight + 8 : Math.max(78, stationInfo.implicitHeight + 24)
                     radius: 6
                     color: playing ? MovieStyle.accentSurface : rowMouse.containsMouse ? "#18ffffff" : "transparent"
                     border.width: stationList.activeFocus && stationList.currentIndex === index ? 1 : 0
@@ -792,6 +810,8 @@ Item {
                     RowLayout {
                         anchors.fill: parent
                         anchors.margins: 12
+                        anchors.topMargin: root.compactRows ? 4 : 12
+                        anchors.bottomMargin: anchors.topMargin
                         spacing: 12
                         MovieIconButton {
                             objectName: "radioPlay:" + row.index
@@ -805,18 +825,52 @@ Item {
                                     root.play(row.station);
                             }
                         }
-                        ColumnLayout {
+                        Rectangle {
+                            visible: !root.compactRows
+                            Layout.preferredWidth: 54
+                            Layout.preferredHeight: 54
+                            color: MovieStyle.surface
+                            radius: 4
+                            clip: true
+                            MovieIcon {
+                                anchors.centerIn: parent
+                                width: 24
+                                height: 24
+                                name: "boom-box"
+                                opacity: .35
+                                visible: logo.item?.status !== Image.Ready
+                            }
+                            Loader {
+                                id: logo
+                                anchors.fill: parent
+                                active: root.active && !root.compactRows && /^https?:\/\//i.test(row.station.favicon || "")
+                                sourceComponent: CachedImage {
+                                    objectName: "radioLogo:" + row.index
+                                    cacheService: stationArtwork
+                                    remoteSource: row.station.favicon
+                                    fillMode: Image.PreserveAspectFit
+                                    sourceSize.width: 108
+                                    sourceSize.height: 108
+                                }
+                            }
+                        }
+                        GridLayout {
                             id: stationInfo
                             Layout.fillWidth: true
-                            spacing: 5
+                            columns: root.compactRows ? 2 : 1
+                            rowSpacing: 5
+                            columnSpacing: 12
                             MovieText {
-                                Layout.fillWidth: true
+                                Layout.fillWidth: !root.compactRows || !metadata.visible
+                                Layout.maximumWidth: root.compactRows && metadata.visible ? stationInfo.width * 0.6 : Infinity
                                 text: row.station.name || ""
                                 font.bold: true
                                 font.pixelSize: MovieStyle.fontSize * 1.2
                                 elide: Text.ElideRight
                             }
                             MovieText {
+                                id: metadata
+                                visible: !root.compactRows || !!text
                                 Layout.fillWidth: true
                                 text: [row.station.country, row.station.language, (row.station.tags || "").split(",").slice(0, 5).join(" · ")].filter(Boolean).join("   /   ")
                                 color: MovieStyle.muted

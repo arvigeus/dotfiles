@@ -6,8 +6,10 @@ Radio registers with the existing `ui/SpaceState` and retained fullscreen host.
 It uses Movies' typography, controls, palette, scrollbar and wheel handling on
 a solid black background in both desktop theme modes. The Stations label/count,
 search and inline filters share the host's top row beside its hide X. The
-vertical station list replaces artwork views; rows show country, language,
-genres, quality choices, playback, favorites and an optional website action.
+vertical station list shows country, language, genres, quality choices, playback,
+favorites and an optional website action. The default layout stacks names over
+metadata and uses Radio Browser's `favicon` URL for station artwork. Compact
+rows fit the same information and actions on one line without loading logos.
 Rows reserve the website action's width even when no website is available, keeping
 quality selectors aligned. The playback heading remains above the list.
 One discovery list pins saved favorites without separate browse tabs. Saved
@@ -63,7 +65,9 @@ are changed. SIGTERM invokes bounded cleanup and the shared worker process-group
 shutdown, releasing network threads and owned processes on explicit close or shell
 exit. Python, mpv and mpv-mpris are declared by the quickshell module. ffplay is no longer a
 fallback because mpv is a provisioned dependency with consistent pause/metadata.
-Station images and their download/cache machinery are omitted from the text list.
+An artwork worker uses the shared bounded cache under Radio's own cache
+directory. Unavailable icons keep the placeholder. Hiding Radio or choosing
+compact rows releases the logo delegates and their worker.
 
 ## Nextcloud favorites and station identity
 
@@ -112,8 +116,8 @@ directly rather than sending that synthetic UUID to Radio Browser.
 
 User configuration and state:
 
-- `~/.config/quickshell/desktop/spaces/radio/radio-ui.json`: country, genre and
-  per-station quality preferences.
+- `~/.config/quickshell/desktop/spaces/radio/radio-ui.json`: country, genre,
+  row layout and per-station quality preferences.
 - `~/.local/share/quickshell/desktop/spaces/radio/favorites.json`: station
   records, stable provider UUIDs and stream variants.
 - `~/.local/share/quickshell/desktop/spaces/radio/sync.json`: account-scoped

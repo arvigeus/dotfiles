@@ -1,7 +1,8 @@
 """Conditional DAV writes. Server versions are checked at the commit itself."""
 
 from pathlib import PurePosixPath
-from urllib.parse import quote
+from urllib.error import HTTPError
+from urllib.parse import quote, unquote, urlsplit
 import xml.etree.ElementTree as ET
 
 from integrations import nextcloud
@@ -32,8 +33,8 @@ class UploadBody:
 
 
 class RemoteFiles:
-    def __init__(self):
-        account = nextcloud.load_account()
+    def __init__(self, account=None):
+        account = nextcloud.load_account() if account is None else account
         if not account:
             raise MusicError('Restore the shared Nextcloud account first.')
         self.dav = nextcloud.DAVClient(
@@ -59,6 +60,42 @@ class RemoteFiles:
         if not value or value.startswith('W/') or any(c in value for c in '\r\n'):
             raise MusicError('The server did not provide a safe file version.')
         return value
+
+    def versions(self, directory):
+        """Return the ETags of the direct children of a Music directory."""
+        url = self.url('Music/' + directory) + '/'
+        body = b'<d:propfind xmlns:d="DAV:"><d:prop><d:getetag/></d:prop></d:propfind>'
+        try:
+            document, _ = self.dav.request(
+                'PROPFIND', url, body, {'Depth': '1', 'Content-Type': 'application/xml'}
+            )
+        except nextcloud.NextcloudError as error:
+            cause = error.__cause__
+            # Subsonic may still list songs from a removed directory.
+            if directory and isinstance(cause, HTTPError) and cause.code == 404:
+                return {}
+            raise
+        prefix = unquote(urlsplit(url).path)
+        versions = {}
+        found_directory = False
+        for entry in ET.fromstring(document).findall('{DAV:}response'):
+            path = unquote(urlsplit(entry.findtext('{DAV:}href', '')).path)
+            if path.rstrip('/') == prefix.rstrip('/'):
+                found_directory = True
+            if not path.startswith(prefix):
+                continue
+            name = path[len(prefix) :]
+            if not name or '/' in name:
+                continue
+            versions[name] = None
+            for prop in entry.findall('{DAV:}propstat'):
+                if prop.findtext('{DAV:}status', '').split()[1:2] == ['200']:
+                    value = prop.findtext('{DAV:}prop/{DAV:}getetag', '')
+                    if value and not value.startswith('W/'):
+                        versions[name] = value
+        if not found_directory:
+            raise MusicError('Nextcloud did not return the Music directory.')
+        return versions
 
     def parents(self, path):
         for parent in reversed(PurePosixPath(path).parents):

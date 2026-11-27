@@ -155,6 +155,7 @@ class Inventory:
                         remote.backup(db)
                 else:
                     CatalogueIndex.create(db)
+                db.execute('CREATE TABLE local_lyrics(id TEXT PRIMARY KEY,text TEXT)')
                 remote_paths = {
                     str(json.loads(payload).get('serverPath', '')).lstrip(
                         '/'
@@ -352,6 +353,10 @@ class Inventory:
                         discNumber=number('disc'),
                     )
                     self.index.put(db, item)
+                    db.execute(
+                        'INSERT OR REPLACE INTO local_lyrics VALUES(?,?)',
+                        (item['id'], fold(values.get('lyrics', ''))),
+                    )
 
                     for identifier in artist_ids:
                         local_artist(identifier, artist)

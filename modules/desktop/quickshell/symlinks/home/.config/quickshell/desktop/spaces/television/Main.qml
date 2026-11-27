@@ -25,6 +25,7 @@ Item {
     property bool statusPending: false
     property bool searchOpen: false
     property bool filtersOpen: false
+    property bool compactRows: false
     property string country: ""
     property string language: ""
     property string category: ""
@@ -99,6 +100,7 @@ Item {
             language = result.settings.language || "";
             category = result.settings.category || "";
             streamChoices = result.settings.streams || ({});
+            compactRows = result.settings.compactRows === true;
             favorites = result.favorites || [];
             applySummary(result);
             initialized = true;
@@ -116,7 +118,8 @@ Item {
                 country: country,
                 language: language,
                 category: category,
-                streams: streamChoices
+                streams: streamChoices,
+                compactRows: compactRows
             }
         }, (result, failure) => {
             saveError = failure || "";
@@ -372,6 +375,10 @@ Item {
         }
     }
     Component.onCompleted: initialize()
+    ArtworkCache {
+        id: channelArtwork
+        spaceId: "television"
+    }
     Timer {
         id: searchDelay
         interval: 300
@@ -594,6 +601,17 @@ Item {
             enabled: !root.refreshing
             onClicked: root.initialized ? root.refresh() : root.initialize()
         }
+        MovieIconButton {
+            toolbar: true
+            objectName: "televisionLayoutToggle"
+            enabled: root.initialized
+            iconName: root.compactRows ? "panels-top-left" : "list"
+            text: root.compactRows ? "Show two-line entries" : "Show single-line entries"
+            onClicked: {
+                root.compactRows = !root.compactRows;
+                root.persist();
+            }
+        }
     }
 
     ColumnLayout {
@@ -650,7 +668,7 @@ Item {
                     readonly property var channel: JSON.parse(payload)
                     readonly property bool playing: root.playback.playing && root.playback.channelId === channel.id
                     width: channelList.width
-                    height: Math.max(78, info.implicitHeight + 24)
+                    height: root.compactRows ? MovieStyle.controlHeight + 8 : Math.max(78, info.implicitHeight + 24)
                     radius: 6
                     color: playing ? MovieStyle.accentSurface : hover.containsMouse ? "#18ffffff" : "transparent"
                     border.width: channelList.activeFocus && channelList.currentIndex === index ? 1 : 0
@@ -675,6 +693,8 @@ Item {
                     RowLayout {
                         anchors.fill: parent
                         anchors.margins: 12
+                        anchors.topMargin: root.compactRows ? 4 : 12
+                        anchors.bottomMargin: anchors.topMargin
                         spacing: 12
                         MovieIconButton {
                             objectName: "televisionPlay:" + row.index
@@ -685,18 +705,53 @@ Item {
                                 root.play(row.channel);
                             }
                         }
-                        ColumnLayout {
+                        Rectangle {
+                            visible: !root.compactRows
+                            Layout.preferredWidth: 64
+                            Layout.preferredHeight: 54
+                            color: MovieStyle.surface
+                            radius: 4
+                            clip: true
+                            MovieIcon {
+                                objectName: "televisionLogoPlaceholder:" + row.index
+                                anchors.centerIn: parent
+                                width: 24
+                                height: 24
+                                name: "tv"
+                                opacity: .35
+                                visible: logo.item?.status !== Image.Ready
+                            }
+                            Loader {
+                                id: logo
+                                anchors.fill: parent
+                                active: root.active && !root.compactRows && /^https?:\/\//i.test(row.channel.logo || "")
+                                sourceComponent: CachedImage {
+                                    objectName: "televisionLogo:" + row.index
+                                    cacheService: channelArtwork
+                                    remoteSource: row.channel.logo
+                                    fillMode: Image.PreserveAspectFit
+                                    sourceSize.width: 128
+                                    sourceSize.height: 108
+                                }
+                            }
+                        }
+                        GridLayout {
                             id: info
                             Layout.fillWidth: true
-                            spacing: 5
+                            columns: root.compactRows ? 2 : 1
+                            rowSpacing: 5
+                            columnSpacing: 12
                             MovieText {
-                                Layout.fillWidth: true
+                                Layout.fillWidth: !root.compactRows || !metadata.visible
+                                Layout.maximumWidth: root.compactRows && metadata.visible ? info.width * 0.6 : Infinity
                                 text: row.channel.name
                                 font.bold: true
                                 font.pixelSize: MovieStyle.fontSize * 1.2
                                 elide: Text.ElideRight
                             }
                             MovieText {
+                                id: metadata
+                                visible: !root.compactRows || !!text
                                 Layout.fillWidth: true
                                 color: MovieStyle.muted
                                 elide: Text.ElideRight

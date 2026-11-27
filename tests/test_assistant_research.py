@@ -290,15 +290,39 @@ class LyricsResearchTests(unittest.TestCase):
             local=True,
         )
         self.lyrics = '[00:01.20]Silver spaceships cross the quiet sky\n[00:04.50]Original invented words for this test'
+        self.server_song = dict(
+            self.song,
+            id='song-2',
+            title='Another Fixture Song',
+            serverPath='/album/cloud.flac',
+            local=False,
+        )
+        self.server_lyrics = 'The mountain keeps its silence\nI dream among the pines'
         self.file = self.folder / 'album/song.flac'
         self.file.parent.mkdir()
         self.file.write_bytes(b'fixture audio identity')
         stat = self.file.stat()
         with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('CREATE TABLE records(kind,id,payload)')
-            db.execute(
+            db.executemany(
                 'INSERT INTO records VALUES(?,?,?)',
-                ('song', self.song['id'], json.dumps(self.song)),
+                [
+                    ('song', song['id'], json.dumps(song))
+                    for song in (self.song, self.server_song)
+                ],
+            )
+        with closing(sqlite3.connect(self.path.with_name('lyrics.sqlite'))) as db, db:
+            db.execute('CREATE TABLE lyrics(account,id,path,version,text,display)')
+            db.execute(
+                'INSERT INTO lyrics VALUES(?,?,?,?,?,?)',
+                (
+                    self.server_song['account'],
+                    self.server_song['id'],
+                    'album/cloud.flac',
+                    'fixture',
+                    research.Spaces.fold(self.server_lyrics),
+                    self.server_lyrics,
+                ),
             )
         with closing(sqlite3.connect(self.path.parent / 'local.sqlite')) as db, db:
             db.execute('CREATE TABLE files(path,signature,payload)')
@@ -335,10 +359,10 @@ class LyricsResearchTests(unittest.TestCase):
 
     def test_stale_or_symlinked_inventory_never_identifies_a_song(self):
         self.file.write_bytes(b'changed audio identity')
-        self.assertEqual(research.local_matches('spaceships cross', 5), [])
+        self.assertEqual(research.library_matches('spaceships cross', 5), [])
         self.file.unlink()
         self.file.symlink_to(self.root / 'outside.flac')
-        self.assertEqual(research.local_matches('spaceships cross', 5), [])
+        self.assertEqual(research.library_matches('spaceships cross', 5), [])
         self.assertIsNone(research.local_file('../outside.flac'))
         self.assertIsNone(research.local_file('/absolute.flac'))
 
@@ -396,11 +420,13 @@ class LyricsResearchTests(unittest.TestCase):
             ) as lookup,
         ):
             result = research.get_lyrics(dict(song=self.song, online=False))
-            self.assertEqual(research.local_matches('spaceships cross', 5), [])
+            self.assertEqual(research.library_matches('spaceships cross', 5), [])
         self.assertFalse(result['available'])
         self.assertFalse(lookup.call_args.args[0]['online'])
 
-    def test_actual_worker_reads_current_account_inventory_and_complete_lyrics(self):
+    def test_actual_worker_reads_current_account_inventory_and_cached_nextcloud_lyrics(
+        self,
+    ):
         account = dict(url='https://cloud.example/', username='fixture')
         digest = hashlib.sha256(
             json.dumps(account, sort_keys=True).encode()
@@ -410,8 +436,15 @@ class LyricsResearchTests(unittest.TestCase):
         (config / 'nextcloud.json').write_text(json.dumps(account))
         cache = self.root / 'cache/quickshell/desktop/spaces/music/nextcloud' / digest
         cache.mkdir(parents=True)
-        for filename in ('library.sqlite', 'local.sqlite'):
+        for filename in ('library.sqlite', 'local.sqlite', 'lyrics.sqlite'):
             shutil.copyfile(self.path.parent / filename, cache / filename)
+        with closing(sqlite3.connect(cache / 'library.sqlite')) as db, db:
+            db.execute(
+                "UPDATE records SET payload=json_set(payload,'$.account',?)",
+                (digest,),
+            )
+        with closing(sqlite3.connect(cache / 'lyrics.sqlite')) as db, db:
+            db.execute('UPDATE lyrics SET account=?', (digest,))
         with patch.dict(
             os.environ,
             dict(
@@ -428,8 +461,44 @@ class LyricsResearchTests(unittest.TestCase):
             lyrics = backend.execute_tool(
                 'get_song_lyrics', dict(ref=found['items'][0]['ref'], online=False)
             )
-        self.assertEqual(lyrics['content'], self.lyrics)
-        self.assertTrue(lyrics['saved'])
+            self.assertEqual(lyrics['content'], self.lyrics)
+            self.assertTrue(lyrics['saved'])
+
+            args, _ = backend.normalize_tool(
+                'search_lyrics',
+                dict(fragment='pines mountain', match='keywords', online=False),
+            )
+            found = backend.execute_tool('search_lyrics', args)
+            card = found['items'][0]
+            self.assertEqual(card['title'], self.server_song['title'])
+            self.assertEqual(card['availability'], 'Saved')
+            self.assertIn('mountain', card['metadata']['lyrics_excerpt'])
+            lyrics = backend.execute_tool(
+                'get_song_lyrics', dict(ref=card['ref'], online=False)
+            )
+            self.assertEqual(lyrics['content'], self.server_lyrics)
+            self.assertEqual(lyrics['provider'], 'Nextcloud Music')
+            self.assertTrue(lyrics['saved'])
+
+    def test_saved_lyrics_require_the_current_account_and_song_path(self):
+        self.assertEqual(research.library_matches('pines mountain', 5), [])
+        phrase = research.library_matches('the mountain keeps', 5)
+        self.assertEqual(
+            [card['title'] for card in phrase], [self.server_song['title']]
+        )
+        cache = self.path.with_name('lyrics.sqlite')
+        with closing(sqlite3.connect(cache)) as db, db:
+            db.execute("UPDATE lyrics SET account='other'")
+        self.assertEqual(research.library_matches('the mountain keeps', 5), [])
+        with closing(sqlite3.connect(cache)) as db, db:
+            db.execute("UPDATE lyrics SET account='account',path='old.flac'")
+        self.assertEqual(research.library_matches('the mountain keeps', 5), [])
+        with patch.object(
+            music, 'fetch_lyrics', return_value=dict(available=False)
+        ) as lookup:
+            result = research.get_lyrics(dict(song=self.server_song, online=False))
+        self.assertFalse(result['available'])
+        self.assertFalse(lookup.call_args.args[0]['online'])
 
     def test_lyrics_tool_refs_survive_followup_and_reject_non_song_refs(self):
         result = research.search_lyrics(
@@ -522,6 +591,7 @@ class LyricsResearchTests(unittest.TestCase):
             ('get_song_lyrics', dict(ref='invalid')),
             ('search_lyrics', dict(fragment='a')),
             ('search_lyrics', dict(fragment='a real fragment', online='false')),
+            ('search_lyrics', dict(fragment='a real fragment', match='semantic')),
             ('read_web_page', dict(url='http://localhost')),
             ('web_search', dict(query='real query', limit=True)),
         ]:

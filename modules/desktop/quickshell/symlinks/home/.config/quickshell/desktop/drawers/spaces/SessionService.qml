@@ -41,6 +41,7 @@ Singleton {
         actionError = "";
         actionBusy = true;
         received = false;
+        worker.reloadShell = false;
         worker.command = ["python3", Quickshell.shellPath("drawers/spaces/backend.py"), JSON.stringify({
                 action,
                 minutes
@@ -49,12 +50,15 @@ Singleton {
     }
     Process {
         id: worker
+        property bool reloadShell: false
         stdout: SplitParser {
             onRead: line => {
                 root.received = true;
                 try {
                     const result = JSON.parse(line);
-                    if (result.ok)
+                    if (result.ok && result.data.reloadShell)
+                        worker.reloadShell = true;
+                    else if (result.ok)
                         root.state = result.data;
                     else
                         root.actionError = result.error || qsTr("Session action failed.");
@@ -67,6 +71,8 @@ Singleton {
         onExited: (code, status) => {
             if (!root.received || code !== 0)
                 root.actionError = qsTr("Session helper stopped. Reopen Spaces to retry.");
+            else if (worker.reloadShell)
+                Qt.callLater(() => Quickshell.reload(false));
             root.actionBusy = false;
         }
     }

@@ -21,6 +21,7 @@ def clean_settings(settings):
             for key in ('country', 'language', 'category')
         )
         or not isinstance(settings.get('streams', {}), dict)
+        or not isinstance(settings.get('compactRows', False), bool)
     ):
         raise TelevisionError(
             'Invalid Television preferences; the existing file was preserved.'
@@ -38,6 +39,7 @@ def clean_settings(settings):
         language=text(settings.get('language'), 10),
         category=text(settings.get('category'), 100),
         streams=dict(list(choices.items())[:1000]),
+        compactRows=settings.get('compactRows', False),
     )
 
 
@@ -85,6 +87,7 @@ def clean_channel(raw):
         categories=strings('categories'),
         categoryNames=strings('categoryNames'),
         website=http_url(raw.get('website')),
+        logo=http_url(raw.get('logo')),
         streams=cleaned,
     )
 

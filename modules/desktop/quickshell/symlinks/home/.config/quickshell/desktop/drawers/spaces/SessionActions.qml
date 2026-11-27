@@ -189,7 +189,7 @@ ColumnLayout {
             label: qsTr("Restart computer")
             iconName: "rotate-ccw"
             hasOptions: true
-            optionsEnabled: !!root.service.state.capabilities.reload
+            optionsEnabled: !!root.service.state.capabilities.reloadDesktop || !!root.service.state.capabilities.reload
             optionsName: "sessionRestartOptions"
             menuOpen: restartMenu.visible
             onOptionsClicked: root.togglePopup(restartMenu)
@@ -262,11 +262,28 @@ ColumnLayout {
         y: -height - 8
         width: Math.min(280, Math.max(0, (Overlay.overlay?.width ?? 296) - 16))
         padding: 10
+        ShellButton {
+            id: reloadDesktop
+            objectName: "sessionReloadDesktop"
+            Layout.fillWidth: true
+            text: qsTr("Reload desktop")
+            iconName: "refresh-cw"
+            idleColor: "transparent"
+            enabled: root.active && !root.service.busy && !!root.service.state.capabilities.reloadDesktop
+            onClicked: {
+                root.service.execute("reload-desktop");
+                root.closePopup();
+            }
+            PassiveToolTip {
+                target: reloadDesktop
+                text: qsTr("Reload Hyprland and Quickshell while keeping applications open")
+            }
+        }
         HoldButton {
             objectName: "sessionReload"
             Layout.fillWidth: true
             text: qsTr("Reload session")
-            iconName: "refresh-cw"
+            iconName: "log-out"
             idleColor: "transparent"
             hint: qsTr("Close applications and restart the desktop session")
             holdDuration: 2000

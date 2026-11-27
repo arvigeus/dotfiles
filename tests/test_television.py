@@ -69,6 +69,7 @@ def datasets(count=110):
         languages=[dict(code='eng', name='English')],
         categories=[dict(id='news', name='News')],
         blocklist=[],
+        logos=[],
     )
 
 
@@ -223,6 +224,46 @@ class TelevisionTests(unittest.TestCase):
         self.backend.catalogue.fetch = lambda _: []
         self.assertTrue(self.backend.handle(dict(op='refresh'))['warning'])
         self.assertEqual((self.root / 'cache/catalogue.json').read_bytes(), before)
+
+    def test_current_channel_logos_are_optional_and_preserved_during_outages(self):
+        channel_logo = 'https://images.example/current.svg'
+        main_logo = 'https://images.example/main.png'
+        self.data['logos'] = [
+            dict(channel='Fixture0.us', url='https://images.example/retired.png'),
+            dict(
+                channel='Fixture0.us',
+                feed='HD',
+                in_use=True,
+                format='PNG',
+                url=main_logo,
+            ),
+            dict(channel='Fixture0.us', in_use=True, format='SVG', url=channel_logo),
+            dict(channel='Fixture1.us', feed='HD', in_use=True, url=main_logo),
+            dict(channel='Fixture2.us', feed='Other', in_use=True, url=main_logo),
+        ]
+        self.backend.handle(dict(op='refresh'))
+        rows = self.backend.handle(dict(op='browse'))['items']
+        self.assertEqual(
+            [row['logo'] for row in rows[:3]], [channel_logo, main_logo, '']
+        )
+        self.backend.handle(dict(op='favorite', channel=rows[0], value=True))
+        self.assertEqual(self.backend.favorites()[0]['logo'], channel_logo)
+
+        def fetch(name):
+            if name == 'logos':
+                raise TelevisionError('Logo feed unavailable')
+            return self.data[name]
+
+        self.backend.catalogue.fetch = fetch
+        self.data['channels'][0]['name'] = 'Updated channel'
+        self.assertFalse(self.backend.handle(dict(op='refresh'))['warning'])
+        row = self.backend.handle(dict(op='browse'))['items'][0]
+        self.assertEqual((row['name'], row['logo']), ('Updated channel', channel_logo))
+
+        self.data['logos'] = []
+        self.backend.catalogue.fetch = self.data.__getitem__
+        self.backend.handle(dict(op='refresh'))
+        self.assertEqual(self.backend.handle(dict(op='browse'))['items'][0]['logo'], '')
 
     def test_stream_injection_is_rejected_and_stale_selection_cannot_launch(self):
         data = datasets(2)

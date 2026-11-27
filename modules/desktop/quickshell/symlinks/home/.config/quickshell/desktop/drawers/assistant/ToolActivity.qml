@@ -46,7 +46,7 @@ ColumnLayout {
         case "read_web_page":
             return qsTr("Read web page");
         case "search_lyrics":
-            return qsTr("Identify song from lyrics");
+            return qsTr("Search song lyrics");
         case "get_song_lyrics":
             return qsTr("Read song lyrics");
         case "inspect_system":

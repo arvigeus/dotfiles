@@ -26,6 +26,10 @@ failures preserve local previews and any previously known count. Missing play
 counts are omitted rather than becoming zero. Info also starts a `file-tags`
 request for uncached songs, merging embedded fields (including stored lyrics) and
 available duration/rate/bit-depth/channel/bitrate details from bounded DAV reads.
+A separate request loads saved server lyrics for uncached Nextcloud songs from
+the search index. Embedded tags and explicit draft edits take precedence in Info.
+A cache miss reads Subsonic and stores the result for both Info and search.
+The background index validates these entries against DAV file versions.
 A complete local `song-info` result is reused without another tag read. This never
 downloads/caches a complete song or starts a lyrics-provider lookup.
 All tag fields remain visible, with placeholders for
@@ -92,7 +96,12 @@ automatic media eviction exists; adding deletion requires an explicit interface
 action with hold-to-confirm.
 
 The `ListView` instantiates visible delegates and reads metadata pages ahead of
-its lower edge. Small cover thumbnails load only for visible rows and the Info header.
+its lower edge. The toolbar saves the row layout in `music-ui.json` across
+catalogue views. The default stacks titles over metadata and loads row
+thumbnails after scrolling settles, for the current viewport. Compact rows put
+metadata and its links alongside the title and skip row artwork reads. In-flight
+requests can fill a retained row with the same identity. The Info header and
+player request thumbnails independently.
 `artwork.py` isolates thumbnail requests from browsing and file jobs. It prefers
 embedded art in cached files, uses authenticated Subsonic POST requests for remote
 art, and reuses the shared image cache for public catalogue art. Album/account
@@ -119,6 +128,32 @@ list plays instead. Playlists use cached `getPlaylists` and `getPlaylist` reads;
 entry order is retained.
 Provider caches are account-scoped, bounded and usable offline after a successful
 read. Authentication errors never select another account's cache.
+
+Song searches and their playback queues always match folded catalogue metadata.
+The toggle beside the library search field saves `includeLyrics` in
+`music-ui.json`. It defaults on and also enables matches against folded lyrics.
+The setting applies to indexed song searches, including artist and album pages,
+and to the queues built from those results. The catalogue worker publishes
+metadata first, then lists the Nextcloud Music directories over DAV. It uses the
+audio ETag and the ETags
+of matching `.lrc` sidecars as the lyric version. Added, moved and changed
+songs use `getLyricsBySongId`; unchanged songs reuse the saved result, including
+confirmed empty lyrics. Removed songs are pruned and remote lyrics join by song
+ID and path. The worker stores folded text from all returned lyric versions and
+the preferred display text in private, account-scoped `lyrics.sqlite`. Up to
+three requests run concurrently and each committed batch is searchable offline.
+Reopening resumes missing work.
+The visible library checks the Music root ETag around five minutes after the
+previous pass ends. A completed check with the same root ETag can reuse the
+catalogue for up to fifteen minutes and skip directory listings while the
+catalogue's song IDs and paths still match. Manual refresh checks all directories
+and can interrupt lyric fetching. Older entries with folded lyrics remain valid
+for search. Song properties fill in their display text on demand.
+
+The merged library also searches embedded lyrics from local audio metadata.
+Pending edits take precedence for those tracks. Otherwise, indexed server lyrics
+take precedence for cloud songs, with local tags available before the server
+result arrives.
 
 `inventory.py` observes ordinary files in `~/Music` on opening/restoring My Library,
 after file jobs, and every five seconds while visible. The observer performs no

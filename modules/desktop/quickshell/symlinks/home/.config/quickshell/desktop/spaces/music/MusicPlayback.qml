@@ -56,8 +56,9 @@ Item {
     }
 
     Component.onCompleted: {
-        shuffleEnabled = preferences.value("shuffleEnabled", false) === true;
-        repeatAllEnabled = preferences.value("repeatAllEnabled", false) === true;
+        // INI-backed Settings can return strings after reading from disk.
+        shuffleEnabled = String(preferences.value("shuffleEnabled", false)) === "true";
+        repeatAllEnabled = String(preferences.value("repeatAllEnabled", false)) === "true";
         preferencesLoaded = true;
         syncMprisState();
     }

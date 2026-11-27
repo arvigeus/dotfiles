@@ -26,6 +26,9 @@ MovieStyle.Panel {
     property string fileInfo: ""
     property string coverDraft: ""
     property bool loadingTags: false
+    property bool loadingStoredLyrics: false
+    property string storedLyrics: ""
+    readonly property string displayedLyrics: draft.lyrics || (touched.lyrics ? "" : storedLyrics)
     property bool tagsLoaded: false
     property string tagError: ""
     property int tagGeneration: 0
@@ -152,6 +155,24 @@ MovieStyle.Panel {
             applyTags(result);
         });
     }
+    function loadStoredLyrics() {
+        if (song?.source !== "nextcloud" || song.local || song.localPath || !originalPath || loadingStoredLyrics || busy)
+            return;
+        const token = generation, path = originalPath;
+        loadingStoredLyrics = true;
+        catalogue.request("stored-lyrics", {
+            song: Object.assign({}, song, {
+                serverPath: path
+            }),
+            lane: "info"
+        }, (result, failure) => {
+            if (token !== generation || path !== originalPath)
+                return;
+            loadingStoredLyrics = false;
+            if (!failure)
+                storedLyrics = result.lyrics || "";
+        });
+    }
     function placeholder(key) {
         if (knownFields.includes(key))
             return "No value";
@@ -162,6 +183,7 @@ MovieStyle.Panel {
             open();
             if (!tagsLoaded)
                 loadFileTags();
+            loadStoredLyrics();
             return;
         }
         if (dirty) {
@@ -179,6 +201,8 @@ MovieStyle.Panel {
         ++tagGeneration;
         ++lyricGeneration;
         loadingTags = false;
+        loadingStoredLyrics = false;
+        storedLyrics = "";
         tagsLoaded = false;
         tagError = "";
         remoteVersion = "";
@@ -190,9 +214,11 @@ MovieStyle.Panel {
         knownFields = Object.keys(original).filter(key => !!original[key]);
         draft = Object.assign({}, original);
         originalPath = String(item.serverPath || "").replace(/^\/+/, "");
+        const initialPath = originalPath;
         relativePath = originalPath;
         fileInfo = item.fileInfo || "";
         open();
+        loadStoredLyrics();
         catalogue.request("song-info", {
             song: item,
             lane: "info"
@@ -214,6 +240,11 @@ MovieStyle.Panel {
             }
             const moving = pathDirty;
             originalPath = result.relativePath || originalPath;
+            if (originalPath !== initialPath) {
+                loadingStoredLyrics = false;
+                storedLyrics = "";
+                loadStoredLyrics();
+            }
             if (!moving)
                 relativePath = originalPath;
             if (!tagsLoaded)
@@ -245,6 +276,7 @@ MovieStyle.Panel {
             return;
         ++generation;
         ++tagGeneration;
+        loadingStoredLyrics = false;
         ++lyricGeneration;
         reading = false;
         loadingTags = false;
@@ -294,6 +326,7 @@ MovieStyle.Panel {
         });
         originalPath = rel;
         relativePath = rel;
+        storedLyrics = "";
         if (action === "save") {
             original = Object.assign({}, draft, result.tags || {});
             draft = Object.assign({}, original);
@@ -308,7 +341,8 @@ MovieStyle.Panel {
             if (result.synced) {
                 editing = false;
             }
-        }
+        } else
+            loadStoredLyrics();
         setMessage(result.error ? "Saved locally. " + result.error : action === "move" ? "Song moved." : result.synced ? "Saved locally and on Nextcloud." : result.message || "Saved locally. The server file was not updated.", !!result.error || (action !== "move" && !result.synced));
         saved(song, result);
     }
@@ -331,7 +365,9 @@ MovieStyle.Panel {
         lookingUp = true;
         setMessage("Fetching lyrics…");
         catalogue.request("lyrics", {
-            song: Object.assign({}, song, draft),
+            song: Object.assign({}, song, draft, {
+                lyrics: displayedLyrics
+            }),
             refresh: true,
             lane: "info"
         }, (result, failure) => {
@@ -377,6 +413,7 @@ MovieStyle.Panel {
         ++lyricGeneration;
         lookingUp = false;
         loadingTags = false;
+        loadingStoredLyrics = false;
         reading = false;
     }
     Component.onDestruction: coverChooser.close()
@@ -616,21 +653,21 @@ MovieStyle.Panel {
                     objectName: "musicLyrics"
                     Layout.fillWidth: true
                     Layout.minimumHeight: 180
-                    text: root.draft.lyrics || ""
+                    text: root.displayedLyrics
                     readOnly: !root.editing || root.busy
                     wrapMode: TextEdit.Wrap
                     color: MovieStyle.text
                     font.family: MovieStyle.fontFamily
                     font.pixelSize: MovieStyle.fontSize
                     selectByMouse: true
-                    placeholderText: root.reading || root.loadingTags ? "Loading existing lyrics…" : root.knownFields.includes("lyrics") ? "No embedded lyrics" : "Existing lyrics not loaded"
+                    placeholderText: root.reading || root.loadingTags || root.loadingStoredLyrics ? "Loading existing lyrics…" : root.knownFields.includes("lyrics") ? "No embedded lyrics" : "Existing lyrics not loaded"
                     placeholderTextColor: MovieStyle.muted
                     background: Rectangle {
                         color: "#211b24"
                         radius: 4
                         border.color: parent.activeFocus ? MovieStyle.accent : MovieStyle.border
                     }
-                    onTextChanged: if (activeFocus && !readOnly && text !== (root.draft.lyrics || ""))
+                    onTextChanged: if (activeFocus && !readOnly && text !== root.displayedLyrics)
                         root.editTag("lyrics", text)
                     Keys.onEscapePressed: root.dismissTransient()
                 }

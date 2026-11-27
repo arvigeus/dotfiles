@@ -1,9 +1,10 @@
 """Lyrics drafts cache independently of tags; thumbnails never expose credentials or alter audio."""
 
-from contextlib import ExitStack
+from contextlib import ExitStack, closing
 from io import BytesIO
 from pathlib import Path
 import subprocess
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -544,6 +545,64 @@ class MetadataEditingTests(unittest.TestCase):
 
 
 class StoredLyricsTests(unittest.TestCase):
+    def test_properties_cache_server_lyrics_for_search_and_later_opens(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            client = MagicMock()
+            client.account_id = 'fixture'
+            client.request.return_value = dict(
+                lyricsList=dict(
+                    structuredLyrics=[
+                        dict(synced=True, line=[dict(value='Another variant')]),
+                        dict(
+                            synced=False,
+                            line=[
+                                dict(value='Café, still here.'),
+                                dict(value='Second line.'),
+                            ],
+                        ),
+                    ]
+                )
+            )
+            library = CloudLibrary(client, root)
+            song = dict(
+                id='track-7',
+                source='nextcloud',
+                account='fixture',
+                serverPath='/song.flac',
+            )
+            with (
+                closing(sqlite3.connect(library.index.lyrics_path)) as database,
+                database,
+            ):
+                database.execute("""CREATE TABLE lyrics(account TEXT,id TEXT,path TEXT,
+                    version TEXT,text TEXT,PRIMARY KEY(account,id))""")
+                database.execute(
+                    'INSERT INTO lyrics VALUES(?,?,?,?,?)',
+                    (
+                        'fixture',
+                        'track-7',
+                        'song.flac',
+                        'old-version',
+                        'cafe, still here.',
+                    ),
+                )
+            with patch('spaces.music.cloud.CloudLibrary', return_value=library):
+                result = backend.dispatch(dict(op='stored-lyrics', song=song))
+                self.assertEqual(result['lyrics'], 'Café, still here.\nSecond line.')
+                client.request.side_effect = AssertionError(
+                    'Cached lyrics were fetched again'
+                )
+                self.assertEqual(
+                    backend.dispatch(dict(op='stored-lyrics', song=song)), result
+                )
+            client.request.assert_called_once_with('getLyricsBySongId', id='track-7')
+            with closing(library.index.open_lyrics()) as database:
+                text = database.execute(
+                    'SELECT text FROM lyrics WHERE id=?', (song['id'],)
+                ).fetchone()[0]
+            self.assertEqual(text, 'cafe, still here.\nsecond line.\nanother variant')
+
     def test_server_information_reads_metadata_only_and_preserves_missing_fields(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

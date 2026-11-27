@@ -13,7 +13,16 @@ import urllib.parse
 import urllib.request
 
 SPACE = os.environ.get('QUICKSHELL_MEDIA_SPACE', 'movies')
-if SPACE not in ('movies', 'series', 'games', 'pictures', 'books', 'music'):
+if SPACE not in (
+    'movies',
+    'series',
+    'games',
+    'pictures',
+    'books',
+    'music',
+    'radio',
+    'television',
+):
     raise ValueError('Unknown artwork Space.')
 CACHE = (
     Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.local/cache'))

@@ -8,7 +8,7 @@ Rectangle {
     property var service
     property bool fetchEnabled: false
     property bool initialized: false
-    property int generation: 0
+    property var pendingRequest: null
     // The identity the current image belongs to; rows scrolling back reuse it.
     property string shownIdentity: ""
     readonly property bool imageReady: cover.status === Image.Ready
@@ -36,37 +36,49 @@ Rectangle {
         sourceSize.width: 128
         sourceSize.height: 128
     }
+    function invalidateRequest() {
+        if (pendingRequest) {
+            pendingRequest.valid = false;
+            pendingRequest = null;
+        }
+    }
     function resolve() {
-        const token = ++generation;
-        if (!fetchEnabled || shownIdentity === identity)
+        if (!fetchEnabled || pendingRequest || shownIdentity === identity)
             return;
         if (String(previewSource)) {
             cover.source = previewSource;
             shownIdentity = identity;
             return;
         }
-        cover.source = "";
-        shownIdentity = "";
         if (!record || !service)
             return;
+        const request = {
+            valid: true
+        };
+        pendingRequest = request;
         const requested = identity;
         service.request("cover", {
             item: record
         }, (file, error) => {
-            if (token !== generation || !fetchEnabled)
+            if (!request.valid)
                 return;
+            pendingRequest = null;
             cover.source = error ? "" : file || "";
             // Failures retry the next time the cover becomes visible.
             shownIdentity = error ? "" : requested;
         });
     }
-    onIdentityChanged: if (initialized)
-        resolve()
+    onIdentityChanged: if (initialized) {
+        invalidateRequest();
+        cover.source = "";
+        shownIdentity = "";
+        Qt.callLater(resolve);
+    }
     onFetchEnabledChanged: if (initialized)
-        resolve()
+        Qt.callLater(resolve)
     Component.onCompleted: {
         initialized = true;
-        resolve();
+        Qt.callLater(resolve);
     }
-    Component.onDestruction: ++generation
+    Component.onDestruction: invalidateRequest()
 }

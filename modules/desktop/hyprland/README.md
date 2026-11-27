@@ -3,9 +3,9 @@
 This module configures the desktop and its session. Edit the Lua files under
 `symlinks/home/.config/hypr/`; Hyprland reloads them automatically. After
 something rewrites several of them at once, such as a Git checkout, pull or
-rebase, run `hyprctl reload config-only`: the automatic reload can pick up a mix
-of old and new files. Run `hyprctl configerrors` if a change does not work as
-expected.
+rebase, automatic reload can pick up a mix of old and new files. Use
+**Spaces → Restart → Reload desktop**, or run `hyprctl reload config-only` to
+reload Hyprland on its own. Run `hyprctl configerrors` to see configuration errors.
 
 Alt+Tab focuses and centers the next column to the right, wrapping from the last
 column to the first. Win+Left/Right also wrap between columns.
@@ -24,7 +24,7 @@ gaming session. Ctrl+Shift+Tab opens Performance, and Ctrl+Alt+Delete launches
 btop in Kitty. Steam's **Go to Desktop** or **Exit Steam** returns to the desktop.
 Rebooting always starts Hyprland.
 
-**Restart → Reload** starts a fresh desktop session, closing running applications.
+**Restart → Reload session** starts a fresh desktop session, closing running applications.
 Gaming exits, startup failures and a compositor startup timeout return to Hyprland.
 Returning from gaming can take about 30 seconds while Steam and Gamescope shut down.
 If gaming mode stops responding, press Ctrl+Alt+F2, log in, run

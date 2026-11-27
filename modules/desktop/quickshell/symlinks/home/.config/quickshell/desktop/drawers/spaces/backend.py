@@ -1,6 +1,7 @@
 """On-demand session controls; systemd owns scheduled shutdowns."""
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -40,6 +41,12 @@ def session_status():
         return {}
 
 
+def can_reload_desktop():
+    return bool(
+        os.environ.get('HYPRLAND_INSTANCE_SIGNATURE') and shutil.which('hyprctl')
+    )
+
+
 def scheduled_shutdown():
     """Return logind's pending shutdown action and epoch milliseconds, if any."""
     try:
@@ -68,6 +75,7 @@ def snapshot():
         capabilities=dict(
             gaming=bool(session.get('gaming')),
             reload=bool(session.get('available')),
+            reloadDesktop=can_reload_desktop(),
             suspend=can('CanSuspend'),
             reboot=can('CanReboot'),
             poweroff=can('CanPowerOff'),
@@ -80,6 +88,13 @@ def handle(request):
     action = request.get('action', 'status')
     if action == 'status':
         return snapshot()
+    if action == 'reload-desktop':
+        if not can_reload_desktop():
+            raise ValueError('Reload desktop requires a running Hyprland session.')
+        reply = run(['hyprctl', 'reload', 'config-only']).stdout.strip()
+        if reply != 'ok':
+            raise ValueError(reply or 'Hyprland did not accept the reload request.')
+        return dict(reloadShell=True)
     if action in ('gaming', 'reload'):
         argv = ['session-mode', 'gaming' if action == 'gaming' else 'desktop']
     elif action in ('suspend', 'reboot', 'poweroff'):

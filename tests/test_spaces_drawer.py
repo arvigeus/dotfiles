@@ -58,6 +58,27 @@ class SessionBackendTests(unittest.TestCase):
             backend.handle(dict(action='reload'))
             run.assert_called_with(['session-mode', 'desktop'])
 
+    def test_reload_desktop_only_requests_a_config_reload(self):
+        with (
+            patch.dict(os.environ, HYPRLAND_INSTANCE_SIGNATURE='fixture'),
+            patch.object(backend.shutil, 'which', return_value='/usr/bin/hyprctl'),
+            patch.object(backend, 'run') as run,
+        ):
+            run.return_value = subprocess.CompletedProcess([], 0, 'ok\n', '')
+            self.assertEqual(
+                backend.handle(dict(action='reload-desktop')), dict(reloadShell=True)
+            )
+            run.assert_called_once_with(['hyprctl', 'reload', 'config-only'])
+            run.return_value.stdout = 'invalid keyword'
+            with self.assertRaisesRegex(ValueError, 'invalid keyword'):
+                backend.handle(dict(action='reload-desktop'))
+            with (
+                patch.dict(os.environ, HYPRLAND_INSTANCE_SIGNATURE=''),
+                self.assertRaisesRegex(ValueError, 'requires a running Hyprland'),
+            ):
+                backend.handle(dict(action='reload-desktop'))
+            self.assertEqual(run.call_count, 2)
+
     def test_capabilities_shutdown_status_and_command_errors(self):
         with patch.object(backend, 'run') as run:
             for answer, expected in [
@@ -167,7 +188,7 @@ ShellRoot {
  }
  QtObject {
   id:mock
-  property var state:({capabilities:{gaming:true,reload:true,suspend:true,reboot:true,poweroff:true},scheduledShutdown:{action:"poweroff",at:Date.UTC(2030,0,2,3,4)}})
+  property var state:({capabilities:{gaming:true,reload:true,reloadDesktop:true,suspend:true,reboot:true,poweroff:true},scheduledShutdown:{action:"poweroff",at:Date.UTC(2030,0,2,3,4)}})
   property bool busy:false
   property string error:""
   property bool pausesAvailable:true
@@ -243,7 +264,17 @@ ShellRoot {
   click(gaming);click(sleep);
   check(!mock.lockingPaused&&!mock.sleepPaused&&calls.length===4,"restore icons executed destructive actions");
   click(find(drawer,"sessionRestartOptions"));input.wait(150);
-  const reload=find(actions.restartPopup.contentItem,"sessionReload");reload.holdDuration=80;
+  const restartPopup=actions.restartPopup;
+  const reload=find(restartPopup.contentItem,"sessionReload");reload.holdDuration=80;
+  const reloadDesktop=find(restartPopup.contentItem,"sessionReloadDesktop");
+  const capabilities=mock.state.capabilities;
+  mock.state=Object.assign({},mock.state,{capabilities:Object.assign({},capabilities,{reload:false})});
+  check(restartPopup.visible&&reloadDesktop.enabled&&!reload.enabled,"desktop reload requires a session supervisor");
+  click(reloadDesktop);
+  check(calls[calls.length-1].action==="reload-desktop","Reload desktop requested the wrong action");input.wait(150);
+  mock.state=Object.assign({},mock.state,{capabilities:Object.assign({},capabilities,{reloadDesktop:false})});
+  click(find(drawer,"sessionRestartOptions"));input.wait(150);
+  check(restartPopup.visible&&reload.enabled&&!reloadDesktop.enabled,"session reload requires desktop reload");
   input.mousePress(reload,reload.width/2,reload.height/2);input.wait(120);input.mouseRelease(window.contentItem,1,1);
   check(calls[calls.length-1].action==="reload","Reload did not request a desktop restart");input.wait(150);
   const options=find(drawer,"sessionShutdownOptions");click(options);input.wait(150);
@@ -281,6 +312,59 @@ ShellRoot {
  }catch(e){console.error("DISPLAY_FAIL",e);Qt.quit();}}}
  Timer{interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout");Qt.quit();}}
 }""")
+
+    def test_reload_desktop_reloads_quickshell_only_after_hyprland_accepts(self):
+        def setup(root):
+            backend_path = root / 'drawers/spaces/backend.py'
+            source = backend_path.read_text()
+            backend_path.write_text(
+                source.replace(
+                    "if __name__ == '__main__':",
+                    """if __name__ == '__main__':
+    from pathlib import Path
+    can_reload_desktop = lambda: True
+    def run(argv):
+        assert argv == ['hyprctl', 'reload', 'config-only'], argv
+        marker = Path(__file__).with_name('reload-attempted')
+        reply = 'ok' if marker.exists() else 'Fixture refused'
+        marker.touch()
+        return subprocess.CompletedProcess(argv, 0, reply, '')
+""",
+                )
+            )
+
+        log = self.run_qml(
+            """import QtQuick
+import Quickshell
+import "drawers/spaces"
+ShellRoot {
+ property int stage: 0
+ Connections {
+  target: Quickshell
+  function onReloadCompleted() {
+   console.log("DISPLAY_PASS"); Qt.quit();
+  }
+ }
+ Component.onCompleted: Quickshell.watchFiles = false
+ Timer {interval:75; repeat:true; running:true; onTriggered:{
+  if(SessionService.busy)return;
+  if(stage===0){
+   SessionService.execute("reload-desktop");
+   stage++;
+  }else if(stage===1){
+   if(SessionService.error!=="Fixture refused"){
+    console.error("DISPLAY_FAIL missing Hyprland error",SessionService.error); Qt.quit(); return;
+   }
+   console.log("Requesting reload after fixture rejection");
+   SessionService.execute("reload-desktop");
+   stage++;
+  }
+ }}
+ Timer{interval:4000;running:true;onTriggered:{console.error("DISPLAY_FAIL reload timed out");Qt.quit();}}
+}""",
+            setup,
+        )
+        self.assertIn('Requesting reload after fixture rejection', log)
 
     def test_submitted_command_survives_page_destruction_and_reports_failure(self):
         def setup(root):

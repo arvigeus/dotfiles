@@ -1,5 +1,6 @@
 """Account-scoped metadata snapshot. Audio and file synchronization are not involved."""
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -7,12 +8,21 @@ import tempfile
 import threading
 import time
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
+from xml.etree.ElementTree import ParseError
+
+from integrations.nextcloud import NextcloudError
+from integrations.subsonic import MusicError
+from spaces.music import records
 
 BATCH = 500
 PAGE = 200
 SCHEMA = 2
+REFRESH_INTERVAL = 300
+CATALOGUE_RECHECK = 900
+LYRICS_BATCH = 12
 
 
 def fold(text):
@@ -23,12 +33,35 @@ def fold(text):
     )
 
 
+def lyric_texts(result):
+    """Return plain text for each version, with unsynced versions first."""
+    group = result.get('lyricsList', {})
+    values = group.get('structuredLyrics', []) if isinstance(group, dict) else None
+    if not isinstance(values, list):
+        raise MusicError('The server returned invalid lyrics.')
+    texts = []
+    for value in sorted(
+        (value for value in values if isinstance(value, dict)),
+        key=lambda value: bool(value.get('synced')),
+    ):
+        lines = value.get('line', [])
+        if not isinstance(lines, list):
+            raise MusicError('The server returned invalid lyrics.')
+        text = '\n'.join(
+            str(line.get('value') or '') for line in lines if isinstance(line, dict)
+        )
+        if text.strip():
+            texts.append(text)
+    return texts
+
+
 class CatalogueIndex:
     def __init__(self, client, root, normalize):
         self.client = client
         self.account = client.account_id
         self.root = Path(root)
         self.path = self.root / 'catalogue.sqlite'
+        self.lyrics_path = self.root / 'lyrics.sqlite'
         self.normalize = normalize
         self.view_path = None
         self.lock = threading.RLock()
@@ -36,10 +69,12 @@ class CatalogueIndex:
         self.thread = None
         self.temporary = None
         self.running = False
-        self.attempted = False
+        self.next_refresh = 0
         self.loaded = 0
         self.error = ''
         self.phase = ''
+        self.lyrics_error = ''
+        self.refresh_requested = False
         self.song_edits = {}
 
     def connect(self, remote=False):
@@ -77,28 +112,28 @@ class CatalogueIndex:
                 loaded=self.loaded,
                 phase=self.phase,
                 indexError=self.error,
+                lyricsVersion=self.lyrics_revision(),
+                lyricsError=self.lyrics_error,
                 **info,
             )
 
     def start(self, force=False):
         with self.lock:
-            if self.running or (not force and self.attempted):
+            if self.running:
+                if force and self.phase in ('checking', 'lyric-files', 'lyrics'):
+                    self.refresh_requested = True
                 return
-            if (
-                not force
-                and self.info(remote=True)
-                and time.time() - self.path.stat().st_mtime < 120
-            ):
+            if not force and time.monotonic() < self.next_refresh:
                 return
-            self.attempted = True
             self.running = True
             self.loaded = 0
             self.error = ''
-            self.phase = 'songs'
+            self.lyrics_error = ''
+            self.phase = 'checking'
             self.cancelled.clear()
             self.song_edits = {}
             self.thread = threading.Thread(
-                target=self._build, daemon=True, name='music-catalogue'
+                target=self._build, args=(force,), daemon=True, name='music-catalogue'
             )
             self.thread.start()
 
@@ -162,9 +197,34 @@ class CatalogueIndex:
                 [(str(artist), identifier) for artist in item.get('artistIds', [])],
             )
 
-    def _build(self):
+    def _build(self, force):
         temporary = None
         try:
+            remote = None
+            etag = ''
+            checkpoint = self.lyrics_checkpoint()
+            if hasattr(self.client, 'lyrics_files'):
+                try:
+                    remote = self.client.lyrics_files()
+                    etag = remote.etag('')
+                except (NextcloudError, records.MusicError, ParseError):
+                    pass
+            if self.cancelled.is_set():
+                return
+            previous = self.info(remote=True)
+            with self.lock:
+                force |= self.refresh_requested
+                self.refresh_requested = False
+                if (
+                    not force
+                    and etag
+                    and previous
+                    and checkpoint[:2] == (etag, previous['version'])
+                    and time.time_ns() - int(previous['version'])
+                    < CATALOGUE_RECHECK * 10**9
+                ):
+                    return
+                self.phase = 'metadata'
             self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
             fd, name = tempfile.mkstemp(
                 prefix='.catalogue-', suffix='.sqlite', dir=self.root
@@ -210,7 +270,6 @@ class CatalogueIndex:
                     db.commit()
                     with self.lock:
                         self.loaded = offsets['song']
-                        self.phase = 'metadata'
                 version = time.time_ns()
                 meta = dict(
                     account=self.account, schema=str(SCHEMA), version=str(version)
@@ -233,6 +292,11 @@ class CatalogueIndex:
                         self._put_song(db, item)
                     db.commit()
                     os.replace(temporary, self.path)
+            if not self.cancelled.is_set() and hasattr(self.client, 'lyrics_files'):
+                with self.lock:
+                    self.phase = 'lyric-files'
+                    self.loaded = 0
+                self._refresh_lyrics(remote, etag, str(version), checkpoint, force)
         except Exception:
             with self.lock:
                 self.error = 'The library index could not refresh. Your previous cached library is preserved.'
@@ -242,6 +306,262 @@ class CatalogueIndex:
             with self.lock:
                 self.running = False
                 self.temporary = None
+                self.next_refresh = time.monotonic() + REFRESH_INTERVAL
+                if self.refresh_requested and not self.cancelled.is_set():
+                    self.refresh_requested = False
+                    self.start(True)
+
+    def lyrics_revision(self):
+        try:
+            return str(self.lyrics_path.stat().st_mtime_ns)
+        except OSError:
+            return ''
+
+    def lyrics_checkpoint(self):
+        try:
+            with closing(
+                sqlite3.connect(self.lyrics_path.as_uri() + '?mode=ro', uri=True)
+            ) as db:
+                return (
+                    db.execute(
+                        'SELECT etag, catalogue, songs FROM lyric_checks WHERE account=?',
+                        (self.account,),
+                    ).fetchone()
+                    or ()
+                )
+        except sqlite3.Error:
+            return ()
+
+    def open_lyrics(self):
+        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if not self.lyrics_path.exists():
+            os.close(os.open(self.lyrics_path, os.O_WRONLY | os.O_CREAT, 0o600))
+        db = sqlite3.connect(self.lyrics_path, timeout=5)
+        try:
+            if any(
+                column[1] == 'display'
+                for column in db.execute('PRAGMA table_info(lyrics)')
+            ):
+                return db
+            # Both the catalogue and the properties workers can initialize this cache.
+            with db:
+                db.execute('BEGIN IMMEDIATE')
+                db.execute("""CREATE TABLE IF NOT EXISTS lyrics(
+                    account TEXT, id TEXT, path TEXT, version TEXT, text TEXT, display TEXT,
+                    PRIMARY KEY(account,id))""")
+                if 'display' not in {
+                    column[1] for column in db.execute('PRAGMA table_info(lyrics)')
+                }:
+                    db.execute('ALTER TABLE lyrics ADD COLUMN display TEXT')
+            return db
+        except sqlite3.Error:
+            db.close()
+            raise
+
+    def song_lyrics(self, identifier, path):
+        previous = None
+        if path:
+            try:
+                with closing(self.open_lyrics()) as db:
+                    previous = db.execute(
+                        'SELECT path, version, display FROM lyrics WHERE account=? AND id=?',
+                        (self.account, identifier),
+                    ).fetchone()
+                if previous and previous[0] == path and previous[2] is not None:
+                    return previous[2]
+            except (sqlite3.Error, OSError):
+                pass
+        texts = lyric_texts(self.client.request('getLyricsBySongId', id=identifier))
+        display = next(iter(texts), '')
+        if path:
+            try:
+                with closing(self.open_lyrics()) as db, db:
+                    db.execute(
+                        """INSERT INTO lyrics(account,id,path,version,text,display)
+                        VALUES(?,?,?,?,?,?) ON CONFLICT(account,id) DO UPDATE SET
+                        path=excluded.path, version=excluded.version, text=excluded.text, display=excluded.display
+                        WHERE lyrics.path IS ? AND lyrics.version IS ? AND lyrics.display IS ?""",
+                        (
+                            self.account,
+                            identifier,
+                            path,
+                            previous[1] if previous and previous[0] == path else '',
+                            fold('\n'.join(texts)),
+                            display,
+                            *(previous or (None, None, None)),
+                        ),
+                    )
+            except (sqlite3.Error, OSError):
+                pass
+        return display
+
+    def _refresh_lyrics(self, remote, etag, catalogue_version, checkpoint, force):
+        from spaces.music.local_files import relative
+
+        try:
+            with closing(self.open_lyrics()) as db:
+                with closing(self.connect(remote=True)) as catalogue:
+                    songs = {
+                        identifier: json.loads(payload)
+                        for identifier, payload in catalogue.execute(
+                            "SELECT id,payload FROM records WHERE kind='song'"
+                        )
+                    }
+                cached = {
+                    identifier: (path, version)
+                    for identifier, path, version in db.execute(
+                        'SELECT id,path,version FROM lyrics WHERE account=?',
+                        (self.account,),
+                    )
+                }
+                remove = set(cached) - songs.keys()
+                folders = {}
+                for identifier, song in songs.items():
+                    try:
+                        path = relative(song)
+                    except records.MusicError:
+                        continue
+                    directory, _, name = path.rpartition('/')
+                    folders.setdefault(directory, []).append((identifier, path, name))
+
+                signature = hashlib.sha256(
+                    json.dumps(
+                        sorted(
+                            (identifier, path)
+                            for tracks in folders.values()
+                            for identifier, path, _ in tracks
+                        )
+                    ).encode()
+                ).hexdigest()
+                if (
+                    not force
+                    and etag
+                    and checkpoint
+                    and (etag, signature) == (checkpoint[0], checkpoint[2])
+                ):
+                    self.save_lyrics_checkpoint(db, etag, catalogue_version, signature)
+                    return
+                if checkpoint:
+                    with db:
+                        db.execute(
+                            'DELETE FROM lyric_checks WHERE account=?', (self.account,)
+                        )
+
+                remote = remote or (self.client.lyrics_files() if folders else None)
+                pending = []
+                failed = False
+                for directory, versions in self.lyric_file_versions(remote, folders):
+                    if self.cancelled.is_set() or self.refresh_requested:
+                        return
+                    if versions is None:
+                        failed = True
+                        continue
+                    sidecars = {}
+                    for name, version in versions.items():
+                        if name.casefold().endswith('.lrc'):
+                            sidecars.setdefault(name.casefold(), []).append(
+                                (name, version)
+                            )
+                    for identifier, path, name in folders[directory]:
+                        if name not in versions:
+                            remove.add(identifier)
+                            continue
+                        audio = versions[name]
+                        sidecar_names = {
+                            name.casefold() + '.lrc',
+                            Path(name).stem.casefold() + '.lrc',
+                        }
+                        matches = sorted(
+                            entry
+                            for sidecar in sidecar_names
+                            for entry in sidecars.get(sidecar, [])
+                        )
+                        if not audio or any(not version for _, version in matches):
+                            failed = True
+                            continue
+                        version = json.dumps([audio, matches])
+                        previous = cached.get(identifier)
+                        if previous != (path, version):
+                            if previous and previous != (path, ''):
+                                remove.add(identifier)
+                            pending.append((identifier, path, version))
+                if remove.intersection(cached):
+                    db.executemany(
+                        'DELETE FROM lyrics WHERE account=? AND id=?',
+                        [(self.account, identifier) for identifier in remove],
+                    )
+                    db.commit()
+                consecutive_failures = 0
+                if pending:
+                    with self.lock:
+                        self.phase = 'lyrics'
+                with ThreadPoolExecutor(max_workers=3) as pool:
+                    for offset in range(0, len(pending), LYRICS_BATCH):
+                        if self.cancelled.is_set() or self.refresh_requested:
+                            return
+                        batch = pending[offset : offset + LYRICS_BATCH]
+                        values = [
+                            row for row in pool.map(self._read_lyrics, batch) if row
+                        ]
+                        failed |= len(values) != len(batch)
+                        consecutive_failures = 0 if values else consecutive_failures + 1
+                        if consecutive_failures == 2:
+                            break
+                        db.executemany(
+                            'INSERT OR REPLACE INTO lyrics(account,id,path,version,text,display) VALUES(?,?,?,?,?,?)',
+                            values,
+                        )
+                        db.commit()
+                        self.loaded += len(values)
+                if failed:
+                    self.lyrics_error = 'Some song lyrics could not be refreshed.'
+                elif (
+                    etag and not self.cancelled.is_set() and not self.refresh_requested
+                ):
+                    self.save_lyrics_checkpoint(db, etag, catalogue_version, signature)
+        except (NextcloudError, records.MusicError, sqlite3.Error, OSError):
+            self.lyrics_error = 'Song lyrics could not be refreshed.'
+
+    def lyric_file_versions(self, remote, folders):
+        def listing(directory):
+            try:
+                return remote.versions(directory)
+            except (NextcloudError, records.MusicError, ParseError):
+                return None
+
+        directories = list(folders)
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for start in range(0, len(directories), 4):
+                if self.cancelled.is_set() or self.refresh_requested:
+                    return
+                batch = directories[start : start + 4]
+                yield from zip(batch, pool.map(listing, batch))
+
+    def save_lyrics_checkpoint(self, db, etag, catalogue_version, signature):
+        with db:
+            db.execute("""CREATE TABLE IF NOT EXISTS lyric_checks(
+                account TEXT PRIMARY KEY, etag TEXT, catalogue TEXT, songs TEXT)""")
+            db.execute(
+                'INSERT OR REPLACE INTO lyric_checks VALUES(?,?,?,?)',
+                (self.account, etag, catalogue_version, signature),
+            )
+
+    def _read_lyrics(self, entry):
+        if self.cancelled.is_set() or self.refresh_requested:
+            return None
+        identifier, path, version = entry
+        try:
+            texts = lyric_texts(self.client.request('getLyricsBySongId', id=identifier))
+        except MusicError:
+            return None
+        return (
+            self.account,
+            identifier,
+            path,
+            version,
+            fold('\n'.join(texts)),
+            next(iter(texts), ''),
+        )
 
     def lookup(self, kind, identifier):
         with closing(self.connect()) as db:
@@ -261,9 +581,8 @@ class CatalogueIndex:
         offset = max(0, int(args.get('offset') or 0))
         clauses = ['r.kind=?']
         params = [kind]
-        for term in fold(args.get('query') or '').split():
-            clauses.append('instr(r.search,?)>0')
-            params.append(term)
+        terms = fold(args.get('query') or '').split()
+        search_lyrics = kind == 'song' and args.get('includeLyrics', True)
         if args.get('pending'):
             clauses.append("json_extract(r.payload,'$.notUploaded')=1")
         genre = args.get('genreName') or ''
@@ -291,19 +610,60 @@ class CatalogueIndex:
                     "r.id IN (SELECT album FROM album_artists WHERE artist=? UNION SELECT s.album FROM records s JOIN artist_songs a ON s.id=a.song WHERE s.kind='song' AND a.artist=?)"
                 )
                 params.extend([str(artist), str(artist)])
-        where = ' AND '.join(clauses)
         order = 'r.disc,r.track,r.sort,r.id' if album else 'r.sort,r.id'
         with closing(self.connect()) as db:
+            joins = ''
+            join_params = []
+            if terms:
+                match = ' AND '.join('instr(r.search,?)>0' for _ in terms)
+                lyrics = []
+                if search_lyrics and self.lyrics_path.exists():
+                    db.execute(
+                        'ATTACH DATABASE ? AS remote_lyrics',
+                        (self.lyrics_path.as_uri() + '?mode=ro',),
+                    )
+                    if db.execute(
+                        "SELECT 1 FROM remote_lyrics.sqlite_schema WHERE name='lyrics'"
+                    ).fetchone():
+                        joins += """ LEFT JOIN remote_lyrics.lyrics remote ON remote.account=?
+                            AND remote.id=r.id AND remote.path=ltrim(json_extract(r.payload,'$.serverPath'),'/')"""
+                        join_params.append(self.account)
+                        lyrics.append('remote.text')
+                if (
+                    search_lyrics
+                    and db.execute(
+                        "SELECT 1 FROM main.sqlite_schema WHERE name='local_lyrics'"
+                    ).fetchone()
+                ):
+                    joins += ' LEFT JOIN local_lyrics local ON local.id=r.id'
+                    lyrics.append('local.text')
+                params.extend(terms)
+                if lyrics:
+                    text = lyrics[0]
+                    if len(lyrics) == 2:
+                        text = """(CASE WHEN json_extract(r.payload,'$.pendingUpload')=1
+                            THEN local.text ELSE coalesce(remote.text,local.text) END)"""
+                    match += (
+                        ' OR ('
+                        + ' AND '.join(f'instr({text},?)>0' for _ in terms)
+                        + ')'
+                    )
+                    params.extend(terms)
+                clauses.append('(' + match + ')')
+            where = ' AND '.join(clauses)
+            selection = ' FROM records r' + joins + ' WHERE ' + where
+            # A batch may commit while searching. Keep the count and page on one snapshot.
+            db.execute('BEGIN')
             total = db.execute(
-                'SELECT count(*) FROM records r WHERE ' + where, params
+                'SELECT count(*)' + selection, [*join_params, *params]
             ).fetchone()[0]
             values = db.execute(
-                'SELECT r.payload FROM records r WHERE '
-                + where
+                'SELECT r.payload'
+                + selection
                 + ' ORDER BY '
                 + order
                 + ' LIMIT ? OFFSET ?',
-                [*params, page_size, offset],
+                [*join_params, *params, page_size, offset],
             ).fetchall()
         return dict(
             items=[json.loads(payload) for (payload,) in values],

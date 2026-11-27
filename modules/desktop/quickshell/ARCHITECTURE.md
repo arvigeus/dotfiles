@@ -261,9 +261,13 @@ scope, offline boundaries, recommendation tool rounds, follow-up refs, stale
 queries and explicit card actions.
 
 `SessionService` reads logind capabilities and `ScheduledShutdown` on demand.
-Systemd owns shutdown timers. Gaming/reload delegate to `session-mode`; see
-[session ownership](../hyprland/ARCHITECTURE.md#session-ownership). Temporary
-sleep/locking pauses use `ComfortService` leases.
+Systemd owns shutdown timers. Gaming and Reload session delegate to
+`session-mode`. Reload desktop asks the current compositor to reload with
+`hyprctl reload config-only`, which skips monitor reconfiguration. After
+Hyprland accepts and the helper exits successfully, Quickshell reloads its
+configuration in process and can reuse existing windows. Temporary sleep and
+locking pauses use `ComfortService` leases. See
+[session ownership](../hyprland/ARCHITECTURE.md#session-ownership).
 
 ## System tray and bar badges
 
@@ -542,29 +546,30 @@ bounded to 160,000 characters. Page and lyrics chunks include character offsets,
 `next_offset`, `total_chars` and `has_more`; UTF-8 byte truncation adjusts the
 continuation offset so multibyte text is not skipped.
 
-`search_lyrics` first scans up to 10,000 rows of the current Nextcloud account's
-Music `local.sqlite` inventory. Matching ignores case, accents, punctuation and
-LRC timestamps. Each match requires an ordinary file under the Music directory
-with the inventory's current inode/size/mtime signature; stale rows, symlinks and
-other accounts are excluded. It produces ordinary song cards with a bounded
-matching excerpt, using the merged library identity where available. Local
-matches suppress web transmission of the fragment. Otherwise, `online=true`
-searches for the quoted fragment and returns unverified web leads. LRCLIB's
-[search endpoint](https://lrclib.net/docs) searches track metadata, so it is not
-used as a lyric-text search. An empty local result does not mean every library
-song has been checked: only indexed embedded lyrics can match, and Music owns
-inventory refresh.
+`search_lyrics` reads the current account's Music caches. It scans up to 10,000
+rows of `local.sqlite`, using embedded lyrics only when an ordinary file under
+the Music directory still has the recorded inode, size and modification time.
+Saved Nextcloud lyrics in `lyrics.sqlite` must match the current account, song
+ID and catalogue path. A verified local file with pending edits takes precedence.
+`match=phrase` looks for a contiguous phrase and `match=keywords` requires all
+words in any order. Both ignore case, accents, punctuation and LRC timestamps.
+Results carry a song ref and a bounded excerpt. Indexed matches suppress web
+transmission. When the cache has no match and `online=true`, the tool searches
+for the quoted phrase or keywords and returns leads to verify. Music owns cache
+refresh and only indexed lyrics are searchable here.
 
 `get_song_lyrics` accepts only a returned song ref, never a model-authored song
 object or filesystem path. The parent resolves the entity, and the worker seeks
 an exact title/artist match in the current account's library, preferring the same
-identity and album. Validated inventory lyrics are read in full rather than from
-the bounded card payload. Fallback uses Music's existing embedded-tag reader,
-Nextcloud lyrics API, configured audio-tools providers and lyrics cache. The
+identity and album. It reads validated inventory or saved Nextcloud lyric text
+in full from the cache. Fallback uses Music's embedded-tag reader, Nextcloud
+lyrics API, configured audio-tools providers and lyrics cache. The
 `online=false` option preserves local/cache access while skipping cloud/provider
 requests. No audio is downloaded, no tags are changed, and provider configuration
 is shared with Music and Audio Tools. `search_lyrics` refs participate in the same
 96-ref registry and validated follow-up restoration as Space discovery results.
+Both agent prompts direct topic searches to keyword candidates, then read their
+lyrics to check the theme before making a recommendation.
 
 `test_assistant_research.py` covers public-address and redirect validation, pinned
 TLS connections, page/search parsing, challenge fallback, Unicode continuation,
@@ -755,7 +760,7 @@ and approval semantics stay the Assistant's.
 
 The shared backend handles native desktop operations. Media, behaviour and
 goodbye are `intent` events the companion app carries out and answers.
-`play_space_result` resolves a `search_spaces` ref (results from earlier turns
+`play_space_result` resolves a Space or lyric search ref (results from earlier turns
 are restored from the saved tool context) and hands its card payload to the
 shell's `spaces.open` IPC, which `ui/SpaceInbox.qml` passes to
 `SpaceState.open()` on the focused output, as a card's Open or Play does. Like

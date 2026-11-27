@@ -1539,9 +1539,11 @@ def cleanup_player(args):
 
 
 def settings_save(settings):
-    if not isinstance(settings, dict) or settings.get('section', 'library') not in (
-        'library',
-        'discover',
+    if (
+        not isinstance(settings, dict)
+        or settings.get('section', 'library') not in ('library', 'discover')
+        or not isinstance(settings.get('compactRows', False), bool)
+        or not isinstance(settings.get('includeLyrics', True), bool)
     ):
         raise MusicError(
             'Music preferences are invalid; existing records were preserved.'
@@ -1549,7 +1551,12 @@ def settings_save(settings):
     views = settings.get('views', {})
     if not isinstance(views, dict):
         raise MusicError('Invalid Music views.')
-    cleaned = {'section': settings.get('section', 'library'), 'views': {}}
+    cleaned = {
+        'section': settings.get('section', 'library'),
+        'compactRows': settings.get('compactRows', False),
+        'includeLyrics': settings.get('includeLyrics', True),
+        'views': {},
+    }
     for section in ('library', 'discover'):
         view = views.get(section, {})
         if (
@@ -1659,6 +1666,10 @@ def dispatch(args):
         return playlist_details(args.get('playlist') or {})
     if operation == 'lyrics':
         return fetch_lyrics(args)
+    if operation == 'stored-lyrics':
+        from spaces.music.cloud import CloudLibrary
+
+        return CloudLibrary().lyrics(args['song'])
     if operation == 'song-info':
         return song_information(args)
     if operation == 'file-tags':
@@ -1701,6 +1712,7 @@ def main():
             'album',
             'playlist',
             'lyrics',
+            'stored-lyrics',
             'song-info',
             'file-tags',
             'play',
@@ -1715,7 +1727,7 @@ def main():
             'player-cleanup',
             'mpris-state',
         ),
-        enrichment=('file-tags',),
+        enrichment=('file-tags', 'stored-lyrics'),
         scope=request_scope,
         on_started=MPRIS.start,
     )

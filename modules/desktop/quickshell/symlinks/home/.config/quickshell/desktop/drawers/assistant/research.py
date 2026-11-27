@@ -4,12 +4,15 @@ import json
 from pathlib import Path
 import re
 import signal
+import sqlite3
 import sys
 import unicodedata
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from ui import space_search as Spaces
 import web
+
+MAX_LYRICS_CHARS = 200000
 
 
 class ResearchDeadline(BaseException):
@@ -27,7 +30,7 @@ def normalize(name, args):
     fields = {
         'web_search': {'query', 'limit'},
         'read_web_page': {'url', 'offset', 'max_chars'},
-        'search_lyrics': {'fragment', 'online', 'limit', 'display'},
+        'search_lyrics': {'fragment', 'match', 'online', 'limit', 'display'},
         'get_song_lyrics': {'ref', 'online', 'offset', 'max_chars'},
     }
     if not isinstance(args, dict) or name not in fields or set(args) - fields[name]:
@@ -44,20 +47,25 @@ def normalize(name, args):
             raise ValueError(f'{field} requires 3 to 500 characters of text.')
         result[field] = ' '.join(value.split())
         result['limit'] = integer(args, 'limit', 5, 1, 6)
-        if name == 'search_lyrics' and len(words(value)) < 5:
-            raise ValueError(
-                'Use a lyric fragment with at least five letters or numbers.'
-            )
     if name in ('search_lyrics', 'get_song_lyrics'):
         if type(args.get('online', True)) is not bool:
             raise ValueError('online must be boolean.')
         result['online'] = args.get('online', True)
     if name == 'search_lyrics':
+        result['match'] = args.get('match', 'phrase')
+        if result['match'] not in ('phrase', 'keywords'):
+            raise ValueError('Choose phrase or keywords for the lyric search.')
+        if len(words(result['fragment']).replace(' ', '')) < (
+            5 if result['match'] == 'phrase' else 3
+        ):
+            raise ValueError('Provide a longer lyric fragment or keyword.')
         if type(args.get('display', True)) is not bool:
             raise ValueError('display must be boolean.')
         result['display'] = args.get('display', True)
     if name in ('read_web_page', 'get_song_lyrics'):
-        result['offset'] = integer(args, 'offset', 0, 0, web.MAX_TEXT + 200000)
+        result['offset'] = integer(
+            args, 'offset', 0, 0, web.MAX_TEXT + MAX_LYRICS_CHARS
+        )
         result['max_chars'] = integer(args, 'max_chars', 9000, 500, 10000)
     if name == 'read_web_page':
         result['url'] = web.clean_url(args.get('url'))
@@ -144,20 +152,44 @@ def library_songs(path):
             continue
 
 
-def local_matches(fragment, limit):
+def lyrics_excerpt(lyrics, terms):
+    normalized = ' ' + words(lyrics[:MAX_LYRICS_CHARS]) + ' '
+    matches = [(normalized.find(' ' + term + ' '), term) for term in terms]
+    index, term = min(matches)
+    if index < 0:
+        return ''
+    return normalized[max(0, index - 50) : index + len(term) + 80].strip()[:300]
+
+
+def lyric_card(song, excerpt, source, local):
+    song = {key: value for key, value in song.items() if key != 'lyrics'}
+    card = Spaces.card('song', song, local=local, saved=True)
+    if card:
+        card['metadata'].update(lyrics_source=source, lyrics_excerpt=excerpt)
+    return card
+
+
+def library_matches(fragment, limit, match='phrase'):
     path = Spaces.music_path()
-    by_path = {
-        str(song.get('serverPath', '')).lstrip('/'): song
-        for song in library_songs(path)
-    }
-    needle, result = words(fragment), []
+    if path is None:
+        return []
+    needle = words(fragment)
+    terms = needle.split() if match == 'keywords' else [needle]
+    if not needle:
+        return []
+    songs = list(library_songs(path))
+    by_path = {str(song.get('serverPath', '')).lstrip('/'): song for song in songs}
+    result = []
+    pending_paths = set()
     for relative, file, details in inventory_rows(path):
         tags = details['tags']
-        lyrics = str(tags.get('lyrics') or '')[:200000]
-        normalized = words(lyrics)
-        if ' ' + needle + ' ' not in ' ' + normalized + ' ':
+        song = by_path.get(relative)
+        if song and song.get('pendingUpload'):
+            pending_paths.add(relative)
+        excerpt = lyrics_excerpt(str(tags.get('lyrics') or ''), terms)
+        if not excerpt:
             continue
-        song = by_path.get(relative) or dict(
+        song = song or dict(
             id='local:' + relative,
             source='music-local',
             account=path.parent.name,
@@ -167,25 +199,50 @@ def local_matches(fragment, limit):
             serverPath='/' + relative,
             duration=details.get('duration', 0),
         )
-        song = {k: v for k, v in song.items() if k != 'lyrics'}
-        song.update(local=True, localPath=str(file))
-        card = Spaces.card('song', song, local=True, saved=True)
+        card = lyric_card(
+            dict(song, local=True, localPath=str(file)),
+            excerpt,
+            'Embedded library lyrics',
+            local=True,
+        )
         if card:
-            index = normalized.find(needle)
-            card['metadata'].update(
-                lyrics_source='Embedded library lyrics',
-                lyrics_excerpt=normalized[
-                    max(0, index - 50) : index + len(needle) + 80
-                ][:300],
-            )
             result.append(card)
         if len(result) >= limit:
-            break
+            return result
+    by_identity = {
+        (str(song.get('id', '')), str(song.get('serverPath') or '').lstrip('/')): song
+        for song in songs
+        if song.get('source') == 'nextcloud'
+    }
+    seen = {card['id'] for card in result}
+    try:
+        for identifier, relative, text in Spaces.iter_rows(
+            path.with_name('lyrics.sqlite'),
+            'SELECT id,path,substr(text,1,?) FROM lyrics '
+            'WHERE account=? AND instr(text,?)>0 LIMIT 20000',
+            (MAX_LYRICS_CHARS, path.parent.name, needle.split()[0]),
+        ):
+            song = by_identity.get((identifier, relative))
+            if not song or not relative or relative in pending_paths or not text:
+                continue
+            excerpt = lyrics_excerpt(text, terms)
+            if not excerpt:
+                continue
+            file = local_file(relative) if song.get('local') else None
+            card = lyric_card(song, excerpt, 'Saved Nextcloud lyrics', bool(file))
+            if card and card['id'] not in seen:
+                result.append(card)
+                seen.add(card['id'])
+            if len(result) >= limit:
+                break
+    except (OSError, sqlite3.Error):
+        pass  # The optional server lyric cache must not hide local matches.
     return result
 
 
 def search_lyrics(args):
-    items = local_matches(args['fragment'], args['limit'])
+    match = args.get('match', 'phrase')
+    items = library_matches(args['fragment'], args['limit'], match)
     result = dict(
         fragment=args['fragment'],
         items=items,
@@ -197,13 +254,15 @@ def search_lyrics(args):
         result['warning'] = (
             ''
             if items
-            else 'No match in indexed local lyrics. Open Music to refresh its library; songs without embedded lyrics cannot match here.'
+            else 'No match in indexed library lyrics. Open Music to refresh the library index.'
         )
         return result
     try:
-        evidence = web.search(
-            '"' + args['fragment'].replace('"', '') + '" lyrics', args['limit']
+        fragment = args['fragment'].replace('"', '')
+        query = (
+            f'"{fragment}" lyrics' if match == 'phrase' else fragment + ' song lyrics'
         )
+        evidence = web.search(query, args['limit'])
         result.update(
             entries=evidence['entries'],
             provider=evidence['provider'],
@@ -213,8 +272,23 @@ def search_lyrics(args):
             'These are web leads, not verified song identities. Read promising pages, verify title and artist, then search_spaces(kind=song) and present the matching card. Say when identification is uncertain.'
         )
     except web.WebError as error:
-        result['warning'] = 'No indexed local lyric match. ' + str(error)
+        result['warning'] = 'No indexed library lyric match. ' + str(error)
     return result
+
+
+def saved_lyrics_result(song, lyrics, provider, args):
+    return dict(
+        available=True,
+        title=song.get('title', ''),
+        artist=song.get('artist', ''),
+        provider=provider,
+        saved=True,
+        **web.chunk(
+            lyrics[:MAX_LYRICS_CHARS],
+            args.get('offset', 0),
+            args.get('max_chars', 9000),
+        ),
+    )
 
 
 def get_lyrics(args):
@@ -254,18 +328,31 @@ def get_lyrics(args):
         details = cached.get(str(candidate.get('serverPath', '')).lstrip('/'), {})
         lyrics = str(details.get('tags', {}).get('lyrics') or '').strip()
         if lyrics:
-            return dict(
-                available=True,
-                title=candidate.get('title', ''),
-                artist=candidate.get('artist', ''),
-                provider='Song tags',
-                saved=True,
-                **web.chunk(
-                    lyrics[:200000], args.get('offset', 0), args.get('max_chars', 9000)
-                ),
-            )
-    # Full embedded tags and existing Music/Nextcloud/provider caches are shared
-    # with the Music Space. Looking up lyrics never downloads or edits audio.
+            return saved_lyrics_result(candidate, lyrics, 'Song tags', args)
+    if path is not None:
+        try:
+            for candidate in candidates:
+                relative = str(candidate.get('serverPath') or '').lstrip('/')
+                if candidate.get('source') != 'nextcloud' or not relative:
+                    continue
+                saved = Spaces.rows(
+                    path.with_name('lyrics.sqlite'),
+                    'SELECT substr(display,1,?) FROM lyrics '
+                    'WHERE account=? AND id=? AND path=?',
+                    (
+                        MAX_LYRICS_CHARS,
+                        path.parent.name,
+                        candidate.get('id', ''),
+                        relative,
+                    ),
+                )
+                if saved and saved[0][0] and saved[0][0].strip():
+                    return saved_lyrics_result(
+                        candidate, saved[0][0], 'Nextcloud Music', args
+                    )
+        except (OSError, sqlite3.Error):
+            pass  # Older caches may only have folded search text.
+    # Reuse the Music Space's remaining tag, cache and provider fallbacks.
     from spaces.music.backend import fetch_lyrics
 
     preferred = candidates[0] if candidates else song
@@ -278,7 +365,7 @@ def get_lyrics(args):
         provider=result.get('provider', ''),
         saved=result.get('saved', False),
         **web.chunk(
-            str(result.get('lyrics') or '')[:200000],
+            str(result.get('lyrics') or '')[:MAX_LYRICS_CHARS],
             args.get('offset', 0),
             args.get('max_chars', 9000),
         ),

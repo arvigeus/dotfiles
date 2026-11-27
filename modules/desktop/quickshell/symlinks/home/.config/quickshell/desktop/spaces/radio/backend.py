@@ -108,6 +108,7 @@ class RadioBackend:
             not isinstance(settings, dict)
             or not isinstance(settings.get('genres', []), list)
             or not isinstance(settings.get('qualities', {}), dict)
+            or not isinstance(settings.get('compactRows', False), bool)
         ):
             raise api.RadioError('Invalid Radio preferences.')
         atomic_json(
@@ -116,6 +117,7 @@ class RadioBackend:
                 'country': str(settings.get('country') or '')[:200],
                 'genres': [str(tag)[:100] for tag in settings.get('genres', [])[:12]],
                 'qualities': dict(list(settings.get('qualities', {}).items())[:1000]),
+                'compactRows': settings.get('compactRows', False),
             },
         )
         return True

@@ -1,8 +1,10 @@
 # Music
 
 **My Library** opens all your Nextcloud songs alongside audio found in `~/Music`.
-Search filters songs; the filter button reveals Genres, Artists, Albums and
-Playlists with searchable lists. Artist
+Search matches song titles, artist and album names, and lyrics. Use the icon
+beside the search field to toggle lyric matches. Server lyrics become searchable
+as the background index fills. The filter button reveals
+Genres, Artists, Albums and Playlists with searchable lists. Artist
 pages include a picture, biography, albums and a playable song collection.
 
 Playback prefers cached files. New local songs appear automatically with an upload

@@ -104,6 +104,21 @@ def normalize(data):
         feeds[(row.get('channel'), row.get('id'))] = row
         if row.get('is_main'):
             main_feeds.setdefault(row.get('channel'), row)
+    logos = {}
+    for row in data.get('logos', []):
+        channel_id = text(row.get('channel'))
+        url = http_url(row.get('url'))
+        feed_id = row.get('feed')
+        if (
+            not channel_id
+            or row.get('in_use') is not True
+            or not url
+            or (feed_id and feed_id != main_feeds.get(channel_id, {}).get('id'))
+        ):
+            continue
+        rank = (bool(feed_id), row.get('format') != 'PNG')
+        if channel_id not in logos or rank < logos[channel_id][0]:
+            logos[channel_id] = (rank, url)
     grouped = {}
     for raw in data['streams']:
         channel_id = text(raw.get('channel'))
@@ -140,6 +155,7 @@ def normalize(data):
                 languages=[],
                 languageNames=[],
                 website=http_url(metadata.get('website')),
+                logo=logos[channel_id][1] if channel_id in logos else '',
                 streams=[],
             )
         channel = grouped[identity]
@@ -202,23 +218,38 @@ class Catalogue:
             self.snapshot = {}
 
     def summary(self):
+        channels = self.snapshot.get('channels', [])
         return dict(
-            total=len(self.snapshot.get('channels', [])),
+            total=len(channels),
             filters=self.snapshot.get('filters', {}),
             updated=self.snapshot.get('updated', 0),
-            stale=time.time() - self.snapshot.get('updated', 0) > 86400,
+            stale=time.time() - self.snapshot.get('updated', 0) > 86400
+            or bool(channels and 'logo' not in channels[0]),
         )
 
     def refresh(self):
         with self.refresh_lock:
             try:
                 with ThreadPoolExecutor(max_workers=4) as pool:
-                    data = dict(zip(DATASETS, pool.map(self.fetch, DATASETS)))
+                    required = pool.map(self.fetch, DATASETS)
+                    logos = pool.submit(self.fetch, 'logos')
+                    data = dict(zip(DATASETS, required))
+                    try:
+                        data['logos'] = logos.result()
+                    except TelevisionError:
+                        pass  # Keep the successful channel directory update.
                 snapshot = normalize(data)
                 if not snapshot['channels']:
                     raise TelevisionError(
                         'The channel directory returned no usable channels. Saved data was preserved.'
                     )
+                if 'logos' not in data:
+                    saved_logos = {
+                        row['id']: row.get('logo', '')
+                        for row in self.snapshot.get('channels', [])
+                    }
+                    for row in snapshot['channels']:
+                        row['logo'] = saved_logos.get(row['id'], '')
                 atomic_json(self.path, snapshot)
                 self.snapshot = snapshot
                 return dict(self.summary(), warning='')

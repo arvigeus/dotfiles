@@ -445,11 +445,22 @@ class HelperProcessTests(unittest.TestCase):
         self.assertIn('You are Fern', chats[0]['messages'][0]['content'])
         self.assertNotIn('"Paint"', chats[0]['messages'][0]['content'])
         self.assertIn('play_space_result', chats[0]['messages'][0]['content'])
+        self.assertIn('match=keywords', chats[0]['messages'][0]['content'])
+        self.assertIn('get_song_lyrics', chats[0]['messages'][0]['content'])
         self.assertNotIn('present_space_results', chats[0]['messages'][0]['content'])
         self.assertIs(chats[0]['enable_thinking'], False)
         offered = {tool['function']['name'] for tool in chats[0]['tools']}
         self.assertTrue(
-            {'timer', 'window', 'agenda', 'lid_policy', 'open_app', 'web_search'}
+            {
+                'timer',
+                'window',
+                'agenda',
+                'lid_policy',
+                'open_app',
+                'web_search',
+                'search_lyrics',
+                'get_song_lyrics',
+            }
             <= offered
         )
         self.assertFalse({'run_command', 'write_file', 'read_file'} & offered)

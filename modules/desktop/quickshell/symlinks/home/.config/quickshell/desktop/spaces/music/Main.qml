@@ -32,7 +32,9 @@ Item {
     property string genreId: ""
     property string genreName: ""
     property bool searchOpen: false
+    property bool includeLyrics: true
     property bool filtersOpen: false
+    property bool compactRows: false
     property bool loading: false
     property bool appending: false
     property bool needsBrowse: false
@@ -42,6 +44,10 @@ Item {
     property bool libraryIndexed: false
     property bool libraryIndexing: false
     property string libraryVersion: ""
+    property string lyricsVersion: ""
+    property string lyricsWarning: ""
+    readonly property bool canSearchLyrics: section === "library" && category === "songs" && (!entity || (libraryIndexed && entity.kind !== "playlist" && ["nextcloud", "music-local"].includes(entity.source)))
+    readonly property bool lyricSearch: includeLyrics && canSearchLyrics
     property string libraryIndexMessage: ""
     property bool checkingIndex: false
     property int offset: 0
@@ -136,6 +142,7 @@ Item {
     }
     Worker {
         id: covers
+        objectName: "musicArtworkService"
         backendDirectory: "spaces/music"
         backend: "artwork.py"
         spaceId: "music"
@@ -253,12 +260,19 @@ Item {
         if (!info)
             return;
         const changed = info.ready && (!libraryIndexed || String(info.version) !== libraryVersion);
+        const lyricsChanged = String(info.lyricsVersion || "") !== lyricsVersion;
         libraryIndexed = !!info.ready;
         libraryIndexing = !!info.indexing;
         if (info.version)
             libraryVersion = String(info.version);
-        libraryIndexMessage = libraryIndexing ? "Caching library metadata · " + (info.loaded || 0).toLocaleString() + " songs" : info.indexError || "";
-        if (requery && changed && section === "library")
+        if (requery || !lyricSearch || !search.text.trim())
+            lyricsVersion = String(info.lyricsVersion || "");
+        else if (lyricsChanged)
+            Qt.callLater(indexStatus);
+        lyricsWarning = info.lyricsError || "";
+        const count = (info.loaded || 0).toLocaleString() + " songs";
+        libraryIndexMessage = !libraryIndexing ? "" : info.phase === "checking" ? "" : info.phase === "lyric-files" ? "Checking lyric file versions…" : (info.phase === "lyrics" ? "Indexing song lyrics · " : "Caching library metadata · ") + count;
+        if (requery && section === "library" && (changed || (lyricsChanged && lyricSearch && search.text.trim())))
             browse(false, false, true);
     }
     function indexStatus() {
@@ -326,6 +340,8 @@ Item {
             const settings = result.settings || {};
             section = "library";
             savedViews = settings.views || ({});
+            compactRows = settings.compactRows === true;
+            includeLyrics = settings.includeLyrics !== false;
             category = "songs";
             pendingOnly = false;
             genreId = "";
@@ -353,6 +369,8 @@ Item {
         service.request("settings-save", {
             settings: {
                 section: section,
+                compactRows: compactRows,
+                includeLyrics: includeLyrics,
                 views: savedViews
             }
         }, (result, failure) => saveError = failure || "");
@@ -410,6 +428,7 @@ Item {
                     entity: entity,
                     category: category,
                     query: search.text.trim(),
+                    includeLyrics: lyricSearch,
                     offset: offset,
                     pageSize: preserveScroll ? rows.length : 200
                 }, (result, failure) => {
@@ -474,6 +493,7 @@ Item {
         loading = true;
         currentService().request(section === "library" ? "browse" : "search-page", {
             query: search.text.trim(),
+            includeLyrics: lyricSearch,
             category: section === "discover" && !search.text.trim() ? "songs" : category,
             genreId: category === "artists" ? "" : genreId,
             genreName: category === "artists" ? "" : genreName,
@@ -647,6 +667,7 @@ Item {
                 category: category,
                 entityReady: entityReady,
                 query: search.text,
+                includeLyrics: includeLyrics,
                 rows: rows.slice(),
                 offset: offset,
                 cursor: cursor,
@@ -757,6 +778,11 @@ Item {
         // A restored query keeps filtering, so keep it visible.
         searchOpen = searchOpen || !!previous.query;
         searchDelay.stop();
+        if (canSearchLyrics && search.text.trim() && previous.includeLyrics !== includeLyrics) {
+            updateRows([], false);
+            browse(false);
+            return;
+        }
         total = previous.total || 0;
         offset = previous.offset;
         cursor = previous.cursor;
@@ -784,6 +810,7 @@ Item {
         cloudService.request("queue", {
             entity: entity,
             query: search.text.trim(),
+            includeLyrics: lyricSearch,
             genreName: entity ? "" : genreName,
             pending: !entity && pendingOnly
         }, (result, failure) => {
@@ -935,10 +962,16 @@ Item {
         }
     }
     Timer {
+        id: coverScrollDelay
+        property bool waiting: false
+        interval: 150
+        onTriggered: waiting = false
+    }
+    Timer {
         objectName: "musicIndexTimer"
-        interval: 800
+        interval: root.libraryIndexing ? 800 : 60000
         repeat: true
-        running: root.active && root.section === "library" && root.libraryIndexing
+        running: root.active && root.section === "library"
         onTriggered: root.indexStatus()
     }
 
@@ -1063,7 +1096,7 @@ Item {
             visible: root.searchOpen
             Layout.preferredWidth: Math.min(280, root.width * 0.23)
             Layout.minimumWidth: 90
-            placeholderText: root.entity ? "Search this " + root.entity.kind + "…" : root.section === "library" ? "Search My Library…" : "Search music…"
+            placeholderText: root.canSearchLyrics ? (root.lyricSearch ? "Search songs or lyrics…" : "Search songs…") : root.entity ? "Search this " + root.entity.kind + "…" : root.section === "library" ? "Search My Library…" : "Search music…"
             Accessible.name: "Search music"
             onTextChanged: if (root.initialized && !root.restoringView) {
                 if (root.active)
@@ -1073,6 +1106,22 @@ Item {
             }
             onAccepted: root.browse(false)
         }
+        MovieIconButton {
+            toolbar: true
+            objectName: "musicSearchLyrics"
+            visible: root.searchOpen && root.canSearchLyrics
+            enabled: root.initialized
+            iconName: "file-text"
+            text: "Include lyrics in search"
+            checkable: true
+            checked: root.includeLyrics
+            onClicked: {
+                root.includeLyrics = checked;
+                root.persist();
+                if (search.text.trim())
+                    root.browse(false);
+            }
+        }
         Item {
             Layout.preferredWidth: 28
             Layout.preferredHeight: 28
@@ -1081,7 +1130,7 @@ Item {
                 active: root.active
                 spinnerName: "musicLoadingIndicator"
                 jobs: service.jobs.concat(cacheService.jobs)
-                tasks: [task(root.loading, "browse", "Loading music…"), task(root.section === "library" && root.libraryIndexing, "index", root.libraryIndexMessage || "Indexing music…"), task(root.genresLoading, "genres", "Loading genres…"), task(service.startingJobs + cacheService.startingJobs > 0, "queue", "Queuing operation…"), task(info.lookingUp, "lyrics", "Finding lyrics…"), task(info.reading, "song", "Loading song details…"), task(playback.preparing, "player", playback.playMessage || "Opening player…")]
+                tasks: [task(root.loading, "browse", "Loading music…"), task(root.section === "library" && !!root.libraryIndexMessage, "index", root.libraryIndexMessage), task(root.genresLoading, "genres", "Loading genres…"), task(service.startingJobs + cacheService.startingJobs > 0, "queue", "Queuing operation…"), task(info.lookingUp, "lyrics", "Finding lyrics…"), task(info.reading, "song", "Loading song details…"), task(playback.preparing, "player", playback.playMessage || "Opening player…")]
             }
         }
         MovieIconButton {
@@ -1133,6 +1182,17 @@ Item {
         }
         MovieIconButton {
             toolbar: true
+            objectName: "musicLayoutToggle"
+            enabled: root.initialized
+            iconName: root.compactRows ? "panels-top-left" : "list"
+            text: root.compactRows ? "Show two-line entries" : "Show single-line entries"
+            onClicked: {
+                root.compactRows = !root.compactRows;
+                root.persist();
+            }
+        }
+        MovieIconButton {
+            toolbar: true
             objectName: "musicNotificationsButton"
             iconName: "bell"
             text: "Notifications"
@@ -1146,7 +1206,7 @@ Item {
         spacing: 12
         RowLayout {
             id: messageRow
-            readonly property string message: [root.error, root.saveError, root.warning, root.section === "library" ? root.libraryWarning : ""].filter(Boolean).join("\n")
+            readonly property string message: [root.error, root.saveError, root.warning, root.section === "library" ? root.libraryWarning : "", root.lyricSearch && search.text.trim() ? root.lyricsWarning : ""].filter(Boolean).join("\n")
             visible: !!message
             Layout.fillWidth: true
             MovieText {
@@ -1236,8 +1296,12 @@ Item {
                 activeFocusOnTab: true
                 keyNavigationEnabled: true
                 keyNavigationWraps: false
-                onContentYChanged: if (root.active)
-                    pagination.restart()
+                onContentYChanged: if (root.active) {
+                    // WheelScroll moves contentY directly, without setting moving.
+                    coverScrollDelay.waiting = true;
+                    coverScrollDelay.restart();
+                    pagination.restart();
+                }
                 onHeightChanged: if (root.active)
                     pagination.restart()
                 Keys.onReturnPressed: if (currentItem)
@@ -1252,7 +1316,7 @@ Item {
                     readonly property var record: JSON.parse(payload)
                     readonly property bool playing: playback.currentTrackKey === root.recordKey(record)
                     width: list.width
-                    height: Math.max(80, details.implicitHeight + 24)
+                    height: root.compactRows ? MovieStyle.controlHeight + 8 : Math.max(80, details.implicitHeight + 24)
                     radius: 6
                     color: playing ? MovieStyle.accentSurface : hover.containsMouse ? "#18ffffff" : "transparent"
                     border.width: list.activeFocus && list.currentIndex === index ? 1 : 0
@@ -1270,6 +1334,8 @@ Item {
                     RowLayout {
                         anchors.fill: parent
                         anchors.margins: 12
+                        anchors.topMargin: root.compactRows ? 4 : 12
+                        anchors.bottomMargin: anchors.topMargin
                         spacing: 12
                         MovieIconButton {
                             objectName: "musicPlay:" + row.index
@@ -1279,24 +1345,30 @@ Item {
                         }
                         MusicCover {
                             objectName: "musicCover:" + row.index
+                            visible: !root.compactRows
                             Layout.preferredWidth: 56
                             Layout.preferredHeight: 56
                             record: row.record
                             service: covers
-                            fetchEnabled: root.active && row.y + row.height >= list.contentY && row.y <= list.contentY + list.height
+                            fetchEnabled: visible && root.active && !list.moving && !coverScrollDelay.waiting && row.y + row.height >= list.contentY && row.y <= list.contentY + list.height
                         }
-                        ColumnLayout {
+                        GridLayout {
                             id: details
                             Layout.fillWidth: true
-                            spacing: 5
+                            columns: root.compactRows ? 2 : 1
+                            rowSpacing: 5
+                            columnSpacing: 12
                             MovieText {
-                                Layout.fillWidth: true
+                                Layout.fillWidth: !root.compactRows || !metadata.visible
+                                Layout.maximumWidth: root.compactRows && metadata.visible ? details.width * 0.6 : Infinity
                                 text: row.record.title || row.record.name || ""
                                 font.bold: true
                                 font.pixelSize: MovieStyle.fontSize * 1.2
                                 elide: Text.ElideRight
                             }
                             RowLayout {
+                                id: metadata
+                                visible: !root.compactRows || !!(row.record.artist || row.record.album || row.record.releaseDate || row.record.genres?.length)
                                 Layout.fillWidth: true
                                 spacing: 10
                                 MusicLink {
@@ -1496,12 +1568,14 @@ Item {
                 }
             }
             MovieIconButton {
+                objectName: "musicShuffle"
                 iconName: "shuffle"
                 text: "Shuffle"
                 highlighted: playback.shuffleEnabled
                 onClicked: playback.shuffleEnabled = !playback.shuffleEnabled
             }
             MovieIconButton {
+                objectName: "musicRepeat"
                 iconName: "repeat"
                 text: "Repeat queue"
                 highlighted: playback.repeatAllEnabled

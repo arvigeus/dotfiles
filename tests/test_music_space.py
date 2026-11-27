@@ -36,6 +36,7 @@ for line in sys.stdin:
  r=json.loads(line);op=r["op"];result={}
  if op=="browse":
   items=[song] if r.get("query") else [dict(song,id=str(i),local=i==0) for i in range(r.get("offset",0),r.get("offset",0)+50)]
+  if r.get("query")=="fixture lyric" and not r.get("includeLyrics"):items=[]
   result=dict(items=items,limit=r.get("offset",0)+50,hasMore=not r.get("query") and r.get("offset",0)<50)
  elif op=="cover":result=""
  elif op=="local-refresh":result=dict(version="fixture")
@@ -74,6 +75,97 @@ for line in sys.stdin:
 @unittest.skipUnless(support.QS, 'Quickshell required')
 class MusicSpaceTests(unittest.TestCase):
     run_qml = support.run_qml
+
+    def test_search_lyrics_shuffle_and_repeat_preferences_survive_reopening(self):
+        def saved_playback_settings(root):
+            setup(root)
+            playback = root / 'config/quickshell/desktop/music-playback.ini'
+            playback.write_text(
+                '[Playback]\nshuffleEnabled=true\nrepeatAllEnabled=true\n'
+            )
+
+        self.run_qml(
+            """import QtQuick
+import QtTest
+import Quickshell
+import "ui"
+ShellRoot {
+ InteractionState { id: interactions }
+ SpaceHost { id: host; interactionState: interactions }
+ TestCase { id: input; when: false; parent: host.contentItem }
+ property int step: 0
+ function find(item, name) {
+  if (item.objectName === name) return item;
+  for (const child of item.children ?? []) {
+   const match = find(child, name);
+   if (match) return match;
+  }
+  return null;
+ }
+ function check(value, message) { if (!value) throw new Error(message); }
+ Timer { id: driver; interval: 85; running: true; onTriggered: { try {
+  if (step === 0) { SpaceState.open("music", Quickshell.screens[0]); step++; return; }
+  const page = host.currentPage;
+  if (!page?.initialized || page.loading) return;
+  const toolbar = page.toolbarTarget;
+  const search = find(toolbar, "musicSearch");
+  const toggle = find(toolbar, "musicSearchLyrics");
+  const shuffle = find(page, "musicShuffle"), repeat = find(page, "musicRepeat");
+  if (step === 1) {
+   check(shuffle.highlighted && repeat.highlighted, "saved playback preferences did not restore");
+   check(!toggle.visible && toggle.checked, "lyrics preference did not default on");
+   input.mouseClick(find(toolbar, "musicSearchButton"));
+   check(toggle.visible, "lyrics toggle missing beside library search");
+   search.text = "fixture lyric";
+   step++; return;
+  }
+  if (step === 2) {
+   if (page.rows.length !== 1) return;
+   input.mouseClick(toggle);
+   check(!toggle.checked && search.text === "fixture lyric", "toggle did not keep the query");
+   input.mouseClick(shuffle);
+   input.mouseClick(repeat);
+   check(!shuffle.highlighted && !repeat.highlighted, "playback controls did not turn off");
+   step++; return;
+  }
+  if (step === 3) {
+   check(!page.rows.length, "lyrics-only matches were still visible");
+   input.mouseClick(toggle);
+   step++; return;
+  }
+  if (step === 4) {
+   check(page.rows.length === 1, "enabling lyrics did not restore matches");
+   page.openArtist(page.rows[0]);
+   step++; return;
+  }
+  if (step === 5) {
+   check(toggle.visible && toggle.checked, "lyrics toggle missing in the indexed artist view");
+   input.mouseClick(toggle);
+   page.back();
+   step++; return;
+  }
+  if (step === 6) {
+   check(search.text === "fixture lyric" && !page.rows.length, "back restored stale lyric matches");
+   page.changeSection("discover");
+   page.searchOpen = true;
+   check(search.visible && !toggle.visible, "lyrics toggle appeared in Browse");
+   step++; return;
+  }
+  if (step === 7) {
+   SpaceState.close("music");
+   SpaceState.open("music", Quickshell.screens[0]);
+   step++; return;
+  }
+  input.mouseClick(find(toolbar, "musicSearchButton"));
+  check(toggle.visible && !toggle.checked, "lyrics preference did not survive reopening");
+  check(!shuffle.highlighted && !repeat.highlighted, "playback preference changes did not survive reopening");
+  SpaceState.close("music");
+  console.log("DISPLAY_PASS"); Qt.quit();
+ } catch (error) { console.error("DISPLAY_FAIL", error.message); Qt.quit(); } finally { driver.restart(); } } }
+ Timer { interval: 8000; running: true; onTriggered: { console.error("DISPLAY_FAIL timeout", step); Qt.quit(); } }
+}""",
+            setup=saved_playback_settings,
+        )
 
     def test_browse_restores_filters_and_opens_catalogue_playlist(self):
         def legacy_settings(root):
@@ -258,6 +350,39 @@ ShellRoot {
   if(root.step===15){check(page!==root.retained&&page.section==="library","fresh instance failed");SpaceState.close("music");SpaceState.close("movies");console.log("DISPLAY_PASS");Qt.quit();}
  }catch(error){console.error("DISPLAY_FAIL",error.message+" "+error.stack);Qt.quit();}finally{driver.restart();}}}
  Timer {interval:12000;running:true;onTriggered:{console.error("DISPLAY_FAIL timeout at "+root.step);Qt.quit();}}
+}""",
+            setup=setup,
+        )
+
+    def test_row_covers_wait_for_the_viewport_to_settle(self):
+        self.run_qml(
+            """import QtQuick
+import Quickshell
+import "ui"
+ShellRoot {
+ id:root
+ InteractionState {id:interactions}
+ SpaceHost {id:host;interactionState:interactions}
+ property int step:0
+ property int inMotionRequests:0
+ function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
+ Timer {interval:35;repeat:true;running:true;onTriggered:{try{
+  if(root.step===0){SpaceState.open("music",Quickshell.screens[0]);root.step++;return;}
+  const page=host.currentPage,list=page&&find(page,"musicList"),artwork=page&&find(page,"musicArtworkService");
+  if(!page||!list||!artwork||!artwork.serial||page.rows.length<50||list.contentHeight<2000)return;
+  if(root.step<=5){
+   if(root.step===1){
+    if(artwork.pendingCount)return;
+    root.inMotionRequests=artwork.serial;
+   }else if(artwork.serial!==root.inMotionRequests)throw new Error("Cover requests queued while scrolling");
+   list.contentY+=320;
+   root.step++;
+   return;
+  }
+  if(artwork.serial<=root.inMotionRequests)return;
+  SpaceState.close("music");console.log("DISPLAY_PASS");Qt.quit();
+ }catch(error){console.error("DISPLAY_FAIL",error.message);Qt.quit();}}}
+ Timer {interval:8000;running:true;onTriggered:{console.error("DISPLAY_FAIL viewport timeout",root.step);Qt.quit();}}
 }""",
             setup=setup,
         )
@@ -485,6 +610,7 @@ ShellRoot {
  property var previews:[]
  property var tags:[]
  property var lyrics:[]
+ property var stored:[]
  property var saves:[]
  function check(value,message){if(!value)throw new Error(message);}
  function find(item,name){if(item.objectName===name)return item;for(const child of item.children??[]){const found=find(child,name);if(found)return found;}return null;}
@@ -492,6 +618,7 @@ ShellRoot {
  QtObject {id:catalogue;function request(op,args,callback){
   if(op==="song-info")root.previews=root.previews.concat([callback]);
   else if(op==="file-tags")root.tags=root.tags.concat([callback]);
+  else if(op==="stored-lyrics")root.stored=root.stored.concat([callback]);
   else if(op==="lyrics")root.lyrics=root.lyrics.concat([callback]);
   else throw new Error("Unexpected request "+op);
  }}
@@ -510,8 +637,9 @@ ShellRoot {
   root.tags[0]({tags:{title:"File title",comment:"Existing comment",composer:"Existing composer",lyrics:"Embedded lyrics"},signature:"[1, 2, 3]",fileInfo:"FLAC · 24-bit · 96 kHz"},"");
   check(info.draft.title==="My title"&&info.draft.comment===""&&info.draft.composer==="Existing composer","late tags overwrote an edit or failed to fill an untouched field");
   root.previews[0]({tags:{title:"Late API title",comment:""},knownFields:["title"],relativePath:"one.flac",fileInfo:"FLAC · 320 kbps"},"");
+  root.stored[0]({lyrics:"Cached server lyrics"},"");
   check(info.draft.title==="My title"&&info.original.title==="File title","late preview replaced file tags");
-  check(info.draft.lyrics==="Embedded lyrics"&&info.fileInfo==="FLAC · 24-bit · 96 kHz","late API response replaced embedded lyrics or format details");
+  check(info.displayedLyrics==="Embedded lyrics"&&info.fileInfo==="FLAC · 24-bit · 96 kHz","late API response replaced embedded lyrics or format details");
   info.run("save");
   check(root.saves.length===1&&root.saves[0].tags.title==="My title"&&root.saves[0].tags.comment===""&&Object.keys(root.saves[0].tags).length===2,"Save included untouched or unknown fields");
   info.complete({},"Save failed");check(info.dirty&&info.draft.title==="My title","failure lost the draft");
@@ -528,8 +656,9 @@ ShellRoot {
   root.previews[1]({tags:{title:"Second"}},"");info.prepare();
   check(root.lyrics.length===0,"entering editing fetched lyrics");
   info.lookupLyrics();info.editTag("lyrics","Manual lyrics");
+  root.stored[1]({lyrics:"Cached lyrics"},"");
   root.lyrics[0]({available:true,lyrics:"Fetched lyrics"},"");
-  check(info.draft.lyrics==="Manual lyrics"&&!info.lookingUp,"late lyrics replaced manual edits");
+  check(info.displayedLyrics==="Manual lyrics"&&!info.lookingUp,"late lyrics replaced manual edits");
   info.cancelEdits();root.tags[2]({tags:{comment:"Cancelled read"}},"");
   check(!info.editing&&!info.dirty&&info.draft.comment==="Cancelled read","cancel stopped Info from loading metadata or restored discarded edits");
   console.log("DISPLAY_PASS");Qt.quit();
@@ -553,7 +682,8 @@ ShellRoot {
   if(op==="song-info"){
    if(args.song.local)callback({tags:{title:"Local title",comment:"Local comment",lyrics:"Local lyrics"},signature:"[1, 2, 3]",fileInfo:"FLAC · 24-bit"},"");
    else callback({tags:{title:"Server title",comment:""},knownFields:["title"]},"");
-  }else if(op==="file-tags"){root.fileReads++;root.pending=callback;}
+  }else if(op==="stored-lyrics"){callback({lyrics:"Cached server lyrics"},"");}
+  else if(op==="file-tags"){root.fileReads++;root.pending=callback;}
   else throw new Error("Info started a lyrics lookup");
  }}
  FloatingWindow {id:window;visible:true;implicitWidth:1000;implicitHeight:950
@@ -565,6 +695,7 @@ ShellRoot {
   info.prepare();check(root.fileReads===0&&info.editing,"Edit reread cached metadata");info.cancelEdits();
   info.showSong({id:"remote",source:"nextcloud",serverPath:"/remote.flac"});
   check(root.fileReads===1&&info.loadingTags&&!info.editing,"Info did not request remote metadata");
+  check(info.displayedLyrics==="Cached server lyrics","Info waited for DAV to show cached lyrics");
   root.pending({},"Partial reads are unavailable");
   check(!info.loadingTags&&info.draft.title==="Server title"&&!info.knownFields.includes("comment")&&!info.editing,"DAV failure discarded API metadata or invented an empty value");
   info.prepare();info.editTag("comment","Replacement");

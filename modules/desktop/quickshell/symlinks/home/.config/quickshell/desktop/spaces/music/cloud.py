@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from integrations import nextcloud
 from integrations.subsonic import MusicError, NoRedirect, SubsonicClient
 from spaces.music.cloud_index import CatalogueIndex
+from spaces.music.remote_files import RemoteFiles
 from spaces.music.storage import atomic_write
 
 PAGE = 50
@@ -93,6 +94,9 @@ class LibraryClient(SubsonicClient):
         'getGenres',
         'stream',
     }
+
+    def lyrics_files(self):
+        return RemoteFiles(self.account)
 
 
 class CloudLibrary:
@@ -338,30 +342,15 @@ class CloudLibrary:
             return target.as_uri()
 
     def lyrics(self, item):
+        from spaces.music.local_files import relative
+        from spaces.music.records import MusicError as LocalError
+
         identifier = self.checked(item)
-        values = (
-            self.request('getLyricsBySongId', id=identifier)
-            .get('lyricsList', {})
-            .get('structuredLyrics', [])
-        )
-        if not isinstance(values, list):
-            raise MusicError('The server returned invalid lyrics.')
-        values = sorted(
-            (value for value in values if isinstance(value, dict)),
-            key=lambda value: bool(value.get('synced')),
-        )
-        text = next(
-            (
-                '\n'.join(
-                    str(line.get('value') or '')
-                    for line in value.get('line', [])
-                    if isinstance(line, dict)
-                )
-                for value in values
-                if value.get('line')
-            ),
-            '',
-        )
+        try:
+            path = relative(item)
+        except LocalError:
+            path = ''
+        text = self.index.song_lyrics(identifier, path)
         return dict(
             available=bool(text.strip()), lyrics=text, provider='Song tags', saved=True
         )
@@ -649,6 +638,7 @@ def handle(args):
             index=library.index.status()
         )
     if op == 'index-status':
+        library.index.start()
         return library.index.status()
     if op == 'refresh-item':
         result = library.refresh_item(args.get('item'), args.get('action', ''))

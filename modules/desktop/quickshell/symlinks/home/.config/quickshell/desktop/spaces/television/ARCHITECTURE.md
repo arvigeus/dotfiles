@@ -11,6 +11,10 @@ shared top row, and a virtualized vertical channel list. There is no Radio-style
 large now-playing heading and no Nextcloud integration. Channel rows show country, feed languages, categories,
 numbered alternate streams/qualities, optional website and favorite actions.
 Missing websites reserve the same space so stream selectors stay aligned.
+The default layout stacks channel names over metadata and reserves a fixed slot
+for each logo. A TV icon fills the slot until a logo is ready, keeping titles
+aligned. The single-line layout places metadata and actions beside the name and
+skips artwork loads.
 
 Open lazily creates one retained instance and worker. Hide preserves list position,
 filter/search drafts, chosen streams, favorites and playback. Search debounce,
@@ -50,7 +54,13 @@ snapshot if the directory is offline or a channel disappears. Private records
 are validated before replacement;
 invalid records are reported without erasing their file. Anonymous public streams
 may lack a country, language or category and consequently do not match those
-specific filters. Logos and EPG data are not fetched.
+specific filters.
+
+Refresh also reads IPTV-org's optional logos dataset. It prefers current
+channel-wide logos, then current logos for the main feed. If the logo feed is
+unavailable, a successful directory refresh carries forward cached logo URLs.
+Two-line rows use the shared artwork worker and Television's own bounded cache.
+EPG data is not fetched.
 
 ## Desktop mpv playback
 
@@ -97,7 +107,7 @@ The backend checks that channel and stream IDs match the supplied snapshot.
 User configuration and state:
 
 - `~/.config/quickshell/desktop/spaces/television/television-ui.json`: country,
-  language/category choices and selected stream IDs by channel ID.
+  language/category choices, row layout and selected stream IDs by channel ID.
 - `~/.local/share/quickshell/desktop/spaces/television/favorites.json`: complete
   favorite channel/stream snapshots, including public provider headers.
 
