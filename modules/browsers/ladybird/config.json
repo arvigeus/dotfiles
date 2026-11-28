@@ -1,0 +1,16 @@
+{
+    "extra": {
+        "flatpak": {
+            "packages": [
+                {
+                    "remote": "ladybird",
+                    "app": "org.ladybird.Ladybird"
+                }
+            ],
+            "remotes": {
+                "ladybird": "https://flatpak.ladybird.org/ladybird.flatpakrepo",
+                "flathub": "https://dl.flathub.org/repo/flathub.flatpakrepo"
+            }
+        }
+    }
+}

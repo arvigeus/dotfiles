@@ -193,6 +193,10 @@
           "app": "com.google.Chrome"
         },
         {
+          "remote": "ladybird",
+          "app": "org.ladybird.Ladybird"
+        },
+        {
           "remote": "flathub",
           "app": "org.torproject.torbrowser-launcher"
         },
@@ -287,7 +291,8 @@
       ],
       "remotes": {
         "flathub": "https://dl.flathub.org/repo/flathub.flatpakrepo",
-        "flatpark": "https://dl.flatpark.org/flatpark.flatpakrepo"
+        "flatpark": "https://dl.flatpark.org/flatpark.flatpakrepo",
+        "ladybird": "https://flatpak.ladybird.org/ladybird.flatpakrepo"
       }
     },
     "browsers": {
@@ -731,6 +736,11 @@
       {
         "source": "modules/browsers/firefox/files/usr/lib/firefox/defaults/pref/arkenfox.js",
         "target": "/usr/lib/firefox/defaults/pref/arkenfox.js",
+        "mode": "0644"
+      },
+      {
+        "source": "modules/browsers/ladybird/files/etc/bash.bashrc.d/ladybird.sh",
+        "target": "/etc/bash.bashrc.d/ladybird.sh",
         "mode": "0644"
       },
       {
